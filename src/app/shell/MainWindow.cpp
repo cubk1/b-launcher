@@ -19,8 +19,10 @@
 #include "app/instances/NewInstanceScreen.h"
 #include "app/shell/Page.h"
 #include "app/settings/SettingsScreen.h"
+#include "app/system/Platform.h"
 
 #include "ui/gl/ShaderUtil.h"
+#include "ui/menu/MenuItems.h"
 #include "ui/overlay/UiOverlays.h"
 #include "ui/panel/NewUi.h"
 #include "ui/panel/Notifications.h"
@@ -492,9 +494,50 @@ namespace MainWindow {
         fadeGlyph(0xf078, chevronX, cy, tint, open, 9.0f);
         fadeGlyph(0xf054, chevronX, cy, tint, 1.0f - open, 9.0f);
         UiRender::alphaMul = savedAlpha;
+        if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
+            NewUi::rightClick = false;
+            std::string key = source.key;
+            NewUi::openMenu(
+                    "sidebar#group#" + key,
+                    [key] {
+                        MenuItems items;
+                        const Instances::Source* found = Instances::source(key);
+                        if (found == nullptr) {
+                            return items;
+                        }
+                        std::filesystem::path root = found->root;
+                        items.push_back(ActionMenuItem::make("打开文件夹", 0xf07c, [root] {
+                                            Platform::open(root);
+                                        })->enabled(found->exists));
+                        items.push_back(ActionMenuItem::make("重新读取", 0xf2f1, [] { Instances::refresh(); }));
+                        if (found->custom) {
+                            items.push_back(
+                                    ActionMenuItem::make("移除", 0xf2ed, [key] { Instances::removeFolder(key); })
+                                            ->dangerous()
+                                            ->confirmFirst());
+                        }
+                        return items;
+                    },
+                    NewUi::mouseX, NewUi::mouseY, 160.0f);
+        }
         if (!blocked && !rail && NewUi::click(x, y, listW, GROUP_H)) {
             UiSound::request(UiSound::TICK);
             toggleGroup(source.key);
+        }
+    }
+
+    static void addFolderRow(float y, bool blocked) {
+        NavItemWidget item("nav#addFolder", Ui::glyph(0xf65e), "添加游戏目录");
+        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
+        item.paint();
+        if (!item.pressed) {
+            return;
+        }
+        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::exeDirectory())) {
+            std::string problem = Instances::addFolder(*picked);
+            if (!problem.empty()) {
+                Instances::notify(problem, true);
+            }
         }
     }
 
@@ -574,6 +617,7 @@ namespace MainWindow {
                                        isCollapsed(sources[i].key) && !searching ? 0.0f : 1.0f, 16.0f);
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
+        contentH += ITEM_STEP;
 
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - LIST_TOP;
@@ -628,6 +672,11 @@ namespace MainWindow {
                 UiRender::unscissor();
             }
             cursor += shownH + GROUP_GAP;
+        }
+        if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
+            UiRender::scissor(0, LIST_TOP, sideW, viewH);
+            addFolderRow(cursor, !NewUi::rawHit(0, LIST_TOP, sideW, viewH));
+            UiRender::unscissor();
         }
 
         if (maxScroll > 0.5f && fold < 0.5f) {

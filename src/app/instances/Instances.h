@@ -16,6 +16,7 @@ namespace Instances {
         std::string label;
         std::filesystem::path root;
         bool exists = false;
+        bool custom = false;
     };
 
     struct Entry {
@@ -46,6 +47,8 @@ namespace Instances {
     void refresh();
     void refresh(std::function<void()> done);
     void createFolder(const std::string& source);
+    std::string addFolder(const std::filesystem::path& folder);
+    void removeFolder(const std::string& source);
 
     void editSettings(const std::string& key, const std::function<void(blb::instance::instance_settings&)>& edit);
 

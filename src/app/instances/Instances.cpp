@@ -4,6 +4,10 @@
 
 #include "ui/panel/Notifications.h"
 
+#include <core/base/hash.hpp>
+#include <core/base/strings.hpp>
+
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -20,6 +24,7 @@ namespace Instances {
         using Clock = std::chrono::steady_clock;
 
         constexpr double SAVE_DELAY = 0.5;
+        const char* const FOLDERS = "gameFolders";
 
         std::thread worker;
         std::mutex lock;
@@ -39,7 +44,7 @@ namespace Instances {
 
         struct Scan {
             std::vector<Entry> entries;
-            std::vector<bool> exists;
+            std::unordered_map<std::string, bool> exists;
         };
 
         blb::instance::instance_manager managerFor(const std::filesystem::path& root) {
@@ -56,7 +61,7 @@ namespace Instances {
             for (const Source& source : from) {
                 std::error_code error;
                 bool exists = std::filesystem::is_directory(source.root, error);
-                out.exists.push_back(exists);
+                out.exists[source.key] = exists;
                 if (!exists) {
                     continue;
                 }
@@ -74,9 +79,18 @@ namespace Instances {
         }
 
         void apply(Scan& result) {
-            entries = std::move(result.entries);
-            for (size_t i = 0; i < roots.size() && i < result.exists.size(); i++) {
-                roots[i].exists = result.exists[i];
+            entries.clear();
+            for (Entry& entry : result.entries) {
+                if (std::any_of(roots.begin(), roots.end(),
+                                [&](const Source& source) { return source.key == entry.source; })) {
+                    entries.push_back(std::move(entry));
+                }
+            }
+            for (Source& source : roots) {
+                auto found = result.exists.find(source.key);
+                if (found != result.exists.end()) {
+                    source.exists = found->second;
+                }
             }
             scanned = true;
         }
@@ -132,6 +146,65 @@ namespace Instances {
             doc["selectedInstance"] = selection;
             if (!Config::save()) {
                 notify("无法保存启动器配置", true);
+            }
+        }
+
+        std::string folderKey(const std::filesystem::path& root) {
+            std::string text = blb::to_lower(blb::path_to_utf8(root.lexically_normal()));
+            while (!text.empty() && (text.back() == '\\' || text.back() == '/')) {
+                text.pop_back();
+            }
+            return "dir-" + blb::to_hex(blb::sha1::digest(text)).substr(0, 10);
+        }
+
+        std::string folderLabel(const std::filesystem::path& root) {
+            std::filesystem::path clean = root.lexically_normal();
+            if (!clean.has_filename()) {
+                clean = clean.parent_path();
+            }
+            std::string name = blb::path_to_utf8(clean.filename());
+            if (blb::iequals(name, ".minecraft")) {
+                std::string parent = blb::path_to_utf8(clean.parent_path().filename());
+                if (!parent.empty()) {
+                    return parent;
+                }
+            }
+            return name.empty() ? Platform::display(clean) : name;
+        }
+
+        bool sameFolder(const std::filesystem::path& a, const std::filesystem::path& b) {
+            std::error_code error;
+            return std::filesystem::equivalent(a, b, error) || folderKey(a) == folderKey(b);
+        }
+
+        void saveFolders() {
+            nlohmann::json list = nlohmann::json::array();
+            for (const Source& source : roots) {
+                if (source.custom) {
+                    list.push_back(blb::path_to_utf8(source.root));
+                }
+            }
+            Config::data()[FOLDERS] = list;
+            if (!Config::save()) {
+                notify("无法保存启动器配置", true);
+            }
+        }
+
+        void loadFolders() {
+            const nlohmann::json& doc = Config::data();
+            auto list = doc.find(FOLDERS);
+            if (list == doc.end() || !list->is_array()) {
+                return;
+            }
+            for (const nlohmann::json& item : *list) {
+                if (!item.is_string()) {
+                    continue;
+                }
+                std::filesystem::path root = blb::path_from_utf8(item.get<std::string>());
+                if (std::none_of(roots.begin(), roots.end(),
+                                 [&](const Source& source) { return sameFolder(source.root, root); })) {
+                    roots.push_back(Source{folderKey(root), folderLabel(root), root, false, true});
+                }
             }
         }
 
@@ -231,6 +304,7 @@ namespace Instances {
         if (!appData.empty()) {
             roots.push_back(Source{"appdata", "APPDATA", appData, false});
         }
+        loadFolders();
         worker = std::thread(runWorker);
         refresh();
     }
@@ -357,6 +431,45 @@ namespace Instances {
             return;
         }
         notify("已创建 " + Platform::display(target->root), false);
+        refresh();
+    }
+
+    std::string addFolder(const std::filesystem::path& picked) {
+        std::error_code error;
+        std::filesystem::path root = picked;
+        if (!std::filesystem::is_directory(root / L"versions", error) &&
+            std::filesystem::is_directory(root / L".minecraft", error)) {
+            root /= L".minecraft";
+        }
+        if (!std::filesystem::is_directory(root, error)) {
+            return "找不到这个文件夹";
+        }
+        for (const Source& source : roots) {
+            if (sameFolder(source.root, root)) {
+                return "这个游戏目录已经在列表里（" + source.label + "）";
+            }
+        }
+        roots.push_back(Source{folderKey(root), folderLabel(root), root, true, true});
+        saveFolders();
+        notify("已添加游戏目录 " + roots.back().label, false);
+        refresh();
+        return {};
+    }
+
+    void removeFolder(const std::string& key) {
+        auto found = std::find_if(roots.begin(), roots.end(),
+                                  [&](const Source& source) { return source.key == key && source.custom; });
+        if (found == roots.end()) {
+            return;
+        }
+        std::string label = found->label;
+        flushSaves();
+        roots.erase(found);
+        entries.erase(
+                std::remove_if(entries.begin(), entries.end(), [&](const Entry& entry) { return entry.source == key; }),
+                entries.end());
+        saveFolders();
+        notify("已移除游戏目录 " + label + "，文件夹里的文件不会被删除", false);
         refresh();
     }
 
