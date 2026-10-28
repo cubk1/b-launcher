@@ -12,8 +12,13 @@ namespace Platform {
 
     extern void* window;
 
+    inline constexpr const char* USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 "
+            "Safari/537.36";
+
     std::filesystem::path exeDirectory();
     std::filesystem::path defaultMinecraft();
+    std::filesystem::path cacheDirectory();
     bool open(const std::filesystem::path& path);
     bool openUrl(const std::string& url);
     void reveal(const std::filesystem::path& path);

@@ -8,6 +8,7 @@
 
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
@@ -184,47 +185,77 @@ namespace Accounts {
             };
         }
 
+        std::filesystem::path skinFile(const std::string& url) {
+            std::filesystem::path cache = Platform::cacheDirectory();
+            size_t slash = url.find_last_of('/');
+            std::string hash = slash == std::string::npos ? url : url.substr(slash + 1);
+            if (cache.empty() || hash.empty() || hash.size() > 128 ||
+                hash.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+                return {};
+            }
+            return cache / "skins" / (hash + ".png");
+        }
+
+        std::shared_ptr<std::vector<unsigned char>> faceOf(const std::string& skin) {
+            int w = 0;
+            int h = 0;
+            int channels = 0;
+            unsigned char* pixels =
+                    stbi_load_from_memory((const stbi_uc*) skin.data(), (int) skin.size(), &w, &h, &channels, 4);
+            if (pixels == nullptr) {
+                return nullptr;
+            }
+            if (w < 64 || h < 32) {
+                stbi_image_free(pixels);
+                return nullptr;
+            }
+            auto rgba = std::make_shared<std::vector<unsigned char>>((size_t) FACE_SIZE * FACE_SIZE * 4);
+            for (int y = 0; y < 8; y++) {
+                for (int x = 0; x < 8; x++) {
+                    const unsigned char* face = pixels + ((size_t) (8 + y) * w + 8 + x) * 4;
+                    const unsigned char* hat = pixels + ((size_t) (8 + y) * w + 40 + x) * 4;
+                    float cover = hat[3] / 255.0f;
+                    unsigned char color[4];
+                    for (int k = 0; k < 3; k++) {
+                        color[k] = (unsigned char) (face[k] * (1.0f - cover) + hat[k] * cover + 0.5f);
+                    }
+                    color[3] = 255;
+                    for (int dy = 0; dy < FACE_SCALE; dy++) {
+                        for (int dx = 0; dx < FACE_SCALE; dx++) {
+                            std::copy(color, color + 4,
+                                      rgba->data() +
+                                              ((size_t) (y * FACE_SCALE + dy) * FACE_SIZE + x * FACE_SCALE + dx) * 4);
+                        }
+                    }
+                }
+            }
+            stbi_image_free(pixels);
+            return rgba;
+        }
+
         void fetchFace(const std::string& url) {
             run(
                     [url](blb::cancellation_token token) -> Continuation {
-                        auto data = blb::net::http_get(url, token);
-                        if (!data) {
-                            return nullptr;
-                        }
-                        int w = 0;
-                        int h = 0;
-                        int channels = 0;
-                        unsigned char* pixels = stbi_load_from_memory((const stbi_uc*) data->data(), (int) data->size(),
-                                                                      &w, &h, &channels, 4);
-                        if (pixels == nullptr) {
-                            return nullptr;
-                        }
-                        if (w < 64 || h < 32) {
-                            stbi_image_free(pixels);
-                            return nullptr;
-                        }
-                        auto rgba = std::make_shared<std::vector<unsigned char>>((size_t) FACE_SIZE * FACE_SIZE * 4);
-                        for (int y = 0; y < 8; y++) {
-                            for (int x = 0; x < 8; x++) {
-                                const unsigned char* face = pixels + ((size_t) (8 + y) * w + 8 + x) * 4;
-                                const unsigned char* hat = pixels + ((size_t) (8 + y) * w + 40 + x) * 4;
-                                float cover = hat[3] / 255.0f;
-                                unsigned char color[4];
-                                for (int k = 0; k < 3; k++) {
-                                    color[k] = (unsigned char) (face[k] * (1.0f - cover) + hat[k] * cover + 0.5f);
-                                }
-                                color[3] = 255;
-                                for (int dy = 0; dy < FACE_SCALE; dy++) {
-                                    for (int dx = 0; dx < FACE_SCALE; dx++) {
-                                        std::copy(color, color + 4,
-                                                  rgba->data() +
-                                                          ((size_t) (y * FACE_SCALE + dy) * FACE_SIZE + x * FACE_SCALE +
-                                                           dx) * 4);
-                                    }
-                                }
+                        std::filesystem::path file = skinFile(url);
+                        std::shared_ptr<std::vector<unsigned char>> rgba;
+                        if (!file.empty()) {
+                            if (auto cached = blb::fs::read_file(file)) {
+                                rgba = faceOf(*cached);
                             }
                         }
-                        stbi_image_free(pixels);
+                        if (rgba == nullptr) {
+                            auto data = blb::net::http_get(url, token);
+                            if (!data) {
+                                return nullptr;
+                            }
+                            rgba = faceOf(*data);
+                            if (rgba == nullptr) {
+                                return nullptr;
+                            }
+                            if (!file.empty() && blb::fs::create_directories(file.parent_path())) {
+                                (void) blb::fs::write_file_atomic(file, *data);
+                            }
+                        }
                         return [url, rgba] {
                             faces[url].texture = UiImages::upload(rgba->data(), FACE_SIZE, FACE_SIZE);
                         };

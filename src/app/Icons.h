@@ -8,7 +8,6 @@ namespace b_launcher_base::install {
 
 namespace Icons {
 
-    uint32_t logo();
     uint32_t forge();
     uint32_t vanilla();
     uint32_t loader(b_launcher_base::install::loader_type type);

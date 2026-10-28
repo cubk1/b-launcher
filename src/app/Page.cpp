@@ -206,7 +206,7 @@ namespace Page {
         }
         state.target = UiRender::clamp(state.target, 0.0f, maxScroll);
         state.shown = UiRender::clamp(UiRender::approach(state.shown, state.target, 18.0f), 0.0f, maxScroll);
-        offset = state.shown;
+        offset = UiRender::snapLayout(state.shown);
     }
 
     bool Scroll::begin() {

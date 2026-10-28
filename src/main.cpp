@@ -9,13 +9,17 @@
 #include "app/InstanceExport.h"
 #include "app/Mods.h"
 #include "app/GameLog.h"
+#include "app/Homepage.h"
 #include "app/LogWindow.h"
 #include "app/Game.h"
 #include "app/Instances.h"
+#include "app/JavaDownloads.h"
+#include "app/Logo.h"
 #include "app/MainWindow.h"
 #include "app/Modrinth.h"
 #include "app/Platform.h"
 #include "app/ProjectInstaller.h"
+#include "app/Updates.h"
 
 #include "ui/gl/UiGL.h"
 #include "ui/panel/NewUi.h"
@@ -33,6 +37,87 @@
 #include <cmath>
 
 namespace {
+
+    HICON iconOf(int size) {
+        std::vector<unsigned char> rgba = Logo::pixels(size);
+        if (rgba.empty()) {
+            return nullptr;
+        }
+        BITMAPV5HEADER header = {};
+        header.bV5Size = sizeof(header);
+        header.bV5Width = size;
+        header.bV5Height = -size;
+        header.bV5Planes = 1;
+        header.bV5BitCount = 32;
+        header.bV5Compression = BI_BITFIELDS;
+        header.bV5RedMask = 0x00FF0000u;
+        header.bV5GreenMask = 0x0000FF00u;
+        header.bV5BlueMask = 0x000000FFu;
+        header.bV5AlphaMask = 0xFF000000u;
+        void* bits = nullptr;
+        HDC screen = GetDC(nullptr);
+        HBITMAP color = CreateDIBSection(screen, (BITMAPINFO*) &header, DIB_RGB_COLORS, &bits, nullptr, 0);
+        ReleaseDC(nullptr, screen);
+        if (color == nullptr || bits == nullptr) {
+            return nullptr;
+        }
+        auto* out = (unsigned char*) bits;
+        for (size_t i = 0; i < rgba.size(); i += 4) {
+            out[i] = rgba[i + 2];
+            out[i + 1] = rgba[i + 1];
+            out[i + 2] = rgba[i];
+            out[i + 3] = rgba[i + 3];
+        }
+        std::vector<unsigned char> zeros((size_t) ((size + 15) / 16) * 2 * size, 0);
+        HBITMAP mask = CreateBitmap(size, size, 1, 1, zeros.data());
+        ICONINFO info = {TRUE, 0, 0, mask, color};
+        HICON icon = CreateIconIndirect(&info);
+        DeleteObject(color);
+        DeleteObject(mask);
+        return icon;
+    }
+
+    struct WindowIcons {
+        uint32_t accent = 0;
+        HICON big = nullptr;
+        HICON compact = nullptr;
+
+        void follow(BorderlessWindow& window) {
+            uint32_t current = UiTheme::accent() | 0xFF000000u;
+            if (current == accent && big != nullptr) {
+                return;
+            }
+            HICON nextBig = iconOf(GetSystemMetrics(SM_CXICON));
+            HICON nextSmall = iconOf(GetSystemMetrics(SM_CXSMICON));
+            if (nextBig == nullptr || nextSmall == nullptr) {
+                if (nextBig != nullptr) {
+                    DestroyIcon(nextBig);
+                }
+                if (nextSmall != nullptr) {
+                    DestroyIcon(nextSmall);
+                }
+                accent = current;
+                return;
+            }
+            window.setIcons(nextBig, nextSmall);
+            LogWindow::setIcons(nextBig, nextSmall);
+            release();
+            big = nextBig;
+            compact = nextSmall;
+            accent = current;
+        }
+
+        void release() {
+            if (big != nullptr) {
+                DestroyIcon(big);
+                big = nullptr;
+            }
+            if (compact != nullptr) {
+                DestroyIcon(compact);
+                compact = nullptr;
+            }
+        }
+    };
 
     int pixels(float layout, float scale) {
         return (int) (layout * scale + 0.5f);
@@ -103,8 +188,10 @@ int main() {
     Drop::attach(window.hwnd);
     Catalog::preload();
     Modrinth::preload();
+    Updates::check(true, false);
     bool shown = false;
     bool windowLight = false;
+    WindowIcons icons;
 
     auto frame = [&]() {
         float next = dpiScale * Appearance::zoom() / 100.0f;
@@ -134,6 +221,9 @@ int main() {
         Mods::poll();
         InstanceExport::poll();
         Drop::poll();
+        Homepage::poll();
+        Updates::poll();
+        JavaDownloads::poll();
 
         UiRender::uiScale = scale / (float) UiRender::guiScale();
         UiRender::begin(ImGui::GetForegroundDrawList());
@@ -152,6 +242,7 @@ int main() {
         }
         LogWindow::frame(scale);
 
+        icons.follow(window);
         if (UiTheme::isLight() != windowLight) {
             windowLight = UiTheme::isLight();
             window.setDarkMode(!windowLight);
@@ -196,6 +287,10 @@ int main() {
     Config::save();
 
     LogWindow::shutdown();
+    icons.release();
+    Homepage::shutdown();
+    Updates::shutdown();
+    JavaDownloads::shutdown();
     Drop::shutdown();
     InstanceExport::shutdown();
     Mods::shutdown();

@@ -1,6 +1,7 @@
 #include "Platform.h"
 
 #include <core/base/strings.hpp>
+#include <core/meta/game_layout.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -127,6 +128,16 @@ namespace Platform {
             return {};
         }
         return std::filesystem::path(appData) / L".minecraft";
+    }
+
+    std::filesystem::path cacheDirectory() {
+        std::error_code error;
+        for (const std::filesystem::path& root : {exeDirectory() / L".minecraft", defaultMinecraft()}) {
+            if (!root.empty() && std::filesystem::is_directory(root, error)) {
+                return b_launcher_base::meta::game_layout(root).cache();
+            }
+        }
+        return {};
     }
 
     bool open(const std::filesystem::path& path) {

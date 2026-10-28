@@ -1,4 +1,5 @@
 #include "LogWindow.h"
+#include "Logo.h"
 #include "BorderlessWindow.h"
 #include "GameLog.h"
 #include "Icons.h"
@@ -310,9 +311,7 @@ namespace LogWindow {
 
         void titleBar() {
             float w = width();
-            if (uint32_t logo = Icons::logo()) {
-                UiRender::texture(logo, PAD + 2.0f, (TITLE_H - 18.0f) * 0.5f, 18.0f, 18.0f);
-            }
+            Logo::draw(PAD + 2.0f, (TITLE_H - 18.0f) * 0.5f, 18.0f);
             float x = PAD + 28.0f;
             const char* title = "游戏日志";
             UiRender::textY(title, x, 0.0f, TITLE_H, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
@@ -594,8 +593,9 @@ namespace LogWindow {
             uint64_t high = std::max(anchor, caret);
             uint64_t currentLine = current >= 0 && current < (int) matches.size() ? matches[(size_t) current] : ~0ull;
             UiRender::scissor(left + 1.0f, viewTop, right - left - 2.0f, view);
-            size_t firstRow = (size_t) (scroll / ROW_H);
-            float y = viewTop - std::fmod(scroll, ROW_H);
+            float shownScroll = UiRender::snapLayout(scroll);
+            size_t firstRow = (size_t) (shownScroll / ROW_H);
+            float y = viewTop - std::fmod(shownScroll, ROW_H);
             for (size_t i = firstRow; i < rows.size() && y < viewTop + view; i++, y += ROW_H) {
                 uint64_t number = rows[i];
                 const GameLog::Line& entry = line(number);
@@ -768,6 +768,10 @@ namespace LogWindow {
             wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
             created = true;
         }
+    }
+
+    void setIcons(void* large, void* compact) {
+        window.setIcons((HICON) large, (HICON) compact);
     }
 
     void init(BorderlessWindow* main) {

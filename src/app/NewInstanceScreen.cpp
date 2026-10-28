@@ -1,4 +1,6 @@
 #include "NewInstanceScreen.h"
+#include "Platform.h"
+#include "Drop.h"
 #include "Catalog.h"
 #include "Icons.h"
 #include "InstancePage.h"
@@ -327,7 +329,15 @@ namespace NewInstanceScreen {
             if (iconButton("new#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
                 Catalog::refreshMinecraft();
             }
-            float filterX = refreshX - 8.0f - 170.0f;
+            float importX = refreshX - 32.0f;
+            if (iconButton("new#import", 0xf56f, "导入整合包", importX, Page::TOP - 2.0f, blocked)) {
+                std::vector<std::filesystem::path> picked =
+                        Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
+                if (!picked.empty()) {
+                    Drop::importPack(picked.front());
+                }
+            }
+            float filterX = importX - 8.0f - 170.0f;
             SelectWidget filter("new#kinds", std::make_shared<KindChoice>());
             filter.bounds(filterX, Page::TOP + 1.0f, 170.0f, FIELD_H).block(blocked);
             filter.paint();

@@ -1,9 +1,13 @@
 #include "SettingsScreen.h"
+#include "Logo.h"
 #include "Appearance.h"
 #include "Background.h"
 #include "Catalog.h"
+#include "Homepage.h"
+#include "Updates.h"
 #include "Icons.h"
 #include "Instances.h"
+#include "JavaDownloads.h"
 #include "LaunchDefaults.h"
 #include "MainWindow.h"
 #include "Page.h"
@@ -11,6 +15,7 @@
 
 #include <core/base/strings.hpp>
 
+#include "ui/gl/ShaderUtil.h"
 #include "ui/menu/MenuItems.h"
 #include "ui/panel/NewUi.h"
 #include "ui/panel/UiCommon.h"
@@ -28,6 +33,8 @@
 #include "ui/widget/SwatchWidget.h"
 #include "ui/widget/TextFieldWidget.h"
 #include "ui/widget/ToggleWidget.h"
+
+#include "imgui.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -457,9 +464,59 @@ namespace SettingsScreen {
             body.end();
         }
 
+        int homepageCount() {
+            int kind = Homepage::source();
+            return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL ? 2 : 1;
+        }
+
+        void homepageFileRow(float y, bool blocked) {
+            const std::string label = "主页文件";
+            Page::label(label, y);
+            std::string path = Homepage::file();
+            float pickX = Page::controlRight() - 27.0f;
+            if (iconButton("settings#homepagePick", 0xf07c, "选择 XAML 文件", pickX, y + 6.0f, blocked)) {
+                std::filesystem::path start =
+                        path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path).parent_path();
+                std::vector<std::filesystem::path> picked =
+                        Platform::pickFiles(start, L"选择主页文件", L"XAML 文件", L"*.xaml;*.xml;*.txt");
+                if (!picked.empty()) {
+                    Homepage::setFile(blb::path_to_utf8(picked.front()));
+                }
+            }
+            float right = pickX - 8.0f;
+            float labelRight = MAIN_X + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 16.0f;
+            std::string shown = path.empty()
+                    ? std::string("未选择")
+                    : fitTail(Platform::display(blb::path_from_utf8(path)), std::max(0.0f, right - labelRight));
+            float shownW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(shown, right - shownW, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+        }
+
+        void homepageRows(float y, bool blocked) {
+            Page::label("主页内容", y);
+            select("settings#homepage",
+                   std::make_shared<ModeBinding>(
+                           "settings#homepage", [] { return Homepage::choice(); },
+                           [](const std::string& value) { Homepage::choose(value); },
+                           [] { return Homepage::choices(); }),
+                   y, blocked);
+            y += Page::ROW_H;
+            if (Homepage::source() == Homepage::SOURCE_FILE) {
+                homepageFileRow(y, blocked);
+            } else if (Homepage::source() == Homepage::SOURCE_URL) {
+                textRow(
+                        "settings#homepageUrl", "主页网址", "PCL2 联网主页的地址，返回 XAML 内容",
+                        [] { return Homepage::url(); }, [](const std::string& value) { Homepage::setUrl(value); }, y,
+                        blocked);
+            }
+        }
+
         void launcherTab(bool covered) {
             int lookCount = appearanceCount();
-            float contentH = Page::CAPTION_H + lookCount * Page::ROW_H;
+            int homeCount = homepageCount();
+            float contentH =
+                    Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + homeCount * Page::ROW_H;
             Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -467,6 +524,10 @@ namespace SettingsScreen {
             Page::caption("外观", y);
             Page::card(y + Page::CAPTION_H, lookCount);
             appearanceRows(y + Page::CAPTION_H, blocked);
+            y += Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP;
+            Page::caption("主页", y);
+            Page::card(y + Page::CAPTION_H, homeCount);
+            homepageRows(y + Page::CAPTION_H, blocked);
             body.end();
         }
 
@@ -506,7 +567,10 @@ namespace SettingsScreen {
                     x, y, 170.0f);
         }
 
-        void javaTab(bool covered) {
+        PageTransition javaViews(0);
+        int javaMajor = 21;
+
+        void javaList(bool covered) {
             const Catalog::JavaList& javas = Catalog::java();
             bool loading = javas.status == Catalog::Status::Loading;
             std::string count = loading && javas.list.empty() ? std::string("正在查找…")
@@ -520,11 +584,17 @@ namespace SettingsScreen {
             }
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
-            if (Page::button("settings#java#add", add, refreshX - 8.0f - addW, Page::TOP + 4.0f, addW, false, covered,
-                             0xf067)) {
+            float addX = refreshX - 8.0f - addW;
+            if (Page::button("settings#java#add", add, addX, Page::TOP + 4.0f, addW, false, covered, 0xf067)) {
                 if (std::optional<std::filesystem::path> picked = Platform::pickJava(std::filesystem::path())) {
                     Catalog::addJava(*picked);
                 }
+            }
+            std::string download = "下载";
+            float downloadW = Page::buttonWidth(download, 0xf019);
+            if (Page::button("settings#java#download", download, addX - 8.0f - downloadW, Page::TOP + 4.0f, downloadW,
+                             true, covered, 0xf019)) {
+                javaViews.go(1);
             }
 
             float top = Page::TOP + 40.0f;
@@ -591,13 +661,171 @@ namespace SettingsScreen {
             body.end();
         }
 
-        struct Credit {
+        void javaRing(float cx, float cy, float fraction) {
+            const float tau = 6.28318531f;
+            float r = UiRender::transformW(7.0f);
+            float stroke = UiRender::transformW(1.7f);
+            float x = UiRender::transformX(cx);
+            float y = UiRender::transformY(cy);
+            ShaderUtil::arc(x, y, r, stroke, 0.0f, tau,
+                            UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
+            if (fraction > 0.001f) {
+                ShaderUtil::arc(x, y, r, stroke, -tau * 0.25f, -tau * 0.25f + tau * std::min(1.0f, fraction),
+                                UiRender::applyAlpha(UiTheme::accent()));
+            }
+        }
+
+        std::shared_ptr<ModeBinding> majorChoice(const std::vector<JavaDownloads::Package>& packages) {
+            std::vector<std::string> options = {"全部版本"};
+            for (const JavaDownloads::Package& package : packages) {
+                std::string label = "Java " + std::to_string(package.major);
+                if (std::find(options.begin(), options.end(), label) == options.end()) {
+                    options.push_back(label);
+                }
+            }
+            return std::make_shared<ModeBinding>(
+                    "settings#java#major",
+                    [] { return javaMajor == 0 ? std::string("全部版本") : "Java " + std::to_string(javaMajor); },
+                    [](const std::string& value) {
+                        javaMajor = value.rfind("Java ", 0) == 0 ? std::atoi(value.c_str() + 5) : 0;
+                    },
+                    [options] { return options; });
+        }
+
+        void javaDownloads(bool covered) {
+            const JavaDownloads::List& list = JavaDownloads::list();
+            bool loading = list.status == JavaDownloads::Status::Loading;
+            if (iconButton("settings#java#back", 0xf053, "返回", MAIN_X - 4.0f, Page::TOP + 1.0f, covered)) {
+                javaViews.go(0);
+            }
+            UiRender::textY("下载 Java", MAIN_X + 30.0f, Page::TOP, NAV_ITEM_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_BODY);
+            float refreshX = Page::right() - 28.0f;
+            if (iconButton("settings#java#reload", 0xf2f1, "刷新列表", refreshX, Page::TOP + 1.0f,
+                           covered || loading)) {
+                JavaDownloads::refresh();
+            }
+            SelectWidget major("settings#java#major", majorChoice(list.packages));
+            major.bounds(refreshX - 8.0f - SELECT_W, Page::TOP + 4.0f, SELECT_W, FIELD_H).block(covered || loading);
+            major.paint();
+
+            float top = Page::TOP + 40.0f;
+            float bottom = MainWindow::height() - 14.0f;
+            std::vector<const JavaDownloads::Package*> shown;
+            for (const JavaDownloads::Package& package : list.packages) {
+                if (javaMajor == 0 || package.major == javaMajor) {
+                    shown.push_back(&package);
+                }
+            }
+            if (shown.empty()) {
+                std::string text = loading                             ? "正在获取 Java 列表…"
+                        : list.status == JavaDownloads::Status::Failed ? "获取 Java 列表失败：" + list.error
+                        : list.packages.empty()                        ? "列表是空的"
+                                                                       : "没有这个版本的 Java";
+                text = UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, mainW() - 40.0f);
+                float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float lead = loading ? 24.0f : 0.0f;
+                float x = MAIN_X + (mainW() - w - lead) * 0.5f;
+                if (loading) {
+                    Page::spinner(x + 8.0f, top + 82.0f, 8.0f, UiTheme::accent());
+                }
+                UiRender::textY(text, x + lead, top + 70.0f, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                return;
+            }
+            int rows = (int) shown.size();
+            Page::Scroll body("settings#java#downloads", top, bottom, rows * Page::ROW_H);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y0 = body.top - body.offset;
+            Page::card(y0, rows);
+            for (int i = 0; i < rows; i++) {
+                float rowY = y0 + i * Page::ROW_H;
+                if (!Page::shown(rowY)) {
+                    continue;
+                }
+                const JavaDownloads::Package& package = *shown[i];
+                std::string id = "settings#java#get#" + package.folder;
+                bool hovered = !blocked && NewUi::hit(MAIN_X, rowY, mainW(), Page::ROW_H);
+                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == rows - 1 ? 4 | 8 : 0));
+                float cy = rowY + Page::ROW_H * 0.5f;
+                UiWidgets::icon(Ui::glyph(0xf0f4), MAIN_X + 24.0f, cy, UiTheme::textMuted(), 12.0f);
+
+                JavaDownloads::State state = JavaDownloads::state(package.folder);
+                bool done = state == JavaDownloads::State::Done || JavaDownloads::installed(package);
+                float right = Page::controlRight();
+                float actionX = right;
+                if (state == JavaDownloads::State::Running) {
+                    javaRing(right - 10.0f, cy, JavaDownloads::progress(package.folder));
+                    actionX = right - 24.0f;
+                } else if (done) {
+                    std::string text = "已安装";
+                    float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                    UiRender::textY(text, right - w, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    UiWidgets::check(right - w - 12.0f, cy, UiTheme::accent(), 9.0f);
+                    actionX = right - w - 22.0f;
+                } else {
+                    std::string text = "安装";
+                    float w = Page::buttonWidth(text, 0xf019);
+                    if (Page::button(id + "#install", text, right - w, rowY + Page::FIELD_Y, w, false, blocked,
+                                     0xf019)) {
+                        JavaDownloads::install(package);
+                    }
+                    actionX = right - w;
+                }
+                std::string size = package.archiveSize > 0
+                        ? std::to_string((package.archiveSize + 500000) / 1000000) + " MB"
+                        : std::string();
+                float sizeW = size.empty() ? 0.0f : UiFont::width(size, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                if (!size.empty()) {
+                    UiRender::textY(size, actionX - 12.0f - sizeW, rowY, Page::ROW_H, UiTheme::textMuted(),
+                                    UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                }
+                float x = MAIN_X + 44.0f;
+                float tags = UiFont::width(package.version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 16.0f +
+                        (package.preview ? UiFont::width("预览", UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 16.0f : 0.0f);
+                float room = std::max(40.0f, actionX - 24.0f - sizeW - x - tags);
+                std::string name =
+                        UiFont::fitEnd(JavaDownloads::name(package), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, room);
+                UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                x += UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
+                x += tag(package.version, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
+                if (package.preview) {
+                    tag("预览", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText());
+                }
+            }
+            body.end();
+        }
+
+        void javaTab(bool covered) {
+            javaViews.begin();
+            if (javaViews.page == 1) {
+                javaDownloads(covered);
+            } else {
+                javaList(covered);
+            }
+            javaViews.end();
+        }
+
+        struct Link {
             const char* name;
-            const char* license;
+            const char* value;
             const char* url;
         };
 
-        const Credit CREDITS[] = {
+        const Link PROJECT[] = {
+                {"作者", "cubk", "https://cubk.cn/"},
+                {"GitHub", "cubk1/b-launcher", "https://github.com/cubk1/b-launcher"},
+        };
+
+        const Link THANKS[] = {
+                {"BMCLAPI", "提供下载源", "https://www.bangbang93.com/"},
+                {"PCL", "提供主页系统", "https://github.com/Meloong-Git/PCL"},
+        };
+
+        const Link CREDITS[] = {
                 {"Dear ImGui", "MIT", "https://github.com/ocornut/imgui"},
                 {"FreeType", "FreeType License", "https://freetype.org"},
                 {"libcurl", "curl License", "https://curl.se"},
@@ -607,67 +835,134 @@ namespace SettingsScreen {
                 {"JSON for Modern C++", "MIT", "https://github.com/nlohmann/json"},
                 {"reproc", "MIT", "https://github.com/DaanDeMeyer/reproc"},
                 {"stb", "MIT", "https://github.com/nothings/stb"},
+                {"nanosvg", "zlib License", "https://github.com/memononen/nanosvg"},
                 {"Font Awesome Free", "SIL OFL 1.1", "https://fontawesome.com"},
         };
+
+        constexpr int PROJECT_COUNT = (int) (sizeof(PROJECT) / sizeof(PROJECT[0]));
+        constexpr int THANKS_COUNT = (int) (sizeof(THANKS) / sizeof(THANKS[0]));
         constexpr int CREDIT_COUNT = (int) (sizeof(CREDITS) / sizeof(CREDITS[0]));
 
         constexpr float HERO_H = 72.0f;
         constexpr float LOGO = 32.0f;
 
-        void hero(float y) {
+        void quietButton(float x, float y, float w, const std::string& text, bool spinning) {
+            UiRender::roundRect(x, y, w, Page::FIELD_H, 7.0f, UiTheme::surfaceRaised());
+            UiRender::outline(x, y, w, Page::FIELD_H, 7.0f, UiTheme::outlineSoft());
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            float left = x + (w - (12.0f + 6.0f + textW)) * 0.5f;
+            float cy = y + Page::FIELD_H * 0.5f;
+            if (spinning) {
+                Page::spinner(left + 6.0f, cy, 5.0f, UiTheme::accent());
+            } else {
+                UiWidgets::check(left + 6.0f, cy, UiTheme::accent(), 8.0f);
+            }
+            UiRender::textY(text, left + 18.0f, y, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+        }
+
+        void updateControl(float y, float leftEnd, bool blocked) {
+            Updates::State state = Updates::state();
+            float by = y + (HERO_H - Page::FIELD_H) * 0.5f;
+            float right = MAIN_X + mainW() - 20.0f;
+            if (state == Updates::State::Checking || state == Updates::State::Latest) {
+                std::string text = state == Updates::State::Checking ? "正在检查" : "已是最新版本";
+                float w = Page::buttonWidth(text, 0xf00c);
+                quietButton(right - w, by, w, text, state == Updates::State::Checking);
+                return;
+            }
+            bool available = state == Updates::State::Available;
+            std::string label = available ? "下载 v" + Updates::latest() : std::string("检查更新");
+            int glyph = available ? 0xf019 : 0xf2f1;
+            float w = Page::buttonWidth(label, glyph);
+            float x = right - w;
+            if (Page::button("settings#update", label, x, by, w, available, blocked, glyph)) {
+                if (available) {
+                    Updates::openDownload();
+                } else {
+                    Updates::check(false, true);
+                }
+            }
+            if (state != Updates::State::Failed) {
+                return;
+            }
+            std::string status = "检查失败";
+            float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            float statusX = x - 12.0f - statusW;
+            if (statusX >= leftEnd + 12.0f) {
+                UiRender::textY(status, statusX, y, HERO_H, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            }
+        }
+
+        void hero(float y, bool blocked) {
             UiRender::roundRect(MAIN_X, y, mainW(), HERO_H, 12.0f, UiTheme::surface());
             UiRender::outline(MAIN_X, y, mainW(), HERO_H, 12.0f, UiTheme::outlineSoft());
-            UiRender::texture(Icons::logo(), MAIN_X + 20.0f, y + (HERO_H - LOGO) * 0.5f, LOGO, LOGO);
+            Logo::draw(MAIN_X + 20.0f, y + (HERO_H - LOGO) * 0.5f, LOGO);
             const std::string name = "B Launcher\xE2\x84\xA2";
             float x = MAIN_X + 20.0f + LOGO + 14.0f;
             UiRender::textY(name, x, y, HERO_H, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            tag(std::string("v") + B_LAUNCHER_VERSION, x, y + (HERO_H - Page::ROW_H) * 0.5f, UiTheme::accentSoft(40),
-                UiTheme::accentText());
+            x += tag(std::string("v") + B_LAUNCHER_VERSION, x, y + (HERO_H - Page::ROW_H) * 0.5f,
+                     UiTheme::accentSoft(40), UiTheme::accentText());
+            updateControl(y, x, blocked);
         }
 
-        void creditRows(float y, bool blocked) {
-            for (int i = 0; i < CREDIT_COUNT; i++) {
-                const Credit& credit = CREDITS[i];
+        void linkRows(const char* prefix, const Link* links, int count, float y, bool blocked) {
+            for (int i = 0; i < count; i++) {
+                const Link& link = links[i];
                 float rowY = y + i * Page::ROW_H;
                 if (!Page::shown(rowY)) {
                     continue;
                 }
-                std::string id = std::string("settings#credit#") + credit.name;
+                std::string id = std::string(prefix) + link.name;
                 bool hovered = !blocked && NewUi::hit(MAIN_X, rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == CREDIT_COUNT - 1 ? 4 | 8 : 0));
-                Page::label(credit.name, rowY);
+                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == count - 1 ? 4 | 8 : 0));
+                Page::label(link.name, rowY);
                 float amount = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
                 float linkX = Page::controlRight() - 6.0f;
                 UiWidgets::icon(Ui::glyph(0xf35d), linkX, rowY + Page::ROW_H * 0.5f,
                                 UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), amount), 10.0f);
-                float w = UiFont::width(credit.license, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(credit.license, linkX - 18.0f - w, rowY, Page::ROW_H, UiTheme::textMuted(),
-                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float w = UiFont::width(link.value, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(link.value, linkX - 18.0f - w, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
                 if (!blocked && NewUi::click(MAIN_X, rowY, mainW(), Page::ROW_H)) {
                     UiSound::request(UiSound::PAGE);
-                    Platform::openUrl(credit.url);
+                    Platform::openUrl(link.url);
                 }
             }
         }
 
+        float linkCard(const char* caption, const char* prefix, const Link* links, int count, float y, bool blocked) {
+            if (Page::shown(y, Page::CAPTION_H + count * Page::ROW_H)) {
+                Page::caption(caption, y);
+                Page::card(y + Page::CAPTION_H, count);
+                linkRows(prefix, links, count, y + Page::CAPTION_H, blocked);
+            }
+            return y + Page::CAPTION_H + count * Page::ROW_H + Page::GAP;
+        }
+
+        int aboutFrame = -10;
+
         void aboutTab(bool covered) {
-            float contentH = HERO_H + Page::GAP + Page::CAPTION_H + CREDIT_COUNT * Page::ROW_H;
+            int frame = ImGui::GetFrameCount();
+            if (frame - aboutFrame > 1 && Updates::state() != Updates::State::Checking) {
+                Updates::check(false, false);
+            }
+            aboutFrame = frame;
+            float contentH = HERO_H + Page::GAP + 3 * Page::CAPTION_H +
+                    (PROJECT_COUNT + THANKS_COUNT + CREDIT_COUNT) * Page::ROW_H + 2 * Page::GAP;
             Page::Scroll body("settings#about", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
 
             if (Page::shown(y, HERO_H)) {
-                hero(y);
+                hero(y, blocked);
             }
             y += HERO_H + Page::GAP;
-
-            if (Page::shown(y, Page::CAPTION_H + CREDIT_COUNT * Page::ROW_H)) {
-                Page::caption("开源组件", y);
-                Page::card(y + Page::CAPTION_H, CREDIT_COUNT);
-                creditRows(y + Page::CAPTION_H, blocked);
-            }
+            y = linkCard("项目", "settings#project#", PROJECT, PROJECT_COUNT, y, blocked);
+            y = linkCard("鸣谢", "settings#thanks#", THANKS, THANKS_COUNT, y, blocked);
+            linkCard("开源组件", "settings#credit#", CREDITS, CREDIT_COUNT, y, blocked);
             body.end();
         }
     }

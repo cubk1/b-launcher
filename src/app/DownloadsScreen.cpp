@@ -59,6 +59,7 @@ namespace DownloadsScreen {
         constexpr float RESULT_H = 56.0f;
         constexpr float RESULT_ICON = 36.0f;
         constexpr float LOADER_ICON = 16.0f;
+        constexpr float LOADER_BADGE = 10.0f;
         constexpr size_t LOADER_SLOTS = 4;
         constexpr float CARD_RADIUS = 12.0f;
         constexpr size_t LOADERS_SHOWN = 3;
@@ -1212,17 +1213,31 @@ namespace DownloadsScreen {
             float x = MAIN_X + 14.0f;
             bool overIcon = false;
             if (iconSlots > 0) {
-                float iconX = x;
+                std::vector<std::pair<uint32_t, std::string>> icons = loaderIcons(version);
                 float iconY = centreY - LOADER_ICON * 0.5f;
-                for (const auto& [image, loader] : loaderIcons(version)) {
-                    UiRender::texture(image, iconX, iconY, LOADER_ICON, LOADER_ICON);
-                    if (hovered && NewUi::hit(iconX - 2.0f, iconY - 2.0f, LOADER_ICON + 4.0f, LOADER_ICON + 4.0f)) {
-                        overIcon = true;
-                        tip(Modrinth::label(loader), iconX, iconY, LOADER_ICON, LOADER_ICON);
+                if (!icons.empty()) {
+                    UiRender::texture(icons.front().first, x, iconY, LOADER_ICON, LOADER_ICON);
+                    if (icons.size() > 1) {
+                        float badgeX = x + LOADER_ICON - LOADER_BADGE + 3.0f;
+                        float badgeY = iconY + LOADER_ICON - LOADER_BADGE + 3.0f;
+                        UiRender::roundRect(badgeX - 1.0f, badgeY - 1.0f, LOADER_BADGE + 2.0f, LOADER_BADGE + 2.0f,
+                                            3.0f, UiTheme::surface());
+                        if (hover > 0.001f) {
+                            UiRender::roundRect(badgeX - 1.0f, badgeY - 1.0f, LOADER_BADGE + 2.0f, LOADER_BADGE + 2.0f,
+                                                3.0f, UiTheme::overlay(Ui::round(10 * hover)));
+                        }
+                        UiRender::texture(icons[1].first, badgeX, badgeY, LOADER_BADGE, LOADER_BADGE);
                     }
-                    iconX += LOADER_ICON + 4.0f;
+                    if (hovered && NewUi::hit(x - 2.0f, iconY - 2.0f, LOADER_ICON + 6.0f, LOADER_ICON + 6.0f)) {
+                        overIcon = true;
+                        std::string names;
+                        for (const auto& icon : icons) {
+                            names += (names.empty() ? "" : "、") + Modrinth::label(icon.second);
+                        }
+                        tip(names, x, iconY, LOADER_ICON, LOADER_ICON);
+                    }
                 }
-                x += iconSlots * (LOADER_ICON + 4.0f) + 6.0f;
+                x += LOADER_ICON + 8.0f;
             }
             std::string detail = version.published.substr(0, std::min<size_t>(10, version.published.size()));
             if (versionFilter.empty() && !version.gameVersions.empty()) {
@@ -1368,5 +1383,16 @@ namespace DownloadsScreen {
             resultsView(covered);
         }
         views.end();
+    }
+
+    void openFor(const std::string& key) {
+        if (Instances::find(key) == nullptr) {
+            return;
+        }
+        if (key != target || !followed) {
+            chooseTarget(key);
+        }
+        started = true;
+        followed = true;
     }
 }

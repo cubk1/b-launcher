@@ -2,8 +2,8 @@
 
 namespace EmbeddedIcons {
 
-    extern const unsigned char logo[];
-    extern const unsigned int logoSize;
+    extern const unsigned char logoSvg[];
+    extern const unsigned int logoSvgSize;
 
     extern const unsigned char forge[];
     extern const unsigned int forgeSize;

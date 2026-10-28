@@ -189,6 +189,8 @@ namespace Drop {
             return item;
         }
 
+        bool importing = false;
+
         void classifyLater(std::vector<std::filesystem::path> files) {
             if (worker.joinable()) {
                 worker.join();
@@ -444,7 +446,23 @@ namespace Drop {
         if (worker.joinable()) {
             worker.join();
         }
+        if (importing) {
+            importing = false;
+            for (const Item& item : found) {
+                if (item.kind == Kind::Modpack) {
+                    openModpack(item);
+                    return;
+                }
+            }
+            Notifications::add(Notifications::FAILED, "这个文件不是支持的整合包", 4000);
+            return;
+        }
         act(found, key);
+    }
+
+    void importPack(const std::filesystem::path& file) {
+        importing = true;
+        classifyLater({file});
     }
 
     void shutdown() {

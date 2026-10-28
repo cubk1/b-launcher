@@ -22,7 +22,7 @@ std::string Choice::label() {
             picked.push_back(option);
         }
     }
-    return picked.empty() ? std::string("None") : Ui::join(picked, ", ");
+    return picked.empty() ? std::string("无") : Ui::join(picked, "、");
 }
 
 uint32_t Choice::optionColor(const std::string& option, bool selected) {
@@ -134,7 +134,7 @@ void MultiBinding::choose(const std::string& option) {
 }
 
 std::string MultiBinding::label() {
-    return selection->empty() ? std::string("None") : Ui::join(*selection, ", ");
+    return selection->empty() ? std::string("无") : Ui::join(*selection, "、");
 }
 
 bool MultiBinding::reorderable() {

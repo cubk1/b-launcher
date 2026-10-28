@@ -113,7 +113,7 @@ void ColorPickerWidget::paint() {
                         UiWidgets::TEXT_CONTROL);
     }
     if (gridHover) {
-        NewUi::tooltipText = "Copy color";
+        NewUi::tooltipText = "复制颜色";
         NewUi::tooltipX = gridX - 46;
         NewUi::tooltipY = footY + 26;
     }

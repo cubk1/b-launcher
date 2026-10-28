@@ -13,11 +13,11 @@ namespace Appearance {
         constexpr uint32_t DEFAULT_ACCENT = 0xFF4F7DFFu;
 
         const std::vector<Theme> THEMES = {
-                {"plain", "Plain", UiTheme::MODE_PLAIN},
-                {"dark", "Dark", UiTheme::MODE_SHADCN},
-                {"light", "Light", UiTheme::MODE_SHADCN_LIGHT},
-                {"iridium-dark", "Iridium Dark", UiTheme::MODE_DARK},
-                {"iridium-light", "Iridium Light", UiTheme::MODE_LIGHT},
+                {"plain", "简约", UiTheme::MODE_PLAIN},
+                {"dark", "深色", UiTheme::MODE_SHADCN},
+                {"light", "浅色", UiTheme::MODE_SHADCN_LIGHT},
+                {"iridium-dark", "Iridium 深色", UiTheme::MODE_DARK},
+                {"iridium-light", "Iridium 浅色", UiTheme::MODE_LIGHT},
         };
 
         const Theme* current = &THEMES[0];

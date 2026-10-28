@@ -43,7 +43,7 @@ void ShortcutWidget::paint() {
         }
         text += UiKeys::comboLabel(keys[i]);
     }
-    std::string shown = capturing ? "Press keys..." : (text.empty() ? "None" : text);
+    std::string shown = capturing ? "请按下按键…" : (text.empty() ? "无" : text);
     float textW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
     uint32_t color =
             capturing ? UiTheme::accentText() : (keys.empty() ? UiTheme::textFaint() : UiTheme::textSecondary());

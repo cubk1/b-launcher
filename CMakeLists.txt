@@ -124,7 +124,7 @@ if (WIN32)
 endif ()
 
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
-        logo assets/images/logo.png
+        logoSvg assets/images/logo.svg
         forge assets/images/forge.png
         vanilla assets/images/vanilla.png
         neoforge assets/images/neoforge.png
@@ -150,7 +150,7 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
 add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app/app.rc
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp)
-target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
 target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
 if (MSVC)

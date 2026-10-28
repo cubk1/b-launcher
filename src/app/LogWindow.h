@@ -13,6 +13,7 @@ class BorderlessWindow;
 namespace LogWindow {
 
     void init(BorderlessWindow* main);
+    void setIcons(void* large, void* compact);
     void open();
     void close();
     bool isOpen();

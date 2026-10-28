@@ -70,6 +70,8 @@ namespace UiRender {
     void gradientH(float x, float y, float w, float h, uint32_t left, uint32_t right);
     void texture(uint32_t location, float x, float y, float w, float h);
     void texture(uint32_t location, float x, float y, float w, float h, float u0, float v0, float u1, float v1);
+    void texture(uint32_t location, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                 uint32_t tint);
     void roundTexture(uint32_t location, float x, float y, float w, float h, float radius, float fadeWidth,
                       uint32_t fadeRgba, float textureW, float textureH);
     void roundTexture(uint32_t location, float x, float y, float w, float h, float radius, float fadeWidth,
@@ -95,6 +97,7 @@ namespace UiRender {
     float deltaTime();
     float approach01(float current, float target, float speed);
     float approach(float current, float target, float speed);
+    float snapLayout(float value);
     void triangle(float cx, float cy, float size, float angle, uint32_t rgba);
     void scissor(float x, float y, float w, float h);
     void unscissor();

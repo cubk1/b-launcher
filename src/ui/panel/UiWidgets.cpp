@@ -68,7 +68,7 @@ namespace UiWidgets {
         UiRender::outline(x, y, w, 23, 5.0f,
                           UiRender::over(UiTheme::overlay(Ui::round(22.0f * response) + 10), UiTheme::surfaceRaised()),
                           0xF, 0.5f);
-        UiRender::textClipped(value.empty() ? std::string("Select") : value, x + 7, y, 23, w - 26,
+        UiRender::textClipped(value.empty() ? std::string("请选择") : value, x + 7, y, 23, w - 26,
                               UiTheme::textSecondary(), UiFont::MEDIUM, TEXT_CONTROL, fillColor);
         uint32_t arrowColor = UiRender::mix(UiTheme::textMuted(), UiTheme::textSecondary(), response);
         icon(Ui::glyph(0xF078), x + w - 11.5f, y + 11.5f, arrowColor, 10.0f);
@@ -246,7 +246,7 @@ namespace UiWidgets {
         float response = UiState::motion(id + "#submode", open ? 1.0f : (hovered ? 0.7f : 0.0f), 18.0f);
         uint32_t tint = UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), response);
         float arrowW = 11.0f;
-        std::string text = value.empty() ? std::string("Off") : value;
+        std::string text = value.empty() ? std::string("关闭") : value;
         float textW = UiFont::width(text, UiFont::MEDIUM, TEXT_CONTROL);
         float room = std::max(20.0f, maxWidth - arrowW);
         if (textW > room) {
@@ -258,7 +258,7 @@ namespace UiWidgets {
     }
 
     float subModeWidth(const std::string& value) {
-        return UiFont::width(value.empty() ? std::string("Off") : value, UiFont::MEDIUM, TEXT_CONTROL) + 11.0f;
+        return UiFont::width(value.empty() ? std::string("关闭") : value, UiFont::MEDIUM, TEXT_CONTROL) + 11.0f;
     }
 
     void subSlider(const std::string& id, float x, float y, float trackWidth, float amount, bool hovered, bool active,

@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Logo.h"
 #include "Drop.h"
 #include "Accounts.h"
 #include "AccountsScreen.h"
@@ -7,6 +8,7 @@
 #include "DownloadsScreen.h"
 #include "Game.h"
 #include "GameLog.h"
+#include "Homepage.h"
 #include "LogWindow.h"
 #include "Config.h"
 #include "Icons.h"
@@ -52,6 +54,8 @@ namespace MainWindow {
     static const float SIDEBAR_W = SIDEBAR_WIDTH;
     static const float ITEM_X = 8.0f;
     static const float ITEM_W = SIDEBAR_W - 16.0f;
+    static const float SCROLL_ROOM = 8.0f;
+    static float listW = ITEM_W;
     static const float ITEM_H = 30.0f;
     static const float ITEM_STEP = 32.0f;
     static const float SEARCH_Y = 50.0f;
@@ -244,7 +248,7 @@ namespace MainWindow {
     static void brand() {
         float logo = 20.0f;
         float logoY = (TITLE_HEIGHT - logo) * 0.5f;
-        UiRender::texture(Icons::logo(), ITEM_X + ICON_CENTER - logo * 0.5f, logoY, logo, logo);
+        Logo::draw(ITEM_X + ICON_CENTER - logo * 0.5f, logoY, logo);
         UiRender::textY("B Launcher\xE2\x84\xA2", ITEM_X + LABEL_X, logoY, logo, UiTheme::textPrimary(), UiFont::MEDIUM,
                         15.0f);
     }
@@ -376,11 +380,11 @@ namespace MainWindow {
 
     static void groupHeader(const Instances::Source& source, size_t count, float y, float open, bool blocked) {
         float x = ITEM_X;
-        bool hovered = !blocked && NewUi::hit(x, y, ITEM_W, GROUP_H);
+        bool hovered = !blocked && NewUi::hit(x, y, listW, GROUP_H);
         float lit = UiState::motion("group#hover#" + source.key, hovered ? 1.0f : 0.0f, 18.0f);
         uint32_t tint = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
         UiRender::textY(source.label, x + 8.0f, y, GROUP_H, tint, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-        float chevronX = SIDEBAR_W - ITEM_X - ICON_CENTER;
+        float chevronX = ITEM_X + listW - ICON_CENTER;
         float cy = y + GROUP_H * 0.5f;
         if (count > 0) {
             std::string text = std::to_string(count);
@@ -390,7 +394,7 @@ namespace MainWindow {
         }
         fadeGlyph(0xf078, chevronX, cy, tint, open, 9.0f);
         fadeGlyph(0xf054, chevronX, cy, tint, 1.0f - open, 9.0f);
-        if (!blocked && NewUi::click(x, y, ITEM_W, GROUP_H)) {
+        if (!blocked && NewUi::click(x, y, listW, GROUP_H)) {
             UiSound::request(UiSound::TICK);
             toggleGroup(source.key);
         }
@@ -398,14 +402,14 @@ namespace MainWindow {
 
     static void instanceRow(const Instances::Entry& entry, float y, bool blocked) {
         const std::string& key = entry.key;
-        if (!blocked && !NewUi::overlayCoversMouse() && NewUi::rightClick && NewUi::hit(ITEM_X, y, ITEM_W, ITEM_H)) {
+        if (!blocked && !NewUi::overlayCoversMouse() && NewUi::rightClick && NewUi::hit(ITEM_X, y, listW, ITEM_H)) {
             NewUi::rightClick = false;
             InstancePage::openMenu(key, NewUi::mouseX, NewUi::mouseY);
         }
         NavItemWidget item("nav#instance#" + key, Ui::glyph(0xf071), entry.info.id);
         bool current = Instances::selected() == key &&
                 (pages.page == PAGE_HOME || pages.page == PAGE_EDIT_LOADERS || pages.page == pageOf(key));
-        item.selected(current).bounds(ITEM_X, y, ITEM_W, ITEM_H);
+        item.selected(current).bounds(ITEM_X, y, listW, ITEM_H);
         uint32_t image = InstancePage::icon(entry);
         if (image != 0) {
             item.image(image, 16.0f);
@@ -426,7 +430,7 @@ namespace MainWindow {
         }
         if (!source.exists && source.key == "local" && !Instances::loading()) {
             NavItemWidget create("nav#create#" + source.key, Ui::glyph(0xf65e), "新建 .minecraft");
-            create.bounds(ITEM_X, y, ITEM_W, ITEM_H).block(blocked);
+            create.bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
             create.paint();
             if (create.pressed) {
                 Instances::createFolder(source.key);
@@ -470,6 +474,7 @@ namespace MainWindow {
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - LIST_TOP;
         float maxScroll = std::max(0.0f, contentH - viewH);
+        listW = ITEM_W - (maxScroll > 0.5f ? SCROLL_ROOM : 0.0f);
         if (!scrollRestored && !Instances::loading()) {
             scrollRestored = true;
             const nlohmann::json& doc = Config::data();
@@ -484,7 +489,7 @@ namespace MainWindow {
         listScroll = UiRender::clamp(listScroll, 0, maxScroll);
         listSmooth = UiRender::clamp(UiRender::approach(listSmooth, listScroll, 18.0f), 0, maxScroll);
 
-        float cursor = LIST_TOP - listSmooth;
+        float cursor = LIST_TOP - UiRender::snapLayout(listSmooth);
         for (size_t i = 0; i < sources.size(); i++) {
             const Instances::Source& source = sources[i];
             UiRender::scissor(0, LIST_TOP, SIDEBAR_W, viewH);
@@ -537,7 +542,9 @@ namespace MainWindow {
         const b_launcher_base::auth::account* account = Accounts::current();
         navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + ITEM_STEP, ITEM_W, PAGE_ACCOUNTS, false, 0,
                 account != nullptr ? account->name : std::string());
-        navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + 2 * ITEM_STEP, ITEM_W, PAGE_DOWNLOADS);
+        if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + 2 * ITEM_STEP, ITEM_W, PAGE_DOWNLOADS)) {
+            DownloadsScreen::openFor(Instances::selected());
+        }
         navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 3 * ITEM_STEP, ITEM_W, PAGE_SETTINGS);
     }
 
@@ -562,6 +569,8 @@ namespace MainWindow {
     static void content() {
         pages.begin();
         if (pages.page == PAGE_HOME) {
+            Homepage::draw(Page::LEFT, TITLE_HEIGHT, Page::right(), height() - 14.0f, LaunchButton::SIZE + 22.0f,
+                           NewUi::overlayCoversMouse());
             float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
             LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
             LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);

@@ -16,11 +16,6 @@ namespace Icons {
         return texture;
     }
 
-    uint32_t logo() {
-        static uint32_t texture = 0;
-        return load(texture, EmbeddedIcons::logo, EmbeddedIcons::logoSize);
-    }
-
     uint32_t forge() {
         static uint32_t texture = 0;
         return load(texture, EmbeddedIcons::forge, EmbeddedIcons::forgeSize);

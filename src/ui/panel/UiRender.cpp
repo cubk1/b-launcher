@@ -406,10 +406,15 @@ namespace UiRender {
     }
 
     void texture(uint32_t location, float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+        texture(location, x, y, w, h, u0, v0, u1, v1, 0xFFFFFFFFu);
+    }
+
+    void texture(uint32_t location, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                 uint32_t tint) {
         if (location == 0) {
             return;
         }
-        int alpha = Ui::round(std::max(0.0f, std::min(1.0f, alphaMul)) * 255);
+        int alpha = Ui::round(std::max(0.0f, std::min(1.0f, alphaMul)) * (float) ((tint >> 24) & 0xFF));
         if (alpha == 0) {
             return;
         }
@@ -422,7 +427,7 @@ namespace UiRender {
         float u = unit();
         dl->AddImage(ImTextureRef((ImTextureID) (intptr_t) location), ImVec2(drawX * u, drawY * u),
                      ImVec2((drawX + drawW) * u, (drawY + drawH) * u), ImVec2(u0, v0), ImVec2(u1, v1),
-                     IM_COL32(255, 255, 255, alpha));
+                     IM_COL32((tint >> 16) & 0xFF, (tint >> 8) & 0xFF, tint & 0xFF, alpha));
     }
 
     void roundTexture(uint32_t location, float x, float y, float w, float h, float radius, float fadeWidth,
@@ -606,6 +611,11 @@ namespace UiRender {
     float approach01(float current, float target, float speed) {
         float next = lerp(current, target, 1.0f - (float) std::exp(-speed * deltaTime()));
         return std::fabs(next - target) < 0.002f ? target : next;
+    }
+
+    float snapLayout(float value) {
+        float pixels = uiScale * pixelScale();
+        return pixels > 0.0f ? std::round(value * pixels) / pixels : value;
     }
 
     float approach(float current, float target, float speed) {

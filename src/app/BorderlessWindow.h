@@ -36,6 +36,7 @@ public:
     bool sizing() const;
     void close();
     void setDarkMode(bool dark);
+    void setIcons(HICON large, HICON compact);
     bool pumpMessages();
     bool minimized() const;
     void swap();
@@ -48,6 +49,8 @@ private:
 
     int minWidth = 0;
     int minHeight = 0;
+    HICON bigIcon = nullptr;
+    HICON smallIcon = nullptr;
     bool inSizeMove = false;
     bool inModalFrame = false;
 

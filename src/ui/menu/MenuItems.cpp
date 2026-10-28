@@ -188,7 +188,7 @@ bool ActionMenuItem::armed() const {
 }
 
 std::string ActionMenuItem::itemText() {
-    return armed() ? "Confirm " + text : text;
+    return armed() ? "确认" + text : text;
 }
 
 int ActionMenuItem::itemGlyph() {

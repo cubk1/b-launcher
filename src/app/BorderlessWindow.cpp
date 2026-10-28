@@ -58,6 +58,9 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
     }
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     applyFrame();
+    if (bigIcon != nullptr || smallIcon != nullptr) {
+        setIcons(bigIcon, smallIcon);
+    }
     return createGlContext(share);
 }
 
@@ -104,6 +107,20 @@ void BorderlessWindow::applyFrame() {
                      TRUE);
     }
     setDarkMode(true);
+}
+
+void BorderlessWindow::setIcons(HICON large, HICON compact) {
+    bigIcon = large;
+    smallIcon = compact;
+    if (hwnd == nullptr) {
+        return;
+    }
+    if (large != nullptr) {
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM) large);
+    }
+    if (compact != nullptr) {
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM) compact);
+    }
 }
 
 void BorderlessWindow::setDarkMode(bool dark) {

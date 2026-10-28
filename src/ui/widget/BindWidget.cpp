@@ -27,7 +27,7 @@ void BindWidget::paint() {
     }
     bool capturing = listening();
     int key = value->get();
-    std::string keyText = capturing ? "..." : UiKeys::isValidBind(key) ? RenderUtil::keyName(key) : "None";
+    std::string keyText = capturing ? "..." : UiKeys::isValidBind(key) ? RenderUtil::keyName(key) : "无";
     float keyW = UiFont::width(keyText, UiFont::MEDIUM, UiWidgets::TEXT_PILL);
     float boxW = std::max(22.0f, keyW + 10);
     float boxH = 18.0f;

@@ -869,7 +869,7 @@ namespace NewUi {
         bool accepts = popupOpen && frameCounter > popupOpenedFrame && pressSerial != popupOpenedPress;
         bool reorderable = choice->reorderable();
         float rowW = sizeX - 8 - (scrollable ? 14 : 0);
-        float listTop = py + 4 - popupScrollSmooth;
+        float listTop = py + 4 - UiRender::snapLayout(popupScrollSmooth);
         int dropIndex = -1;
         if (popupDragFrom >= count || (popupDragFrom >= 0 && !reorderable)) {
             popupDragFrom = -1;
@@ -1550,9 +1550,9 @@ namespace NewUi {
             return;
         }
         MenuItems items;
-        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 0, "Copy", 0xf0c5));
-        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 1, "Paste", 0xf0ea));
-        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 2, "Reset", 0xf0e2));
+        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 0, "复制", 0xf0c5));
+        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 1, "粘贴", 0xf0ea));
+        items.push_back(std::make_shared<SwatchMenuItem>(swatchMenuColor, 2, "重置", 0xf0e2));
         swatchContextMenu.minWidth = 132.0f;
         swatchContextMenu.fill(items);
         float sizeX = swatchContextMenu.menuWidth();
@@ -2047,7 +2047,7 @@ namespace NewUi {
             return;
         }
         std::string id = fieldMenuTarget;
-        const char* options[] = {"Undo", "Redo", "Cut", "Copy", "Paste", "Delete", "Select All"};
+        const char* options[] = {"撤销", "重做", "剪切", "复制", "粘贴", "删除", "全选"};
         const char* shortcuts[] = {"Ctrl+Z", "Ctrl+Y", "Ctrl+X", "Ctrl+C", "Ctrl+V", "", "Ctrl+A"};
         bool selected = UiInput::hasSelection(id);
         bool enabled[] = {UiInput::canUndo(id),
