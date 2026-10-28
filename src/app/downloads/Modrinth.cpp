@@ -1,21 +1,10 @@
 #include "app/downloads/Modrinth.h"
 
-#include "ui/panel/UiImages.h"
-
 #include <core/base/cancellation.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
 #include <nlohmann/json.hpp>
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#include <wincodec.h>
 
 #include <algorithm>
 #include <cmath>
@@ -34,16 +23,25 @@ namespace Modrinth {
 
     namespace blb = b_launcher_base;
     using json = nlohmann::json;
+    using Addons::Category;
+    using Addons::Dependency;
+    using Addons::Fetched;
+    using Addons::File;
+    using Addons::Hit;
+    using Addons::Kind;
+    using Addons::PAGE_SIZE;
+    using Addons::Query;
+    using Addons::Results;
+    using Addons::Sort;
+    using Addons::Status;
+    using Addons::Version;
+    using Addons::Versions;
 
     namespace {
         using Continuation = std::function<void()>;
 
         const char* const API = "https://api.modrinth.com/v2";
         const char* const API_MIRROR = "https://mod.mcimirror.top/modrinth/v2";
-        const char* const CDN = "https://cdn.modrinth.com";
-        const char* const CDN_MIRROR = "https://mod.mcimirror.top";
-        constexpr int ICON_SIZE = 64;
-        constexpr int ICON_WORKERS = 4;
 
         std::mutex lock;
         std::deque<Continuation> finished;
@@ -54,17 +52,6 @@ namespace Modrinth {
         std::map<int, std::vector<Category>> categoryLists;
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
-
-        struct Icon {
-            uint32_t texture = 0;
-            bool requested = false;
-        };
-        std::unordered_map<std::string, Icon> icons;
-        std::mutex iconLock;
-        std::condition_variable iconWake;
-        std::deque<std::string> iconQueue;
-        std::vector<std::thread> iconWorkers;
-        bool iconsStopping = false;
 
         void run(std::function<Continuation(blb::cancellation_token)> work,
                  std::function<Continuation(const std::string&)> fail) {
@@ -81,11 +68,6 @@ namespace Modrinth {
                     finished.push_back(std::move(next));
                 }
             });
-        }
-
-        void hand(Continuation next) {
-            std::lock_guard<std::mutex> guard(lock);
-            finished.push_back(std::move(next));
         }
 
         std::string text(const json& node, const char* key) {
@@ -192,8 +174,9 @@ namespace Modrinth {
             std::string path = "/search?query=" + blb::url_encode(query.text) +
                     "&facets=" + blb::url_encode(facets.dump()) + "&index=" + sortIndex(query.sort) +
                     "&offset=" + std::to_string(query.page * PAGE_SIZE) + "&limit=" + std::to_string(PAGE_SIZE);
+            std::string kind = projectType(query.kind);
             run(
-                    [key, path](blb::cancellation_token token) -> Continuation {
+                    [key, path, kind](blb::cancellation_token token) -> Continuation {
                         auto doc = api(path, token);
                         if (!doc) {
                             std::string error = doc.err().message;
@@ -215,6 +198,8 @@ namespace Modrinth {
                                 hit.description = text(item, "description");
                                 hit.author = text(item, "author");
                                 hit.iconUrl = text(item, "icon_url");
+                                hit.pageUrl =
+                                        "https://modrinth.com/" + kind + "/" + (hit.slug.empty() ? hit.id : hit.slug);
                                 hit.downloads = number(item, "downloads");
                                 hit.follows = number(item, "follows");
                                 std::vector<std::string> tags = strings(item, "display_categories");
@@ -247,8 +232,9 @@ namespace Modrinth {
                         }
                         std::map<std::string, std::vector<Category>> byType;
                         for (const json& item : *doc) {
+                            std::string name = text(item, "name");
                             byType[text(item, "project_type")].push_back(
-                                    Category{text(item, "name"), text(item, "header")});
+                                    Category{name, name, text(item, "header"), std::string()});
                         }
                         return [byType] {
                             for (Kind kind :
@@ -265,6 +251,7 @@ namespace Modrinth {
 
         Version parseVersion(const json& item) {
             Version version;
+            version.source = Addons::Source::Modrinth;
             version.id = text(item, "id");
             version.projectId = text(item, "project_id");
             version.name = text(item, "name");
@@ -343,102 +330,6 @@ namespace Modrinth {
                     });
         }
 
-        void roundCorners(std::vector<unsigned char>& rgba) {
-            const float radius = ICON_SIZE * 0.22f;
-            for (int y = 0; y < ICON_SIZE; y++) {
-                for (int x = 0; x < ICON_SIZE; x++) {
-                    float px = x + 0.5f;
-                    float py = y + 0.5f;
-                    float cx = std::clamp(px, radius, ICON_SIZE - radius);
-                    float cy = std::clamp(py, radius, ICON_SIZE - radius);
-                    float distance = std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
-                    float cover = std::clamp(radius - distance + 0.5f, 0.0f, 1.0f);
-                    if (cover < 1.0f) {
-                        unsigned char& alpha = rgba[((size_t) y * ICON_SIZE + x) * 4 + 3];
-                        alpha = (unsigned char) std::lround(alpha * cover);
-                    }
-                }
-            }
-        }
-
-        bool decodeIcon(const std::string& data, std::vector<unsigned char>& rgba) {
-            IWICImagingFactory* factory = nullptr;
-            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                        IID_PPV_ARGS(&factory)))) {
-                return false;
-            }
-            bool ok = false;
-            IWICStream* stream = nullptr;
-            IWICBitmapDecoder* decoder = nullptr;
-            IWICBitmapFrameDecode* frame = nullptr;
-            IWICBitmapScaler* scaler = nullptr;
-            IWICFormatConverter* converter = nullptr;
-            UINT w = 0;
-            UINT h = 0;
-            if (SUCCEEDED(factory->CreateStream(&stream)) &&
-                SUCCEEDED(stream->InitializeFromMemory((BYTE*) data.data(), (DWORD) data.size())) &&
-                SUCCEEDED(
-                        factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnDemand, &decoder)) &&
-                SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(frame->GetSize(&w, &h)) && w > 0 && h > 0) {
-                float fit = (float) ICON_SIZE / (float) std::max(w, h);
-                UINT sw = std::max(1u, (UINT) (w * fit + 0.5f));
-                UINT sh = std::max(1u, (UINT) (h * fit + 0.5f));
-                WICBitmapInterpolationMode mode = std::max(w, h) <= 32 ? WICBitmapInterpolationModeNearestNeighbor
-                                                                       : WICBitmapInterpolationModeHighQualityCubic;
-                if (SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
-                    SUCCEEDED(scaler->Initialize(frame, sw, sh, mode)) &&
-                    SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
-                    SUCCEEDED(converter->Initialize(scaler, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
-                                                    nullptr, 0.0, WICBitmapPaletteTypeCustom))) {
-                    std::vector<unsigned char> scaled((size_t) sw * sh * 4);
-                    if (SUCCEEDED(converter->CopyPixels(nullptr, sw * 4, (UINT) scaled.size(), scaled.data()))) {
-                        rgba.assign((size_t) ICON_SIZE * ICON_SIZE * 4, 0);
-                        UINT ox = (ICON_SIZE - sw) / 2;
-                        UINT oy = (ICON_SIZE - sh) / 2;
-                        for (UINT row = 0; row < sh; row++) {
-                            std::copy(scaled.begin() + (size_t) row * sw * 4,
-                                      scaled.begin() + (size_t) (row + 1) * sw * 4,
-                                      rgba.begin() + ((size_t) (oy + row) * ICON_SIZE + ox) * 4);
-                        }
-                        roundCorners(rgba);
-                        ok = true;
-                    }
-                }
-            }
-            if (converter) converter->Release();
-            if (scaler) scaler->Release();
-            if (frame) frame->Release();
-            if (decoder) decoder->Release();
-            if (stream) stream->Release();
-            factory->Release();
-            return ok;
-        }
-
-        void iconWorker() {
-            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-            HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-            blb::cancellation_token token = stopping.token();
-            while (true) {
-                std::string url;
-                {
-                    std::unique_lock<std::mutex> guard(iconLock);
-                    iconWake.wait(guard, [] { return iconsStopping || !iconQueue.empty(); });
-                    if (iconsStopping) {
-                        break;
-                    }
-                    url = iconQueue.front();
-                    iconQueue.pop_front();
-                }
-                auto data = blb::net::http_get(fileUrls(url), token);
-                auto rgba = std::make_shared<std::vector<unsigned char>>();
-                if (data && decodeIcon(*data, *rgba)) {
-                    hand([url, rgba] { icons[url].texture = UiImages::upload(rgba->data(), ICON_SIZE, ICON_SIZE); });
-                }
-            }
-            if (SUCCEEDED(com)) {
-                CoUninitialize();
-            }
-        }
     }
 
     const char* projectType(Kind kind) {
@@ -483,15 +374,6 @@ namespace Modrinth {
         return found != categoryLists.end() ? found->second : none;
     }
 
-    const File* Version::file() const {
-        for (const File& f : files) {
-            if (f.primary) {
-                return &f;
-            }
-        }
-        return files.empty() ? nullptr : &files.front();
-    }
-
     const Versions& versions(const std::string& projectId) {
         auto found = versionLists.find(projectId);
         if (found == versionLists.end()) {
@@ -506,25 +388,6 @@ namespace Modrinth {
         if (found == versionLists.end() || found->second.status != Status::Loading) {
             fetchVersions(projectId);
         }
-    }
-
-    uint32_t icon(const std::string& url) {
-        if (url.empty()) {
-            return 0;
-        }
-        Icon& entry = icons[url];
-        if (!entry.requested) {
-            entry.requested = true;
-            std::lock_guard<std::mutex> guard(iconLock);
-            if (iconWorkers.empty() && !iconsStopping) {
-                for (int i = 0; i < ICON_WORKERS; i++) {
-                    iconWorkers.emplace_back(iconWorker);
-                }
-            }
-            iconQueue.push_back(url);
-            iconWake.notify_one();
-        }
-        return entry.texture;
     }
 
     std::string label(const std::string& tag) {
@@ -624,18 +487,6 @@ namespace Modrinth {
         return out;
     }
 
-    std::string count(long long value) {
-        char text[32];
-        if (value >= 100000000LL) {
-            std::snprintf(text, sizeof(text), "%.1f亿", value / 100000000.0);
-        } else if (value >= 10000LL) {
-            std::snprintf(text, sizeof(text), "%.1f万", value / 10000.0);
-        } else {
-            std::snprintf(text, sizeof(text), "%lld", value);
-        }
-        return text;
-    }
-
     void poll() {
         std::deque<Continuation> ready;
         {
@@ -651,17 +502,6 @@ namespace Modrinth {
 
     void shutdown() {
         stopping.cancel();
-        {
-            std::lock_guard<std::mutex> guard(iconLock);
-            iconsStopping = true;
-        }
-        iconWake.notify_all();
-        for (std::thread& worker : iconWorkers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        iconWorkers.clear();
         for (std::thread& worker : workers) {
             if (worker.joinable()) {
                 worker.join();
@@ -701,14 +541,6 @@ namespace Modrinth {
         }
         out.ok = true;
         out.versions = parseVersions(*doc);
-        return out;
-    }
-
-    std::vector<std::string> fileUrls(const std::string& url) {
-        std::vector<std::string> out = {url};
-        if (url.rfind(CDN, 0) == 0) {
-            out.push_back(std::string(CDN_MIRROR) + url.substr(std::string(CDN).size()));
-        }
         return out;
     }
 }

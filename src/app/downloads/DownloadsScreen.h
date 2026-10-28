@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/downloads/Modrinth.h"
+#include "app/downloads/Addons.h"
 
 #include <string>
 
@@ -8,5 +8,5 @@ namespace DownloadsScreen {
 
     void draw();
     void openFor(const std::string& key);
-    void open(Modrinth::Kind kind);
+    void open(Addons::Kind kind);
 }

@@ -16,7 +16,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/shell/Logo.h"
 #include "app/shell/MainWindow.h"
-#include "app/downloads/Modrinth.h"
+#include "app/downloads/Addons.h"
 #include "app/system/Platform.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/system/Updates.h"
@@ -34,6 +34,7 @@
 #include <GL/gl.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 namespace {
@@ -119,6 +120,24 @@ namespace {
         }
     };
 
+    constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
+
+    bool foreground() {
+        HWND active = GetForegroundWindow();
+        DWORD process = 0;
+        GetWindowThreadProcessId(active, &process);
+        return active != nullptr && process == GetCurrentProcessId();
+    }
+
+    void idleUntil(std::chrono::steady_clock::time_point started) {
+        double spent = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        double wait = BACKGROUND_FRAME_MS - spent;
+        if (wait >= 1.0) {
+            MsgWaitForMultipleObjectsEx(0, nullptr, (DWORD) wait, QS_INPUT | QS_POSTMESSAGE | QS_SENDMESSAGE,
+                                        MWMO_INPUTAVAILABLE);
+        }
+    }
+
     int pixels(float layout, float scale) {
         return (int) (layout * scale + 0.5f);
     }
@@ -172,6 +191,7 @@ int main() {
     if (!window.create(Platform::widen(shownTitle), pixels(startW, scale), pixels(startH, scale))) {
         return 1;
     }
+    window.setVsync(true);
     window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
     Platform::window = window.hwnd;
 
@@ -189,7 +209,7 @@ int main() {
     LogWindow::init(&window);
     Drop::attach(window.hwnd);
     Catalog::preload();
-    Modrinth::preload();
+    Addons::preload();
     Updates::check(true, false);
     bool shown = false;
     bool windowLight = false;
@@ -216,7 +236,7 @@ int main() {
         Accounts::poll();
         Game::poll();
         Catalog::poll();
-        Modrinth::poll();
+        Addons::poll();
         Background::poll();
         ProjectInstaller::poll();
         Installer::poll();
@@ -281,12 +301,16 @@ int main() {
 
     while (window.pumpMessages()) {
         GameLog::poll();
-        if (window.minimized()) {
+        if (window.minimized() || (shown && !IsWindowVisible(window.hwnd))) {
             LogWindow::frame(scale);
             Sleep(LogWindow::isOpen() ? 15 : 10);
             continue;
         }
+        auto started = std::chrono::steady_clock::now();
         frame();
+        if (!foreground()) {
+            idleUntil(started);
+        }
     }
 
     window.onModalFrame = nullptr;
@@ -304,7 +328,7 @@ int main() {
     Installer::shutdown();
     Background::shutdown();
     ProjectInstaller::shutdown();
-    Modrinth::shutdown();
+    Addons::shutdown();
     Catalog::shutdown();
     Game::shutdown();
     Accounts::shutdown();

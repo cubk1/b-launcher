@@ -95,9 +95,9 @@ namespace ProjectInstaller {
             std::map<std::string, std::pair<unsigned long long, unsigned long long>> sizes;
         };
 
-        blb::net::download_task taskFor(const Modrinth::File& file, const std::filesystem::path& target) {
+        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& target) {
             blb::net::download_task task;
-            task.urls = Modrinth::fileUrls(file.url);
+            task.urls = Addons::fileUrls(file.url);
             task.target = target;
             task.size = file.size;
             if (!file.sha1.empty()) {
@@ -134,11 +134,11 @@ namespace ProjectInstaller {
         return found != tasks.end() ? found->second->fraction.load() : -1.0f;
     }
 
-    std::string folder(Modrinth::Kind kind) {
+    std::string folder(Addons::Kind kind) {
         switch (kind) {
-            case Modrinth::Kind::Mod: return "mods";
-            case Modrinth::Kind::ResourcePack: return "resourcepacks";
-            case Modrinth::Kind::Shader: return "shaderpacks";
+            case Addons::Kind::Mod: return "mods";
+            case Addons::Kind::ResourcePack: return "resourcepacks";
+            case Addons::Kind::Shader: return "shaderpacks";
             default: return {};
         }
     }
@@ -163,9 +163,9 @@ namespace ProjectInstaller {
         return {};
     }
 
-    bool installed(const Modrinth::Version& version, Modrinth::Kind kind, const std::string& instanceKey) {
+    bool installed(const Addons::Version& version, Addons::Kind kind, const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
-        const Modrinth::File* file = version.file();
+        const Addons::File* file = version.file();
         std::string sub = folder(kind);
         if (entry == nullptr || file == nullptr || sub.empty()) {
             return false;
@@ -174,10 +174,10 @@ namespace ProjectInstaller {
         return std::filesystem::exists(entry->gameDirectory / sub / blb::path_from_utf8(file->filename), error);
     }
 
-    void install(const Modrinth::Version& version, Modrinth::Kind kind, const std::string& title,
+    void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
                  const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
-        const Modrinth::File* file = version.file();
+        const Addons::File* file = version.file();
         std::string sub = folder(kind);
         if (entry == nullptr || file == nullptr || sub.empty() || state(version.id) == State::Running) {
             return;
@@ -187,40 +187,41 @@ namespace ProjectInstaller {
         std::string gameVersion = entry->info.minecraft_version;
         std::string loader = loaderOf(instanceKey);
         std::string instanceName = entry->info.id;
-        Modrinth::Version chosen = version;
+        Addons::Version chosen = version;
         run([task, target, gameVersion, loader, chosen, kind, title,
              instanceName](blb::cancellation_token token) -> Continuation {
             std::vector<blb::net::download_task> files;
             std::set<std::string> projects = {chosen.projectId};
             std::set<std::string> names;
-            auto add = [&](const Modrinth::Version& version) {
-                const Modrinth::File* file = version.file();
+            auto add = [&](const Addons::Version& version) {
+                const Addons::File* file = version.file();
                 if (file != nullptr && names.insert(file->filename).second) {
                     files.push_back(taskFor(*file, target / blb::path_from_utf8(file->filename)));
                 }
             };
             add(chosen);
             int dependencies = 0;
-            std::vector<Modrinth::Version> level = {chosen};
-            for (int depth = 0; kind == Modrinth::Kind::Mod && depth < DEPENDENCY_DEPTH && !level.empty(); depth++) {
-                std::vector<Modrinth::Version> next;
-                for (const Modrinth::Version& version : level) {
-                    for (const Modrinth::Dependency& dependency : version.dependencies) {
+            std::vector<Addons::Version> level = {chosen};
+            for (int depth = 0; kind == Addons::Kind::Mod && depth < DEPENDENCY_DEPTH && !level.empty(); depth++) {
+                std::vector<Addons::Version> next;
+                for (const Addons::Version& version : level) {
+                    for (const Addons::Dependency& dependency : version.dependencies) {
                         if (!dependency.required ||
                             (!dependency.projectId.empty() && !projects.insert(dependency.projectId).second)) {
                             continue;
                         }
-                        Modrinth::Fetched fetched = !dependency.versionId.empty()
-                                ? Modrinth::fetchVersion(dependency.versionId)
-                                : Modrinth::fetchProjectVersions(dependency.projectId, gameVersion, loader);
+                        Addons::Fetched fetched = !dependency.versionId.empty()
+                                ? Addons::fetchVersion(version.source, dependency.versionId)
+                                : Addons::fetchProjectVersions(version.source, dependency.projectId, gameVersion,
+                                                               loader);
                         if (token.is_cancelled()) {
                             return nullptr;
                         }
                         if (!fetched.ok || fetched.versions.empty()) {
                             continue;
                         }
-                        const Modrinth::Version& found = fetched.versions.front();
-                        const Modrinth::File* file = found.file();
+                        const Addons::Version& found = fetched.versions.front();
+                        const Addons::File* file = found.file();
                         std::error_code error;
                         if (file == nullptr ||
                             std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
@@ -251,8 +252,8 @@ namespace ProjectInstaller {
         });
     }
 
-    void saveTo(const Modrinth::Version& version, const std::filesystem::path& folder, const std::string& title) {
-        const Modrinth::File* file = version.file();
+    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title) {
+        const Addons::File* file = version.file();
         if (file == nullptr || state(version.id) == State::Running) {
             return;
         }

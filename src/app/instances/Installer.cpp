@@ -1,4 +1,5 @@
 #include "app/instances/Installer.h"
+#include "app/downloads/CurseForge.h"
 #include "app/instances/InstancePage.h"
 #include "app/instances/Instances.h"
 #include "app/shell/MainWindow.h"
@@ -472,6 +473,7 @@ namespace Installer {
                     blb::install::game_installer installer(blb::meta::game_layout(root), options);
                     blb::modpack::import_options settings;
                     settings.id = id;
+                    settings.curseforge.api_key = CurseForge::apiKey();
                     auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
                     if (imported) {
                         result = *imported;

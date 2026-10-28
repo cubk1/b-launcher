@@ -1,6 +1,6 @@
 #pragma once
 
-#include "app/downloads/Modrinth.h"
+#include "app/downloads/Addons.h"
 
 #include <filesystem>
 #include <string>
@@ -12,13 +12,13 @@ namespace ProjectInstaller {
     State state(const std::string& versionId);
     float progress(const std::string& versionId);
 
-    std::string folder(Modrinth::Kind kind);
+    std::string folder(Addons::Kind kind);
     std::string loaderOf(const std::string& instanceKey);
-    bool installed(const Modrinth::Version& version, Modrinth::Kind kind, const std::string& instanceKey);
+    bool installed(const Addons::Version& version, Addons::Kind kind, const std::string& instanceKey);
 
-    void install(const Modrinth::Version& version, Modrinth::Kind kind, const std::string& title,
+    void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
                  const std::string& instanceKey);
-    void saveTo(const Modrinth::Version& version, const std::filesystem::path& folder, const std::string& title);
+    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title);
 
     void poll();
     void shutdown();

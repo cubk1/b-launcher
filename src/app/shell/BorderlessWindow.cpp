@@ -236,6 +236,13 @@ void BorderlessWindow::swap() {
     SwapBuffers(deviceContext);
 }
 
+void BorderlessWindow::setVsync(bool on) {
+    using SwapInterval = BOOL(WINAPI*)(int);
+    if (auto swapInterval = (SwapInterval) wglGetProcAddress("wglSwapIntervalEXT")) {
+        swapInterval(on ? 1 : 0);
+    }
+}
+
 LRESULT WINAPI BorderlessWindow::windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_NCCREATE) {
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);

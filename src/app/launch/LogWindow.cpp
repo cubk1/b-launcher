@@ -761,10 +761,7 @@ namespace LogWindow {
             ImGui_ImplWin32_InitForOpenGL(window.hwnd);
             ImGui_ImplOpenGL3_Init("#version 130");
             window.imguiContext = context;
-            using SwapInterval = BOOL(WINAPI*)(int);
-            if (auto swapInterval = (SwapInterval) wglGetProcAddress("wglSwapIntervalEXT")) {
-                swapInterval(0);
-            }
+            window.setVsync(false);
             ImGui::SetCurrentContext(main);
             wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
             created = true;

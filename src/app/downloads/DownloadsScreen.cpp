@@ -7,6 +7,7 @@
 #include "app/downloads/Modrinth.h"
 #include "app/instances/NewInstanceScreen.h"
 #include "app/shell/Page.h"
+#include "app/shell/SvgPath.h"
 #include "app/system/Platform.h"
 #include "app/downloads/ProjectInstaller.h"
 
@@ -44,7 +45,8 @@
 
 namespace DownloadsScreen {
 
-    using Modrinth::Kind;
+    using Addons::Kind;
+    using Addons::Source;
 
     namespace {
         constexpr float SIDE_W = 140.0f;
@@ -94,18 +96,54 @@ namespace DownloadsScreen {
         constexpr int VIEW_PROJECT = 1;
         PageTransition views(VIEW_RESULTS);
 
-        Modrinth::Query query;
+        Addons::Query query;
         std::string typed;
         double typedAt = 0.0;
         std::string target;
         bool started = false;
         bool followed = false;
-        Modrinth::Results shown;
-        Modrinth::Hit project;
+        Addons::Results shown;
+        Addons::Hit project;
         std::string versionFilter;
         std::string loaderFilter;
         std::set<std::string> folded;
         bool allLoaders = false;
+        Source source = Source::Modrinth;
+        PageTransition sourceViews(0);
+
+        struct Tab {
+            bool ready = false;
+            Addons::Query query;
+            std::string typed;
+            Addons::Results shown;
+            Addons::Hit project;
+            std::string versionFilter;
+            std::string loaderFilter;
+            std::set<std::string> folded;
+            bool allLoaders = false;
+            int view = VIEW_RESULTS;
+        };
+        Tab tabs[2];
+
+        const char* const MODRINTH_MARK =
+                "F1 M12.252.004a11.78 11.768 0 0 0-8.92 3.73 11 10.999 0 0 0-2.17 3.11 11.37 11.359 0 0 0-1.16 5.169c"
+                "0 1.42.17 2.5.6 3.77.24.759.77 1.899 1.17 2.529a12.3 12.298 0 0 0 8.85 5.639c.44.05 2.54.07 2.76.02."
+                "2-.04.22.1-.26-1.7l-.36-1.37-1.01-.06a8.5 8.489 0 0 1-5.18-1.8 5.34 5.34 0 0 1-1.3-1.26c0-.05.34-.28"
+                ".74-.5a37.572 37.545 0 0 1 2.88-1.629c.03 0 .5.45 1.06.98l1 .97 2.07-.43 2.06-.43 1.47-1.47c.8-.8 1."
+                "48-1.5 1.48-1.52 0-.09-.42-1.63-.46-1.7-.04-.06-.2-.03-1.02.18-.53.13-1.2.3-1.45.4l-.48.15-.53.53-.5"
+                "3.53-.93.1-.93.07-.52-.5a2.7 2.7 0 0 1-.96-1.7l-.13-.6.43-.57c.68-.9.68-.9 1.46-1.1.4-.1.65-.2.83-.3"
+                "3.13-.099.65-.579 1.14-1.069l.9-.9-.7-.7-.7-.7-1.95.54c-1.07.3-1.96.53-1.97.53-.03 0-2.23 2.48-2.63 "
+                "2.97l-.29.35.28 1.03c.16.56.3 1.16.31 1.34l.03.3-.34.23c-.37.23-2.22 1.3-2.84 1.63-.36.2-.37.2-.44.1"
+                "-.08-.1-.23-.6-.32-1.03-.18-.86-.17-2.75.02-3.73a8.84 8.839 0 0 1 7.9-6.93c.43-.03.77-.08.78-.1.06-."
+                "17.5-2.999.47-3.039-.01-.02-.1-.02-.2-.03Zm3.68.67c-.2 0-.3.1-.37.38-.06.23-.46 2.42-.46 2.52 0 .04."
+                "1.11.22.16a8.51 8.499 0 0 1 2.99 2 8.38 8.379 0 0 1 2.16 3.449 6.9 6.9 0 0 1 .4 2.8c0 1.07 0 1.27-.1"
+                " 1.73a9.37 9.369 0 0 1-1.76 3.769c-.32.4-.98 1.06-1.37 1.38-.38.32-1.54 1.1-1.7 1.14-.1.03-.1.06-.07"
+                ".26.03.18.64 2.56.7 2.78l.06.06a12.07 12.058 0 0 0 7.27-9.4c.13-.77.13-2.58 0-3.4a11.96 11.948 0 0 0"
+                "-5.73-8.578c-.7-.42-2.05-1.06-2.25-1.06Z";
+        const char* const CURSEFORGE_MARK =
+                "F1 M18.326 9.2145S23.2261 8.4418 24 6.1882h-7.5066V4.4H0l2.0318 2.3576V9.173s5.1267-.2665 7.1098 1.2"
+                "372c2.7146 2.516-3.053 5.917-3.053 5.917L5.0995 19.6c1.5465-1.4726 4.494-3.3775 9.8983-3.2857-2.0565"
+                ".65-4.1245 1.6651-5.7344 3.2857h10.9248l-1.0288-3.2726s-7.918-4.6688-.8336-7.1127z";
 
         void tip(const std::string& text, float x, float y, float w, float h) {
             float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
@@ -180,7 +218,7 @@ namespace DownloadsScreen {
 
         void projectIcon(const std::string& url, float x, float y, float size) {
             float radius = size * 0.22f;
-            if (uint32_t texture = Modrinth::icon(url)) {
+            if (uint32_t texture = Addons::icon(url)) {
                 UiRender::texture(texture, x, y, size, size);
                 return;
             }
@@ -217,10 +255,23 @@ namespace DownloadsScreen {
         }
 
         bool hasLoaders(Kind kind) {
+            if (source == Source::CurseForge) {
+                return kind == Kind::Mod || kind == Kind::Modpack;
+            }
             return kind == Kind::Mod || kind == Kind::Modpack || kind == Kind::Shader;
         }
 
+        std::string categoryLabel(const std::string& name) {
+            return source == Source::Modrinth ? Modrinth::label(name) : name;
+        }
+
         std::vector<std::string> loaderTags(Kind kind) {
+            if (source == Source::CurseForge) {
+                if (kind == Kind::Modpack) {
+                    return {"forge", "fabric", "neoforge", "quilt"};
+                }
+                return {"forge", "fabric", "neoforge", "quilt", "liteloader"};
+            }
             if (kind == Kind::Shader) {
                 return {"iris", "optifine", "canvas", "vanilla"};
             }
@@ -404,41 +455,47 @@ namespace DownloadsScreen {
 
         std::shared_ptr<ModeBinding> sortChoice() {
             struct SortOption {
-                Modrinth::Sort sort;
+                Addons::Sort sort;
                 const char* label;
                 int glyph;
             };
-            static const std::vector<SortOption> sorts = {
-                    {Modrinth::Sort::Relevance, "相关度", 0xf002}, {Modrinth::Sort::Downloads, "下载量", 0xf019},
-                    {Modrinth::Sort::Follows, "关注数", 0xf004},   {Modrinth::Sort::Newest, "最新发布", 0xf271},
-                    {Modrinth::Sort::Updated, "最近更新", 0xf2f1},
+            static const std::vector<SortOption> modrinthSorts = {
+                    {Addons::Sort::Relevance, "相关度", 0xf002}, {Addons::Sort::Downloads, "下载量", 0xf019},
+                    {Addons::Sort::Follows, "关注数", 0xf004},   {Addons::Sort::Newest, "最新发布", 0xf271},
+                    {Addons::Sort::Updated, "最近更新", 0xf2f1},
             };
+            static const std::vector<SortOption> curseSorts = {
+                    {Addons::Sort::Popularity, "热门", 0xf06d},  {Addons::Sort::Downloads, "下载量", 0xf019},
+                    {Addons::Sort::Updated, "最近更新", 0xf2f1}, {Addons::Sort::Newest, "最新发布", 0xf271},
+                    {Addons::Sort::Name, "名称", 0xf15d},
+            };
+            const std::vector<SortOption>* sorts = source == Source::CurseForge ? &curseSorts : &modrinthSorts;
             auto choice = std::make_shared<ModeBinding>(
                     "downloads#sort",
-                    [] {
-                        for (const SortOption& option : sorts) {
+                    [sorts] {
+                        for (const SortOption& option : *sorts) {
                             if (option.sort == query.sort) {
                                 return std::string(option.label);
                             }
                         }
-                        return std::string(sorts.front().label);
+                        return std::string(sorts->front().label);
                     },
-                    [](const std::string& picked) {
-                        for (const SortOption& option : sorts) {
+                    [sorts](const std::string& picked) {
+                        for (const SortOption& option : *sorts) {
                             if (picked == option.label) {
                                 query.sort = option.sort;
                             }
                         }
                         query.page = 0;
                     },
-                    [] {
+                    [sorts] {
                         std::vector<std::string> labels;
-                        for (const SortOption& option : sorts) {
+                        for (const SortOption& option : *sorts) {
                             labels.push_back(option.label);
                         }
                         return labels;
                     });
-            for (const SortOption& option : sorts) {
+            for (const SortOption& option : *sorts) {
                 choice->icon(option.label, option.glyph);
             }
             return choice;
@@ -690,9 +747,11 @@ namespace DownloadsScreen {
             return "类别";
         }
 
-        float filterGroups(float y, bool blocked) {
-            float start = y;
-            if (hasLoaders(query.kind)) {
+        float loaderGroup(float y, bool blocked) {
+            if (!hasLoaders(query.kind)) {
+                return 0.0f;
+            }
+            {
                 std::vector<std::string> tags = loaderTags(query.kind);
                 bool more = tags.size() > LOADERS_SHOWN + 1;
                 std::vector<Filter> rows;
@@ -727,18 +786,44 @@ namespace DownloadsScreen {
                         }
                     };
                 }
-                y += group("loader", "加载器", rows, y, blocked, toggleMore, more ? FILTER_ROW : 0.0f);
+                return group("loader", "加载器", rows, y, blocked, toggleMore, more ? FILTER_ROW : 0.0f);
             }
+        }
 
-            const std::vector<Modrinth::Category>& categories = Modrinth::categories(query.kind);
+        float curseGroups(float y, bool blocked) {
+            float start = y;
+            y += loaderGroup(y, blocked);
+            std::vector<Filter> rows;
+            for (const Addons::Category& category : Addons::categories(source, query.kind)) {
+                std::string id = category.id;
+                rows.push_back(Filter{"downloads#cf#category#" + id, category.name, 0xf02b,
+                                      Addons::icon(category.iconUrl), contains(query.categories, id), [id] {
+                                          flip(query.categories, id);
+                                          query.page = 0;
+                                      }});
+            }
+            if (rows.empty()) {
+                Page::spinner(Page::left() + 17.0f, y + 13.0f, 6.0f, UiTheme::accent());
+                y += FILTER_ROW;
+            } else {
+                y += group("cf#categories", "类别", rows, y, blocked);
+            }
+            return y - start;
+        }
+
+        float modrinthGroups(float y, bool blocked) {
+            float start = y;
+            y += loaderGroup(y, blocked);
+
+            const std::vector<Addons::Category>& categories = Addons::categories(source, query.kind);
             for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
                 std::vector<Filter> rows;
-                for (const Modrinth::Category& category : categories) {
+                for (const Addons::Category& category : categories) {
                     if (category.header != header) {
                         continue;
                     }
                     std::string name = category.name;
-                    rows.push_back(Filter{"downloads#category#" + name, Modrinth::label(name), categoryGlyph(name), 0,
+                    rows.push_back(Filter{"downloads#category#" + name, categoryLabel(name), categoryGlyph(name), 0,
                                           contains(query.categories, name), [name] {
                                               flip(query.categories, name);
                                               query.page = 0;
@@ -779,9 +864,15 @@ namespace DownloadsScreen {
             return y - start;
         }
 
-        float filterHeight() {
-            float h = 0.0f;
-            if (hasLoaders(query.kind)) {
+        float filterGroups(float y, bool blocked) {
+            return source == Source::CurseForge ? curseGroups(y, blocked) : modrinthGroups(y, blocked);
+        }
+
+        float loaderHeight() {
+            if (!hasLoaders(query.kind)) {
+                return 0.0f;
+            }
+            {
                 std::vector<std::string> tags = loaderTags(query.kind);
                 bool more = tags.size() > LOADERS_SHOWN + 1;
                 size_t rows = 0;
@@ -790,13 +881,21 @@ namespace DownloadsScreen {
                         rows++;
                     }
                 }
-                h += groupHeight("loader", rows, more ? FILTER_ROW : 0.0f);
+                return groupHeight("loader", rows, more ? FILTER_ROW : 0.0f);
             }
-            const std::vector<Modrinth::Category>& categories = Modrinth::categories(query.kind);
+        }
+
+        float filterHeight() {
+            if (source == Source::CurseForge) {
+                size_t rows = Addons::categories(source, query.kind).size();
+                return loaderHeight() + (rows > 0 ? groupHeight("cf#categories", rows) : FILTER_ROW);
+            }
+            float h = loaderHeight();
+            const std::vector<Addons::Category>& categories = Addons::categories(source, query.kind);
             for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
                 size_t rows = (size_t) std::count_if(
                         categories.begin(), categories.end(),
-                        [header](const Modrinth::Category& category) { return category.header == header; });
+                        [header](const Addons::Category& category) { return category.header == header; });
                 if (rows > 0) {
                     h += groupHeight(header, rows);
                 }
@@ -819,15 +918,98 @@ namespace DownloadsScreen {
                 query.gameVersion.clear();
                 query.client = false;
                 query.server = false;
-                shown = Modrinth::Results();
+                shown = Addons::Results();
                 allLoaders = false;
                 followInstance();
             }
             views.go(VIEW_RESULTS);
         }
 
+        void switchSource(Source next) {
+            if (next == source) {
+                views.go(VIEW_RESULTS);
+                return;
+            }
+            if (NewUi::textEditing == NAME_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+            Tab& out = tabs[(int) source];
+            out.ready = true;
+            out.query = query;
+            out.typed = typed;
+            out.shown = shown;
+            out.project = project;
+            out.versionFilter = versionFilter;
+            out.loaderFilter = loaderFilter;
+            out.folded = folded;
+            out.allLoaders = allLoaders;
+            out.view = views.page;
+            Kind kind = query.kind;
+            source = next;
+            Tab& in = tabs[(int) next];
+            if (in.ready) {
+                query = in.query;
+                typed = in.typed;
+                shown = in.shown;
+                project = in.project;
+                versionFilter = in.versionFilter;
+                loaderFilter = in.loaderFilter;
+                folded = in.folded;
+                allLoaders = in.allLoaders;
+                views.page = in.view;
+            } else {
+                query = Addons::Query();
+                query.kind = kind;
+                query.sort = next == Source::CurseForge ? Addons::Sort::Popularity : Addons::Sort::Relevance;
+                typed.clear();
+                shown = Addons::Results();
+                project = Addons::Hit();
+                folded.clear();
+                allLoaders = false;
+                followInstance();
+                versionFilter = query.gameVersion;
+                loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
+                views.page = VIEW_RESULTS;
+            }
+            views.mix = 1.0f;
+            sourceViews.go((int) next);
+        }
+
+        bool sourceRow(Source each, float y, bool blocked) {
+            std::string id = std::string("downloads#source#") + Addons::sourceName(each);
+            float x = Page::left();
+            bool active = source == each;
+            bool hovered = !blocked && NewUi::hit(x, y, SIDE_W, NAV_ITEM_H);
+            float r = UiState::motion(id, active ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
+            if (r > 0.001f) {
+                UiRender::roundRect(x, y, SIDE_W, NAV_ITEM_H, 8.0f,
+                                    UiRender::mix(UiTheme::clear(), UiTheme::navHover(), r));
+            }
+            const float mark = 14.0f;
+            SvgPath::draw(each == Source::CurseForge ? CURSEFORGE_MARK : MODRINTH_MARK, x + 16.0f - mark * 0.5f,
+                          y + (NAV_ITEM_H - mark) * 0.5f, mark, mark,
+                          UiRender::mix(UiTheme::textMuted(), UiTheme::accent(), r));
+            UiRender::textY(Addons::sourceName(each), x + 31.0f, y, NAV_ITEM_H,
+                            UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), r), UiFont::MEDIUM,
+                            UiWidgets::TEXT_BODY);
+            if (!blocked && NewUi::click(x, y, SIDE_W, NAV_ITEM_H)) {
+                UiSound::request(UiSound::TICK);
+                return true;
+            }
+            return false;
+        }
+
         void side(bool covered) {
             float y = Page::TOP;
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                if (sourceRow(each, y, covered)) {
+                    switchSource(each);
+                }
+                y += NAV_STEP;
+            }
+            y += 4.0f;
+            UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
+            y += 9.0f;
             for (const KindInfo& info : KINDS) {
                 NavItemWidget item(std::string("downloads#kind#") + info.label, Ui::glyph(info.glyph), info.label);
                 item.selected(query.kind == info.kind).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
@@ -841,8 +1023,9 @@ namespace DownloadsScreen {
             UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
             float top = y + 6.0f;
             float bottom = MainWindow::height() - 14.0f;
-            Page::Scroll body("downloads#filters#" + std::to_string((int) query.kind), top, bottom, filterHeight(),
-                              Page::left(), SIDE_W);
+            Page::Scroll body("downloads#filters#" + std::to_string((int) source) + "#" +
+                                      std::to_string((int) query.kind),
+                              top, bottom, filterHeight(), Page::left(), SIDE_W);
             bool outside = body.begin();
             shownTop = top;
             shownBottom = bottom;
@@ -850,14 +1033,14 @@ namespace DownloadsScreen {
             body.end();
         }
 
-        void openProject(const Modrinth::Hit& hit) {
+        void openProject(const Addons::Hit& hit) {
             project = hit;
             versionFilter = query.gameVersion;
             loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
             views.go(VIEW_PROJECT);
         }
 
-        void resultRow(const Modrinth::Hit& hit, float x, float y, float w, int index, int count, bool blocked) {
+        void resultRow(const Addons::Hit& hit, float x, float y, float w, int index, int count, bool blocked) {
             bool hovered = !blocked && NewUi::hit(x, y, w, RESULT_H);
             float hover = UiState::motion("downloads#hit#" + hit.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
@@ -870,7 +1053,7 @@ namespace DownloadsScreen {
             float titleY = y + 9.0f;
             float titleCentre = titleY + 10.0f;
 
-            std::string downloads = Modrinth::count(hit.downloads);
+            std::string downloads = Addons::count(hit.downloads);
             float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             float downloadsX = right - downloadsW;
             UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -883,7 +1066,7 @@ namespace DownloadsScreen {
             UiRender::textY(title, textX, titleY, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
             float tagX = textX + UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
             for (const std::string& category : hit.categories) {
-                float tagW = tag(Modrinth::label(category), tagX, titleCentre, limit, UiTheme::surfaceRaised(),
+                float tagW = tag(categoryLabel(category), tagX, titleCentre, limit, UiTheme::surfaceRaised(),
                                  UiTheme::textSecondary());
                 if (tagW == 0.0f) {
                     break;
@@ -907,7 +1090,7 @@ namespace DownloadsScreen {
         }
 
         void pages(float y, int total, bool blocked) {
-            int count = std::max(1, (total + Modrinth::PAGE_SIZE - 1) / Modrinth::PAGE_SIZE);
+            int count = std::max(1, (total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
             int page = std::min(query.page, count - 1);
             std::vector<int> numbers;
             if (count <= 7) {
@@ -992,45 +1175,47 @@ namespace DownloadsScreen {
 
         void resultsView(bool covered) {
             followTyping();
-            const Modrinth::Results& results = Modrinth::search(query);
-            static const Modrinth::Results* shownFrom = nullptr;
+            const Addons::Results& results = Addons::search(source, query);
+            static const Addons::Results* shownFrom = nullptr;
             static bool shownReady = false;
-            bool ready = results.status == Modrinth::Status::Ready;
+            bool ready = results.status == Addons::Status::Ready;
             if (ready && (shownFrom != &results || !shownReady)) {
                 shown = results;
             }
             shownFrom = &results;
             shownReady = ready;
-            bool loading = results.status == Modrinth::Status::Loading;
+            bool loading = results.status == Addons::Status::Loading;
             float y = Page::TOP;
-            filters(y, shown.total, !shown.hits.empty() || results.status == Modrinth::Status::Ready, covered);
+            filters(y, shown.total, !shown.hits.empty() || results.status == Addons::Status::Ready, covered);
             float listTop = y + FILTER_H + 10.0f;
             const float pagesH = 28.0f;
             float pagesY = MainWindow::height() - 12.0f - pagesH;
             float listBottom = pagesY - 8.0f;
 
-            if (results.status == Modrinth::Status::Failed && shown.hits.empty()) {
+            if (results.status == Addons::Status::Failed && shown.hits.empty()) {
                 message("搜索失败：" + results.error, UiTheme::danger(), listTop, listBottom, false);
                 std::string retry = "重试";
                 float w = Page::buttonWidth(retry);
                 if (Page::button("downloads#retry", retry, mainX() + (mainW() - w) * 0.5f,
                                  (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
-                    Modrinth::refresh(query);
+                    Addons::refresh(source, query);
                 }
                 return;
             }
             if (shown.hits.empty()) {
                 if (loading) {
-                    message("正在搜索 Modrinth", UiTheme::textMuted(), listTop, listBottom, true);
+                    message(std::string("正在搜索 ") + Addons::sourceName(source), UiTheme::textMuted(), listTop,
+                            listBottom, true);
                 } else {
                     message("没有找到符合条件的内容", UiTheme::textMuted(), listTop, listBottom, false);
                 }
                 return;
             }
-            bool stale = loading || results.status == Modrinth::Status::Failed;
+            bool stale = loading || results.status == Addons::Status::Failed;
             float contentH = shown.hits.size() * RESULT_H;
-            Page::Scroll body("downloads#results#" + std::to_string((int) query.kind), listTop, listBottom, contentH,
-                              mainX(), mainW());
+            Page::Scroll body("downloads#results#" + std::to_string((int) source) + "#" +
+                                      std::to_string((int) query.kind),
+                              listTop, listBottom, contentH, mainX(), mainW());
             bool outside = body.begin();
             bool blocked = outside || covered || stale;
             float rowsY = body.top - body.offset;
@@ -1067,8 +1252,8 @@ namespace DownloadsScreen {
             return "正式版";
         }
 
-        void openModpackInstall(const Modrinth::Version& version) {
-            const Modrinth::File* file = version.file();
+        void openModpackInstall(const Addons::Version& version) {
+            const Addons::File* file = version.file();
             if (file == nullptr) {
                 return;
             }
@@ -1077,7 +1262,7 @@ namespace DownloadsScreen {
             setup.version = version.name.empty() ? version.number : version.name;
             setup.minecraft = version.gameVersions.empty() ? std::string() : version.gameVersions.front();
             setup.pack.minecraft = setup.minecraft;
-            setup.pack.urls = Modrinth::fileUrls(file->url);
+            setup.pack.urls = Addons::fileUrls(file->url);
             setup.pack.sha1 = file->sha1;
             setup.pack.size = file->size;
             for (const std::string& tag : version.loaders) {
@@ -1097,7 +1282,7 @@ namespace DownloadsScreen {
             MainWindow::showNewInstance();
         }
 
-        void versionAction(const Modrinth::Version& version, float rowY, bool blocked) {
+        void versionAction(const Addons::Version& version, float rowY, bool blocked) {
             float centreY = rowY + Page::ROW_H * 0.5f;
             float right = Page::right() - 12.0f;
             ProjectInstaller::State state = ProjectInstaller::state(version.id);
@@ -1178,7 +1363,7 @@ namespace DownloadsScreen {
             return name.substr(start);
         }
 
-        const std::string& sharedPrefix(const Modrinth::Versions& versions) {
+        const std::string& sharedPrefix(const Addons::Versions& versions) {
             static std::string cachedProject;
             static size_t cachedCount = (size_t) -1;
             static std::string prefix;
@@ -1190,7 +1375,7 @@ namespace DownloadsScreen {
             prefix.clear();
             if (versions.list.size() >= 2) {
                 prefix = versions.list.front().name;
-                for (const Modrinth::Version& version : versions.list) {
+                for (const Addons::Version& version : versions.list) {
                     prefix.resize(sameStart(version.name, prefix));
                     if (prefix.empty()) {
                         break;
@@ -1205,7 +1390,7 @@ namespace DownloadsScreen {
             return prefix;
         }
 
-        std::string shortName(const Modrinth::Version& version, const std::string& prefix) {
+        std::string shortName(const Addons::Version& version, const std::string& prefix) {
             std::string name = dropStart(version.name, prefix);
             name = dropStart(name, project.title);
             if (name.empty()) {
@@ -1214,7 +1399,7 @@ namespace DownloadsScreen {
             return name;
         }
 
-        std::vector<std::pair<uint32_t, std::string>> loaderIcons(const Modrinth::Version& version) {
+        std::vector<std::pair<uint32_t, std::string>> loaderIcons(const Addons::Version& version) {
             std::vector<std::pair<uint32_t, std::string>> out;
             for (const std::string& loader : version.loaders) {
                 if (out.size() == LOADER_SLOTS) {
@@ -1227,7 +1412,7 @@ namespace DownloadsScreen {
             return out;
         }
 
-        void versionRow(const Modrinth::Version& version, const std::string& prefix, float rowY, int index, int count,
+        void versionRow(const Addons::Version& version, const std::string& prefix, float rowY, int index, int count,
                         size_t iconSlots, bool blocked) {
             bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
             float hover = UiState::motion("downloads#version#" + version.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
@@ -1310,12 +1495,13 @@ namespace DownloadsScreen {
             UiRender::textY(fitEnd(project.title, linkX - 8.0f - textX, Page::TITLE_SIZE), textX, Page::TOP - 2.0f,
                             22.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             std::string byline = project.author.empty() ? std::string() : project.author + "  ";
-            byline += Modrinth::count(project.downloads) + " 次下载";
+            byline += Addons::count(project.downloads) + " 次下载";
             UiRender::textY(fitEnd(byline, linkX - 8.0f - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f,
                             16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            if (iconButton("downloads#open", 0xf35d, "在 Modrinth 上查看", linkX, Page::TOP + 2.0f, covered)) {
-                Platform::openUrl("https://modrinth.com/" + std::string(Modrinth::projectType(query.kind)) + "/" +
-                                  (project.slug.empty() ? project.id : project.slug));
+            std::string site = std::string("在 ") + Addons::sourceName(source) + " 上查看";
+            if (iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP + 2.0f, covered) &&
+                !project.pageUrl.empty()) {
+                Platform::openUrl(project.pageUrl);
             }
 
             float rowY = Page::TOP + 46.0f;
@@ -1334,24 +1520,24 @@ namespace DownloadsScreen {
 
             float listTop = rowY + Page::FIELD_H + 12.0f;
             float listBottom = MainWindow::height() - 14.0f;
-            const Modrinth::Versions& versions = Modrinth::versions(project.id);
-            if (versions.status == Modrinth::Status::Loading) {
+            const Addons::Versions& versions = Addons::versions(source, project.id);
+            if (versions.status == Addons::Status::Loading) {
                 message("正在获取版本列表", UiTheme::textMuted(), listTop, listBottom, true);
                 return;
             }
-            if (versions.status == Modrinth::Status::Failed) {
+            if (versions.status == Addons::Status::Failed) {
                 message("获取版本失败：" + versions.error, UiTheme::danger(), listTop, listBottom, false);
                 std::string retry = "重试";
                 float w = Page::buttonWidth(retry);
                 if (Page::button("downloads#versions#retry", retry, mainX() + (mainW() - w) * 0.5f,
                                  (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
-                    Modrinth::refreshVersions(project.id);
+                    Addons::refreshVersions(source, project.id);
                 }
                 return;
             }
             const std::string& prefix = sharedPrefix(versions);
-            std::vector<const Modrinth::Version*> matching;
-            for (const Modrinth::Version& version : versions.list) {
+            std::vector<const Addons::Version*> matching;
+            for (const Addons::Version& version : versions.list) {
                 if ((versionFilter.empty() || contains(version.gameVersions, versionFilter)) &&
                     (loaderFilter.empty() || contains(version.loaders, loaderFilter))) {
                     matching.push_back(&version);
@@ -1362,11 +1548,12 @@ namespace DownloadsScreen {
                 return;
             }
             size_t iconSlots = 0;
-            for (const Modrinth::Version* version : matching) {
+            for (const Addons::Version* version : matching) {
                 iconSlots = std::max(iconSlots, loaderIcons(*version).size());
             }
             float contentH = matching.size() * Page::ROW_H;
-            Page::Scroll body("downloads#versions#" + project.id, listTop, listBottom, contentH, mainX(), mainW());
+            Page::Scroll body("downloads#versions#" + std::to_string((int) source) + "#" + project.id, listTop,
+                              listBottom, contentH, mainX(), mainW());
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1402,6 +1589,7 @@ namespace DownloadsScreen {
         }
         bool covered = NewUi::overlayCoversMouse();
         side(covered);
+        sourceViews.begin();
         views.begin();
         if (views.page == VIEW_PROJECT) {
             projectView(covered);
@@ -1409,6 +1597,7 @@ namespace DownloadsScreen {
             resultsView(covered);
         }
         views.end();
+        sourceViews.end();
     }
 
     void openFor(const std::string& key) {
@@ -1422,7 +1611,7 @@ namespace DownloadsScreen {
         followed = true;
     }
 
-    void open(Modrinth::Kind kind) {
+    void open(Addons::Kind kind) {
         openFor(Instances::selected());
         switchKind(kind);
         MainWindow::showDownloads();

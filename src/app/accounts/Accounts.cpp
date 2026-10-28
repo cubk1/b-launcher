@@ -27,13 +27,11 @@
 #include <atomic>
 #include <deque>
 #include <filesystem>
-#include <fstream>
 #include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <thread>
 
 namespace Accounts {
@@ -78,10 +76,6 @@ namespace Accounts {
 
         const char* const STORE_VALUE = "Accounts";
 
-        std::filesystem::path oldStoreFile() {
-            return Platform::exeDirectory() / "b-launcher-accounts.dat";
-        }
-
         void run(std::function<Continuation(blb::cancellation_token)> work,
                  std::function<Continuation(const std::string&)> fail) {
             blb::cancellation_token token = stopping.token();
@@ -121,18 +115,7 @@ namespace Accounts {
         void load() {
             std::optional<std::string> sealed = Platform::loadValue(STORE_VALUE);
             if (!sealed) {
-                std::ifstream in(oldStoreFile(), std::ios::binary);
-                if (!in) {
-                    return;
-                }
-                std::ostringstream content;
-                content << in.rdbuf();
-                sealed = content.str();
-                in.close();
-                if (Platform::storeValue(STORE_VALUE, *sealed, false)) {
-                    std::error_code error;
-                    std::filesystem::remove(oldStoreFile(), error);
-                }
+                return;
             }
             std::optional<std::string> plain = protect(*sealed, false);
             if (!plain) {

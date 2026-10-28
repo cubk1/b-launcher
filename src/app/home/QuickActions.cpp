@@ -133,9 +133,9 @@ namespace QuickActions {
                 MainWindow::showAccounts();
                 AccountsScreen::openAdd();
             } else if (id == "downloadMods") {
-                DownloadsScreen::open(Modrinth::Kind::Mod);
+                DownloadsScreen::open(Addons::Kind::Mod);
             } else if (id == "downloadModpacks") {
-                DownloadsScreen::open(Modrinth::Kind::Modpack);
+                DownloadsScreen::open(Addons::Kind::Modpack);
             } else if (id == "importModpack") {
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");

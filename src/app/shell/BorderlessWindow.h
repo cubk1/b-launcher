@@ -41,6 +41,7 @@ public:
     bool pumpMessages();
     bool minimized() const;
     void swap();
+    void setVsync(bool on);
 
 private:
     static LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
