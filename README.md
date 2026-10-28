@@ -1,4 +1,4 @@
-<img src="assets/images/logo.svg" align="left" width="80" height="80" alt="logo" />
+<img src="assets/images/logo.svg" align="left" width="64" height="64" alt="logo" />
 
 <h3>B Launcher™</h3>
 <p>轻量 Minecraft 启动器，使用纯C++开发</p>
