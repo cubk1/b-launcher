@@ -123,7 +123,7 @@ if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 endif ()
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/shell/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
         logoSvg assets/images/logo.svg
         forge assets/images/forge.png
         vanilla assets/images/vanilla.png
@@ -140,18 +140,18 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADE
         pcl assets/images/pcl.png
         backgroundSidebar assets/images/background-sidebar.jpg
         backgroundPanel assets/images/background-panel.jpg)
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEADER app/EmbeddedSounds.h NAMESPACE EmbeddedSounds FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEADER app/shell/EmbeddedSounds.h NAMESPACE EmbeddedSounds FILES
         press assets/sounds/press.wav
         tick assets/sounds/tick.wav
         release assets/sounds/release.wav
         page assets/sounds/page.wav
         pulse assets/sounds/pulse.wav)
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/launch/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
         launcherAgent assets/launcher-agent.jar)
 
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
-add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app/app.rc
+add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)

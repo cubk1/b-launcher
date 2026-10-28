@@ -14,11 +14,14 @@ public:
     bool active;
     bool child;
     bool pressed;
+    float fold;
+    float openWidth;
 
     NavItemWidget(const std::string& id, const std::string& glyph, const std::string& label);
     NavItemWidget& selected(bool value);
     NavItemWidget& nested(bool value);
     NavItemWidget& image(uint32_t texture, float size = 16.0f);
     NavItemWidget& note(const std::string& text);
+    NavItemWidget& folded(float amount, float fullWidth);
     void paint() override;
 };

@@ -1,25 +1,25 @@
-#include "app/Accounts.h"
-#include "app/Appearance.h"
-#include "app/Background.h"
-#include "app/BorderlessWindow.h"
-#include "app/Catalog.h"
-#include "app/Config.h"
-#include "app/Drop.h"
-#include "app/Installer.h"
-#include "app/InstanceExport.h"
-#include "app/Mods.h"
-#include "app/GameLog.h"
-#include "app/Homepage.h"
-#include "app/LogWindow.h"
-#include "app/Game.h"
-#include "app/Instances.h"
-#include "app/JavaDownloads.h"
-#include "app/Logo.h"
-#include "app/MainWindow.h"
-#include "app/Modrinth.h"
-#include "app/Platform.h"
-#include "app/ProjectInstaller.h"
-#include "app/Updates.h"
+#include "app/accounts/Accounts.h"
+#include "app/shell/Appearance.h"
+#include "app/shell/Background.h"
+#include "app/shell/BorderlessWindow.h"
+#include "app/system/Catalog.h"
+#include "app/system/Config.h"
+#include "app/shell/Drop.h"
+#include "app/instances/Installer.h"
+#include "app/instances/InstanceExport.h"
+#include "app/instances/Mods.h"
+#include "app/launch/GameLog.h"
+#include "app/home/Homepage.h"
+#include "app/launch/LogWindow.h"
+#include "app/launch/Game.h"
+#include "app/instances/Instances.h"
+#include "app/launch/JavaDownloads.h"
+#include "app/shell/Logo.h"
+#include "app/shell/MainWindow.h"
+#include "app/downloads/Modrinth.h"
+#include "app/system/Platform.h"
+#include "app/downloads/ProjectInstaller.h"
+#include "app/system/Updates.h"
 
 #include "ui/gl/UiGL.h"
 #include "ui/panel/NewUi.h"
@@ -167,7 +167,9 @@ int main() {
     float startW = remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH;
     float startH = remember ? storedSize("windowHeight", MainWindow::MIN_HEIGHT) : MainWindow::MIN_HEIGHT;
     bool startMaximized = remember && Config::data().value("windowMaximized", false);
-    if (!window.create(L"b-launcher", pixels(startW, scale), pixels(startH, scale))) {
+    std::string shownTitle = Appearance::windowTitle();
+    LogWindow::setTitle(Platform::widen(shownTitle));
+    if (!window.create(Platform::widen(shownTitle), pixels(startW, scale), pixels(startH, scale))) {
         return 1;
     }
     window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
@@ -243,6 +245,11 @@ int main() {
         LogWindow::frame(scale);
 
         icons.follow(window);
+        if (std::string title = Appearance::windowTitle(); title != shownTitle) {
+            shownTitle = title;
+            window.setTitle(Platform::widen(title));
+            LogWindow::setTitle(Platform::widen(title));
+        }
         if (UiTheme::isLight() != windowLight) {
             windowLight = UiTheme::isLight();
             window.setDarkMode(!windowLight);

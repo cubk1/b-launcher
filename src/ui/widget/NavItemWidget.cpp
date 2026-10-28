@@ -7,6 +7,8 @@
 #include "../panel/UiTheme.h"
 #include "../panel/UiWidgets.h"
 
+#include <algorithm>
+
 NavItemWidget::NavItemWidget(const std::string& id, const std::string& glyph, const std::string& label)
     : Widget(id),
       glyph(glyph),
@@ -15,7 +17,9 @@ NavItemWidget::NavItemWidget(const std::string& id, const std::string& glyph, co
       label(label),
       active(false),
       child(false),
-      pressed(false) {}
+      pressed(false),
+      fold(0.0f),
+      openWidth(0.0f) {}
 
 NavItemWidget& NavItemWidget::selected(bool value) {
     active = value;
@@ -29,6 +33,12 @@ NavItemWidget& NavItemWidget::nested(bool value) {
 
 NavItemWidget& NavItemWidget::note(const std::string& text) {
     aside = text;
+    return *this;
+}
+
+NavItemWidget& NavItemWidget::folded(float amount, float fullWidth) {
+    fold = amount;
+    openWidth = fullWidth;
     return *this;
 }
 
@@ -57,15 +67,18 @@ void NavItemWidget::paint() {
         UiWidgets::iconBeside(glyph, x + indent + 16, label, UiFont::MEDIUM, UiWidgets::TEXT_BODY, y, h,
                               UiRender::mix(UiTheme::textMuted(), UiTheme::accent(), r), UiWidgets::TEXT_ICON);
     }
-    float room = w - indent - 31 - 10;
+    float labelW = fold > 0.0f ? std::max(w, openWidth) : w;
+    float room = labelW - indent - 31 - 10;
     std::string shown = NewUi::fit(label, room);
+    float savedAlpha = UiRender::alphaMul;
+    UiRender::alphaMul = savedAlpha * std::max(0.0f, 1.0f - fold * 2.0f);
     UiRender::textY(shown, x + indent + 31, y, h, UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), r),
                     UiFont::MEDIUM, UiWidgets::TEXT_BODY);
     bool cut = shown != label;
     if (!aside.empty() && !cut) {
         float noteX = x + indent + 31 + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         float parens = UiFont::width("\xEF\xBC\x88\xEF\xBC\x89", UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-        float left = x + w - 10 - noteX - parens;
+        float left = x + labelW - 10 - noteX - parens;
         if (left > 12.0f) {
             std::string inner = NewUi::fit(aside, left);
             cut = inner != aside;
@@ -76,7 +89,12 @@ void NavItemWidget::paint() {
             cut = true;
         }
     }
-    if (isHovered && cut) {
+    UiRender::alphaMul = savedAlpha;
+    if (isHovered && fold > 0.5f) {
+        NewUi::tooltipText = aside.empty() ? label : label + "\xEF\xBC\x88" + aside + "\xEF\xBC\x89";
+        NewUi::tooltipX = x + w + 8;
+        NewUi::tooltipY = y + 3;
+    } else if (isHovered && cut) {
         NewUi::tooltipText = aside.empty() ? label : label + "\xEF\xBC\x88" + aside + "\xEF\xBC\x89";
         NewUi::tooltipX = x + indent + 22;
         NewUi::tooltipY = y + h + 4;
