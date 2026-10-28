@@ -1,0 +1,34 @@
+BasedOnStyle: GNU
+Language: Cpp
+Standard: c++20
+ColumnLimit: 79
+IndentWidth: 2
+UseTab: Never
+BreakBeforeBraces: GNU
+AlwaysBreakAfterDefinitionReturnType: All
+SpaceBeforeParens: Always
+PointerAlignment: Right
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<core/'
+    Priority: 1
+  - Regex: '^"'
+    Priority: 2
+  - Regex: '^<(curl|nlohmann|simdjson|reproc|mz|zlib)'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 4
+FixNamespaceComments: false
+NamespaceIndentation: None
+AllowShortFunctionsOnASingleLine: None
+AllowShortLambdasOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BreakConstructorInitializers: BeforeComma
+Cpp11BracedListStyle: false
+SpaceBeforeCpp11BracedList: true
+ReflowComments: false

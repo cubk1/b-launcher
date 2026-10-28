@@ -1,0 +1,215 @@
+#include "app/Accounts.h"
+#include "app/Appearance.h"
+#include "app/Background.h"
+#include "app/BorderlessWindow.h"
+#include "app/Catalog.h"
+#include "app/Config.h"
+#include "app/Drop.h"
+#include "app/Installer.h"
+#include "app/InstanceExport.h"
+#include "app/Mods.h"
+#include "app/GameLog.h"
+#include "app/LogWindow.h"
+#include "app/Game.h"
+#include "app/Instances.h"
+#include "app/MainWindow.h"
+#include "app/Modrinth.h"
+#include "app/Platform.h"
+#include "app/ProjectInstaller.h"
+
+#include "ui/gl/UiGL.h"
+#include "ui/panel/NewUi.h"
+#include "ui/panel/UiFont.h"
+#include "ui/panel/UiRender.h"
+#include "ui/panel/UiTheme.h"
+
+#include "imgui.h"
+#include "imgui_impl_opengl3.h"
+#include "imgui_impl_win32.h"
+
+#include <GL/gl.h>
+
+#include <algorithm>
+#include <cmath>
+
+namespace {
+
+    int pixels(float layout, float scale) {
+        return (int) (layout * scale + 0.5f);
+    }
+
+    float storedSize(const char* key, float fallback) {
+        const nlohmann::json& doc = Config::data();
+        if (auto it = doc.find(key); it != doc.end() && it->is_number()) {
+            return std::max(fallback, it->get<float>());
+        }
+        return fallback;
+    }
+
+    bool storeWindow(const BorderlessWindow& window, float scale) {
+        WINDOWPLACEMENT placement = {sizeof(placement)};
+        if (!GetWindowPlacement(window.hwnd, &placement)) {
+            return false;
+        }
+        const RECT& normal = placement.rcNormalPosition;
+        float w = std::round(std::max(MainWindow::MIN_WIDTH, (normal.right - normal.left) / scale));
+        float h = std::round(std::max(MainWindow::MIN_HEIGHT, (normal.bottom - normal.top) / scale));
+        bool maximized =
+                IsZoomed(window.hwnd) || (IsIconic(window.hwnd) && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
+        nlohmann::json& doc = Config::data();
+        if (doc.value("windowWidth", 0.0f) == w && doc.value("windowHeight", 0.0f) == h &&
+            doc.value("windowMaximized", false) == maximized) {
+            return false;
+        }
+        doc["windowWidth"] = w;
+        doc["windowHeight"] = h;
+        doc["windowMaximized"] = maximized;
+        return true;
+    }
+}
+
+int main() {
+    SetProcessDPIAware();
+    HDC screen = GetDC(nullptr);
+    float dpiScale = GetDeviceCaps(screen, LOGPIXELSX) / 96.0f;
+    ReleaseDC(nullptr, screen);
+
+    float scale = dpiScale * Appearance::zoom() / 100.0f;
+    BorderlessWindow window;
+    window.resizable = true;
+    window.isDragArea = [&scale](int x, int y) { return MainWindow::isDragArea(x / scale, y / scale); };
+    bool remember = Appearance::rememberWindow();
+    float startW = remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH;
+    float startH = remember ? storedSize("windowHeight", MainWindow::MIN_HEIGHT) : MainWindow::MIN_HEIGHT;
+    bool startMaximized = remember && Config::data().value("windowMaximized", false);
+    if (!window.create(L"b-launcher", pixels(startW, scale), pixels(startH, scale))) {
+        return 1;
+    }
+    window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
+    Platform::window = window.hwnd;
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::GetIO().IniFilename = nullptr;
+    ImGui_ImplWin32_InitForOpenGL(window.hwnd);
+    ImGui_ImplOpenGL3_Init("#version 130");
+    UiGL::load();
+    UiFont::init();
+    Appearance::load();
+    Instances::init();
+    Accounts::init();
+    window.imguiContext = ImGui::GetCurrentContext();
+    LogWindow::init(&window);
+    Drop::attach(window.hwnd);
+    Catalog::preload();
+    Modrinth::preload();
+    bool shown = false;
+    bool windowLight = false;
+
+    auto frame = [&]() {
+        float next = dpiScale * Appearance::zoom() / 100.0f;
+        if (next != scale) {
+            float layoutW = window.width / scale;
+            float layoutH = window.height / scale;
+            scale = next;
+            window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
+            if (!window.maximized()) {
+                window.resize(pixels(std::max(MainWindow::MIN_WIDTH, layoutW), scale),
+                              pixels(std::max(MainWindow::MIN_HEIGHT, layoutH), scale));
+            }
+        }
+        MainWindow::setSize(window.width / scale, window.height / scale, window.maximized());
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        Instances::poll();
+        Accounts::poll();
+        Game::poll();
+        Catalog::poll();
+        Modrinth::poll();
+        Background::poll();
+        ProjectInstaller::poll();
+        Installer::poll();
+        Mods::poll();
+        InstanceExport::poll();
+        Drop::poll();
+
+        UiRender::uiScale = scale / (float) UiRender::guiScale();
+        UiRender::begin(ImGui::GetForegroundDrawList());
+        NewUi::render(MainWindow::draw);
+        UiRender::end();
+
+        ImGui::Render();
+        glViewport(0, 0, window.width, window.height);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        window.swap();
+        if (!shown) {
+            shown = true;
+            window.show(startMaximized);
+        }
+        LogWindow::frame(scale);
+
+        if (UiTheme::isLight() != windowLight) {
+            windowLight = UiTheme::isLight();
+            window.setDarkMode(!windowLight);
+        }
+
+        if (MainWindow::minimizeRequested) {
+            MainWindow::minimizeRequested = false;
+            window.minimize();
+        }
+        if (MainWindow::maximizeRequested) {
+            MainWindow::maximizeRequested = false;
+            window.toggleMaximize();
+        }
+        if (MainWindow::closeRequested) {
+            MainWindow::closeRequested = false;
+            window.close();
+        }
+        if (Appearance::rememberWindow() && !window.sizing() && storeWindow(window, scale)) {
+            Config::save();
+        }
+    };
+    window.onModalFrame = frame;
+    window.onClose = [&]() {
+        if (Appearance::rememberWindow()) {
+            storeWindow(window, scale);
+        }
+        DestroyWindow(window.hwnd);
+    };
+
+    while (window.pumpMessages()) {
+        GameLog::poll();
+        if (window.minimized()) {
+            LogWindow::frame(scale);
+            Sleep(LogWindow::isOpen() ? 15 : 10);
+            continue;
+        }
+        frame();
+    }
+
+    window.onModalFrame = nullptr;
+    MainWindow::save();
+    Config::save();
+
+    LogWindow::shutdown();
+    Drop::shutdown();
+    InstanceExport::shutdown();
+    Mods::shutdown();
+    Installer::shutdown();
+    Background::shutdown();
+    ProjectInstaller::shutdown();
+    Modrinth::shutdown();
+    Catalog::shutdown();
+    Game::shutdown();
+    Accounts::shutdown();
+    Instances::shutdown();
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    window.destroy();
+    return 0;
+}
