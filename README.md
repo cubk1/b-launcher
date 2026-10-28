@@ -1,9 +1,12 @@
-<img src="assets/images/logo.svg" align="left" width="70" height="70" alt="logo" />
-
-<h3>B Launcher™</h3>
-<p>轻量 Minecraft 启动器，使用纯C++开发</p>
-
-<br clear="left" />
+<table>
+  <tr>
+    <td><img src="assets/images/logo.svg" width="100" alt="logo" /></td>
+    <td valign="middle">
+      <h3>B Launcher™</h3>
+      <p>轻量 Minecraft 启动器，使用纯C++开发</p>
+    </td>
+  </tr>
+</table>
 
 ## 优势
 
