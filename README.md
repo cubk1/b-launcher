@@ -1,8 +1,4 @@
-<table>
-  <tr>
-    <td><img src="assets/images/logo.svg" width="100" alt="logo" /></td>
-  </tr>
-</table>
+<img src="assets/images/logo.svg" width="100" alt="logo" />
 
 ## B Launcher™
 
