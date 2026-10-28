@@ -368,8 +368,10 @@ namespace DownloadsScreen {
                     [value] { return gameVersions(*value); });
         }
 
+        uint32_t loaderImage(const std::string& tag);
+
         std::shared_ptr<ModeBinding> loaderChoice() {
-            return std::make_shared<ModeBinding>(
+            auto choice = std::make_shared<ModeBinding>(
                     "downloads#loaderFilter",
                     [] { return loaderFilter.empty() ? std::string(ANY_LOADER) : Modrinth::label(loaderFilter); },
                     [](const std::string& option) {
@@ -387,39 +389,57 @@ namespace DownloadsScreen {
                         }
                         return labels;
                     });
+            choice->icon(ANY_LOADER, 0xf12e);
+            for (const std::string& tag : loaderTags(query.kind)) {
+                if (uint32_t image = loaderImage(tag)) {
+                    choice->image(Modrinth::label(tag), image);
+                } else {
+                    choice->icon(Modrinth::label(tag), 0xf12e);
+                }
+            }
+            return choice;
         }
 
         std::shared_ptr<ModeBinding> sortChoice() {
-            static const std::vector<std::pair<Modrinth::Sort, const char*>> sorts = {
-                    {Modrinth::Sort::Relevance, "相关度"}, {Modrinth::Sort::Downloads, "下载量"},
-                    {Modrinth::Sort::Follows, "关注数"},   {Modrinth::Sort::Newest, "最新发布"},
-                    {Modrinth::Sort::Updated, "最近更新"},
+            struct SortOption {
+                Modrinth::Sort sort;
+                const char* label;
+                int glyph;
             };
-            return std::make_shared<ModeBinding>(
+            static const std::vector<SortOption> sorts = {
+                    {Modrinth::Sort::Relevance, "相关度", 0xf002}, {Modrinth::Sort::Downloads, "下载量", 0xf019},
+                    {Modrinth::Sort::Follows, "关注数", 0xf004},   {Modrinth::Sort::Newest, "最新发布", 0xf271},
+                    {Modrinth::Sort::Updated, "最近更新", 0xf2f1},
+            };
+            auto choice = std::make_shared<ModeBinding>(
                     "downloads#sort",
                     [] {
-                        for (const auto& sort : sorts) {
-                            if (sort.first == query.sort) {
-                                return std::string(sort.second);
+                        for (const SortOption& option : sorts) {
+                            if (option.sort == query.sort) {
+                                return std::string(option.label);
                             }
                         }
-                        return std::string(sorts.front().second);
+                        return std::string(sorts.front().label);
                     },
-                    [](const std::string& option) {
-                        for (const auto& sort : sorts) {
-                            if (option == sort.second) {
-                                query.sort = sort.first;
+                    [](const std::string& picked) {
+                        for (const SortOption& option : sorts) {
+                            if (picked == option.label) {
+                                query.sort = option.sort;
                             }
                         }
                         query.page = 0;
                     },
                     [] {
                         std::vector<std::string> labels;
-                        for (const auto& sort : sorts) {
-                            labels.push_back(sort.second);
+                        for (const SortOption& option : sorts) {
+                            labels.push_back(option.label);
                         }
                         return labels;
                     });
+            for (const SortOption& option : sorts) {
+                choice->icon(option.label, option.glyph);
+            }
+            return choice;
         }
 
         std::shared_ptr<TextBinding> nameValue() {
@@ -681,7 +701,11 @@ namespace DownloadsScreen {
                     std::string tag = tags[i];
                     rows.push_back(Filter{"downloads#loader#" + tag, Modrinth::label(tag), 0xf12e, loaderImage(tag),
                                           contains(query.loaders, tag), [tag] {
-                                              flip(query.loaders, tag);
+                                              bool picked = contains(query.loaders, tag);
+                                              query.loaders.clear();
+                                              if (!picked) {
+                                                  query.loaders.push_back(tag);
+                                              }
                                               query.page = 0;
                                           }});
                 }
@@ -1394,5 +1418,11 @@ namespace DownloadsScreen {
         }
         started = true;
         followed = true;
+    }
+
+    void open(Modrinth::Kind kind) {
+        openFor(Instances::selected());
+        switchKind(kind);
+        MainWindow::showDownloads();
     }
 }

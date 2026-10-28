@@ -4,6 +4,7 @@
 
 #include <core/auth/account.hpp>
 #include <core/auth/microsoft.hpp>
+#include <core/auth/yggdrasil.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -30,6 +31,19 @@ namespace Accounts {
     Login login();
     void startLogin();
     void cancelLogin();
+
+    enum class ServerLogin { Idle, Working, Choosing, Done };
+    ServerLogin serverLogin();
+    void startServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
+                          const std::string& password);
+    const std::vector<blb::auth::yggdrasil_profile>& serverProfiles();
+    void chooseProfile(size_t index);
+    void cancelServerLogin();
+    void finishServerLogin();
+
+    std::string kindOf(const blb::auth::account& account);
+    const blb::auth::account* pick(const std::string& login, const std::string& server);
+    std::string requirement(const std::string& login, const std::string& server);
 
     void refresh(const std::string& key);
     bool busy(const std::string& key);

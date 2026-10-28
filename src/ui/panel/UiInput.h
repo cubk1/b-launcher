@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace UiInput {
@@ -17,8 +18,11 @@ namespace UiInput {
     extern std::unordered_map<std::string, std::vector<int>> redoCaret;
     extern std::unordered_map<std::string, long long> typedAt;
     extern std::string focused;
+    extern std::unordered_set<std::string> secrets;
 
     std::string get(const std::string& id);
+    std::string shown(const std::string& id);
+    std::string masked(const std::string& value);
     void set(const std::string& id, const std::string& value);
     int caret(const std::string& id);
     int anchor(const std::string& id);

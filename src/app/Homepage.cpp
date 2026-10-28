@@ -4,6 +4,7 @@
 #include "Game.h"
 #include "Instances.h"
 #include "Logo.h"
+#include "QuickActions.h"
 #include "MainWindow.h"
 #include "Page.h"
 #include "Platform.h"
@@ -70,6 +71,8 @@ namespace Homepage {
         };
         constexpr int PRESET_COUNT = (int) (sizeof(PRESETS) / sizeof(PRESETS[0]));
         const char* const NONE_CHOICE = "无";
+        const char* const ANNOUNCEMENT_CHOICE = "公告";
+        const char* const ANNOUNCEMENT_URL = "http://cubk.cn/bl/announcement.xaml";
         const char* const FILE_CHOICE = "本地文件";
         const char* const URL_CHOICE = "自定义网址";
 
@@ -85,6 +88,8 @@ namespace Homepage {
         constexpr float HEADER_H = 36.0f;
         constexpr float TOP_PAD = 12.0f;
         constexpr float TOP_GAP = 10.0f;
+        constexpr float QUICK_W = 360.0f;
+        constexpr float QUICK_GAP = 28.0f;
         constexpr double URL_SETTLE = 0.8;
 
         struct View {
@@ -315,7 +320,9 @@ namespace Homepage {
                 rebuild(view);
                 return;
             }
-            std::string address = kind == SOURCE_PRESET ? std::string(PRESETS[preset()].url) : Ui::trim(url());
+            std::string address = kind == SOURCE_PRESET ? std::string(PRESETS[preset()].url)
+                    : kind == SOURCE_ANNOUNCEMENT       ? std::string(ANNOUNCEMENT_URL)
+                                                        : Ui::trim(url());
             if (address != view.location) {
                 view.doc.reset();
                 view.text.clear();
@@ -674,11 +681,14 @@ namespace Homepage {
         if (value == "url") {
             return SOURCE_URL;
         }
+        if (value == "announcement") {
+            return SOURCE_ANNOUNCEMENT;
+        }
         return SOURCE_PRESET;
     }
 
     std::vector<std::string> choices() {
-        std::vector<std::string> out = {NONE_CHOICE};
+        std::vector<std::string> out = {NONE_CHOICE, ANNOUNCEMENT_CHOICE};
         for (const Preset& item : PRESETS) {
             out.push_back(item.name);
         }
@@ -690,6 +700,7 @@ namespace Homepage {
     std::string choice() {
         switch (source()) {
             case SOURCE_NONE: return NONE_CHOICE;
+            case SOURCE_ANNOUNCEMENT: return ANNOUNCEMENT_CHOICE;
             case SOURCE_FILE: return FILE_CHOICE;
             case SOURCE_URL: return URL_CHOICE;
             default: return PRESETS[preset()].name;
@@ -700,6 +711,8 @@ namespace Homepage {
         nlohmann::json& doc = Config::data();
         if (name == NONE_CHOICE) {
             doc["homepage"] = "none";
+        } else if (name == ANNOUNCEMENT_CHOICE) {
+            doc["homepage"] = "announcement";
         } else if (name == FILE_CHOICE) {
             doc["homepage"] = "file";
         } else if (name == URL_CHOICE) {
@@ -756,17 +769,26 @@ namespace Homepage {
         if (reloadAt >= 0.0 && ImGui::GetTime() >= reloadAt) {
             reload();
         }
-        if (views.size() <= 1 && source() == SOURCE_NONE) {
+        bool announcement = source() == SOURCE_ANNOUNCEMENT;
+        if (announcement || (views.size() <= 1 && source() == SOURCE_NONE)) {
             float panelLeft = MainWindow::SIDEBAR_WIDTH;
             float panelRight = MainWindow::width();
-            float size = std::clamp(std::min(panelRight - panelLeft, bottom - top) * 0.46f, 120.0f, 360.0f);
+            float listH = announcement ? 0.0f : QuickActions::height();
+            float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
+            float size =
+                    std::clamp(std::min(panelRight - panelLeft, bottom - top - listH - gap) * 0.46f, 96.0f, 360.0f);
             float cx = (panelLeft + panelRight) * 0.5f;
-            float cy = (top + bottom) * 0.5f - 8.0f;
-            Logo::draw(cx - size * 0.5f, cy - size * 0.5f, size, UiTheme::isLight() ? 0.12f : 0.09f);
-            if (modal.open) {
-                drawModal(blocked);
+            float logoY = (top + bottom - size - gap - listH) * 0.5f - 8.0f;
+            Logo::draw(cx - size * 0.5f, logoY, size, UiTheme::isLight() ? 0.12f : 0.09f);
+            if (listH > 0.0f) {
+                QuickActions::draw(cx - QUICK_W * 0.5f, logoY + size + gap, QUICK_W, blocked || modal.open);
             }
-            return;
+            if (!announcement) {
+                if (modal.open) {
+                    drawModal(blocked);
+                }
+                return;
+            }
         }
         if (views.empty()) {
             return;
@@ -787,6 +809,7 @@ namespace Homepage {
         }
         float width = right - left;
         if (view.doc) {
+            view.doc->glass = announcement;
             float contentH = view.doc->measure(width);
             Page::Scroll body("homepage#" + view.id, contentTop, bottom, contentH + TOP_PAD + reserve, left, width);
             bool outside = body.begin();

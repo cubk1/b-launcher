@@ -69,11 +69,11 @@ namespace LaunchButton {
             float known = UiState::motion("launch#known", value >= 0.0f ? 1.0f : 0.0f, 8.0f);
             float shown = UiState::motion("launch#fraction", std::max(0.0f, value), 10.0f);
             ring(cx, cy, 0.0f, TAU, (color & 0x00FFFFFFu) | 0x47000000u);
-            double time = ImGui::GetTime();
-            float spin = (float) std::fmod(time * TAU / 1.1, (double) TAU);
-            float sweep = (0.18f + 0.55f * (0.5f - 0.5f * (float) std::cos(time * TAU / 1.5))) * TAU;
-            float from = UiRender::lerp(spin - TAU * 0.25f, -TAU * 0.25f, known);
-            float to = UiRender::lerp(spin - TAU * 0.25f + sweep, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
+            float spinFrom = 0.0f;
+            float spinTo = 0.0f;
+            Page::spinnerArc(spinFrom, spinTo);
+            float from = UiRender::lerp(spinFrom - TAU * 0.25f, -TAU * 0.25f, known);
+            float to = UiRender::lerp(spinTo - TAU * 0.25f, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
             ring(cx, cy, from, to, color);
         }
 
@@ -91,11 +91,13 @@ namespace LaunchButton {
                                     UiRender::applyAlpha(UiTheme::textFaint()));
                     break;
                 case Game::Step::Status::Running: {
-                    float spin = (float) std::fmod(ImGui::GetTime() * TAU / 0.9, (double) TAU);
+                    float from = 0.0f;
+                    float to = 0.0f;
+                    Page::spinnerArc(from, to);
                     ShaderUtil::arc(x, y, UiRender::transformW(4.5f), UiRender::transformW(1.6f), 0.0f, TAU,
                                     UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
-                    ShaderUtil::arc(x, y, UiRender::transformW(4.5f), UiRender::transformW(1.6f), spin,
-                                    spin + TAU * 0.3f, UiRender::applyAlpha(UiTheme::accent()));
+                    ShaderUtil::arc(x, y, UiRender::transformW(4.5f), UiRender::transformW(1.6f), from, to,
+                                    UiRender::applyAlpha(UiTheme::accent()));
                     break;
                 }
                 case Game::Step::Status::Done: UiWidgets::check(cx, cy, UiTheme::accent(), 9.0f); break;

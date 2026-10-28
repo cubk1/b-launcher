@@ -17,6 +17,8 @@ enum class account_type : std::uint8_t
 {
   offline,
   microsoft,
+  yggdrasil,
+  nide8,
 };
 
 struct account
@@ -30,6 +32,10 @@ struct account
   std::string client_id;
   std::int64_t expires_at = 0;
   std::string skin_url;
+  std::string server;
+  std::string server_name;
+  std::string username;
+  std::string client_token;
 
   std::string user_type () const;
   bool needs_refresh (std::chrono::seconds margin
@@ -37,6 +43,7 @@ struct account
 };
 
 std::string_view account_type_name (account_type type) noexcept;
+account_type parse_account_type (std::string_view name) noexcept;
 std::string format_uuid (std::string_view hex);
 std::string strip_uuid (std::string_view uuid);
 std::string serialize_accounts (std::span<const account> accounts);

@@ -18,10 +18,23 @@ namespace UiInput {
     std::unordered_map<std::string, std::vector<int>> redoCaret;
     std::unordered_map<std::string, long long> typedAt;
     std::string focused;
+    std::unordered_set<std::string> secrets;
 
     std::string get(const std::string& id) {
         auto it = texts.find(id);
         return it == texts.end() ? std::string() : it->second;
+    }
+
+    std::string masked(const std::string& value) {
+        std::string out;
+        for (int i = Ui::length(value); i > 0; i--) {
+            out += "\xE2\x80\xA2";
+        }
+        return out;
+    }
+
+    std::string shown(const std::string& id) {
+        return secrets.count(id) != 0 ? masked(get(id)) : get(id);
     }
 
     void set(const std::string& id, const std::string& value) {
@@ -296,7 +309,7 @@ namespace UiInput {
     }
 
     void cut(const std::string& id) {
-        if (!hasSelection(id)) {
+        if (!hasSelection(id) || secrets.count(id) != 0) {
             return;
         }
         setClipboard(selection(id));
@@ -305,7 +318,7 @@ namespace UiInput {
     }
 
     void copy(const std::string& id) {
-        if (hasSelection(id)) {
+        if (hasSelection(id) && secrets.count(id) == 0) {
             setClipboard(selection(id));
         }
     }

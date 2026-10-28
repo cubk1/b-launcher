@@ -60,6 +60,12 @@ namespace Accounts {
         std::atomic<int> loginState{(int) Login::Idle};
         std::shared_ptr<blb::cancellation_source> loginCancel;
 
+        ServerLogin serverState = ServerLogin::Idle;
+        int serverRun = 0;
+        std::shared_ptr<blb::cancellation_source> serverCancel;
+        blb::auth::account pendingBase;
+        std::vector<blb::auth::yggdrasil_profile> profiles;
+
         std::vector<Found> foundList;
         bool scanStarted = false;
         bool scanRunning = false;
@@ -185,6 +191,60 @@ namespace Accounts {
             };
         }
 
+        blb::cancellation_token beginServerRun() {
+            if (serverCancel) {
+                serverCancel->cancel();
+            }
+            serverRun++;
+            serverState = ServerLogin::Working;
+            serverCancel = std::make_shared<blb::cancellation_source>();
+            return serverCancel->token();
+        }
+
+        Continuation serverFailed(int run, const blb::error& error) {
+            return [run, error] {
+                if (run != serverRun || serverState != ServerLogin::Working) {
+                    return;
+                }
+                serverState = profiles.empty() ? ServerLogin::Idle : ServerLogin::Choosing;
+                if (error.code != blb::errc::cancelled) {
+                    notify("登录失败：" + describe(error), true);
+                }
+            };
+        }
+
+        Continuation serverSucceeded(int run, const blb::auth::account& account) {
+            return [run, account] {
+                if (run != serverRun || serverState != ServerLogin::Working) {
+                    return;
+                }
+                serverState = ServerLogin::Done;
+                profiles.clear();
+                pendingBase = blb::auth::account();
+                put(account, true);
+                notify("已登录 " + account.name, false);
+            };
+        }
+
+        bool matches(const blb::auth::account& account, const std::string& login, const std::string& server) {
+            std::string wanted(blb::trim(server));
+            if (login == "microsoft") {
+                return account.type == blb::auth::account_type::microsoft;
+            }
+            if (login == "offline") {
+                return account.type == blb::auth::account_type::offline;
+            }
+            if (login == "yggdrasil") {
+                return account.type == blb::auth::account_type::yggdrasil &&
+                        (wanted.empty() || blb::auth::same_yggdrasil_server(account.server, wanted));
+            }
+            if (login == "nide8") {
+                return account.type == blb::auth::account_type::nide8 &&
+                        (wanted.empty() || blb::iequals(account.server, wanted));
+            }
+            return true;
+        }
+
         std::filesystem::path skinFile(const std::string& url) {
             std::filesystem::path cache = Platform::cacheDirectory();
             size_t slash = url.find_last_of('/');
@@ -288,6 +348,9 @@ namespace Accounts {
         stopping.cancel();
         if (loginCancel) {
             loginCancel->cancel();
+        }
+        if (serverCancel) {
+            serverCancel->cancel();
         }
         for (std::thread& worker : workers) {
             if (worker.joinable()) {
@@ -442,18 +505,139 @@ namespace Accounts {
         }
     }
 
+    ServerLogin serverLogin() {
+        return serverState;
+    }
+
+    void startServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
+                          const std::string& password) {
+        profiles.clear();
+        pendingBase = blb::auth::account();
+        blb::cancellation_token token = beginServerRun();
+        int current = serverRun;
+        run(
+                [type, server, username, password, token, current](blb::cancellation_token) -> Continuation {
+                    auto session = blb::auth::yggdrasil_login(type, server, username, password, token);
+                    if (!session) {
+                        return serverFailed(current, session.err());
+                    }
+                    if (session->ready()) {
+                        return serverSucceeded(current, session->base);
+                    }
+                    blb::auth::yggdrasil_session waiting = *session;
+                    return [current, waiting] {
+                        if (current != serverRun || serverState != ServerLogin::Working) {
+                            return;
+                        }
+                        pendingBase = waiting.base;
+                        profiles = waiting.profiles;
+                        serverState = ServerLogin::Choosing;
+                    };
+                },
+                [current](const std::string& message) -> Continuation {
+                    return serverFailed(current, blb::make_error(blb::errc::auth, message));
+                });
+    }
+
+    const std::vector<blb::auth::yggdrasil_profile>& serverProfiles() {
+        return profiles;
+    }
+
+    void chooseProfile(size_t index) {
+        if (serverState != ServerLogin::Choosing || index >= profiles.size()) {
+            return;
+        }
+        blb::auth::account base = pendingBase;
+        blb::auth::yggdrasil_profile profile = profiles[index];
+        blb::cancellation_token token = beginServerRun();
+        int current = serverRun;
+        run(
+                [base, profile, token, current](blb::cancellation_token) -> Continuation {
+                    auto chosen = blb::auth::yggdrasil_select(base, profile, token);
+                    if (!chosen) {
+                        return serverFailed(current, chosen.err());
+                    }
+                    return serverSucceeded(current, *chosen);
+                },
+                [current](const std::string& message) -> Continuation {
+                    return serverFailed(current, blb::make_error(blb::errc::auth, message));
+                });
+    }
+
+    void cancelServerLogin() {
+        if (serverCancel) {
+            serverCancel->cancel();
+        }
+        serverRun++;
+        serverState = ServerLogin::Idle;
+        profiles.clear();
+        pendingBase = blb::auth::account();
+    }
+
+    void finishServerLogin() {
+        if (serverState == ServerLogin::Done) {
+            serverState = ServerLogin::Idle;
+        }
+    }
+
+    std::string kindOf(const blb::auth::account& account) {
+        switch (account.type) {
+            case blb::auth::account_type::microsoft: return "微软";
+            case blb::auth::account_type::yggdrasil:
+                return account.server_name.empty() ? std::string("第三方") : account.server_name;
+            case blb::auth::account_type::nide8: return "统一通行证";
+            default: return "离线";
+        }
+    }
+
+    const blb::auth::account* pick(const std::string& login, const std::string& server) {
+        const blb::auth::account* chosen = current();
+        if (chosen == nullptr || matches(*chosen, login, server)) {
+            return chosen;
+        }
+        for (const blb::auth::account& account : accounts) {
+            if (matches(account, login, server)) {
+                return &account;
+            }
+        }
+        return nullptr;
+    }
+
+    std::string requirement(const std::string& login, const std::string& server) {
+        std::string wanted(blb::trim(server));
+        if (login == "microsoft") {
+            return "这个实例要求使用微软账户";
+        }
+        if (login == "offline") {
+            return "这个实例要求使用离线账户";
+        }
+        if (login == "yggdrasil") {
+            return wanted.empty() ? std::string("这个实例要求使用第三方账户")
+                                  : "这个实例要求使用 " + wanted + " 的第三方账户";
+        }
+        if (login == "nide8") {
+            return "这个实例要求使用统一通行证账户";
+        }
+        return "先添加一个账户再启动";
+    }
+
     void refresh(const std::string& key) {
         const blb::auth::account* account = find(key);
-        if (account == nullptr || account->type != blb::auth::account_type::microsoft || busy(key)) {
+        if (account == nullptr || busy(key)) {
+            return;
+        }
+        bool yggdrasil = blb::auth::is_yggdrasil(account->type);
+        if (!yggdrasil && account->type != blb::auth::account_type::microsoft) {
             return;
         }
         busyKeys.insert(key);
         blb::auth::account saved = *account;
         blb::auth::microsoft_client client = MicrosoftClients::client(MicrosoftClients::of(saved.client_id));
         run(
-                [key, saved, client](blb::cancellation_token token) -> Continuation {
+                [key, saved, client, yggdrasil](blb::cancellation_token token) -> Continuation {
                     blb::auth::microsoft_authenticator authenticator(client);
-                    auto result = authenticator.refresh(saved, token);
+                    auto result = yggdrasil ? blb::auth::yggdrasil_refresh(saved, token)
+                                            : authenticator.refresh(saved, token);
                     if (!result) {
                         blb::error error = result.err();
                         return [key, error] {
@@ -587,7 +771,7 @@ namespace Accounts {
     }
 
     uint32_t face(const blb::auth::account& account) {
-        if (account.type != blb::auth::account_type::microsoft || account.skin_url.empty()) {
+        if (account.type == blb::auth::account_type::offline || account.skin_url.empty()) {
             return 0;
         }
         Face& entry = faces[account.skin_url];

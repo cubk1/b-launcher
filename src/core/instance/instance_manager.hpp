@@ -35,6 +35,8 @@ struct instance_settings
   std::optional<int> height;
   bool fullscreen = false;
   std::string server;
+  std::string login;
+  std::string auth_server;
   std::string notes;
   std::string wrapper;
   std::string pre_launch;
@@ -45,6 +47,7 @@ struct instance_settings
   std::string launcher_visibility;
   std::string process_priority;
   std::optional<bool> show_logs;
+  std::optional<bool> patch;
 };
 
 struct instance

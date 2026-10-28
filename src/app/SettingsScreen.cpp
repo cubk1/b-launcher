@@ -11,6 +11,8 @@
 #include "LaunchDefaults.h"
 #include "MainWindow.h"
 #include "Page.h"
+#include "Patches.h"
+#include "QuickActions.h"
 #include "Platform.h"
 
 #include <core/base/strings.hpp>
@@ -412,6 +414,7 @@ namespace SettingsScreen {
         constexpr int TAB_LAUNCHER = 1;
         constexpr int TAB_JAVA = 2;
         constexpr int TAB_ABOUT = 3;
+        constexpr int TAB_PATCH = 4;
         PageTransition sections(TAB_GAME);
 
         struct Tab {
@@ -421,10 +424,8 @@ namespace SettingsScreen {
         };
 
         const Tab TABS[] = {
-                {TAB_GAME, 0xf11b, "游戏设置"},
-                {TAB_LAUNCHER, 0xf1de, "启动器设置"},
-                {TAB_JAVA, 0xf0f4, "Java 管理"},
-                {TAB_ABOUT, 0xf05a, "关于"},
+                {TAB_GAME, 0xf11b, "游戏设置"},  {TAB_PATCH, 0xf462, "补丁"}, {TAB_LAUNCHER, 0xf1de, "启动器设置"},
+                {TAB_JAVA, 0xf0f4, "Java 管理"}, {TAB_ABOUT, 0xf05a, "关于"},
         };
 
         void rail(bool covered) {
@@ -466,7 +467,8 @@ namespace SettingsScreen {
 
         int homepageCount() {
             int kind = Homepage::source();
-            return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL ? 2 : 1;
+            return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL || kind == Homepage::SOURCE_NONE ? 2
+                                                                                                                  : 1;
         }
 
         void homepageFileRow(float y, bool blocked) {
@@ -502,7 +504,13 @@ namespace SettingsScreen {
                            [] { return Homepage::choices(); }),
                    y, blocked);
             y += Page::ROW_H;
-            if (Homepage::source() == Homepage::SOURCE_FILE) {
+            if (Homepage::source() == Homepage::SOURCE_NONE) {
+                Page::label("快捷操作", y);
+                select("settings#quickActions", QuickActions::choice(), y, blocked);
+                explain("settings#quickActions",
+                        "显示在主页标志下方，可以多选，拖动右侧的手柄调整顺序；全部取消就不显示。", y,
+                        Page::controlRight() - SELECT_W - 8.0f, blocked);
+            } else if (Homepage::source() == Homepage::SOURCE_FILE) {
                 homepageFileRow(y, blocked);
             } else if (Homepage::source() == Homepage::SOURCE_URL) {
                 textRow(
@@ -941,6 +949,217 @@ namespace SettingsScreen {
             return y + Page::CAPTION_H + count * Page::ROW_H + Page::GAP;
         }
 
+        struct PatchOption {
+            const char* value;
+            const char* label;
+        };
+
+        const std::vector<PatchOption> SKIN_MODES = {
+                {"fallback", "只补全没有皮肤的玩家"},
+                {"override", "强制使用自定义皮肤"},
+        };
+
+        const std::vector<PatchOption> SKIN_SOURCES = {
+                {"mojang", "Mojang"},
+                {"littleskin", "LittleSkin"},
+                {"custom", "自定义"},
+        };
+
+        std::string patchId(const char* key) {
+            return std::string("settings#patch#") + key;
+        }
+
+        void patchToggle(const char* label, const char* key, const char* doc, float y, bool blocked) {
+            Page::label(label, y);
+            std::string id = patchId(key);
+            toggle(id, [key] { return Patches::flag(key); }, [key](bool on) { Patches::setFlag(key, on); }, y, blocked);
+            explain(id, doc, y, Page::controlRight() - 40.0f, blocked);
+        }
+
+        void patchSelect(const char* label, const char* key, const std::vector<PatchOption>& options, const char* doc,
+                         float y, bool blocked) {
+            Page::label(label, y);
+            std::string id = patchId(key);
+            select(id,
+                   std::make_shared<ModeBinding>(
+                           id,
+                           [key, &options] {
+                               std::string current = Patches::value(key);
+                               for (const PatchOption& option : options) {
+                                   if (current == option.value) {
+                                       return std::string(option.label);
+                                   }
+                               }
+                               return std::string(options.front().label);
+                           },
+                           [key, &options](const std::string& picked) {
+                               for (const PatchOption& option : options) {
+                                   if (picked == option.label) {
+                                       Patches::setValue(key, option.value);
+                                   }
+                               }
+                           },
+                           [&options] {
+                               std::vector<std::string> labels;
+                               for (const PatchOption& option : options) {
+                                   labels.push_back(option.label);
+                               }
+                               return labels;
+                           }),
+                   y, blocked);
+            explain(id, doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
+        }
+
+        float patchText(const char* label, const char* key, const char* hint, const char* doc, float y, bool blocked,
+                        float lead, int limit) {
+            Page::label(label, y);
+            std::string id = patchId(key);
+            auto binding = std::make_shared<TextBinding>(
+                    id, [key] { return Patches::value(key); },
+                    [key](const std::string& text) { Patches::setValue(key, Ui::trim(text)); }, hint);
+            binding->limit = limit;
+            float x = Page::controlRight() - WIDE_FIELD;
+            TextFieldWidget field(binding);
+            field.box(x, y + Page::FIELD_Y, WIDE_FIELD, FIELD_H)
+                    .bounds(x, y + Page::FIELD_Y, WIDE_FIELD, FIELD_H)
+                    .block(blocked);
+            field.paint();
+            explain(id, doc, y, x - lead - 8.0f, blocked);
+            return x;
+        }
+
+        void pathRow(const char* label, const char* key, const char* hint, const char* doc, bool png, float y,
+                     bool blocked) {
+            float x = patchText(label, key, hint, doc, y, blocked, 36.0f, 1024);
+            if (!iconButton(patchId(key) + "#pick", 0xf07c, "选择图片", x - 36.0f, y + 6.0f, blocked)) {
+                return;
+            }
+            std::string current = Patches::value(key);
+            bool local = !current.empty() && current.find(',') == std::string::npos &&
+                    current.find("://") == std::string::npos;
+            std::filesystem::path start = local ? blb::path_from_utf8(current).parent_path() : Platform::exeDirectory();
+            std::optional<std::filesystem::path> picked;
+            if (png) {
+                std::vector<std::filesystem::path> files =
+                        Platform::pickFiles(start, L"选择图片", L"PNG 图片", L"*.png");
+                if (!files.empty()) {
+                    picked = files.front();
+                }
+            } else {
+                picked = Platform::pickImage(start);
+            }
+            if (picked) {
+                Patches::setValue(key, blb::path_to_utf8(*picked));
+            }
+        }
+
+        int skinCount() {
+            if (!Patches::flag("skin.authlib")) {
+                return 2;
+            }
+            std::string source = Patches::value("skin.source");
+            return source == "custom" ? 7 : source == "littleskin" ? 5 : 6;
+        }
+
+        void enableRows(float y, bool blocked) {
+            Page::label("为所有实例启用", y);
+            toggle(
+                    "settings#patch#all", [] { return Patches::all(); }, [](bool on) { Patches::setAll(on); }, y,
+                    blocked);
+            explain("settings#patch#all",
+                    "关闭时，只有在版本设置里把“启动器补丁”设为启用的实例会加载补丁；开启后，实例也可以单独设为不启用。"
+                    "补丁和 authlib-injector、自己在 JVM 参数里添加的 -javaagent 可以同时使用。",
+                    y, Page::controlRight() - 40.0f, blocked);
+        }
+
+        void skinRows(float y, bool blocked) {
+            patchToggle("修复旧版皮肤", "skin.legacy",
+                        "1.7.5 及以下版本使用的 s3.amazonaws.com、skins.minecraft.net 皮肤地址已经失效，改为从皮肤来源"
+                        "加载。",
+                        y, blocked);
+            y += Page::ROW_H;
+            patchToggle("自定义皮肤", "skin.authlib",
+                        "通过 authlib 从皮肤来源加载皮肤和披风，适用于 1.7.6 及以上版本。", y, blocked);
+            y += Page::ROW_H;
+            if (!Patches::flag("skin.authlib")) {
+                return;
+            }
+            patchSelect("皮肤优先级", "skin.mode", SKIN_MODES,
+                        "只补全没有皮肤的玩家：正版玩家自带的皮肤不变，只给没有皮肤的玩家（如离线玩家）使用皮肤来源。"
+                        "强制使用自定义皮肤：先查皮肤来源，皮肤来源没有的材质再用玩家原有的。",
+                        y, blocked);
+            y += Page::ROW_H;
+            patchSelect("皮肤来源", "skin.source", SKIN_SOURCES,
+                        "Mojang：从正版服务器获取皮肤；LittleSkin：按玩家名从 LittleSkin 皮肤站获取；自定义：使用选择的"
+                        "皮肤和披风图片。",
+                        y, blocked);
+            y += Page::ROW_H;
+            std::string source = Patches::value("skin.source");
+            if (source == "custom") {
+                pathRow("皮肤图片", "skin.template.skin", "不使用",
+                        "PNG 皮肤图片，也可以填写网址；手臂粗细会自动识别。", true, y, blocked);
+                y += Page::ROW_H;
+                pathRow("披风图片", "skin.template.cape", "不使用", "PNG 披风图片，也可以填写网址。", true, y, blocked);
+                y += Page::ROW_H;
+            } else if (source != "littleskin") {
+                patchText("正版玩家名", "skin.player", "留空则按玩家自己的名字查询",
+                          "填写后使用这个正版玩家的皮肤和披风，启动游戏时获取；留空则按每个玩家自己的名字查询。", y,
+                          blocked, 0.0f, 16);
+                y += Page::ROW_H;
+            }
+            patchToggle("标记为已签名", "skin.trusted",
+                        "1.20.3 起游戏只显示其他玩家已签名的材质，开启后自定义材质会被当作已签名。", y, blocked);
+        }
+
+        void fixRows(float y, bool blocked) {
+            patchToggle("Log4Shell 漏洞修复", "log4j.enabled", "修复 log4j2 的远程代码执行漏洞（CVE-2021-44228）。", y,
+                        blocked);
+            y += Page::ROW_H;
+            patchToggle("中文输入修复", "input.enabled", "修复 1.12.2 及以下版本（LWJGL 2）无法输入中文的问题。", y,
+                        blocked);
+            y += Page::ROW_H;
+            patchToggle("LWJGL 内存访问", "lwjgl.unsafe",
+                        "在 Java 25 以上运行 LWJGL 3 时，让 MemoryUtil 改用 jdk.internal.misc.Unsafe，避开 "
+                        "sun.misc.Unsafe 的弃用路径；LWJGL 3.4 会启用自带的对应后端。",
+                        y, blocked);
+        }
+
+        void windowRows(float y, bool blocked) {
+            patchText("窗口标题", "window.title", "不修改", "{title} 代表游戏原来的标题，例如 {title} - 我的服务器。",
+                      y, blocked, 0.0f, 1024);
+            y += Page::ROW_H;
+            pathRow("窗口图标", "window.icon", "不修改",
+                    "图片路径，多个不同尺寸的图片用英文逗号分隔；支持 PNG、ICO、BMP、GIF 等格式。", false, y, blocked);
+        }
+
+        void debugRows(float y, bool blocked) {
+            patchToggle("输出调试日志", "debug", "在游戏日志里输出每个被修改的类和每次皮肤查询。", y, blocked);
+        }
+
+        float patchCard(const char* title, int rows, float y, const std::function<void(float)>& paint) {
+            if (Page::shown(y, Page::CAPTION_H + rows * Page::ROW_H)) {
+                Page::caption(title, y);
+                Page::card(y + Page::CAPTION_H, rows);
+                paint(y + Page::CAPTION_H);
+            }
+            return y + Page::CAPTION_H + rows * Page::ROW_H + Page::GAP;
+        }
+
+        void patchTab(bool covered) {
+            int skins = skinCount();
+            float contentH = 5 * Page::CAPTION_H + (1 + skins + 3 + 2 + 1) * Page::ROW_H + 4 * Page::GAP;
+            Page::Scroll body("settings#patch", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            y = patchCard("启用", 1, y, [blocked](float top) { enableRows(top, blocked); });
+            y = patchCard("皮肤", skins, y, [blocked](float top) { skinRows(top, blocked); });
+            y = patchCard("修复", 3, y, [blocked](float top) { fixRows(top, blocked); });
+            y = patchCard("窗口", 2, y, [blocked](float top) { windowRows(top, blocked); });
+            patchCard("调试", 1, y, [blocked](float top) { debugRows(top, blocked); });
+            body.end();
+        }
+
         int aboutFrame = -10;
 
         void aboutTab(bool covered) {
@@ -976,6 +1195,7 @@ namespace SettingsScreen {
             case TAB_LAUNCHER: launcherTab(covered); break;
             case TAB_JAVA: javaTab(covered); break;
             case TAB_ABOUT: aboutTab(covered); break;
+            case TAB_PATCH: patchTab(covered); break;
             default: gameTab(covered); break;
         }
         sections.end();

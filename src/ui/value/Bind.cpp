@@ -91,6 +91,16 @@ std::string ModeBinding::optionIcon(const std::string& option) {
     return found == icons.end() ? std::string() : found->second;
 }
 
+uint32_t ModeBinding::optionImage(const std::string& option) {
+    auto found = images.find(option);
+    return found == images.end() ? 0u : found->second;
+}
+
+ModeBinding& ModeBinding::image(const std::string& option, uint32_t texture) {
+    images[option] = texture;
+    return *this;
+}
+
 bool ModeBinding::anchorGlyphs() {
     return anchors;
 }
@@ -249,7 +259,8 @@ TextBinding::TextBinding(const std::string& owner, std::function<std::string()> 
       getter(std::move(getter)),
       setter(std::move(setter)),
       placeholder(placeholder),
-      limit(32) {}
+      limit(32),
+      masked(false) {}
 
 std::string TextBinding::get() {
     return getter ? getter() : std::string();
@@ -267,6 +278,10 @@ std::string TextBinding::hint() {
 
 int TextBinding::maxLength() {
     return limit;
+}
+
+bool TextBinding::secret() {
+    return masked;
 }
 
 KeyBinding::KeyBinding(const std::string& owner, std::function<int()> getter, std::function<void(int)> setter)

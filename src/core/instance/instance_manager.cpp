@@ -55,6 +55,10 @@ settings_to_json (const instance_settings &s)
     out["fullscreen"] = true;
   if (!s.server.empty ())
     out["server"] = s.server;
+  if (!s.login.empty ())
+    out["login"] = s.login;
+  if (!s.auth_server.empty ())
+    out["authServer"] = s.auth_server;
   if (!s.notes.empty ())
     out["notes"] = s.notes;
   if (!s.wrapper.empty ())
@@ -80,6 +84,8 @@ settings_to_json (const instance_settings &s)
     out["processPriority"] = s.process_priority;
   if (s.show_logs)
     out["showLogs"] = *s.show_logs;
+  if (s.patch)
+    out["patch"] = *s.patch;
   return out;
 }
 
@@ -109,6 +115,8 @@ settings_from_json (const json &doc)
     s.height = it->get<int> ();
   s.fullscreen = doc.value ("fullscreen", false);
   s.server = doc.value ("server", std::string ());
+  s.login = doc.value ("login", std::string ());
+  s.auth_server = doc.value ("authServer", std::string ());
   s.notes = doc.value ("notes", std::string ());
   s.wrapper = doc.value ("wrapper", std::string ());
   s.pre_launch = doc.value ("preLaunch", std::string ());
@@ -123,6 +131,8 @@ settings_from_json (const json &doc)
   s.process_priority = doc.value ("processPriority", std::string ());
   if (auto it = doc.find ("showLogs"); it != doc.end () && it->is_boolean ())
     s.show_logs = it->get<bool> ();
+  if (auto it = doc.find ("patch"); it != doc.end () && it->is_boolean ())
+    s.patch = it->get<bool> ();
   return s;
 }
 

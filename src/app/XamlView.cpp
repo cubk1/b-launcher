@@ -242,6 +242,7 @@ namespace XamlView {
             float clipTop = 0.0f;
             float clipBottom = 0.0f;
             bool blocked = false;
+            bool glass = false;
             std::vector<Action>* pending = nullptr;
         };
 
@@ -1544,7 +1545,13 @@ namespace XamlView {
             if (e.canSwap) {
                 e.open = UiState::motion(e.id + "#open", e.swapped ? 0.0f : 1.0f, 14.0f);
             }
-            UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::surface());
+            if (ctx.glass) {
+                UiRender::blur(e.x, e.y, e.w, e.h, CARD_RADIUS, 8, true);
+                uint32_t veil = UiTheme::isLight() ? 0xA6000000u : 0x8C000000u;
+                UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, (UiTheme::surface() & 0x00FFFFFFu) | veil);
+            } else {
+                UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::surface());
+            }
             UiRender::outline(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::outlineSoft());
             if (header) {
                 bool hovered = e.canSwap && !ctx.blocked && NewUi::hit(e.x, e.y, e.w, CARD_HEADER);
@@ -2754,6 +2761,7 @@ namespace XamlView {
         std::unique_ptr<Element> root;
         std::string error;
         std::vector<Action> pending;
+        float width = 0.0f;
     };
 
     Document::Document() : state(std::make_unique<State>()) {}
@@ -2794,6 +2802,7 @@ namespace XamlView {
         if (!state->root) {
             return 0.0f;
         }
+        state->width = width;
         XamlView::measure(*state->root, width, INF);
         return state->root->desiredH;
     }
@@ -2803,11 +2812,12 @@ namespace XamlView {
             return;
         }
         Element& root = *state->root;
-        arrange(root, x, y, root.desiredW > 0.0f ? std::max(root.desiredW, root.w) : root.w, root.desiredH);
+        arrange(root, x, y, std::max(root.desiredW, state->width), root.desiredH);
         Ctx ctx;
         ctx.clipTop = clipTop;
         ctx.clipBottom = clipBottom;
         ctx.blocked = blocked;
+        ctx.glass = glass;
         ctx.pending = &state->pending;
         XamlView::draw(root, ctx);
         if (!state->pending.empty()) {

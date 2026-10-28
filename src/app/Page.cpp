@@ -37,7 +37,7 @@ namespace Page {
     }
 
     float right() {
-        return std::min(MainWindow::width() - RIGHT_MARGIN, LEFT + MAX_WIDTH);
+        return MainWindow::width() - RIGHT_MARGIN;
     }
 
     float width() {
@@ -91,6 +91,26 @@ namespace Page {
                         UiWidgets::TEXT_CONTROL);
     }
 
+    void spinnerArc(float& from, float& to) {
+        const double minimum = 10.0;
+        const double maximum = 280.0;
+        const double phase = 0.75;
+        const double degreesPerSecond = 2.0e9 / 7.5e6;
+        double time = ImGui::GetTime();
+        double index = std::floor(time / phase);
+        double progress = (time - index * phase) / phase;
+        double inverse = 1.0 - progress;
+        double eased = 1.0 - inverse * inverse * inverse;
+        bool growing = std::fmod(index, 2.0) < 0.5;
+        double current = growing ? minimum + (maximum - minimum) * eased : maximum - (maximum - minimum) * eased;
+        double offset = std::fmod(std::floor(index * 0.5) * (maximum - minimum), 360.0);
+        double rotation = std::fmod(time * degreesPerSecond, 360.0) + offset;
+        double start = growing ? rotation : rotation + maximum - current;
+        double radians = 3.14159265358979 / 180.0;
+        from = (float) (std::fmod(start, 360.0) * radians);
+        to = from + (float) (current * radians);
+    }
+
     void spinner(float cx, float cy, float radius, uint32_t color) {
         const float tau = 6.28318531f;
         float x = UiRender::transformX(cx);
@@ -98,10 +118,10 @@ namespace Page {
         float r = UiRender::transformW(radius);
         float stroke = UiRender::transformW(std::max(1.5f, radius * 0.24f));
         ShaderUtil::arc(x, y, r, stroke, 0.0f, tau, UiRender::applyAlpha((color & 0x00FFFFFFu) | 0x40000000u));
-        double time = ImGui::GetTime();
-        float spin = (float) std::fmod(time * tau / 1.1, (double) tau);
-        float sweep = (0.18f + 0.55f * (0.5f - 0.5f * (float) std::cos(time * tau / 1.5))) * tau;
-        ShaderUtil::arc(x, y, r, stroke, spin, spin + sweep, UiRender::applyAlpha(color));
+        float from = 0.0f;
+        float to = 0.0f;
+        spinnerArc(from, to);
+        ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
     }
 
     namespace {

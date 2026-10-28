@@ -10,6 +10,7 @@
 #include "Mods.h"
 #include "NewInstanceScreen.h"
 #include "Page.h"
+#include "Patches.h"
 #include "Platform.h"
 
 #include "ui/menu/MenuItems.h"
@@ -29,6 +30,7 @@
 #include "ui/widget/TextFieldWidget.h"
 #include "ui/widget/ToggleWidget.h"
 
+#include <core/auth/yggdrasil.hpp>
 #include <core/base/strings.hpp>
 
 #include "imgui.h"
@@ -90,6 +92,14 @@ namespace InstancePage {
 
         const std::vector<Option> PRIORITY = {
                 {"低", "low"}, {"低于正常", "below-normal"}, {"正常", ""}, {"高于正常", "above-normal"}, {"高", "high"},
+        };
+
+        const std::vector<Option> LOGIN = {
+                {"任意账户", ""},
+                {"仅微软账户", "microsoft"},
+                {"仅离线账户", "offline"},
+                {"第三方登录：Authlib Injector", "yggdrasil"},
+                {"第三方登录：统一通行证", "nide8"},
         };
 
         const char* const COMMAND_VARIABLES =
@@ -275,6 +285,20 @@ namespace InstancePage {
                     Instances::select(neighbour);
                 }
             });
+        }
+
+        bool sameFolder(const std::string& id) {
+            const Instances::Entry* entry = Instances::find(id);
+            if (entry == nullptr) {
+                return false;
+            }
+            std::error_code error;
+            if (std::filesystem::equivalent(entry->gameDirectory, entry->info.directory, error)) {
+                return true;
+            }
+            std::filesystem::path game = entry->gameDirectory.lexically_normal();
+            std::filesystem::path version = entry->info.directory.lexically_normal();
+            return blb::iequals(blb::path_to_utf8(game / ""), blb::path_to_utf8(version / ""));
         }
 
         std::string owner(const std::string& id, const char* field) {
@@ -793,6 +817,30 @@ namespace InstancePage {
                     },
                     [followLogs] { return std::vector<std::string>{followLogs, "显示", "不显示"}; });
             select("instance#showLogs", logs, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
+            rowY += Page::ROW_H;
+
+            Page::label("启动器补丁", rowY);
+            std::string followPatch = std::string("跟随全局（") + (Patches::all() ? "启用" : "不启用") + "）";
+            auto patch = std::make_shared<ModeBinding>(
+                    owner(id, "patch"),
+                    [id, followPatch] {
+                        const Settings* current = settingsOf(id);
+                        if (current == nullptr || !current->patch) {
+                            return followPatch;
+                        }
+                        return std::string(*current->patch ? "启用" : "不启用");
+                    },
+                    [id, followPatch](const std::string& option) {
+                        edit(id, [&](Settings& settings) {
+                            if (option == followPatch) {
+                                settings.patch.reset();
+                            } else {
+                                settings.patch = option == "启用";
+                            }
+                        });
+                    },
+                    [followPatch] { return std::vector<std::string>{followPatch, "启用", "不启用"}; });
+            select("instance#patch", patch, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
         }
 
         void windowRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -822,16 +870,94 @@ namespace InstancePage {
                     [](Settings& s, bool value) { s.fullscreen = value; }, rowY, blocked);
         }
 
-        void otherRows(const Instances::Entry& entry, float y, bool blocked) {
+        bool needsAuthServer(const Instances::Entry& entry) {
+            const std::string& login = entry.info.settings.login;
+            return login == "yggdrasil" || login == "nide8";
+        }
+
+        int serverCount(const Instances::Entry& entry) {
+            return needsAuthServer(entry) ? 3 : 2;
+        }
+
+        std::shared_ptr<ModeBinding> loginSetting(const std::string& id) {
+            return std::make_shared<ModeBinding>(
+                    owner(id, "login"),
+                    [id] {
+                        const Settings* settings = settingsOf(id);
+                        std::string key = settings != nullptr ? settings->login : std::string();
+                        for (const Option& option : LOGIN) {
+                            if (key == option.key) {
+                                return std::string(option.label);
+                            }
+                        }
+                        return std::string(LOGIN.front().label);
+                    },
+                    [id](const std::string& label) {
+                        for (const Option& option : LOGIN) {
+                            if (label != option.label) {
+                                continue;
+                            }
+                            edit(id, [&](Settings& settings) {
+                                if (settings.login != option.key) {
+                                    settings.login = option.key;
+                                    settings.auth_server.clear();
+                                }
+                            });
+                        }
+                    },
+                    [] {
+                        std::vector<std::string> labels;
+                        for (const Option& option : LOGIN) {
+                            labels.push_back(option.label);
+                        }
+                        return labels;
+                    });
+        }
+
+        void serverRows(const Instances::Entry& entry, float y, bool blocked) {
             const std::string& id = entry.key;
             float rowY = y;
+
+            Page::label("登录方式", rowY);
+            select("instance#login", loginSetting(id), Page::controlRight() - WIDE_FIELD, rowY, WIDE_FIELD, blocked);
+            rowY += Page::ROW_H;
+
+            if (needsAuthServer(entry)) {
+                bool nide8 = entry.info.settings.login == "nide8";
+                Page::label(nide8 ? "服务器 ID" : "认证服务器", rowY);
+                float fieldX = Page::controlRight() - WIDE_FIELD;
+                textField(textSetting(
+                                  id, "authServer",
+                                  nide8 ? "服主后台 → 集成说明中的服务器 ID" : "Yggdrasil API 认证服务器地址",
+                                  [](const Settings& s) { return s.auth_server; },
+                                  [](Settings& s, const std::string& value) { s.auth_server = Ui::trim(value); }),
+                          fieldX, rowY, WIDE_FIELD, blocked);
+                std::string preset = nide8 ? "服主后台" : "设置为 LittleSkin";
+                float presetW = Page::buttonWidth(preset);
+                if (Page::button("instance#authPreset", preset, fieldX - 8.0f - presetW, rowY + Page::FIELD_Y, presetW,
+                                 false, blocked)) {
+                    if (nide8) {
+                        Platform::openUrl(std::string(blb::auth::nide8_admin_url));
+                    } else {
+                        if (NewUi::textEditing == owner(id, "authServer")) {
+                            NewUi::cancelTextEdit();
+                        }
+                        edit(id, [](Settings& s) { s.auth_server = std::string(blb::auth::littleskin_api); });
+                    }
+                }
+                rowY += Page::ROW_H;
+            }
 
             Page::label("自动加入服务器", rowY);
             textField(textSetting(
                               id, "server", "服务器地址", [](const Settings& s) { return s.server; },
                               [](Settings& s, const std::string& value) { s.server = Ui::trim(value); }),
                       Page::controlRight() - WIDE_FIELD, rowY, WIDE_FIELD, blocked);
-            rowY += Page::ROW_H;
+        }
+
+        void otherRows(const Instances::Entry& entry, float y, bool blocked) {
+            const std::string& id = entry.key;
+            float rowY = y;
 
             Page::label("备注", rowY);
             textField(textSetting(
@@ -906,12 +1032,14 @@ namespace InstancePage {
             header(entry);
 
             const int manage = manageCount(entry);
-            const int gameCount = 5;
+            const int gameCount = 6;
             const int memoryCount = 2;
             const int windowCount = 2;
-            const int otherCount = 3;
-            float contentH = 5 * Page::CAPTION_H +
-                    (manage + gameCount + memoryCount + windowCount + otherCount) * Page::ROW_H + 4 * Page::GAP;
+            const int serverRowCount = serverCount(entry);
+            const int otherCount = 2;
+            float contentH = 6 * Page::CAPTION_H +
+                    (manage + gameCount + memoryCount + windowCount + serverRowCount + otherCount) * Page::ROW_H +
+                    5 * Page::GAP;
             Page::Scroll body("instance#body", Page::TOP + 54.0f, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || NewUi::overlayCoversMouse();
@@ -944,6 +1072,13 @@ namespace InstancePage {
                 windowRows(entry, y + Page::CAPTION_H, blocked);
             }
             y += Page::CAPTION_H + windowCount * Page::ROW_H + Page::GAP;
+
+            if (Page::shown(y, Page::CAPTION_H + serverRowCount * Page::ROW_H)) {
+                Page::caption("服务器", y);
+                Page::card(y + Page::CAPTION_H, serverRowCount);
+                serverRows(entry, y + Page::CAPTION_H, blocked);
+            }
+            y += Page::CAPTION_H + serverRowCount * Page::ROW_H + Page::GAP;
 
             if (Page::shown(y, Page::CAPTION_H + otherCount * Page::ROW_H)) {
                 Page::caption("其他", y);
@@ -1167,11 +1302,13 @@ namespace InstancePage {
                             Platform::open(entry->gameDirectory);
                         }
                     }));
-                    items.push_back(ActionMenuItem::make("打开版本文件夹", 0xf07b, [id] {
-                        if (const Instances::Entry* entry = Instances::find(id)) {
-                            Platform::open(entry->info.directory);
-                        }
-                    }));
+                    if (!sameFolder(id)) {
+                        items.push_back(ActionMenuItem::make("打开版本文件夹", 0xf07b, [id] {
+                            if (const Instances::Entry* entry = Instances::find(id)) {
+                                Platform::open(entry->info.directory);
+                            }
+                        }));
+                    }
                     items.push_back(ActionMenuItem::make("重命名", 0xf044, [id] { beginRename(id); }));
                     items.push_back(ActionMenuItem::make("复制", 0xf0c5, [id] { copy(id); }));
                     items.push_back(

@@ -26,6 +26,7 @@ namespace XamlView {
         void draw(float x, float y, float clipTop, float clipBottom, bool blocked);
 
         std::function<void(const std::vector<Action>& actions)> onActions;
+        bool glass = false;
 
     private:
         struct State;

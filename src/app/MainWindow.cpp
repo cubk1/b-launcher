@@ -474,7 +474,8 @@ namespace MainWindow {
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - LIST_TOP;
         float maxScroll = std::max(0.0f, contentH - viewH);
-        listW = ITEM_W - (maxScroll > 0.5f ? SCROLL_ROOM : 0.0f);
+        float room = UiState::motion("sidebar#scrollRoom", maxScroll > 0.5f ? 1.0f : 0.0f, 14.0f);
+        listW = UiRender::snapLayout(ITEM_W - SCROLL_ROOM * room);
         if (!scrollRestored && !Instances::loading()) {
             scrollRestored = true;
             const nlohmann::json& doc = Config::data();

@@ -267,6 +267,7 @@ namespace NewUi {
     bool scrollColor(double amount);
     void beginSliderEdit(const std::string& id, const std::string& value);
     void beginTextEdit(const std::shared_ptr<TextValue>& value);
+    void tabStop(const std::shared_ptr<TextValue>& value);
     void cancelTextEdit();
     void commitTextEdit();
     void openPicker(const std::shared_ptr<ColorValue>& color, float x, float y);

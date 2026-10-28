@@ -24,6 +24,7 @@ public:
     std::function<void(const std::string&)> setter;
     std::function<std::vector<std::string>()> source;
     std::unordered_map<std::string, std::string> icons;
+    std::unordered_map<std::string, uint32_t> images;
     bool anchors;
 
     ModeBinding(const std::string& owner, std::function<std::string()> getter,
@@ -33,9 +34,11 @@ public:
     void choose(const std::string& option) override;
     std::string label() override;
     std::string optionIcon(const std::string& option) override;
+    uint32_t optionImage(const std::string& option) override;
     bool anchorGlyphs() override;
 
     ModeBinding& icon(const std::string& option, int codepoint);
+    ModeBinding& image(const std::string& option, uint32_t texture);
     ModeBinding& anchorIcons();
 };
 
@@ -102,6 +105,7 @@ public:
     std::function<void(const std::string&)> setter;
     std::string placeholder;
     int limit;
+    bool masked;
 
     TextBinding(const std::string& owner, std::function<std::string()> getter,
                 std::function<void(const std::string&)> setter, const std::string& placeholder);
@@ -109,6 +113,7 @@ public:
     void set(const std::string& value) override;
     std::string hint() override;
     int maxLength() override;
+    bool secret() override;
 };
 
 class KeyBinding final : public KeyValue {

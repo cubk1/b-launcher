@@ -147,9 +147,13 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
         page assets/sounds/page.wav
         pulse assets/sounds/pulse.wav)
 
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
+        launcherAgent assets/launcher-agent.jar)
+
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
 add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app/app.rc
-        ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp)
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
 target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)

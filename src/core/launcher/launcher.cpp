@@ -1,3 +1,4 @@
+#include <core/auth/yggdrasil.hpp>
 #include <core/base/format.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/log.hpp>
@@ -188,10 +189,23 @@ game_launcher::prepare (const launch_settings &settings,
                                             installer.mirror (), host_rules);
   auto native_files = split_natives (files);
 
+  std::vector<std::string> agent;
   install::task_graph graph;
   graph.add ("auth", [&] (cancellation_token t) -> result<void> {
     auto begin = clock::now ();
-    if (out.account.needs_refresh ())
+    if (auth::is_yggdrasil (out.account.type))
+      {
+        BLB_TRY_ASSIGN (auto fresh, auth::yggdrasil_ensure (out.account, t));
+        bool changed = fresh.access_token != out.account.access_token
+                       || fresh.name != out.account.name
+                       || fresh.skin_url != out.account.skin_url;
+        out.account = std::move (fresh);
+        if (changed && callbacks.on_account_refreshed)
+          callbacks.on_account_refreshed (out.account);
+        BLB_TRY_ASSIGN (
+            agent, auth::yggdrasil_agent (out.account, layout.cache (), t));
+      }
+    else if (out.account.needs_refresh ())
       {
         if (!m_impl->authenticator)
           return make_error (errc::auth_expired,
@@ -256,6 +270,8 @@ game_launcher::prepare (const launch_settings &settings,
   ctx.rules = java_rules;
   ctx.settings = settings;
   BLB_TRY_ASSIGN (out.command, build_launch_command (ctx));
+  out.command.jvm_args.insert (out.command.jvm_args.begin (), agent.begin (),
+                               agent.end ());
 
   if (settings.use_argument_file && out.java.major >= 9)
     {

@@ -409,11 +409,11 @@ namespace NewInstanceScreen {
             float known = UiState::motion("new#ring#known", value >= 0.0f ? 1.0f : 0.0f, 8.0f);
             float shown = UiState::motion("new#ring#fraction", std::max(0.0f, value), 10.0f);
             ShaderUtil::arc(x, y, r, stroke, 0.0f, TAU, UiRender::applyAlpha((color & 0x00FFFFFFu) | 0x47000000u));
-            double time = ImGui::GetTime();
-            float spin = (float) std::fmod(time * TAU / 1.1, (double) TAU);
-            float sweep = (0.18f + 0.55f * (0.5f - 0.5f * (float) std::cos(time * TAU / 1.5))) * TAU;
-            float from = UiRender::lerp(spin - TAU * 0.25f, -TAU * 0.25f, known);
-            float to = UiRender::lerp(spin - TAU * 0.25f + sweep, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
+            float spinFrom = 0.0f;
+            float spinTo = 0.0f;
+            Page::spinnerArc(spinFrom, spinTo);
+            float from = UiRender::lerp(spinFrom - TAU * 0.25f, -TAU * 0.25f, known);
+            float to = UiRender::lerp(spinTo - TAU * 0.25f, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
             ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
         }
 

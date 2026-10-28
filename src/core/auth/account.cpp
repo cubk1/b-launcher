@@ -21,7 +21,16 @@ unix_now ()
 std::string
 account::user_type () const
 {
-  return type == account_type::microsoft ? "msa" : "legacy";
+  switch (type)
+    {
+    case account_type::microsoft:
+      return "msa";
+    case account_type::yggdrasil:
+    case account_type::nide8:
+      return "mojang";
+    default:
+      return "legacy";
+    }
 }
 
 bool
@@ -35,7 +44,29 @@ account::needs_refresh (std::chrono::seconds margin) const
 std::string_view
 account_type_name (account_type type) noexcept
 {
-  return type == account_type::microsoft ? "microsoft" : "offline";
+  switch (type)
+    {
+    case account_type::microsoft:
+      return "microsoft";
+    case account_type::yggdrasil:
+      return "yggdrasil";
+    case account_type::nide8:
+      return "nide8";
+    default:
+      return "offline";
+    }
+}
+
+account_type
+parse_account_type (std::string_view name) noexcept
+{
+  if (name == "microsoft")
+    return account_type::microsoft;
+  if (name == "yggdrasil")
+    return account_type::yggdrasil;
+  if (name == "nide8")
+    return account_type::nide8;
+  return account_type::offline;
 }
 
 std::string
@@ -73,7 +104,11 @@ serialize_accounts (std::span<const account> accounts)
                       { "xuid", a.xuid },
                       { "clientId", a.client_id },
                       { "expiresAt", a.expires_at },
-                      { "skin", a.skin_url } });
+                      { "skin", a.skin_url },
+                      { "server", a.server },
+                      { "serverName", a.server_name },
+                      { "username", a.username },
+                      { "clientToken", a.client_token } });
   return json { { "accounts", std::move (list) } }.dump (2);
 }
 
@@ -92,9 +127,7 @@ parse_accounts (std::string_view text)
       if (!entry.is_object ())
         continue;
       account a;
-      a.type = entry.value ("type", std::string ()) == "microsoft"
-                   ? account_type::microsoft
-                   : account_type::offline;
+      a.type = parse_account_type (entry.value ("type", std::string ()));
       a.name = entry.value ("name", std::string ());
       a.uuid = entry.value ("uuid", std::string ());
       a.access_token = entry.value ("accessToken", std::string ());
@@ -103,6 +136,10 @@ parse_accounts (std::string_view text)
       a.client_id = entry.value ("clientId", std::string ());
       a.expires_at = entry.value ("expiresAt", std::int64_t (0));
       a.skin_url = entry.value ("skin", std::string ());
+      a.server = entry.value ("server", std::string ());
+      a.server_name = entry.value ("serverName", std::string ());
+      a.username = entry.value ("username", std::string ());
+      a.client_token = entry.value ("clientToken", std::string ());
       out.push_back (std::move (a));
     }
   return out;

@@ -60,6 +60,11 @@ public:
         return std::string();
     }
 
+    virtual uint32_t optionImage(const std::string& option) {
+        (void) option;
+        return 0;
+    }
+
     virtual bool anchorGlyphs() {
         return false;
     }
@@ -152,6 +157,10 @@ public:
 
     virtual int maxLength() {
         return 32;
+    }
+
+    virtual bool secret() {
+        return false;
     }
 };
 

@@ -7,7 +7,6 @@ namespace Page {
 
     constexpr float LEFT = 216.0f;
     constexpr float RIGHT_MARGIN = 28.0f;
-    constexpr float MAX_WIDTH = 1000.0f;
     constexpr float TOP = 54.0f;
     constexpr float ROW_H = 40.0f;
     constexpr float TITLE_SIZE = 18.0f;
@@ -39,6 +38,7 @@ namespace Page {
     void card(float y, int rows);
     void label(const std::string& text, float y);
     void spinner(float cx, float cy, float radius, uint32_t color);
+    void spinnerArc(float& from, float& to);
     bool button(const std::string& id, const std::string& text, float x, float y, float w, bool primary, bool blocked,
                 int glyph = 0);
     float buttonWidth(const std::string& text, int glyph = 0);

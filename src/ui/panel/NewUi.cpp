@@ -57,6 +57,8 @@ namespace NewUi {
     std::string draggingSlider;
     std::string sliderEditing;
     bool focusFieldLive = false;
+    std::vector<std::shared_ptr<TextValue>> tabStops;
+    std::vector<std::shared_ptr<TextValue>> lastTabStops;
     float focusFieldX;
     float focusFieldY;
     float focusFieldW;
@@ -249,6 +251,8 @@ namespace NewUi {
 
     void beginFrame() {
         ImGuiIO& io = ImGui::GetIO();
+        lastTabStops.swap(tabStops);
+        tabStops.clear();
         UiFont::ensureBaseFonts();
         mouseX = io.MousePos.x / UiRender::unit() / UiRender::uiScale;
         mouseY = io.MousePos.y / UiRender::unit() / UiRender::uiScale;
@@ -594,7 +598,7 @@ namespace NewUi {
     }
 
     float fieldScroll(const std::string& id, float room, int family, float size, bool focused) {
-        std::string value = UiInput::get(id);
+        std::string value = UiInput::shown(id);
         float total = UiFont::width(value, family, size);
         if (!focused || total <= room) {
             fieldOffset[id] = 0.0f;
@@ -811,7 +815,8 @@ namespace NewUi {
             for (int i = 0; i < count; i++) {
                 measuredWidest =
                         std::max(measuredWidest, UiFont::width(options[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL));
-                measuredIcons = measuredIcons || choice->anchorGlyphs() || !choice->optionIcon(options[i]).empty();
+                measuredIcons = measuredIcons || choice->anchorGlyphs() || !choice->optionIcon(options[i]).empty() ||
+                        choice->optionImage(options[i]) != 0;
             }
         }
         float widest = measuredWidest;
@@ -999,11 +1004,15 @@ namespace NewUi {
             UiRender::alphaMul = savedCheckAlpha;
         }
         std::string optionGlyph = popupChoice != nullptr ? popupChoice->optionIcon(option) : std::string();
+        uint32_t optionImage = popupChoice != nullptr ? popupChoice->optionImage(option) : 0u;
         float optionTextX = rx + textIndent;
         uint32_t optionColor = popupChoice != nullptr ? popupChoice->optionColor(option, selected)
                                                       : (selected ? UiTheme::textPrimary() : UiTheme::textMuted());
         if (popupChoice != nullptr && popupChoice->anchorGlyphs()) {
             UiWidgets::anchorGlyph(option, optionTextX + 6, ry + 16, optionColor);
+            optionTextX += 18;
+        } else if (optionImage != 0) {
+            UiRender::texture(optionImage, optionTextX - 1, ry + 9, 14, 14);
             optionTextX += 18;
         } else if (!optionGlyph.empty()) {
             UiWidgets::iconBeside(optionGlyph, optionTextX + 6, option, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, ry, 32,
@@ -1489,15 +1498,38 @@ namespace NewUi {
         commitTextEdit();
         textEditing = target->owner;
         textEditValue = target;
+        if (target->secret()) {
+            UiInput::secrets.insert(INPUT_TEXT);
+        }
         std::string value = target->get();
         UiInput::set(INPUT_TEXT, value);
         UiInput::focus(INPUT_TEXT, target->maxLength());
         UiInput::select(INPUT_TEXT, value);
     }
 
+    void tabStop(const std::shared_ptr<TextValue>& value) {
+        tabStops.push_back(value);
+    }
+
+    void focusAdjacent(int step) {
+        const std::vector<std::shared_ptr<TextValue>>& stops = lastTabStops.empty() ? tabStops : lastTabStops;
+        int count = (int) stops.size();
+        for (int i = 0; i < count; i++) {
+            if (stops[i]->owner != textEditing) {
+                continue;
+            }
+            std::shared_ptr<TextValue> next = stops[(i + step + count) % count];
+            if (next->owner != textEditing) {
+                beginTextEdit(next);
+            }
+            return;
+        }
+    }
+
     void cancelTextEdit() {
         textEditing.clear();
         textEditValue = nullptr;
+        UiInput::secrets.erase(INPUT_TEXT);
         UiInput::set(INPUT_TEXT, "");
         if (UiInput::isFocused(INPUT_TEXT)) {
             UiInput::blur();
@@ -1866,6 +1898,10 @@ namespace NewUi {
         if (target.empty()) {
             return false;
         }
+        if (key == ImGuiKey_Tab && target == INPUT_TEXT) {
+            focusAdjacent(ImGui::GetIO().KeyShift ? -1 : 1);
+            return true;
+        }
         if (key == ImGuiKey_Enter || key == ImGuiKey_KeypadEnter) {
             commitInput(target);
             return true;
@@ -1951,7 +1987,7 @@ namespace NewUi {
         if (!UiInput::hasSelection(id)) {
             return;
         }
-        std::string value = UiInput::get(id);
+        std::string value = UiInput::shown(id);
         float from = UiFont::width(Ui::substring(value, 0, UiInput::selectionStart(id)), family, size);
         float to = UiFont::width(Ui::substring(value, 0, UiInput::selectionEnd(id)), family, size);
         UiRender::roundRect(x + from - 1, y, to - from + 2, h, 2.0f, UiTheme::selection());
@@ -1961,12 +1997,12 @@ namespace NewUi {
         if (((long long) (caretTimer * 1.6f)) % 2 != 0) {
             return;
         }
-        float at = UiFont::width(Ui::substring(UiInput::get(id), 0, UiInput::caret(id)), family, size);
+        float at = UiFont::width(Ui::substring(UiInput::shown(id), 0, UiInput::caret(id)), family, size);
         UiRender::roundRect(x + at, y, 1.2f, h, 0, UiTheme::textPrimary());
     }
 
     int caretIndexAt(const std::string& id, float textX, float pointerX, int family, float size) {
-        std::string value = UiInput::get(id);
+        std::string value = UiInput::shown(id);
         float best = std::fabs(pointerX - textX);
         int index = 0;
         int length = Ui::length(value);

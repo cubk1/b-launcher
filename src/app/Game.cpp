@@ -1,10 +1,12 @@
 #include "Game.h"
 #include "Accounts.h"
+#include "AccountsScreen.h"
 #include "GameLog.h"
 #include "Instances.h"
 #include "LaunchDefaults.h"
 #include "LogWindow.h"
 #include "MainWindow.h"
+#include "Patches.h"
 #include "Platform.h"
 
 #include "ui/panel/Notifications.h"
@@ -26,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 
 namespace Game {
@@ -334,12 +337,21 @@ namespace Game {
             Instances::notify("无法启动 " + entry->info.id + "：" + entry->info.problem, true);
             return;
         }
-        const blb::auth::account* account = Accounts::current();
+        const std::string& login = entry->info.settings.login;
+        const std::string& authServer = entry->info.settings.auth_server;
+        const blb::auth::account* account = Accounts::pick(login, authServer);
         if (account == nullptr) {
-            Instances::notify("先添加一个账户再启动", true);
+            Instances::notify(Accounts::requirement(login, authServer), true);
             MainWindow::showAccounts();
+            if (login == "yggdrasil") {
+                AccountsScreen::openServerLogin(blb::auth::account_type::yggdrasil, authServer, std::string());
+            } else if (login == "nide8") {
+                AccountsScreen::openServerLogin(blb::auth::account_type::nide8, authServer, std::string());
+            }
             return;
         }
+        const blb::auth::account* chosen = Accounts::current();
+        bool substituted = chosen != nullptr && Accounts::keyOf(*chosen) != Accounts::keyOf(*account);
         blb::instance::instance_manager manager(blb::meta::game_layout(source->root), Instances::isolation());
         blb::launch::launch_settings settings = manager.launch_settings_for(entry->info);
         std::filesystem::path root = source->root;
@@ -351,6 +363,12 @@ namespace Game {
             }
         }
         std::vector<std::string> jvm = LaunchDefaults::split(LaunchDefaults::jvmArgs());
+        std::filesystem::path patchJar;
+        Patches::Plan patchPlan;
+        if (Patches::enabled(options.patch)) {
+            patchJar = Patches::jarIn(blb::meta::game_layout(root).cache());
+            patchPlan = Patches::plan();
+        }
         jvm.insert(jvm.end(), settings.jvm_args.begin(), settings.jvm_args.end());
         settings.jvm_args = jvm;
         std::vector<std::string> game = LaunchDefaults::split(LaunchDefaults::gameArgs());
@@ -371,6 +389,13 @@ namespace Game {
         name = entry->info.id;
         GameLog::begin(name);
         GameLog::note("正在启动 " + name + "（Minecraft " + entry->info.minecraft_version + "）");
+        if (!patchJar.empty()) {
+            GameLog::note("已启用启动器补丁");
+        }
+        if (substituted) {
+            GameLog::note("这个实例指定了登录方式，使用账户 " + account->name + "（" + Accounts::kindOf(*account) +
+                          "）");
+        }
         const std::optional<bool>& showLogs = entry->info.settings.show_logs;
         if (test || (showLogs ? *showLogs : LaunchDefaults::showLogs())) {
             LogWindow::open();
@@ -396,11 +421,23 @@ namespace Game {
         Platform::Environment commandVariables = variables;
         std::filesystem::path directory = commandDirectory;
         preparer = std::thread([root, settings, player, authenticator, token, preLaunch, priority, commandVariables,
-                                directory, language, minecraft]() mutable {
+                                directory, language, minecraft, patchJar, patchPlan]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;
             try {
+                if (!patchJar.empty()) {
+                    std::string problem = Patches::extract(patchJar);
+                    if (!problem.empty()) {
+                        throw std::runtime_error("无法准备启动器补丁：" + problem);
+                    }
+                    std::string warning = Patches::resolve(patchPlan, token);
+                    if (!warning.empty()) {
+                        GameLog::note(warning);
+                    }
+                    std::vector<std::string> agent = Patches::arguments(patchJar, patchPlan);
+                    settings.jvm_args.insert(settings.jvm_args.begin(), agent.begin(), agent.end());
+                }
                 blb::install::install_options options;
                 options.mirror = blb::net::make_bmclapi_provider();
                 auto installer = std::make_shared<blb::install::game_installer>(blb::meta::game_layout(root), options);

@@ -9,6 +9,7 @@ namespace Homepage {
     constexpr int SOURCE_PRESET = 1;
     constexpr int SOURCE_FILE = 2;
     constexpr int SOURCE_URL = 3;
+    constexpr int SOURCE_ANNOUNCEMENT = 4;
 
     int source();
     std::vector<std::string> choices();

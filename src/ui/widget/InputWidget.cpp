@@ -55,7 +55,7 @@ InputWidget& InputWidget::tint(uint32_t textColor) {
 
 void InputWidget::paint() {
     bool focused = UiInput::isFocused(id);
-    std::string value = UiInput::get(id);
+    std::string value = UiInput::shown(id);
     float total = UiFont::width(value, family, size);
     float originX = centered && total <= room ? textX + (room - total) * 0.5f
                                               : textX - NewUi::fieldScroll(id, room, family, size, focused);
