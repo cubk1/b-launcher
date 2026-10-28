@@ -29,3 +29,13 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 cmake --build build --config MinSizeRel
 ```
+
+## 截图
+
+<img width="1184" height="818" alt="image" src="https://github.com/user-attachments/assets/d954a965-3077-4f3b-a2a2-ceae881594e0" />
+
+<img width="1184" height="818" alt="image" src="https://github.com/user-attachments/assets/368fb4e8-c40a-4ccd-8919-33b48295600a" />
+
+<img width="1184" height="818" alt="image" src="https://github.com/user-attachments/assets/74e8fcaf-2583-4b53-aa2b-a43833a86810" />
+
+<img width="1184" height="818" alt="image" src="https://github.com/user-attachments/assets/9c26e2d6-4ae4-46e1-9e1b-d132b8ab9f48" />
