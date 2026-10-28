@@ -1,5 +1,6 @@
 #include "QuickActions.h"
 #include "AccountsScreen.h"
+#include "Appearance.h"
 #include "Config.h"
 #include "DownloadsScreen.h"
 #include "Drop.h"
@@ -253,7 +254,12 @@ namespace QuickActions {
             return;
         }
         float h = list.size() * ROW_H;
-        UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
+        if (Appearance::backgroundImage()) {
+            UiRender::blur(x, y, w, h, 12.0f, 8, true);
+            UiRender::roundRect(x, y, w, h, 12.0f, (UiTheme::surface() & 0x00FFFFFFu) | 0x80000000u);
+        } else {
+            UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
+        }
         UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
         for (size_t i = 1; i < list.size(); i++) {
             UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * ROW_H, UiTheme::outlineSoft());

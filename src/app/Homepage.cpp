@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "Game.h"
 #include "Instances.h"
+#include "Appearance.h"
 #include "Logo.h"
 #include "QuickActions.h"
 #include "MainWindow.h"
@@ -779,7 +780,9 @@ namespace Homepage {
                     std::clamp(std::min(panelRight - panelLeft, bottom - top - listH - gap) * 0.46f, 96.0f, 360.0f);
             float cx = (panelLeft + panelRight) * 0.5f;
             float logoY = (top + bottom - size - gap - listH) * 0.5f - 8.0f;
-            Logo::draw(cx - size * 0.5f, logoY, size, UiTheme::isLight() ? 0.12f : 0.09f);
+            float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
+                                                        : (UiTheme::isLight() ? 0.12f : 0.09f);
+            Logo::draw(cx - size * 0.5f, logoY, size, faint);
             if (listH > 0.0f) {
                 QuickActions::draw(cx - QUICK_W * 0.5f, logoY + size + gap, QUICK_W, blocked || modal.open);
             }
