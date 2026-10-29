@@ -151,6 +151,34 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/launch/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
         launcherAgent assets/launcher-agent.jar)
 
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp HEADER ui/exui/EmbeddedSkins.h NAMESPACE EmbeddedSkins FILES
+        mainBackground assets/exui/main_background.jpg
+        dialogBackground assets/exui/dialog_background.jpg
+        msgBoxBorder assets/exui/msgbox_border.png
+        msgBoxSkin assets/exui/msgbox_skin.png
+        downloadCenterBackground assets/exui/download_center_background.png
+        frameAtlas assets/exui/frame_atlas.png
+        comboButtonNormal assets/exui/combo_button_normal.png
+        comboButtonHover assets/exui/combo_button_hover.png
+        radioSprites assets/exui/radio_sprites.png
+        checkSprites assets/exui/check_sprites.png
+        menuCheckmark assets/exui/menu_checkmark.png)
+file(GLOB_RECURSE EXUI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/*.cpp)
+list(FILTER EXUI_SOURCES EXCLUDE REGEX "/src/ui/exui/(gallery|windows)/")
+add_library(exui STATIC ${EXUI_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp)
+target_include_directories(exui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(exui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+target_link_libraries(exui PUBLIC gdiplus msimg32 dwmapi uxtheme shlwapi shcore comctl32 imm32 comdlg32 ole32 oleaut32 uuid)
+if (MSVC)
+    target_compile_options(exui PRIVATE /W4)
+endif ()
+option(BLB_EXUI_GALLERY "Build exui_gallery, which renders the EXUI widgets and windows to PNG files" OFF)
+if (BLB_EXUI_GALLERY)
+    add_executable(exui_gallery src/ui/exui/gallery/Gallery.cpp)
+    target_compile_definitions(exui_gallery PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(exui_gallery PRIVATE exui)
+endif ()
+
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp)
 add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
