@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/accounts/Migrators.h"
+#include "app/system/Pixels.h"
 
 #include <core/auth/account.hpp>
 #include <core/auth/microsoft.hpp>
@@ -60,7 +61,7 @@ namespace Accounts {
     void rescan();
     void import(size_t index);
 
-    uint32_t face(const blb::auth::account& account);
+    std::shared_ptr<const Pixels> face(const blb::auth::account& account);
 
     std::shared_ptr<blb::auth::microsoft_authenticator> authenticator(const blb::auth::account& account);
     void refreshed(const blb::auth::account& account);

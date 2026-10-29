@@ -3,6 +3,7 @@
 #include "app/shell/Icons.h"
 #include "app/shell/MainWindow.h"
 #include "app/shell/Page.h"
+#include "app/shell/Textures.h"
 #include "app/system/Platform.h"
 
 #include "ui/gl/ShaderUtil.h"
@@ -173,7 +174,7 @@ namespace AccountsScreen {
             std::string key = Accounts::keyOf(account);
             bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
             Page::rowHover("accounts#row#" + key, rowY, hovered, corners(index, count));
-            avatar(Accounts::face(account), account.name, rowY);
+            avatar(Textures::of(Accounts::face(account)), account.name, rowY);
             float nameW = UiFont::width(account.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             UiRender::textY(account.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);

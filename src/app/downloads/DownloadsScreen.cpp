@@ -8,6 +8,7 @@
 #include "app/instances/NewInstanceScreen.h"
 #include "app/shell/Page.h"
 #include "app/shell/SvgPath.h"
+#include "app/shell/Textures.h"
 #include "app/system/Platform.h"
 #include "app/downloads/ProjectInstaller.h"
 
@@ -218,7 +219,7 @@ namespace DownloadsScreen {
 
         void projectIcon(const std::string& url, float x, float y, float size) {
             float radius = size * 0.22f;
-            if (uint32_t texture = Addons::icon(url)) {
+            if (uint32_t texture = Textures::of(Addons::icon(url))) {
                 UiRender::texture(texture, x, y, size, size);
                 return;
             }
@@ -797,7 +798,8 @@ namespace DownloadsScreen {
             for (const Addons::Category& category : Addons::categories(source, query.kind)) {
                 std::string id = category.id;
                 rows.push_back(Filter{"downloads#cf#category#" + id, category.name, 0xf02b,
-                                      Addons::icon(category.iconUrl), contains(query.categories, id), [id] {
+                                      Textures::of(Addons::icon(category.iconUrl)), contains(query.categories, id),
+                                      [id] {
                                           flip(query.categories, id);
                                           query.page = 0;
                                       }});

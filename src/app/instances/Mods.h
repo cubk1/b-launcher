@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/system/Pixels.h"
+
 #include <core/modpack/mods.hpp>
 
 #include <cstdint>
@@ -13,7 +15,7 @@ namespace Mods {
 
     struct Mod {
         blb::modpack::mod_info info;
-        uint32_t icon = 0;
+        std::shared_ptr<const Pixels> icon;
         std::vector<std::string> missing;
     };
 
