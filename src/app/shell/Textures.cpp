@@ -1,7 +1,7 @@
 #include "app/shell/Textures.h"
 
-#include "ui/gl/UiGL.h"
-#include "ui/panel/UiImages.h"
+#include "ui/imgui/gl/UiGL.h"
+#include "ui/imgui/panel/UiImages.h"
 
 #include <unordered_map>
 

@@ -4,9 +4,9 @@
 
 #include "app/shell/SvgPath.h"
 
-#include "ui/gl/UiGL.h"
-#include "ui/panel/UiImages.h"
-#include "ui/panel/UiRender.h"
+#include "ui/imgui/gl/UiGL.h"
+#include "ui/imgui/panel/UiImages.h"
+#include "ui/imgui/panel/UiRender.h"
 
 #include <algorithm>
 #include <cmath>

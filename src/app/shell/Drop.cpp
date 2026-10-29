@@ -5,13 +5,13 @@
 #include "app/instances/Mods.h"
 #include "app/instances/NewInstanceScreen.h"
 
-#include "ui/panel/Notifications.h"
-#include "ui/panel/UiCommon.h"
-#include "ui/panel/UiFont.h"
-#include "ui/panel/UiRender.h"
-#include "ui/panel/UiState.h"
-#include "ui/panel/UiTheme.h"
-#include "ui/panel/UiWidgets.h"
+#include "ui/imgui/panel/Notifications.h"
+#include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiRender.h"
+#include "ui/imgui/panel/UiState.h"
+#include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/panel/UiWidgets.h"
 
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>

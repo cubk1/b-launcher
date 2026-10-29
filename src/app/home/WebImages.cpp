@@ -2,7 +2,7 @@
 #include "app/shell/Icons.h"
 #include "app/system/Platform.h"
 
-#include "ui/panel/UiImages.h"
+#include "ui/imgui/panel/UiImages.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>

@@ -1,10 +1,10 @@
 #include "app/shell/Logo.h"
 #include "app/shell/EmbeddedIcons.h"
 
-#include "ui/gl/UiGL.h"
-#include "ui/panel/UiImages.h"
-#include "ui/panel/UiRender.h"
-#include "ui/panel/UiTheme.h"
+#include "ui/imgui/gl/UiGL.h"
+#include "ui/imgui/panel/UiImages.h"
+#include "ui/imgui/panel/UiRender.h"
+#include "ui/imgui/panel/UiTheme.h"
 
 #include "nanosvg.h"
 #include "nanosvgrast.h"
