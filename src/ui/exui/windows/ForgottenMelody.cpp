@@ -81,6 +81,7 @@ namespace ForgottenMelody {
                 }
                 GameLog::poll();
                 Services::poll();
+                window.refresh();
                 if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
                     launchSent = outcome->launched;
                     launchFailed = !outcome->launched;
@@ -125,8 +126,8 @@ namespace ForgottenMelody {
         if (FAILED(OleInitialize(nullptr))) {
             return 1;
         }
-        // 1 is the icon of app.rc.
-        if (!exui::Initialize(MAKEINTRESOURCEW(1))) {
+        // The 2014 icon, 2 in app.rc; the executable keeps the b-launcher one, 1.
+        if (!exui::Initialize(MAKEINTRESOURCEW(2))) {
             OleUninitialize();
             return 1;
         }
