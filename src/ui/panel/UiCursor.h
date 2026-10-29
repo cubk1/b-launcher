@@ -6,6 +6,7 @@ namespace UiCursor {
     extern int applied;
 
     void text();
+    void hand();
     void resize();
     void apply();
 }

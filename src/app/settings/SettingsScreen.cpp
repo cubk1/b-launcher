@@ -21,6 +21,7 @@
 #include "ui/menu/MenuItems.h"
 #include "ui/panel/NewUi.h"
 #include "ui/panel/UiCommon.h"
+#include "ui/panel/UiCursor.h"
 #include "ui/panel/UiPageTransition.h"
 #include "ui/panel/UiFont.h"
 #include "ui/panel/UiRender.h"
@@ -869,6 +870,7 @@ namespace SettingsScreen {
         constexpr int CREDIT_COUNT = (int) (sizeof(CREDITS) / sizeof(CREDITS[0]));
 
         constexpr float HERO_H = 72.0f;
+        const char* const REPOSITORY = "https://github.com/cubk1/b-launcher";
         constexpr float LOGO = 32.0f;
 
         void quietButton(float x, float y, float w, const std::string& text, bool spinning) {
@@ -919,16 +921,47 @@ namespace SettingsScreen {
             }
         }
 
+        void tagline(float x, float y, bool blocked) {
+            const float h = 16.0f;
+            const std::string lead = "an ";
+            const std::string link = "open-source";
+            const std::string rest = " minecraft launcher";
+            UiRender::textY(lead, x, y, h, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float linkX = x + UiFont::width(lead, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float linkW = UiFont::width(link, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            bool hovered = !blocked && NewUi::hit(linkX, y, linkW, h);
+            float lit = UiState::motion("settings#about#source", hovered ? 1.0f : 0.0f, 20.0f);
+            uint32_t ink = UiRender::mix(UiTheme::accentText(), UiTheme::accent(), lit);
+            UiRender::textY(link, linkX, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (lit > 0.001f) {
+                float saved = UiRender::alphaMul;
+                UiRender::alphaMul = saved * lit;
+                UiRender::hLine(linkX, linkX + linkW, y + h - 1.0f, ink);
+                UiRender::alphaMul = saved;
+            }
+            UiRender::textY(rest, linkX + linkW, y, h, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (hovered) {
+                UiCursor::hand();
+            }
+            if (!blocked && NewUi::click(linkX, y, linkW, h)) {
+                UiSound::request(UiSound::PAGE);
+                Platform::openUrl(REPOSITORY);
+            }
+        }
+
         void hero(float y, bool blocked) {
             UiRender::roundRect(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::surface());
             UiRender::outline(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::outlineSoft());
             Logo::draw(mainX() + 20.0f, y + (HERO_H - LOGO) * 0.5f, LOGO);
             const std::string name = "B Launcher\xE2\x84\xA2";
-            float x = mainX() + 20.0f + LOGO + 14.0f;
-            UiRender::textY(name, x, y, HERO_H, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
+            float textX = mainX() + 20.0f + LOGO + 14.0f;
+            float titleY = y + (HERO_H - 24.0f - 2.0f - 16.0f) * 0.5f;
+            float x = textX;
+            UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += tag(std::string("v") + B_LAUNCHER_VERSION, x, y + (HERO_H - Page::ROW_H) * 0.5f,
+            x += tag(std::string("v") + B_LAUNCHER_VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f,
                      UiTheme::accentSoft(40), UiTheme::accentText());
+            tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);
         }
 

@@ -11,6 +11,10 @@ namespace UiCursor {
         wanted = ImGuiMouseCursor_TextInput;
     }
 
+    void hand() {
+        wanted = ImGuiMouseCursor_Hand;
+    }
+
     void resize() {
         wanted = ImGuiMouseCursor_ResizeNWSE;
     }
