@@ -90,14 +90,12 @@ namespace exui {
             SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
         m_scale = m_requestedScale > 0 ? m_requestedScale
                                        : MonitorScale({(work.left + work.right) / 2, (work.top + work.bottom) / 2});
-        m_icon = AppIcon(ToPhysical(16));
         const int x = work.left + (work.right - work.left - PhysicalWidth()) / 2;
         const int y = work.top + (work.bottom - work.top - PhysicalHeight()) / 2;
         const HWND hwnd = CreateWindowExW(WS_EX_LAYERED, ClassName, title.c_str(), style, x, y, PhysicalWidth(),
                                           PhysicalHeight(), parent, nullptr, GetModuleHandleW(nullptr), this);
         if (!hwnd) return false;
-        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_icon));
-        SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_icon));
+        UpdateIcons();
         RenderFrame();
         if (show) ShowWindowWithAnimation(SW_SHOWNORMAL);
         return true;
@@ -149,13 +147,21 @@ namespace exui {
             ApplyScale(GetDpiForWindow(m_hwnd) / 96.f);
     }
 
+    void Window::UpdateIcons() {
+        m_icon = AppIcon(ToPhysical(16));
+        if (!m_hwnd) return;
+        SendMessageW(m_hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_icon));
+        // The taskbar and Alt+Tab show the big one.
+        SendMessageW(m_hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(AppIcon(ToPhysical(32))));
+    }
+
     // Re-renders everything at the new scale. The window keeps its center, or
     // moves where Windows suggests for a monitor with another DPI.
     void Window::ApplyScale(float scale, const RECT* suggested) {
         scale = std::clamp(scale, 0.5f, 4.f);
         if (scale == m_scale) return;
         m_scale = scale;
-        m_icon = AppIcon(ToPhysical(16));
+        UpdateIcons();
         StopAnimations();
         InvalidateBackground();
         if (!m_hwnd) return;
