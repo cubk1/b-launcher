@@ -67,6 +67,7 @@ namespace Game {
         Platform::Environment variables;
         std::filesystem::path commandDirectory;
         bool hidden = false;
+        bool quiet = false;
 
         const char* const NODES[] = {"auth", "integrity", "java", "natives", "command"};
         const char* const LABELS[] = {"验证账户", "检查游戏文件", "准备 Java", "准备本地库", "运行启动前命令"};
@@ -248,6 +249,9 @@ namespace Game {
                 current = State::Running;
                 nextWatch = Clock::now() + WATCH_INTERVAL;
                 Notifications::add(Notifications::DONE, "已启动 " + name, 2500);
+                if (quiet) {
+                    return;
+                }
                 if (visibility == "minimize") {
                     Platform::minimizeWindow();
                 } else if (visibility == "hide") {
@@ -397,7 +401,7 @@ namespace Game {
                           "）");
         }
         const std::optional<bool>& showLogs = entry->info.settings.show_logs;
-        if (test || (showLogs ? *showLogs : LaunchDefaults::showLogs())) {
+        if (test || (!quiet && (showLogs ? *showLogs : LaunchDefaults::showLogs()))) {
             LogWindow::open();
         }
         current = State::Preparing;
@@ -510,6 +514,10 @@ namespace Game {
             cancelled = wasCancelled;
             prepared = true;
         });
+    }
+
+    void setQuiet(bool on) {
+        quiet = on;
     }
 
     void cancel() {

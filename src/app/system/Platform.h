@@ -22,6 +22,29 @@ namespace Platform {
     bool open(const std::filesystem::path& path);
     bool openUrl(const std::string& url);
     std::wstring widen(const std::string& text);
+
+    constexpr unsigned long long LAUNCH_MESSAGE = 0x424C4C4EULL;
+    constexpr unsigned long long LAUNCH_QUIET_MESSAGE = 0x424C4C51ULL;
+
+    struct Shortcut {
+        std::filesystem::path file;
+        std::string arguments;
+        std::string description;
+        std::filesystem::path icon;
+        bool relative = false;
+    };
+
+    std::filesystem::path desktopDirectory();
+    bool insideLauncher(const std::filesystem::path& path);
+    std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path& suggested);
+    std::optional<std::filesystem::path> pickIcon(const std::filesystem::path& initial);
+    std::string createShortcut(const Shortcut& shortcut);
+    std::vector<unsigned char> iconPixels(const std::filesystem::path& file, int size);
+    std::string launchArgument();
+    bool headlessArgument();
+    bool forwardLaunch(const std::string& key, bool quiet);
+    void claimLaunches();
+    std::string narrow(const std::wstring& text);
     void reveal(const std::filesystem::path& path);
     bool recycle(const std::filesystem::path& path);
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial);

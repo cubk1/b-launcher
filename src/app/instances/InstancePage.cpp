@@ -4,6 +4,7 @@
 #include "app/shell/Icons.h"
 #include "app/instances/InstanceExport.h"
 #include "app/instances/InstanceMods.h"
+#include "app/instances/InstanceShortcut.h"
 #include "app/instances/Installer.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/shell/MainWindow.h"
@@ -62,6 +63,7 @@ namespace InstancePage {
         constexpr int SECTION_ADVANCED = 1;
         constexpr int SECTION_MODS = 2;
         constexpr int SECTION_EXPORT = 3;
+        constexpr int SECTION_SHORTCUT = 4;
         PageTransition sections(SECTION_MAIN);
         std::string sectionKey;
 
@@ -287,6 +289,17 @@ namespace InstancePage {
                     Instances::select(neighbour);
                 }
             });
+        }
+
+        void openShortcut(const std::string& key) {
+            if (Instances::find(key) == nullptr) {
+                return;
+            }
+            MainWindow::openVersionSettings(key);
+            sectionKey = key;
+            if (sections.page != SECTION_SHORTCUT) {
+                sections.go(SECTION_SHORTCUT);
+            }
         }
 
         bool sameFolder(const std::string& id) {
@@ -1282,6 +1295,10 @@ namespace InstancePage {
             if (InstanceExport::draw(entry)) {
                 sections.go(SECTION_MAIN);
             }
+        } else if (sections.page == SECTION_SHORTCUT) {
+            if (InstanceShortcut::draw(entry)) {
+                sections.go(SECTION_MAIN);
+            }
         } else {
             mainSection(entry);
         }
@@ -1299,6 +1316,7 @@ namespace InstancePage {
                     items.push_back(ActionMenuItem::make("测试游戏", 0xf188, [id] {
                                         Game::launch(id, true);
                                     })->enabledIf([] { return Game::state() == Game::State::Idle; }));
+                    items.push_back(ActionMenuItem::make("生成快捷方式", 0xf108, [id] { openShortcut(id); }));
                     items.push_back(ActionMenuItem::make("打开游戏目录", 0xf07c, [id] {
                         if (const Instances::Entry* entry = Instances::find(id)) {
                             Platform::open(entry->gameDirectory);

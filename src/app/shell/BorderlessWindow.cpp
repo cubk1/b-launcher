@@ -327,6 +327,17 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
                 return 0;
             }
             break;
+        case WM_COPYDATA: {
+            const COPYDATASTRUCT* data = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
+            if (onCopyData && data != nullptr && data->lpData != nullptr && data->cbData >= sizeof(wchar_t)) {
+                std::wstring text((const wchar_t*) data->lpData, data->cbData / sizeof(wchar_t));
+                while (!text.empty() && text.back() == L'\0') {
+                    text.pop_back();
+                }
+                return onCopyData((unsigned long long) data->dwData, text) ? 1 : 0;
+            }
+            break;
+        }
         case WM_CLOSE:
             if (onClose) {
                 onClose();

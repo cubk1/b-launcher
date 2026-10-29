@@ -242,6 +242,14 @@ namespace {
 }
 
 int main() {
+    std::string pendingLaunch = Platform::launchArgument();
+    bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
+    if (!pendingLaunch.empty() && Platform::forwardLaunch(pendingLaunch, headless)) {
+        return 0;
+    }
+    Game::setQuiet(headless);
+    bool launchSent = false;
+    bool launchFailed = false;
     SetProcessDPIAware();
     HDC screen = GetDC(nullptr);
     float dpiScale = GetDeviceCaps(screen, LOGPIXELSX) / 96.0f;
@@ -263,6 +271,19 @@ int main() {
     window.setVsync(true);
     window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
     Platform::window = window.hwnd;
+    Platform::claimLaunches();
+    bool quietLaunch = headless;
+    window.onCopyData = [&pendingLaunch, &quietLaunch](unsigned long long kind, const std::wstring& text) {
+        if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
+            return false;
+        }
+        pendingLaunch = Platform::narrow(text);
+        quietLaunch = kind == Platform::LAUNCH_QUIET_MESSAGE;
+        if (!quietLaunch) {
+            Platform::showWindow();
+        }
+        return true;
+    };
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -325,6 +346,27 @@ int main() {
         Updates::poll();
         JavaDownloads::poll();
 
+        if (!pendingLaunch.empty() && !Instances::loading()) {
+            std::string key = pendingLaunch;
+            pendingLaunch.clear();
+            std::string name = key.substr(key.find('/') + 1);
+            bool failed = true;
+            if (Instances::find(key) == nullptr) {
+                Instances::notify("找不到实例 " + name + "，快捷方式可能已失效", true);
+            } else if (Game::state() != Game::State::Idle) {
+                Instances::notify("已有游戏正在启动或运行，没有启动 " + name, true);
+            } else {
+                Instances::select(key);
+                MainWindow::showHome();
+                Game::launch(key);
+                failed = Game::state() == Game::State::Idle;
+                launchSent = !failed;
+            }
+            launchFailed = failed;
+            if (failed && quietLaunch && !headless) {
+                Platform::showWindow();
+            }
+        }
         UiRender::uiScale = scale / (float) UiRender::guiScale();
         UiRender::begin(ImGui::GetForegroundDrawList());
         NewUi::render(MainWindow::draw);
@@ -338,7 +380,9 @@ int main() {
         window.swap();
         if (!shown) {
             shown = true;
-            window.show(startMaximized);
+            if (!headless) {
+                window.show(startMaximized);
+            }
         }
         LogWindow::frame(scale);
 
@@ -365,7 +409,8 @@ int main() {
             MainWindow::closeRequested = false;
             window.close();
         }
-        if (Appearance::rememberWindow() && !window.sizing() && storeWindow(window, scale)) {
+        if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd) && !window.sizing() &&
+            storeWindow(window, scale)) {
             Config::save();
         }
     };
@@ -385,7 +430,7 @@ int main() {
         frame();
     };
     window.onClose = [&]() {
-        if (Appearance::rememberWindow()) {
+        if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd)) {
             storeWindow(window, scale);
         }
         DestroyWindow(window.hwnd);
@@ -393,7 +438,7 @@ int main() {
 
     while (window.pumpMessages()) {
         GameLog::poll();
-        if (window.minimized() || (shown && !IsWindowVisible(window.hwnd))) {
+        if (window.minimized() || (shown && !headless && !IsWindowVisible(window.hwnd))) {
             if (!released) {
                 released = true;
                 releaseMemory();
@@ -404,6 +449,16 @@ int main() {
         }
         auto started = std::chrono::steady_clock::now();
         frame();
+        if (headless) {
+            if (launchSent && Game::state() == Game::State::Running) {
+                headless = false;
+                window.close();
+            } else if (launchFailed || (launchSent && Game::state() == Game::State::Idle)) {
+                headless = false;
+                Game::setQuiet(false);
+                window.show(startMaximized);
+            }
+        }
         if (sinceMs(lastInput) > 20000.0 && sinceMs(lastCompact) > 180000.0) {
             lastCompact = std::chrono::steady_clock::now();
             UiFont::compact();

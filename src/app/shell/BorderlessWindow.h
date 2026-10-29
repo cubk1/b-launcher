@@ -23,6 +23,7 @@ public:
     bool quitOnDestroy = true;
     std::function<void()> onClose;
     std::function<void()> onModalFrame;
+    std::function<bool(unsigned long long kind, const std::wstring& text)> onCopyData;
     void* imguiContext = nullptr;
 
     bool create(const std::wstring& title, int clientWidth, int clientHeight, HGLRC share = nullptr);

@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cwchar>
+#include <cwctype>
+#include <cstdio>
 #include <map>
 
 namespace Platform {
@@ -152,6 +154,226 @@ namespace Platform {
 
     std::wstring widen(const std::string& text) {
         return wide(text);
+    }
+
+    namespace {
+        const wchar_t* const MAIN_MARK = L"b-launcher.main";
+
+        std::wstring folded(std::wstring text) {
+            for (wchar_t& c : text) {
+                c = (wchar_t) towlower(c);
+            }
+            return text;
+        }
+
+        std::wstring selfPath() {
+            wchar_t buffer[32768];
+            DWORD length = GetModuleFileNameW(nullptr, buffer, (DWORD) (sizeof(buffer) / sizeof(buffer[0])));
+            return std::wstring(buffer, length);
+        }
+
+        std::wstring processPath(DWORD pid) {
+            HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (process == nullptr) {
+                return {};
+            }
+            wchar_t buffer[32768];
+            DWORD length = (DWORD) (sizeof(buffer) / sizeof(buffer[0]));
+            std::wstring out = QueryFullProcessImageNameW(process, 0, buffer, &length) ? std::wstring(buffer, length)
+                                                                                       : std::wstring();
+            CloseHandle(process);
+            return out;
+        }
+
+        struct Running {
+            std::wstring self;
+            HWND found = nullptr;
+        };
+
+        BOOL CALLBACK findRunning(HWND hwnd, LPARAM data) {
+            Running* search = (Running*) data;
+            if (GetPropW(hwnd, MAIN_MARK) == nullptr) {
+                return TRUE;
+            }
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            if (pid == GetCurrentProcessId() || folded(processPath(pid)) != search->self) {
+                return TRUE;
+            }
+            search->found = hwnd;
+            return FALSE;
+        }
+    }
+
+    std::string narrow(const std::wstring& text) {
+        return utf8(text);
+    }
+
+    std::filesystem::path desktopDirectory() {
+        std::filesystem::path folder;
+        PWSTR desktop = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desktop)) && desktop != nullptr) {
+            folder = desktop;
+        }
+        CoTaskMemFree(desktop);
+        return folder;
+    }
+
+    bool insideLauncher(const std::filesystem::path& path) {
+        std::wstring root = folded(exeDirectory().lexically_normal().wstring());
+        std::wstring file = folded(path.lexically_normal().wstring());
+        if (!root.empty() && root.back() != L'\\') {
+            root.push_back(L'\\');
+        }
+        return !root.empty() && file.size() > root.size() && file.compare(0, root.size(), root) == 0;
+    }
+
+    std::vector<unsigned char> iconPixels(const std::filesystem::path& file, int size) {
+        std::vector<unsigned char> rgba;
+        HICON icon = (HICON) LoadImageW(nullptr, file.c_str(), IMAGE_ICON, size, size, LR_LOADFROMFILE);
+        if (icon == nullptr) {
+            return rgba;
+        }
+        ICONINFO parts = {};
+        if (GetIconInfo(icon, &parts) && parts.hbmColor != nullptr) {
+            BITMAP shape = {};
+            GetObjectW(parts.hbmColor, sizeof(shape), &shape);
+            int w = shape.bmWidth;
+            int h = shape.bmHeight;
+            BITMAPINFO info = {};
+            info.bmiHeader.biSize = sizeof(info.bmiHeader);
+            info.bmiHeader.biWidth = w;
+            info.bmiHeader.biHeight = -h;
+            info.bmiHeader.biPlanes = 1;
+            info.bmiHeader.biBitCount = 32;
+            info.bmiHeader.biCompression = BI_RGB;
+            std::vector<unsigned char> color((size_t) w * h * 4);
+            std::vector<unsigned char> mask((size_t) w * h * 4);
+            HDC screen = GetDC(nullptr);
+            bool read =
+                    w > 0 && h > 0 && GetDIBits(screen, parts.hbmColor, 0, h, color.data(), &info, DIB_RGB_COLORS) == h;
+            bool masked = read && parts.hbmMask != nullptr &&
+                    GetDIBits(screen, parts.hbmMask, 0, h, mask.data(), &info, DIB_RGB_COLORS) == h;
+            ReleaseDC(nullptr, screen);
+            if (read && w == size && h == size) {
+                bool alpha = false;
+                for (size_t i = 3; i < color.size(); i += 4) {
+                    alpha = alpha || color[i] != 0;
+                }
+                rgba.resize(color.size());
+                for (size_t i = 0; i < color.size(); i += 4) {
+                    rgba[i] = color[i + 2];
+                    rgba[i + 1] = color[i + 1];
+                    rgba[i + 2] = color[i];
+                    rgba[i + 3] = alpha ? color[i + 3] : (masked && mask[i] != 0 ? 0 : 255);
+                }
+            }
+        }
+        if (parts.hbmColor != nullptr) {
+            DeleteObject(parts.hbmColor);
+        }
+        if (parts.hbmMask != nullptr) {
+            DeleteObject(parts.hbmMask);
+        }
+        DestroyIcon(icon);
+        return rgba;
+    }
+
+    std::string createShortcut(const Shortcut& shortcut) {
+        std::filesystem::path file = shortcut.file;
+        if (folded(file.extension().wstring()) != L".lnk") {
+            file += L".lnk";
+        }
+        std::wstring exe = selfPath();
+        HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        IShellLinkW* link = nullptr;
+        HRESULT result = CoCreateInstance(__uuidof(ShellLink), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link));
+        if (SUCCEEDED(result)) {
+            link->SetPath(exe.c_str());
+            link->SetArguments(wide(shortcut.arguments).c_str());
+            link->SetDescription(wide(shortcut.description).c_str());
+            if (shortcut.relative) {
+                link->SetWorkingDirectory(L"");
+                link->SetRelativePath(file.c_str(), 0);
+            } else {
+                link->SetWorkingDirectory(exeDirectory().wstring().c_str());
+            }
+            if (!shortcut.icon.empty()) {
+                link->SetIconLocation(shortcut.icon.c_str(), 0);
+            } else if (!shortcut.relative) {
+                link->SetIconLocation(exe.c_str(), 0);
+            }
+            IPersistFile* store = nullptr;
+            result = link->QueryInterface(IID_PPV_ARGS(&store));
+            if (SUCCEEDED(result)) {
+                result = store->Save(file.c_str(), TRUE);
+                store->Release();
+            }
+            link->Release();
+        }
+        if (SUCCEEDED(com)) {
+            CoUninitialize();
+        }
+        if (FAILED(result)) {
+            char code[16];
+            std::snprintf(code, sizeof(code), "%08lX", (unsigned long) result);
+            return std::string("无法创建快捷方式（0x") + code + "）";
+        }
+        return {};
+    }
+
+    std::string launchArgument() {
+        int count = 0;
+        LPWSTR* args = CommandLineToArgvW(GetCommandLineW(), &count);
+        if (args == nullptr) {
+            return {};
+        }
+        std::string key;
+        for (int i = 1; i + 1 < count; i++) {
+            if (std::wcscmp(args[i], L"--launch") == 0) {
+                key = utf8(args[i + 1]);
+            }
+        }
+        LocalFree(args);
+        return key;
+    }
+
+    bool headlessArgument() {
+        int count = 0;
+        LPWSTR* args = CommandLineToArgvW(GetCommandLineW(), &count);
+        if (args == nullptr) {
+            return false;
+        }
+        bool found = false;
+        for (int i = 1; i < count; i++) {
+            found = found || std::wcscmp(args[i], L"--headless") == 0;
+        }
+        LocalFree(args);
+        return found;
+    }
+
+    bool forwardLaunch(const std::string& key, bool quiet) {
+        Running search{folded(selfPath())};
+        EnumWindows(findRunning, (LPARAM) &search);
+        if (search.found == nullptr) {
+            return false;
+        }
+        DWORD pid = 0;
+        GetWindowThreadProcessId(search.found, &pid);
+        AllowSetForegroundWindow(pid);
+        std::wstring text = wide(key);
+        COPYDATASTRUCT data = {(ULONG_PTR) (quiet ? LAUNCH_QUIET_MESSAGE : LAUNCH_MESSAGE),
+                               (DWORD) ((text.size() + 1) * sizeof(wchar_t)), (PVOID) text.c_str()};
+        DWORD_PTR answer = 0;
+        return SendMessageTimeoutW(search.found, WM_COPYDATA, 0, (LPARAM) &data, SMTO_ABORTIFHUNG, 5000, &answer) !=
+                0 &&
+                answer == 1;
+    }
+
+    void claimLaunches() {
+        if (window != nullptr) {
+            SetPropW((HWND) window, MAIN_MARK, (HANDLE) 1);
+        }
     }
 
     bool openUrl(const std::string& url) {
@@ -322,7 +544,7 @@ namespace Platform {
                         CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
                 DWORD options = 0;
                 dialog->GetOptions(&options);
-                dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT);
+                dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_OVERWRITEPROMPT | FOS_NODEREFERENCELINKS);
                 dialog->SetTitle(title);
                 dialog->SetFileTypes(filterCount, filters);
                 dialog->SetDefaultExtension(extension);
@@ -359,6 +581,17 @@ namespace Platform {
                                                       void* owner) {
         const COMDLG_FILTERSPEC filters[] = {{L"日志文件 (*.log)", L"*.log"}, {L"文本文件 (*.txt)", L"*.txt"}};
         return saveDialog(suggested, title, owner, filters, 2, L"log");
+    }
+
+    std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path& suggested) {
+        const COMDLG_FILTERSPEC filters[] = {{L"快捷方式 (*.lnk)", L"*.lnk"}};
+        return saveDialog(suggested, L"快捷方式保存位置", nullptr, filters, 1, L"lnk");
+    }
+
+    std::optional<std::filesystem::path> pickIcon(const std::filesystem::path& initial) {
+        const COMDLG_FILTERSPEC filters[] = {{L"图标或图片", L"*.ico;*.png;*.jpg;*.jpeg;*.bmp;*.gif"},
+                                             {L"所有文件", L"*.*"}};
+        return pickFile(initial, L"选择快捷方式图标", filters, 2);
     }
 
     std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path& suggested) {

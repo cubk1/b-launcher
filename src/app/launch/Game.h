@@ -21,6 +21,7 @@ namespace Game {
     const std::string& instance();
 
     void launch(const std::string& key, bool test = false);
+    void setQuiet(bool on);
     void cancel();
     void stop();
     void poll();
