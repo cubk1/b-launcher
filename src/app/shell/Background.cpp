@@ -1,8 +1,8 @@
 #include "app/shell/Background.h"
 #include "app/system/Config.h"
 #include "app/shell/Icons.h"
+#include "app/system/Notices.h"
 
-#include "ui/panel/Notifications.h"
 #include "ui/panel/UiImages.h"
 
 #include <core/base/strings.hpp>
@@ -279,7 +279,7 @@ namespace Background {
             return;
         }
         if (!result->ok) {
-            Notifications::add(Notifications::FAILED, "背景图片：" + result->error, 4000);
+            Notices::add(Notices::Kind::Failed, "背景图片：" + result->error, 4000);
             chosen.clear();
             Config::data()["backgroundPath"] = chosen;
             Config::save();

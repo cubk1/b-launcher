@@ -4,8 +4,7 @@
 #include "app/instances/Instances.h"
 #include "app/shell/MainWindow.h"
 #include "app/instances/NewInstanceScreen.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/hash.hpp>
@@ -660,10 +659,10 @@ namespace Installer {
         }
         join();
         if (!id.empty()) {
-            Notifications::add(Notifications::DONE,
-                               (modifying ? "已修改 " + id + " 的加载器" : "已安装 " + id) + "，耗时 " +
-                                       duration(Clock::now() - startedAt),
-                               4000);
+            Notices::add(Notices::Kind::Done,
+                         (modifying ? "已修改 " + id + " 的加载器" : "已安装 " + id) + "，耗时 " +
+                                 duration(Clock::now() - startedAt),
+                         4000);
             finishAll(Part::Status::Done);
             finishedKey = Instances::keyOf(sourceKey, id);
             lingering = true;
@@ -672,7 +671,7 @@ namespace Installer {
         }
         busy = false;
         if (!wasCancelled) {
-            Notifications::add(Notifications::FAILED, (modifying ? "修改加载器失败：" : "安装失败：") + error, 5000);
+            Notices::add(Notices::Kind::Failed, (modifying ? "修改加载器失败：" : "安装失败：") + error, 5000);
         }
         Instances::refresh();
     }

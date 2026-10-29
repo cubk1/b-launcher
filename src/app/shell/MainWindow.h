@@ -13,6 +13,7 @@ namespace MainWindow {
     extern bool minimizeRequested;
     extern bool maximizeRequested;
 
+    void init();
     void setSize(float width, float height, bool maximized);
     float width();
     float sidebarWidth();

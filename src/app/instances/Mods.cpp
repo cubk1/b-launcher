@@ -1,8 +1,8 @@
 #include "app/instances/Mods.h"
 #include "app/instances/Instances.h"
 #include "app/system/Platform.h"
+#include "app/system/Notices.h"
 
-#include "ui/panel/Notifications.h"
 #include "ui/panel/UiImages.h"
 
 #include <core/base/strings.hpp>
@@ -193,9 +193,8 @@ namespace Mods {
         }
         auto renamed = blb::modpack::set_mod_enabled(mod->info, enabled);
         if (!renamed) {
-            Notifications::add(Notifications::FAILED,
-                               (enabled ? "无法启用 " : "无法禁用 ") + mod->info.name + "：" + renamed.err().message,
-                               5000);
+            Notices::add(Notices::Kind::Failed,
+                         (enabled ? "无法启用 " : "无法禁用 ") + mod->info.name + "：" + renamed.err().message, 5000);
             return;
         }
         mod->info.file = *renamed;
@@ -211,7 +210,7 @@ namespace Mods {
         }
         std::string name = mod->info.name;
         if (!Platform::recycle(file)) {
-            Notifications::add(Notifications::FAILED, "无法删除 " + name, 5000);
+            Notices::add(Notices::Kind::Failed, "无法删除 " + name, 5000);
             return;
         }
         List& list = lists[instanceKey];
@@ -219,7 +218,7 @@ namespace Mods {
                 std::remove_if(list.mods.begin(), list.mods.end(), [&](const Mod& m) { return m.info.file == file; }),
                 list.mods.end());
         checkDependencies(list);
-        Notifications::add(Notifications::DONE, "已将 " + name + " 移到回收站", 2500);
+        Notices::add(Notices::Kind::Done, "已将 " + name + " 移到回收站", 2500);
     }
 
     std::filesystem::path folder(const std::string& instanceKey, const char* kind) {
@@ -259,12 +258,12 @@ namespace Mods {
             }
             return [instanceKey, copied, problem, what, instanceName, mods, total = files.size()]() {
                 if (copied > 0) {
-                    Notifications::add(Notifications::DONE,
-                                       "已添加 " + std::to_string(copied) + " 个" + what + "到 " + instanceName, 3000);
+                    Notices::add(Notices::Kind::Done,
+                                 "已添加 " + std::to_string(copied) + " 个" + what + "到 " + instanceName, 3000);
                 }
                 if (!problem.empty()) {
-                    Notifications::add(Notifications::FAILED,
-                                       std::to_string(total - copied) + " 个" + what + "添加失败：" + problem, 5000);
+                    Notices::add(Notices::Kind::Failed,
+                                 std::to_string(total - copied) + " 个" + what + "添加失败：" + problem, 5000);
                 }
                 if (mods && lists.count(instanceKey) != 0) {
                     scan(instanceKey);

@@ -2,8 +2,8 @@
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Redirect.h"
+#include "app/system/Notices.h"
 
-#include "ui/panel/Notifications.h"
 #include "ui/panel/UiImages.h"
 
 #include <core/auth/offline.hpp>
@@ -94,7 +94,7 @@ namespace Accounts {
         }
 
         void notify(const std::string& text, bool error) {
-            Notifications::add(error ? Notifications::FAILED : Notifications::DONE, text, error ? 5000 : 2500);
+            Notices::add(error ? Notices::Kind::Failed : Notices::Kind::Done, text, error ? 5000 : 2500);
         }
 
         std::optional<std::string> protect(const std::string& plain, bool encrypt) {
@@ -119,7 +119,7 @@ namespace Accounts {
             }
             std::optional<std::string> plain = protect(*sealed, false);
             if (!plain) {
-                Notifications::add(Notifications::FAILED, "无法读取保存的账户，请重新添加", 5000);
+                Notices::add(Notices::Kind::Failed, "无法读取保存的账户，请重新添加", 5000);
                 return;
             }
             auto parsed = blb::auth::parse_accounts(*plain);

@@ -11,6 +11,7 @@
 #include "app/home/Homepage.h"
 #include "app/launch/LogWindow.h"
 #include "app/system/Config.h"
+#include "app/system/Notices.h"
 #include "app/shell/Icons.h"
 #include "app/instances/InstancePage.h"
 #include "app/instances/Installer.h"
@@ -155,6 +156,28 @@ namespace MainWindow {
         if (NewUi::click(x, y, size, size)) {
             maximizeRequested = true;
         }
+    }
+
+    static const Notifications::Style& noticeStyle(Notices::Kind kind) {
+        switch (kind) {
+            case Notices::Kind::Done: return Notifications::DONE;
+            case Notices::Kind::Failed: return Notifications::FAILED;
+            default: return Notifications::INFO;
+        }
+    }
+
+    void init() {
+        Notices::show({
+                [](Notices::Kind kind, const std::string& text, long long durationMs) {
+                    Notifications::add(noticeStyle(kind), text, durationMs);
+                },
+                [](Notices::Kind kind, const std::string& text) {
+                    return Notifications::live(noticeStyle(kind), text);
+                },
+                [](const std::string& id, Notices::Kind kind, const std::string& text, long long durationMs) {
+                    Notifications::finish(id, noticeStyle(kind), text, durationMs);
+                },
+        });
     }
 
     void setSize(float w, float h, bool isMaximized) {

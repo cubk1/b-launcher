@@ -1,8 +1,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/hash.hpp>
@@ -59,7 +58,7 @@ namespace JavaDownloads {
                     next = work(token);
                 } catch (const std::exception& error) {
                     std::string text = error.what();
-                    next = [text] { Notifications::add(Notifications::FAILED, "Java 下载出错：" + text, 5000); };
+                    next = [text] { Notices::add(Notices::Kind::Failed, "Java 下载出错：" + text, 5000); };
                 }
                 if (next) {
                     std::lock_guard<std::mutex> guard(lock);
@@ -379,9 +378,9 @@ namespace JavaDownloads {
                 if (error.empty()) {
                     job->fraction = 1.0f;
                     Catalog::addJava(java);
-                    Notifications::add(Notifications::DONE, label + " 已安装", 3000);
+                    Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
                 } else {
-                    Notifications::add(Notifications::FAILED, "安装 " + label + " 失败：" + error, 5000);
+                    Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);
                 }
             };
         });

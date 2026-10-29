@@ -8,8 +8,7 @@
 #include "app/shell/MainWindow.h"
 #include "app/launch/Patches.h"
 #include "app/system/Platform.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/progress.hpp>
@@ -248,7 +247,7 @@ namespace Game {
                 killed = false;
                 current = State::Running;
                 nextWatch = Clock::now() + WATCH_INTERVAL;
-                Notifications::add(Notifications::DONE, "已启动 " + name, 2500);
+                Notices::add(Notices::Kind::Done, "已启动 " + name, 2500);
                 if (quiet) {
                     return;
                 }
@@ -266,11 +265,11 @@ namespace Game {
             key.clear();
             if (wasCancelled) {
                 GameLog::note("已取消启动");
-                Notifications::add(Notifications::INFO, "已取消启动", 2000);
+                Notices::add(Notices::Kind::Info, "已取消启动", 2000);
             } else {
                 GameLog::note("启动失败：" + (error.empty() ? std::string("游戏没有启动") : error));
-                Notifications::add(Notifications::FAILED,
-                                   "启动失败：" + (error.empty() ? std::string("游戏没有启动") : error), 5000);
+                Notices::add(Notices::Kind::Failed,
+                             "启动失败：" + (error.empty() ? std::string("游戏没有启动") : error), 5000);
             }
         }
 
@@ -293,15 +292,14 @@ namespace Game {
             if (!postExit.empty()) {
                 std::string problem = Platform::startCommand(postExit, variables, commandDirectory);
                 if (!problem.empty()) {
-                    Notifications::add(Notifications::FAILED, "退出后命令：" + problem, 5000);
+                    Notices::add(Notices::Kind::Failed, "退出后命令：" + problem, 5000);
                 }
             }
             GameLog::note(killed ? std::string("游戏已被结束") : "游戏已退出，退出代码 " + std::to_string(code));
             if (killed) {
-                Notifications::add(Notifications::INFO, "已结束 " + name, 2000);
+                Notices::add(Notices::Kind::Info, "已结束 " + name, 2000);
             } else if (code != 0) {
-                Notifications::add(Notifications::FAILED, name + " 异常退出（代码 " + std::to_string(code) + "）",
-                                   5000);
+                Notices::add(Notices::Kind::Failed, name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
                 LogWindow::open();
             }
             key.clear();
@@ -534,7 +532,7 @@ namespace Game {
         auto result = game.kill();
         if (!result) {
             killed = false;
-            Notifications::add(Notifications::FAILED, "无法结束游戏：" + result.err().message, 4000);
+            Notices::add(Notices::Kind::Failed, "无法结束游戏：" + result.err().message, 4000);
         }
         nextWatch = Clock::now();
     }

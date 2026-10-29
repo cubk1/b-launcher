@@ -2,8 +2,7 @@
 #include "app/instances/Installer.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/hash.hpp>
 #include <core/base/strings.hpp>
@@ -297,7 +296,7 @@ namespace Instances {
             blb::instance::isolation_mode isolation = mode;
             running++;
             activityText = activity + " " + id;
-            std::string notice = Notifications::live(Notifications::INFO, activityText);
+            std::string notice = Notices::live(Notices::Kind::Info, activityText);
             submit([with, id, all, isolation, success, failure, notice, operation, done]() -> Continuation {
                 blb::result<void> outcome = operation(with, id);
                 std::string error = outcome ? std::string() : outcome.err().message;
@@ -308,9 +307,9 @@ namespace Instances {
                     }
                     apply(fresh);
                     if (error.empty()) {
-                        Notifications::finish(notice, Notifications::DONE, success, 2500);
+                        Notices::finish(notice, Notices::Kind::Done, success, 2500);
                     } else {
-                        Notifications::finish(notice, Notifications::FAILED, failure + error, 4000);
+                        Notices::finish(notice, Notices::Kind::Failed, failure + error, 4000);
                     }
                     if (done) {
                         done(error);
@@ -625,6 +624,6 @@ namespace Instances {
     }
 
     void notify(const std::string& text, bool error) {
-        Notifications::add(error ? Notifications::FAILED : Notifications::DONE, text, error ? 4000 : 2500);
+        Notices::add(error ? Notices::Kind::Failed : Notices::Kind::Done, text, error ? 4000 : 2500);
     }
 }

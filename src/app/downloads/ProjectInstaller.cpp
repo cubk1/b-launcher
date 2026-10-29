@@ -1,8 +1,7 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Instances.h"
 #include "app/system/Platform.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/hash.hpp>
@@ -51,7 +50,7 @@ namespace ProjectInstaller {
                     next = work(token);
                 } catch (const std::exception& error) {
                     std::string message = error.what();
-                    next = [message] { Notifications::add(Notifications::FAILED, "下载失败：" + message, 5000); };
+                    next = [message] { Notices::add(Notices::Kind::Failed, "下载失败：" + message, 5000); };
                 }
                 if (next) {
                     std::lock_guard<std::mutex> guard(lock);
@@ -120,7 +119,7 @@ namespace ProjectInstaller {
 
         void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text) {
             task->state = (int) (ok ? State::Done : State::Failed);
-            Notifications::add(ok ? Notifications::DONE : Notifications::FAILED, text, ok ? 3000 : 5000);
+            Notices::add(ok ? Notices::Kind::Done : Notices::Kind::Failed, text, ok ? 3000 : 5000);
         }
     }
 
