@@ -123,6 +123,15 @@ namespace ProjectInstaller {
         }
     }
 
+    bool busy() {
+        for (const auto& [versionId, task] : tasks) {
+            if (task->state.load() == (int) State::Running) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     State state(const std::string& versionId) {
         auto found = tasks.find(versionId);
         return found != tasks.end() ? (State) found->second->state.load() : State::Idle;

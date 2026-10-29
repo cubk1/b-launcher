@@ -43,6 +43,10 @@ namespace Platform {
     std::string launchArgument();
     bool headlessArgument();
     std::string uiArgument();
+    // Starts the launcher again and closes the window; false when it could not be started.
+    bool restart();
+    // A launcher started by restart waits here until the previous one has exited.
+    void waitForPrevious();
     bool forwardLaunch(const std::string& key, bool quiet);
     void claimLaunches();
     void claimTaskbar();

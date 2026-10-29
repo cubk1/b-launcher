@@ -8,6 +8,7 @@
 #include <string_view>
 
 int main() {
+    Platform::waitForPrevious();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
     if (!pendingLaunch.empty() && Platform::forwardLaunch(pendingLaunch, headless)) {
@@ -17,7 +18,8 @@ int main() {
         Platform::claimTaskbar();
     }
     Game::setQuiet(headless);
-    if (std::string_view(UiStyles::choose(Platform::uiArgument()).key) == "forgotten-melody") {
+    UiStyles::start(Platform::uiArgument());
+    if (std::string_view(UiStyles::running().key) == "forgotten-melody") {
         return ForgottenMelody::run(pendingLaunch, headless);
     }
     return ImGuiApp::run(pendingLaunch, headless);

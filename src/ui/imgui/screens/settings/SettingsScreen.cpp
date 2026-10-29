@@ -13,7 +13,9 @@
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/launch/Patches.h"
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "app/system/Notices.h"
 #include "app/system/Platform.h"
+#include "app/system/Services.h"
 #include "app/system/UiStyles.h"
 
 #include <core/base/strings.hpp>
@@ -359,11 +361,25 @@ namespace SettingsScreen {
                         }
                         return options;
                     });
-            float saved = UiRender::alphaMul;
-            UiRender::alphaMul = saved * 0.5f;
-            select("settings#uiStyle", uiStyle, y, true);
-            UiRender::alphaMul = saved;
-            explain("settings#uiStyle", "忘却的旋律，开发中", y, Page::controlRight() - SELECT_W - 8.0f, blocked);
+            select("settings#uiStyle", uiStyle, y, blocked);
+            float labelRight = Page::controlRight() - SELECT_W - 8.0f;
+            if (&UiStyles::current() != &UiStyles::running()) {
+                bool busy = Services::busy();
+                std::string text = "立即重启";
+                float w = Page::buttonWidth(text, 0xf2f1);
+                float x = labelRight - w;
+                if (Page::button("settings#restart", text, x, y + Page::FIELD_Y, w, true, blocked || busy, 0xf2f1) &&
+                    !Platform::restart()) {
+                    Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
+                }
+                std::string hint = busy ? "任务进行中，暂不能重启" : "重启后生效";
+                float hintW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                labelRight = x - 12.0f - hintW;
+                UiRender::textY(hint, labelRight, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                labelRight -= 8.0f;
+            }
+            explain("settings#uiStyle", "忘却的旋律，开发中", y, labelRight, blocked);
         }
 
         void appearanceRows(float y, bool blocked) {

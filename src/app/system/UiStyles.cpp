@@ -8,8 +8,10 @@ namespace UiStyles {
         // the default one. Settings of another interface go under a key of their own.
         const std::vector<Style> STYLES = {
                 {"default", "默认", true},
-                {"forgotten-melody", "忘却的旋律", false},
+                {"forgotten-melody", "忘却的旋律", true},
         };
+
+        const Style* active = nullptr;
 
         const Style* find(const std::string& key) {
             for (const Style& style : STYLES) {
@@ -32,9 +34,13 @@ namespace UiStyles {
         return saved != nullptr && saved->available ? *saved : STYLES[0];
     }
 
-    const Style& choose(const std::string& requested) {
+    void start(const std::string& requested) {
         const Style* named = find(requested);
-        return named != nullptr ? *named : current();
+        active = named != nullptr ? named : &current();
+    }
+
+    const Style& running() {
+        return active != nullptr ? *active : current();
     }
 
     void set(const std::string& key) {

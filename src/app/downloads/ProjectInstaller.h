@@ -10,6 +10,7 @@ namespace ProjectInstaller {
     enum class State { Idle, Running, Done, Failed };
 
     State state(const std::string& versionId);
+    bool busy();
     float progress(const std::string& versionId);
 
     std::string folder(Addons::Kind kind);
