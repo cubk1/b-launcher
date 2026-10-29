@@ -109,7 +109,8 @@ namespace exui {
         void CloseWindow(bool animate = true);
         void SetWindowEnabled(bool enabled);
         // Runs until the window is destroyed. A message box drops input aimed at
-        // other windows while their owners stay enabled.
+        // other windows while their owners stay enabled; the popups it owns, such
+        // as an open dropdown, still get theirs.
         void RunModalLoop(bool filterExternalInput = false);
         bool WaitForWindowAnimation();
 

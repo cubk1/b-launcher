@@ -21,6 +21,13 @@ namespace exui {
             return dpiX / 96.f;
         }
 
+        // The window itself or one it owns, directly or through other owned windows.
+        bool OwnedBy(HWND hwnd, HWND owner) {
+            for (; hwnd; hwnd = GetWindow(hwnd, GW_OWNER))
+                if (hwnd == owner) return true;
+            return false;
+        }
+
         void InvalidateTree(const Widget& widget) {
             widget.Invalidate();
             for (const auto& child : widget.GetChildren())
@@ -265,7 +272,7 @@ namespace exui {
             if (GetMessageW(&message, nullptr, 0, 0) <= 0) return; // WM_QUIT is consumed, not reposted
             const bool input = (message.message >= WM_KEYFIRST && message.message <= WM_KEYLAST) ||
                     (message.message >= WM_MOUSEFIRST && message.message <= WM_MOUSELAST);
-            if (filterExternalInput && input && message.hwnd != target) continue;
+            if (filterExternalInput && input && !OwnedBy(message.hwnd, target)) continue;
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
