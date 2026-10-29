@@ -5,15 +5,15 @@
 #include "app/home/WebImages.h"
 #include "app/home/Xaml.h"
 
-#include "ui/gl/ShaderUtil.h"
-#include "ui/panel/NewUi.h"
-#include "ui/panel/UiCommon.h"
-#include "ui/panel/UiFont.h"
-#include "ui/panel/UiRender.h"
-#include "ui/panel/UiSound.h"
-#include "ui/panel/UiState.h"
-#include "ui/panel/UiTheme.h"
-#include "ui/panel/UiWidgets.h"
+#include "ui/imgui/gl/ShaderUtil.h"
+#include "ui/imgui/panel/NewUi.h"
+#include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiRender.h"
+#include "ui/imgui/panel/UiSound.h"
+#include "ui/imgui/panel/UiState.h"
+#include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/panel/UiWidgets.h"
 
 #include <algorithm>
 #include <cmath>

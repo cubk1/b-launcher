@@ -5,17 +5,17 @@
 #include "app/shell/Page.h"
 #include "app/system/Platform.h"
 
-#include "ui/panel/NewUi.h"
-#include "ui/panel/Notifications.h"
-#include "ui/panel/UiCommon.h"
-#include "ui/panel/UiFont.h"
-#include "ui/panel/UiRender.h"
-#include "ui/panel/UiTheme.h"
-#include "ui/panel/UiWidgets.h"
-#include "ui/value/Bind.h"
-#include "ui/widget/IconButtonWidget.h"
-#include "ui/widget/TextFieldWidget.h"
-#include "ui/widget/ToggleWidget.h"
+#include "ui/imgui/panel/NewUi.h"
+#include "ui/imgui/panel/Notifications.h"
+#include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiRender.h"
+#include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/value/Bind.h"
+#include "ui/imgui/widget/IconButtonWidget.h"
+#include "ui/imgui/widget/TextFieldWidget.h"
+#include "ui/imgui/widget/ToggleWidget.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/progress.hpp>

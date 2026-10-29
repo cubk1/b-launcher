@@ -9,7 +9,7 @@ from fontTools.ttLib import TTFont
 TEXT_FONT = ("textFont", "assets/fonts/SSTRg.TTF")
 ICON_FONT = ("iconFont", "assets/fonts/fa-solid-900.ttf")
 EXTRA_ICONS = []
-ICON_FOLDERS = ["src/app", "src/ui"]
+ICON_FOLDERS = ["src/app", "src/ui/imgui"]
 PER_LINE = 32
 ICON_LITERAL = re.compile(r"\b0[xX]([eEfF][0-9a-fA-F]{3})\b")
 UNUSED_TABLES = ["kern", "GPOS", "GSUB", "GDEF", "DSIG", "hdmx", "LTSH", "VDMX", "PCLT", "FFTM"]

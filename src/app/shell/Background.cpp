@@ -3,7 +3,7 @@
 #include "app/shell/Icons.h"
 #include "app/system/Notices.h"
 
-#include "ui/panel/UiImages.h"
+#include "ui/imgui/panel/UiImages.h"
 
 #include <core/base/strings.hpp>
 

@@ -82,7 +82,7 @@ target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
 target_link_libraries(imgui PUBLIC freetype)
 
-file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp)
+file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
 find_program(PYTHON_ON_PATH NAMES python python3)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 set(FONT_PYTHON "")
@@ -99,7 +99,7 @@ if (FONT_PYTHON)
     set(GENERATED_FONTS_STAMP ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedFonts.stamp)
     file(GLOB_RECURSE ICON_SOURCES CONFIGURE_DEPENDS
             ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.h
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/*.h)
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.h)
     add_custom_command(OUTPUT ${GENERATED_FONTS_STAMP}
             BYPRODUCTS ${GENERATED_FONTS}
             COMMAND ${FONT_PYTHON} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_fonts.py ${GENERATED_FONTS} ${GENERATED_FONTS_STAMP}
@@ -116,7 +116,7 @@ else ()
     list(APPEND UI_SOURCES ${GENERATED_FONTS})
 endif ()
 add_library(ui STATIC ${UI_SOURCES})
-target_include_directories(ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/fonts)
+target_include_directories(ui PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/fonts)
 target_include_directories(ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 target_link_libraries(ui PUBLIC imgui)
 if (WIN32)

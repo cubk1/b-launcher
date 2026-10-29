@@ -2,8 +2,8 @@
 #include "app/system/Config.h"
 #include "app/shell/EmbeddedSounds.h"
 
-#include "ui/panel/UiTheme.h"
-#include "ui/panel/UiSound.h"
+#include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/panel/UiSound.h"
 
 #include <cstdio>
 

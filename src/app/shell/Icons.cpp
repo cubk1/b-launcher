@@ -1,7 +1,7 @@
 #include "app/shell/Icons.h"
 #include "app/shell/EmbeddedIcons.h"
 
-#include "ui/panel/UiImages.h"
+#include "ui/imgui/panel/UiImages.h"
 
 #include <core/installer/loader.hpp>
 
