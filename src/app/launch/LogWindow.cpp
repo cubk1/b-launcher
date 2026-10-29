@@ -59,6 +59,8 @@ namespace LogWindow {
 
         BorderlessWindow* mainWindow = nullptr;
         BorderlessWindow window;
+        ULONGLONG hiddenAt = 0;
+        constexpr ULONGLONG RELEASE_AFTER = 10000;
         std::wstring logTitle = L"游戏日志 - B Launcher";
         ImGuiContext* context = nullptr;
         bool created = false;
@@ -791,6 +793,7 @@ namespace LogWindow {
                 return;
             }
         }
+        hiddenAt = 0;
         shown = true;
         if (IsIconic(window.hwnd)) {
             ShowWindow(window.hwnd, SW_RESTORE);
@@ -812,6 +815,7 @@ namespace LogWindow {
             NewUi::cancelTextEdit();
         }
         ShowWindow(window.hwnd, SW_HIDE);
+        hiddenAt = GetTickCount64();
     }
 
     bool isOpen() {
@@ -820,6 +824,11 @@ namespace LogWindow {
 
     void frame(float scale) {
         layoutScale = scale;
+        if (created && !shown && hiddenAt != 0 && GetTickCount64() - hiddenAt > RELEASE_AFTER) {
+            hiddenAt = 0;
+            shutdown();
+            return;
+        }
         if (!created || !shown || IsIconic(window.hwnd)) {
             return;
         }

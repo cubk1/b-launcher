@@ -114,6 +114,34 @@ namespace UiFont {
         return ImGui::GetIO().Fonts->AddFontFromMemoryTTF((void*) data, (int) size, 16.0f, &config);
     }
 
+    static const unsigned char* mapFile(const std::string& path, unsigned int& size) {
+#if defined(_WIN32)
+        HANDLE file = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) {
+            return nullptr;
+        }
+        LARGE_INTEGER length = {};
+        if (!GetFileSizeEx(file, &length) || length.QuadPart < 100 || length.QuadPart > 0x7FFFFFFF) {
+            CloseHandle(file);
+            return nullptr;
+        }
+        HANDLE mapping = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        CloseHandle(file);
+        if (mapping == nullptr) {
+            return nullptr;
+        }
+        void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+        CloseHandle(mapping);
+        size = (unsigned int) length.QuadPart;
+        return (const unsigned char*) view;
+#else
+        (void) path;
+        (void) size;
+        return nullptr;
+#endif
+    }
+
     static ImFont* fromSystem(const std::string& spec) {
         std::string file = spec;
         int face = 0;
@@ -124,21 +152,39 @@ namespace UiFont {
         }
         bool absolute = file.size() > 1 && (file[1] == ':' || file[0] == '\\' || file[0] == '/');
         std::string path = absolute ? file : windowsFontsDir() + file;
-        std::ifstream probe(path, std::ios::binary);
-        if (!probe) {
-            return nullptr;
-        }
-        probe.close();
         ImFontConfig config;
         crisp(config, fallbackLoaderFlags);
         config.Flags |= ImFontFlags_NoLoadError;
         config.FontNo = face;
         snprintf(config.Name, sizeof(config.Name), "%s", spec.c_str());
+        unsigned int size = 0;
+        if (const unsigned char* data = mapFile(path, size)) {
+            config.FontDataOwnedByAtlas = false;
+            return ImGui::GetIO().Fonts->AddFontFromMemoryTTF((void*) data, (int) size, 16.0f, &config);
+        }
+        std::ifstream probe(path, std::ios::binary);
+        if (!probe) {
+            return nullptr;
+        }
+        probe.close();
         return ImGui::GetIO().Fonts->AddFontFromFileTTF(path.c_str(), 16.0f, &config);
     }
 
     void init() {
         ensureBaseFonts();
+    }
+
+    void compact() {
+        ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+        if (atlas == nullptr || atlas->Builder == nullptr || atlas->TexData == nullptr) {
+            return;
+        }
+        ImFontAtlasBuildDiscardBakes(atlas, 600);
+        ImVec2i size = ImFontAtlasTextureGetSizeEstimate(atlas);
+        if (atlas->Builder->RectsDiscardedCount > 0 || size.x != atlas->TexData->Width ||
+            size.y != atlas->TexData->Height) {
+            ImFontAtlasTextureRepack(atlas, size.x, size.y);
+        }
     }
 
     void ensureBaseFonts() {
@@ -275,8 +321,20 @@ namespace UiFont {
         float x0, y0, x1, y1;
     };
 
-    static Ink inkOf(const ImFontGlyph* glyph) {
+    static std::unordered_map<unsigned long long, Ink> inks;
+
+    static Ink inkOf(const ImFontBaked* baked, const ImFontGlyph* glyph) {
         Ink ink{glyph->X0, glyph->Y0, glyph->X1, glyph->Y1};
+        unsigned long long key = 0;
+        if (baked != nullptr) {
+            key = (unsigned long long) (uintptr_t) baked->ContainerFont;
+            key = key * 1000003ULL ^ (unsigned long long) (baked->Size * 64.0f);
+            key = key * 1000003ULL ^ (unsigned long long) glyph->Codepoint;
+            auto cached = inks.find(key);
+            if (cached != inks.end()) {
+                return cached->second;
+            }
+        }
         ImFontAtlas* atlas = ImGui::GetIO().Fonts;
         ImTextureData* tex = atlas->TexData;
         if (tex == nullptr || tex->Pixels == nullptr || tex->Format != ImTextureFormat_RGBA32 ||
@@ -286,6 +344,9 @@ namespace UiFont {
         ImTextureRect* r = ImFontAtlasPackGetRect(atlas, glyph->PackId);
         if (r == nullptr || r->w == 0 || r->h == 0) {
             return ink;
+        }
+        if (baked != nullptr && inks.size() > 8192) {
+            inks.clear();
         }
         int top = -1, bottom = -1, left = r->w, right = -1;
         for (int row = 0; row < r->h; row++) {
@@ -299,13 +360,16 @@ namespace UiFont {
                 }
             }
         }
-        if (top < 0) {
-            return ink;
+        if (top >= 0) {
+            float unitX = (glyph->X1 - glyph->X0) / r->w;
+            float unitY = (glyph->Y1 - glyph->Y0) / r->h;
+            ink = Ink{glyph->X0 + left * unitX, glyph->Y0 + top * unitY, glyph->X0 + (right + 1) * unitX,
+                      glyph->Y0 + (bottom + 1) * unitY};
         }
-        float unitX = (glyph->X1 - glyph->X0) / r->w;
-        float unitY = (glyph->Y1 - glyph->Y0) / r->h;
-        return Ink{glyph->X0 + left * unitX, glyph->Y0 + top * unitY, glyph->X0 + (right + 1) * unitX,
-                   glyph->Y0 + (bottom + 1) * unitY};
+        if (baked != nullptr) {
+            inks[key] = ink;
+        }
+        return ink;
     }
 
     static bool odd(float pixels) {
@@ -337,7 +401,8 @@ namespace UiFont {
             }
             ImFontBaked* baked = font->GetFontBaked(candidate, 1.0f);
             const ImFontGlyph* glyph = baked != nullptr ? referenceGlyph(font, baked) : nullptr;
-            if (glyph != nullptr && !odd(inkOf(glyph).y1 - inkOf(glyph).y0)) {
+            Ink box = glyph != nullptr ? inkOf(baked, glyph) : Ink{};
+            if (glyph != nullptr && !odd(box.y1 - box.y0)) {
                 chosen = candidate;
                 break;
             }
@@ -371,7 +436,7 @@ namespace UiFont {
         }
         const ImFontGlyph* glyph = referenceGlyph(slot.font, baked);
         if (glyph != nullptr) {
-            Ink ink = inkOf(glyph);
+            Ink ink = inkOf(baked, glyph);
             return (ink.y0 + ink.y1) * 0.5f * factor / (float) pixelScale();
         }
         return (baked->Ascent - baked->Descent) * 0.5f * factor / (float) pixelScale();
@@ -435,8 +500,12 @@ namespace UiFont {
         if (baked == nullptr) {
             return;
         }
+        int visible = 0;
         for (char32_t c : text) {
-            baked->FindGlyph((ImWchar) (c <= 0xFFFF ? c : 0xFFFD));
+            const ImFontGlyph* glyph = baked->FindGlyph((ImWchar) (c <= 0xFFFF ? c : 0xFFFD));
+            if (glyph != nullptr && glyph->Visible) {
+                visible++;
+            }
         }
         baked = bakedOf(slot, factor);
         UiRender::flush();
@@ -445,13 +514,6 @@ namespace UiFont {
         float scale = (float) pixelScale();
         float unit = UiRender::unit();
         float glyphScale = factor / scale * extraScale;
-        int visible = 0;
-        for (char32_t c : text) {
-            const ImFontGlyph* glyph = baked->FindGlyph((ImWchar) (c <= 0xFFFF ? c : 0xFFFD));
-            if (glyph != nullptr && glyph->Visible) {
-                visible++;
-            }
-        }
         bool lcd = visible > 0 && activeSubpixel != SUBPIXEL_OFF && UiGL::BlendColor != nullptr;
         if (lcd) {
             float rgb[3] = {((color >> 16) & 0xFF) / 255.0f, ((color >> 8) & 0xFF) / 255.0f, (color & 0xFF) / 255.0f};
@@ -794,7 +856,7 @@ namespace UiFont {
                 if (candidateGlyph == nullptr || !candidateGlyph->Visible) {
                     continue;
                 }
-                Ink candidateInk = inkOf(candidateGlyph);
+                Ink candidateInk = inkOf(candidateBaked, candidateGlyph);
                 int score = (odd(candidateInk.y1 - candidateInk.y0) != halfY ? 4 : 0) +
                         (odd(candidateInk.x1 - candidateInk.x0) ? 2 : 0) + (delta != 0.0f ? 1 : 0);
                 if (score < best) {
@@ -806,7 +868,7 @@ namespace UiFont {
             baked = bakedOf(chosen, factor);
             ink = baked->FindGlyphNoFallback((ImWchar) c);
         }
-        Ink box = inkOf(ink);
+        Ink box = inkOf(baked, ink);
         bool snapped = std::fabs(extra - 1.0f) < 0.001f;
         float left = centreX - (box.x1 - box.x0) * 0.5f * extra;
         float top = centreY - (box.y1 - box.y0) * 0.5f * extra;
@@ -845,7 +907,9 @@ namespace UiFont {
         float drawSize = size * UiRender::stableScale() * UiRender::rasterScale;
         Slot index = drawSlot(family, size);
         float extra = UiRender::scaleFactor / UiRender::rasterScale;
-        std::u32string leading = Ui::decode(strip(text));
+        bool coded = !raw && text.find("\xC2\xA7") != std::string::npos;
+        std::u32string chars = Ui::decode(text);
+        std::u32string leading = coded ? Ui::decode(strip(text)) : chars;
         int leadFamily = leading.empty() ? family : familyFor(leading[0], family);
         Slot lead = leadFamily == family ? index : drawSlot(leadFamily, size);
         float top = UiRender::transformY(y) +
@@ -857,11 +921,10 @@ namespace UiFont {
             draw(strip(text), x + offset, y + offset, shadowColor, family, size);
             shadowPass = false;
         }
-        std::u32string chars = Ui::decode(text);
         if (family == ICON && chars.size() == 1 && drawIconGlyph(chars[0], x, y, color, size, extra)) {
             return;
         }
-        if (raw || chars.find((char32_t) 167) == std::u32string::npos) {
+        if (!coded) {
             drawRuns(chars, UiRender::transformX(x), top, color, family, size, extra);
             return;
         }

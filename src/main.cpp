@@ -125,6 +125,8 @@ namespace {
     constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
     constexpr double IDLE_FRAME_MS = 100.0;
     constexpr double INPUT_GRACE_MS = 600.0;
+    constexpr double MODAL_FRAME_MS = 1000.0 / 60.0;
+    constexpr double MODAL_IDLE_MS = 100.0;
 
     bool foreground() {
         HWND active = GetForegroundWindow();
@@ -180,6 +182,15 @@ namespace {
             return 1000.0 / mode.dmDisplayFrequency;
         }
         return 1000.0 / 60.0;
+    }
+
+    void releaseMemory() {
+        HANDLE heaps[64];
+        DWORD count = std::min<DWORD>(GetProcessHeaps(64, heaps), 64);
+        for (DWORD i = 0; i < count; i++) {
+            HeapCompact(heaps[i], 0);
+        }
+        SetProcessWorkingSetSizeEx(GetCurrentProcess(), (SIZE_T) -1, (SIZE_T) -1, 0);
     }
 
     bool interacted() {
@@ -273,6 +284,8 @@ int main() {
     bool windowLight = false;
     WindowIcons icons;
     auto lastInput = std::chrono::steady_clock::now();
+    auto lastCompact = std::chrono::steady_clock::now();
+    bool released = false;
     double frameMs = refreshMs(window.hwnd);
     int framesSinceRefresh = 0;
 
@@ -356,7 +369,21 @@ int main() {
             Config::save();
         }
     };
-    window.onModalFrame = frame;
+    auto lastModal = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    int modalWidth = 0;
+    int modalHeight = 0;
+    window.onModalFrame = [&]() {
+        bool resized = window.width != modalWidth || window.height != modalHeight;
+        double gap = resized || UiState::animating() || Notifications::active() ? std::max(frameMs, MODAL_FRAME_MS)
+                                                                                : MODAL_IDLE_MS;
+        if (sinceMs(lastModal) < gap) {
+            return;
+        }
+        lastModal = std::chrono::steady_clock::now();
+        modalWidth = window.width;
+        modalHeight = window.height;
+        frame();
+    };
     window.onClose = [&]() {
         if (Appearance::rememberWindow()) {
             storeWindow(window, scale);
@@ -367,12 +394,26 @@ int main() {
     while (window.pumpMessages()) {
         GameLog::poll();
         if (window.minimized() || (shown && !IsWindowVisible(window.hwnd))) {
+            if (!released) {
+                released = true;
+                releaseMemory();
+            }
             LogWindow::frame(scale);
             Sleep(LogWindow::isOpen() ? 15 : 10);
             continue;
         }
         auto started = std::chrono::steady_clock::now();
         frame();
+        if (sinceMs(lastInput) > 20000.0 && sinceMs(lastCompact) > 180000.0) {
+            lastCompact = std::chrono::steady_clock::now();
+            UiFont::compact();
+        }
+        if (foreground()) {
+            released = false;
+        } else if (!released && sinceMs(lastInput) > 30000.0) {
+            released = true;
+            releaseMemory();
+        }
         if (++framesSinceRefresh >= 120) {
             framesSinceRefresh = 0;
             frameMs = refreshMs(window.hwnd);

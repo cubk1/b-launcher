@@ -43,6 +43,7 @@ namespace UiFont {
 
     void init();
     void ensureBaseFonts();
+    void compact();
     Slot slot(int family, float size);
     Slot drawSlot(int family, float size);
     float width(const std::string& text, int family, float size);

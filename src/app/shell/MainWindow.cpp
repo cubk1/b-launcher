@@ -282,6 +282,36 @@ namespace MainWindow {
 
     static void fadeGlyph(int glyph, float cx, float cy, uint32_t tint, float amount, float size);
 
+    static int framesCounted = 0;
+    static double fpsSince = -1.0;
+    static int fpsShown = 0;
+
+    static void countFrame() {
+        double now = ImGui::GetTime();
+        if (fpsSince < 0.0) {
+            fpsSince = now;
+            return;
+        }
+        framesCounted++;
+        double elapsed = now - fpsSince;
+        if (elapsed >= 0.5) {
+            fpsShown = (int) std::lround(framesCounted / elapsed);
+            framesCounted = 0;
+            fpsSince = now;
+        }
+    }
+
+    static std::string brandText() {
+        std::string text = Appearance::brandTitle();
+        const std::string mark = "{FPS}";
+        for (size_t at = text.find(mark); at != std::string::npos; at = text.find(mark, at)) {
+            std::string value = std::to_string(fpsShown);
+            text.replace(at, mark.size(), value);
+            at += value.size();
+        }
+        return text;
+    }
+
     static void brand() {
         float logo = 20.0f;
         float logoY = (TITLE_HEIGHT - logo) * 0.5f;
@@ -313,7 +343,7 @@ namespace MainWindow {
         float savedAlpha = UiRender::alphaMul;
         UiRender::alphaMul = savedAlpha * fading();
         float room = SIDEBAR_WIDTH - ITEM_X - LABEL_X - (ITEM_X + ICON_CENTER + 20.0f);
-        std::string title = UiFont::fitEnd(Appearance::brandTitle(), UiFont::MEDIUM, 15.0f, room);
+        std::string title = UiFont::fitEnd(brandText(), UiFont::MEDIUM, 15.0f, room);
         UiRender::textY(title, ITEM_X + LABEL_X, logoY, logo, UiTheme::textPrimary(), UiFont::MEDIUM, 15.0f);
         UiRender::alphaMul = savedAlpha;
     }
@@ -780,6 +810,7 @@ namespace MainWindow {
 
     void draw() {
         UiRender::reset();
+        countFrame();
         titleControls.clear();
         unfold();
         followList();

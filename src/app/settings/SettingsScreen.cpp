@@ -418,7 +418,8 @@ namespace SettingsScreen {
             y += Page::ROW_H;
 
             textRow(
-                    "settings#brandTitle", "左上角标题", "侧栏左上角标志旁边的文字，留空使用默认标题。",
+                    "settings#brandTitle", "左上角标题",
+                    "侧栏左上角标志旁边的文字，留空使用默认标题；写 {FPS} 会显示当前帧率，测试用。",
                     [] { return Appearance::customBrandTitle(); },
                     [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
                     Appearance::defaultBrandTitle());
