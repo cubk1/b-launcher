@@ -7,6 +7,7 @@
 #include "app/instances/Mods.h"
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
+#include "app/launch/ShortcutLaunch.h"
 #include "app/system/Catalog.h"
 #include "app/system/Updates.h"
 
@@ -31,6 +32,7 @@ namespace Services {
         Mods::poll();
         Updates::poll();
         JavaDownloads::poll();
+        ShortcutLaunch::poll();
     }
 
     void stop() {
