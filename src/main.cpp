@@ -1,25 +1,18 @@
-#include "app/accounts/Accounts.h"
 #include "app/shell/Appearance.h"
 #include "app/shell/Background.h"
 #include "app/shell/BorderlessWindow.h"
-#include "app/system/Catalog.h"
 #include "app/system/Config.h"
 #include "app/shell/Drop.h"
-#include "app/instances/Installer.h"
 #include "app/instances/InstanceExport.h"
-#include "app/instances/Mods.h"
 #include "app/launch/GameLog.h"
 #include "app/home/Homepage.h"
 #include "app/launch/LogWindow.h"
 #include "app/launch/Game.h"
 #include "app/instances/Instances.h"
-#include "app/launch/JavaDownloads.h"
 #include "app/shell/Logo.h"
 #include "app/shell/MainWindow.h"
-#include "app/downloads/Addons.h"
 #include "app/system/Platform.h"
-#include "app/downloads/ProjectInstaller.h"
-#include "app/system/Updates.h"
+#include "app/system/Services.h"
 
 #include "ui/gl/UiGL.h"
 #include "ui/panel/NewUi.h"
@@ -297,14 +290,10 @@ int main() {
     UiFont::init();
     Appearance::load();
     MainWindow::init();
-    Instances::init();
-    Accounts::init();
+    Services::start();
     window.imguiContext = ImGui::GetCurrentContext();
     LogWindow::init(&window);
     Drop::attach(window.hwnd);
-    Catalog::preload();
-    Addons::preload();
-    Updates::check(true, false);
     bool shown = false;
     bool windowLight = false;
     WindowIcons icons;
@@ -335,20 +324,11 @@ int main() {
         if (interacted()) {
             lastInput = std::chrono::steady_clock::now();
         }
-        Instances::poll();
-        Accounts::poll();
-        Game::poll();
-        Catalog::poll();
-        Addons::poll();
+        Services::poll();
         Background::poll();
-        ProjectInstaller::poll();
-        Installer::poll();
-        Mods::poll();
         InstanceExport::poll();
         Drop::poll();
         Homepage::poll();
-        Updates::poll();
-        JavaDownloads::poll();
 
         if (!pendingLaunch.empty() && !Instances::loading()) {
             std::string key = pendingLaunch;
@@ -496,19 +476,10 @@ int main() {
     LogWindow::shutdown();
     icons.release();
     Homepage::shutdown();
-    Updates::shutdown();
-    JavaDownloads::shutdown();
     Drop::shutdown();
     InstanceExport::shutdown();
-    Mods::shutdown();
-    Installer::shutdown();
     Background::shutdown();
-    ProjectInstaller::shutdown();
-    Addons::shutdown();
-    Catalog::shutdown();
-    Game::shutdown();
-    Accounts::shutdown();
-    Instances::shutdown();
+    Services::stop();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
