@@ -11,6 +11,7 @@
 #include "app/home/Homepage.h"
 #include "app/launch/LogWindow.h"
 #include "app/system/Config.h"
+#include "app/system/Interface.h"
 #include "app/system/Notices.h"
 #include "app/shell/Icons.h"
 #include "app/instances/InstancePage.h"
@@ -176,6 +177,27 @@ namespace MainWindow {
                 },
                 [](const std::string& id, Notices::Kind kind, const std::string& text, long long durationMs) {
                     Notifications::finish(id, noticeStyle(kind), text, durationMs);
+                },
+        });
+        Interface::connect({
+                [] { LogWindow::open(); },
+                [](const std::string& login, const std::string& authServer) {
+                    showAccounts();
+                    if (login == "yggdrasil") {
+                        AccountsScreen::openServerLogin(b_launcher_base::auth::account_type::yggdrasil, authServer,
+                                                        std::string());
+                    } else if (login == "nide8") {
+                        AccountsScreen::openServerLogin(b_launcher_base::auth::account_type::nide8, authServer,
+                                                        std::string());
+                    }
+                },
+                [](const std::string& key, bool loadersChanged) {
+                    NewInstanceScreen::reset();
+                    if (loadersChanged) {
+                        openVersionSettings(key);
+                    } else {
+                        showHome();
+                    }
                 },
         });
     }

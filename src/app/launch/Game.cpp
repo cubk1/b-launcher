@@ -1,13 +1,11 @@
 #include "app/launch/Game.h"
 #include "app/accounts/Accounts.h"
-#include "app/accounts/AccountsScreen.h"
 #include "app/launch/GameLog.h"
 #include "app/instances/Instances.h"
 #include "app/launch/LaunchDefaults.h"
-#include "app/launch/LogWindow.h"
-#include "app/shell/MainWindow.h"
 #include "app/launch/Patches.h"
 #include "app/system/Platform.h"
+#include "app/system/Interface.h"
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
@@ -300,7 +298,7 @@ namespace Game {
                 Notices::add(Notices::Kind::Info, "已结束 " + name, 2000);
             } else if (code != 0) {
                 Notices::add(Notices::Kind::Failed, name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
-                LogWindow::open();
+                Interface::showLog();
             }
             key.clear();
         }
@@ -344,12 +342,7 @@ namespace Game {
         const blb::auth::account* account = Accounts::pick(login, authServer);
         if (account == nullptr) {
             Instances::notify(Accounts::requirement(login, authServer), true);
-            MainWindow::showAccounts();
-            if (login == "yggdrasil") {
-                AccountsScreen::openServerLogin(blb::auth::account_type::yggdrasil, authServer, std::string());
-            } else if (login == "nide8") {
-                AccountsScreen::openServerLogin(blb::auth::account_type::nide8, authServer, std::string());
-            }
+            Interface::needAccount(login, authServer);
             return;
         }
         const blb::auth::account* chosen = Accounts::current();
@@ -400,7 +393,7 @@ namespace Game {
         }
         const std::optional<bool>& showLogs = entry->info.settings.show_logs;
         if (test || (!quiet && (showLogs ? *showLogs : LaunchDefaults::showLogs()))) {
-            LogWindow::open();
+            Interface::showLog();
         }
         current = State::Preparing;
         fraction.store(-1.0f);

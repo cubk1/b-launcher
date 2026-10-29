@@ -111,23 +111,6 @@ namespace InstancePage {
                 "JAVA%（Java 路径），"
                 "装有对应加载器时 %INST_FORGE%、%INST_NEOFORGE%、%INST_FABRIC%、%INST_QUILT%、%INST_OPTIFINE% 等为 1。";
 
-        std::string loaderName(blb::install::loader_type type) {
-            switch (type) {
-                case blb::install::loader_type::forge: return "Forge";
-                case blb::install::loader_type::neoforge: return "NeoForge";
-                case blb::install::loader_type::cleanroom: return "Cleanroom";
-                case blb::install::loader_type::fabric: return "Fabric";
-                case blb::install::loader_type::legacy_fabric: return "Legacy Fabric";
-                case blb::install::loader_type::quilt: return "Quilt";
-                case blb::install::loader_type::liteloader: return "LiteLoader";
-                case blb::install::loader_type::optifine: return "OptiFine";
-                case blb::install::loader_type::fabric_api: return "Fabric API";
-                case blb::install::loader_type::legacy_fabric_api: return "Legacy Fabric API";
-                case blb::install::loader_type::quilt_api: return "QSL";
-            }
-            return std::string(blb::install::loader_name(type));
-        }
-
         std::string joinArgs(const std::vector<std::string>& args) {
             std::string out;
             for (const std::string& arg : args) {
@@ -746,8 +729,8 @@ namespace InstancePage {
                                 UiWidgets::TEXT_SMALL);
                 float pillX = textX + UiFont::width(version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 10.0f;
                 for (const blb::install::loader_info& loader : entry.info.loaders) {
-                    std::string text =
-                            loaderName(loader.type) + (loader.version.empty() ? std::string() : " " + loader.version);
+                    std::string text = Installer::loaderName(loader.type) +
+                            (loader.version.empty() ? std::string() : " " + loader.version);
                     float pillW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 14.0f;
                     if (pillX + pillW > Page::right()) {
                         break;
@@ -1027,7 +1010,7 @@ namespace InstancePage {
             }
             std::string loaders;
             for (const blb::install::loader_info& loader : entry.info.loaders) {
-                loaders += (loaders.empty() ? "" : "、") + loaderName(loader.type);
+                loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
             }
             if (Page::navRow("instance#loaders", "修改加载器", loaders.empty() ? std::string("未安装") : loaders, y,
                              blocked || entry.info.minecraft_version.empty() || Installer::running(), corners(index),
@@ -1267,10 +1250,6 @@ namespace InstancePage {
             }
         }
         return Icons::vanilla();
-    }
-
-    std::string loaderLabel(blb::install::loader_type type) {
-        return loaderName(type);
     }
 
     void draw(const std::string& id) {
