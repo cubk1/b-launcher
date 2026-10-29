@@ -355,6 +355,22 @@ namespace Platform {
         return found;
     }
 
+    std::string uiArgument() {
+        int count = 0;
+        LPWSTR* args = CommandLineToArgvW(GetCommandLineW(), &count);
+        if (args == nullptr) {
+            return {};
+        }
+        std::string style;
+        for (int i = 1; i < count; i++) {
+            if (std::wcsncmp(args[i], L"--ui=", 5) == 0) {
+                style = utf8(args[i] + 5);
+            }
+        }
+        LocalFree(args);
+        return style;
+    }
+
     bool forwardLaunch(const std::string& key, bool quiet) {
         Running search{folded(selfPath())};
         EnumWindows(findRunning, (LPARAM) &search);

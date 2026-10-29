@@ -262,17 +262,7 @@ namespace ImGuiApp {
         window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
         Platform::window = window.hwnd;
         Platform::claimLaunches();
-        window.onCopyData = [](unsigned long long kind, const std::wstring& text) {
-            if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
-                return false;
-            }
-            bool quiet = kind == Platform::LAUNCH_QUIET_MESSAGE;
-            ShortcutLaunch::request(Platform::narrow(text), quiet);
-            if (!quiet) {
-                Platform::showWindow();
-            }
-            return true;
-        };
+        window.onCopyData = ShortcutLaunch::receive;
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();

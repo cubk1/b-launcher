@@ -2,6 +2,7 @@
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "app/system/Interface.h"
+#include "app/system/Platform.h"
 
 #include <utility>
 
@@ -16,6 +17,18 @@ namespace ShortcutLaunch {
     void request(const std::string& key, bool quiet) {
         pending = key;
         pendingQuiet = quiet;
+    }
+
+    bool receive(unsigned long long kind, const std::wstring& text) {
+        if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
+            return false;
+        }
+        bool quiet = kind == Platform::LAUNCH_QUIET_MESSAGE;
+        request(Platform::narrow(text), quiet);
+        if (!quiet) {
+            Platform::showWindow();
+        }
+        return true;
     }
 
     void poll() {
