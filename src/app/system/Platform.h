@@ -42,6 +42,7 @@ namespace Platform {
     std::vector<unsigned char> iconPixels(const std::filesystem::path& file, int size);
     std::string launchArgument();
     bool headlessArgument();
+    std::string uiArgument();
     bool forwardLaunch(const std::string& key, bool quiet);
     void claimLaunches();
     void claimTaskbar();

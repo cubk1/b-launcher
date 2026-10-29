@@ -32,6 +32,11 @@ namespace UiStyles {
         return saved != nullptr && saved->available ? *saved : STYLES[0];
     }
 
+    const Style& choose(const std::string& requested) {
+        const Style* named = find(requested);
+        return named != nullptr ? *named : current();
+    }
+
     void set(const std::string& key) {
         const Style* next = find(key);
         if (next == nullptr || !next->available || next == &current()) {

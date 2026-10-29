@@ -180,13 +180,14 @@ if (BLB_EXUI_GALLERY)
 endif ()
 
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/windows/*.cpp)
 add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
-target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
+target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif ()
