@@ -247,6 +247,9 @@ int main() {
     if (!pendingLaunch.empty() && Platform::forwardLaunch(pendingLaunch, headless)) {
         return 0;
     }
+    if (!pendingLaunch.empty()) {
+        Platform::claimTaskbar();
+    }
     Game::setQuiet(headless);
     bool launchSent = false;
     bool launchFailed = false;

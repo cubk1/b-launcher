@@ -44,6 +44,7 @@ namespace Platform {
     bool headlessArgument();
     bool forwardLaunch(const std::string& key, bool quiet);
     void claimLaunches();
+    void claimTaskbar();
     std::string narrow(const std::wstring& text);
     void reveal(const std::filesystem::path& path);
     bool recycle(const std::filesystem::path& path);

@@ -310,6 +310,9 @@ namespace Platform {
                 store->Release();
             }
             link->Release();
+            if (SUCCEEDED(result)) {
+                SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, file.c_str(), nullptr);
+            }
         }
         if (SUCCEEDED(com)) {
             CoUninitialize();
@@ -368,6 +371,10 @@ namespace Platform {
         return SendMessageTimeoutW(search.found, WM_COPYDATA, 0, (LPARAM) &data, SMTO_ABORTIFHUNG, 5000, &answer) !=
                 0 &&
                 answer == 1;
+    }
+
+    void claimTaskbar() {
+        SetCurrentProcessExplicitAppUserModelID(L"cubk1.BLauncher.Shortcut");
     }
 
     void claimLaunches() {
