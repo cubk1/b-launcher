@@ -7,12 +7,30 @@ namespace UiState {
 
     std::unordered_map<std::string, float> motionMap;
 
+    namespace {
+        bool moving = false;
+    }
+
+    void beginFrame() {
+        moving = false;
+    }
+
+    void keepAnimating() {
+        moving = true;
+    }
+
+    bool animating() {
+        return moving;
+    }
+
     float motion(const std::string& id, float target, float speed) {
         auto it = motionMap.find(id);
         float current = it == motionMap.end() ? target : it->second;
         float value = UiRender::lerp(current, target, 1.0f - (float) std::exp(-speed * UiRender::deltaTime()));
-        if (std::fabs(value - target) < 0.0005f) {
+        if (!std::isfinite(value) || std::fabs(value - target) < 0.0005f) {
             value = target;
+        } else {
+            moving = true;
         }
         motionMap[id] = value;
         return value;

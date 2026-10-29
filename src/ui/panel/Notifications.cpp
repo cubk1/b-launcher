@@ -342,4 +342,8 @@ namespace Notifications {
         UiRender::offsetY = savedOffsetY;
         UiRender::alphaMul = savedAlphaMul;
     }
+
+    bool active() {
+        return !items.empty();
+    }
 }

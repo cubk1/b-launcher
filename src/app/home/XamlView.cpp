@@ -243,6 +243,7 @@ namespace XamlView {
             float clipBottom = 0.0f;
             bool blocked = false;
             bool glass = false;
+            bool captured = false;
             std::vector<Action>* pending = nullptr;
         };
 
@@ -1546,7 +1547,8 @@ namespace XamlView {
                 e.open = UiState::motion(e.id + "#open", e.swapped ? 0.0f : 1.0f, 14.0f);
             }
             if (ctx.glass) {
-                UiRender::blur(e.x, e.y, e.w, e.h, CARD_RADIUS, 8, true);
+                UiRender::blur(e.x, e.y, e.w, e.h, CARD_RADIUS, 8, !ctx.captured);
+                ctx.captured = true;
                 uint32_t veil = UiTheme::isLight() ? 0xA6000000u : 0x8C000000u;
                 UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, (UiTheme::surface() & 0x00FFFFFFu) | veil);
             } else {

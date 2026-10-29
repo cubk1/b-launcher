@@ -24,7 +24,9 @@
 #include "ui/gl/UiGL.h"
 #include "ui/panel/NewUi.h"
 #include "ui/panel/UiFont.h"
+#include "ui/panel/Notifications.h"
 #include "ui/panel/UiRender.h"
+#include "ui/panel/UiState.h"
 #include "ui/panel/UiTheme.h"
 
 #include "imgui.h"
@@ -121,6 +123,8 @@ namespace {
     };
 
     constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
+    constexpr double IDLE_FRAME_MS = 100.0;
+    constexpr double INPUT_GRACE_MS = 600.0;
 
     bool foreground() {
         HWND active = GetForegroundWindow();
@@ -129,13 +133,67 @@ namespace {
         return active != nullptr && process == GetCurrentProcessId();
     }
 
-    void idleUntil(std::chrono::steady_clock::time_point started) {
-        double spent = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-        double wait = BACKGROUND_FRAME_MS - spent;
+    double sinceMs(std::chrono::steady_clock::time_point started) {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    }
+
+    void idleUntil(std::chrono::steady_clock::time_point started, double frameMs) {
+        double wait = frameMs - sinceMs(started);
         if (wait >= 1.0) {
             MsgWaitForMultipleObjectsEx(0, nullptr, (DWORD) wait, QS_INPUT | QS_POSTMESSAGE | QS_SENDMESSAGE,
                                         MWMO_INPUTAVAILABLE);
         }
+    }
+
+    void sleepUntil(std::chrono::steady_clock::time_point started, double frameMs) {
+        double wait = frameMs - sinceMs(started);
+        if (wait < 0.5) {
+            return;
+        }
+        static HANDLE timer =
+                CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        if (timer != nullptr) {
+            LARGE_INTEGER due;
+            due.QuadPart = -(LONGLONG) (wait * 10000.0);
+            if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+                WaitForSingleObject(timer, (DWORD) wait + 5);
+                return;
+            }
+        }
+        Sleep((DWORD) wait);
+    }
+
+    void holdUntil(std::chrono::steady_clock::time_point started, double frameMs) {
+        if (sinceMs(started) < frameMs * 0.75) {
+            sleepUntil(started, frameMs - 0.3);
+        }
+    }
+
+    double refreshMs(HWND hwnd) {
+        HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFOEXW info = {};
+        info.cbSize = sizeof(info);
+        DEVMODEW mode = {};
+        mode.dmSize = sizeof(mode);
+        if (GetMonitorInfoW(monitor, &info) && EnumDisplaySettingsW(info.szDevice, ENUM_CURRENT_SETTINGS, &mode) &&
+            mode.dmDisplayFrequency > 1) {
+            return 1000.0 / mode.dmDisplayFrequency;
+        }
+        return 1000.0 / 60.0;
+    }
+
+    bool interacted() {
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f || io.MouseWheel != 0.0f || io.MouseWheelH != 0.0f ||
+            io.InputQueueCharacters.Size > 0) {
+            return true;
+        }
+        for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; key++) {
+            if (ImGui::IsKeyDown((ImGuiKey) key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     int pixels(float layout, float scale) {
@@ -214,6 +272,9 @@ int main() {
     bool shown = false;
     bool windowLight = false;
     WindowIcons icons;
+    auto lastInput = std::chrono::steady_clock::now();
+    double frameMs = refreshMs(window.hwnd);
+    int framesSinceRefresh = 0;
 
     auto frame = [&]() {
         float next = dpiScale * Appearance::zoom() / 100.0f;
@@ -232,6 +293,10 @@ int main() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        UiState::beginFrame();
+        if (interacted()) {
+            lastInput = std::chrono::steady_clock::now();
+        }
         Instances::poll();
         Accounts::poll();
         Game::poll();
@@ -308,8 +373,19 @@ int main() {
         }
         auto started = std::chrono::steady_clock::now();
         frame();
-        if (!foreground()) {
-            idleUntil(started);
+        if (++framesSinceRefresh >= 120) {
+            framesSinceRefresh = 0;
+            frameMs = refreshMs(window.hwnd);
+        }
+        bool lively = UiState::animating() || Notifications::active() || sinceMs(lastInput) < INPUT_GRACE_MS ||
+                Game::state() == Game::State::Preparing;
+        if (lively && foreground()) {
+            holdUntil(started, frameMs);
+        } else {
+            sleepUntil(started, BACKGROUND_FRAME_MS);
+            if (!lively) {
+                idleUntil(started, IDLE_FRAME_MS);
+            }
         }
     }
 

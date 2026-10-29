@@ -15,4 +15,8 @@ namespace UiState {
     bool contains(const std::string& id);
     void remove(const std::string& id);
     void put(const std::string& id, float value);
+
+    void beginFrame();
+    void keepAnimating();
+    bool animating();
 }

@@ -96,6 +96,7 @@ namespace Page {
     }
 
     void spinnerArc(float& from, float& to) {
+        UiState::keepAnimating();
         const double minimum = 10.0;
         const double maximum = 280.0;
         const double phase = 0.75;

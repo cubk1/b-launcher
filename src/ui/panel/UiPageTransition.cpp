@@ -1,6 +1,7 @@
 #include "UiPageTransition.h"
 #include "NewUi.h"
 #include "UiRender.h"
+#include "UiState.h"
 
 #include <cmath>
 
@@ -18,6 +19,9 @@ bool PageTransition::go(int next) {
 
 void PageTransition::begin() {
     mix = UiRender::lerp(mix, 1.0f, 1.0f - (float) std::exp(-15.0f * UiRender::deltaTime()));
+    if (mix < 0.999f) {
+        UiState::keepAnimating();
+    }
     float eased = 1.0f - (float) std::pow(1.0f - mix, 3.0);
     savedAlpha = UiRender::alphaMul;
     savedOffsetX = UiRender::offsetX;

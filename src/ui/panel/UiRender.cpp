@@ -1,4 +1,5 @@
 #include "UiRender.h"
+#include "UiState.h"
 #include "UiFont.h"
 #include "UiImages.h"
 #include "UiCommon.h"
@@ -610,7 +611,11 @@ namespace UiRender {
 
     float approach01(float current, float target, float speed) {
         float next = lerp(current, target, 1.0f - (float) std::exp(-speed * deltaTime()));
-        return std::fabs(next - target) < 0.002f ? target : next;
+        if (std::fabs(next - target) < 0.002f) {
+            return target;
+        }
+        UiState::keepAnimating();
+        return next;
     }
 
     float snapLayout(float value) {
@@ -620,7 +625,11 @@ namespace UiRender {
 
     float approach(float current, float target, float speed) {
         float next = lerp(current, target, 1.0f - (float) std::exp(-speed * deltaTime()));
-        return std::fabs(next - target) < 0.25f ? target : next;
+        if (std::fabs(next - target) < 0.25f) {
+            return target;
+        }
+        UiState::keepAnimating();
+        return next;
     }
 
     void triangle(float cx, float cy, float size, float angle, uint32_t rgba) {

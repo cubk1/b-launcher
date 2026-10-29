@@ -840,6 +840,11 @@ namespace LogWindow {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        ImGuiIO& logIo = ImGui::GetIO();
+        if (logIo.MouseDelta.x != 0.0f || logIo.MouseDelta.y != 0.0f || logIo.MouseWheel != 0.0f ||
+            logIo.InputQueueCharacters.Size > 0 || ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            UiState::keepAnimating();
+        }
         UiRender::uiScale = scale / (float) UiRender::guiScale();
         UiRender::begin(ImGui::GetForegroundDrawList());
         NewUi::render(draw);
