@@ -291,6 +291,15 @@ namespace JavaDownloads {
         return std::filesystem::exists(homeOf(package) / "bin" / "java.exe", error);
     }
 
+    bool busy() {
+        for (const auto& [folder, job] : jobs) {
+            if (job->state == State::Running) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     State state(const std::string& folder) {
         auto found = jobs.find(folder);
         return found != jobs.end() ? found->second->state : State::None;

@@ -38,6 +38,7 @@ namespace JavaDownloads {
     std::string name(const Package& package);
     bool installed(const Package& package);
     State state(const std::string& folder);
+    bool busy();
     float progress(const std::string& folder);
     void install(const Package& package);
     std::filesystem::path root();

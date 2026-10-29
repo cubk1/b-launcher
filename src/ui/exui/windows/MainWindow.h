@@ -13,5 +13,8 @@ namespace ForgottenMelody {
         bool create();
         // A duration of 0 keeps the notice until the next one.
         void showNotice(Notices::Kind kind, const std::wstring& text, long long durationMs);
+
+    protected:
+        void OnAction(uint32_t id) override;
     };
 }

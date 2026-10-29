@@ -5,13 +5,18 @@
 #define NOMINMAX
 #endif
 #include "ui/exui/windows/MainWindow.h"
+#include "app/system/Platform.h"
+#include "app/system/Services.h"
+#include "app/system/UiStyles.h"
 #include "ui/exui/Skins.h"
+#include "ui/exui/widgets/Button.h"
 #include "ui/exui/widgets/Label.h"
 
 namespace ForgottenMelody {
 
     namespace {
         constexpr uint32_t NOTICE = 1;
+        constexpr uint32_t LEAVE = 2;
 
         // One notice at a time, cleared once its duration is over.
         class NoticeLine : public exui::Label {
@@ -53,7 +58,24 @@ namespace ForgottenMelody {
         notice->SetFont(L"微软雅黑", 14);
         notice->SetAutoGlowColor();
         AddControl(NOTICE, notice);
+        auto leave = std::make_shared<exui::Button>(290, 262, 140, 34, L"回到默认界面");
+        leave->SetFont(L"微软雅黑", 14);
+        AddControl(LEAVE, leave);
         return true;
+    }
+
+    void MainWindow::OnAction(uint32_t id) {
+        if (id != LEAVE) {
+            return;
+        }
+        if (Services::busy()) {
+            showNotice(Notices::Kind::Failed, L"有游戏、安装或下载正在进行，完成后再切换", 4000);
+            return;
+        }
+        UiStyles::set("default");
+        if (!Platform::restart()) {
+            showNotice(Notices::Kind::Failed, L"重启失败，请手动重新打开启动器", 5000);
+        }
     }
 
     void MainWindow::showNotice(Notices::Kind kind, const std::wstring& text, long long durationMs) {

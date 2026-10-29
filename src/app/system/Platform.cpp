@@ -371,6 +371,48 @@ namespace Platform {
         return style;
     }
 
+    bool restart() {
+        static bool started = false;
+        if (started) {
+            return false;
+        }
+        std::wstring exe = selfPath();
+        std::wstring command = L"\"" + exe + L"\" --wait-for=" + std::to_wstring(GetCurrentProcessId());
+        STARTUPINFOW startup = {};
+        startup.cb = sizeof(startup);
+        PROCESS_INFORMATION process = {};
+        if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup,
+                            &process)) {
+            return false;
+        }
+        started = true;
+        AllowSetForegroundWindow(process.dwProcessId);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        closeWindow();
+        return true;
+    }
+
+    void waitForPrevious() {
+        int count = 0;
+        LPWSTR* args = CommandLineToArgvW(GetCommandLineW(), &count);
+        if (args == nullptr) {
+            return;
+        }
+        DWORD pid = 0;
+        for (int i = 1; i < count; i++) {
+            if (std::wcsncmp(args[i], L"--wait-for=", 11) == 0) {
+                pid = (DWORD) std::wcstoul(args[i] + 11, nullptr, 10);
+            }
+        }
+        LocalFree(args);
+        HANDLE previous = pid != 0 ? OpenProcess(SYNCHRONIZE, FALSE, pid) : nullptr;
+        if (previous != nullptr) {
+            WaitForSingleObject(previous, 30000);
+            CloseHandle(previous);
+        }
+    }
+
     bool forwardLaunch(const std::string& key, bool quiet) {
         Running search{folded(selfPath())};
         EnumWindows(findRunning, (LPARAM) &search);
