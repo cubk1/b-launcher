@@ -296,6 +296,7 @@ int main() {
     UiGL::load();
     UiFont::init();
     Appearance::load();
+    MainWindow::init();
     Instances::init();
     Accounts::init();
     window.imguiContext = ImGui::GetCurrentContext();

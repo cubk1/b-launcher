@@ -1,7 +1,6 @@
 #include "app/system/Updates.h"
 #include "app/system/Platform.h"
-
-#include "ui/panel/Notifications.h"
+#include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/network/http_client.hpp>
@@ -154,7 +153,7 @@ namespace Updates {
         if (!done.ok) {
             current = State::Failed;
             if (notifyFailure) {
-                Notifications::add(Notifications::FAILED, "检查更新失败：" + done.error, 5000);
+                Notices::add(Notices::Kind::Failed, "检查更新失败：" + done.error, 5000);
             }
             return;
         }
@@ -162,7 +161,7 @@ namespace Updates {
         downloadUrl = done.url.empty() ? std::string(RELEASES_URL) : done.url;
         current = newer(done.version, B_LAUNCHER_VERSION) ? State::Available : State::Latest;
         if (current == State::Available && notifyFound) {
-            Notifications::add(Notifications::INFO, "发现新版本 v" + latestVersion + "，可在 设置 → 关于 中下载", 6000);
+            Notices::add(Notices::Kind::Info, "发现新版本 v" + latestVersion + "，可在 设置 → 关于 中下载", 6000);
         }
     }
 
