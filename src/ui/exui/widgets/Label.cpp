@@ -128,7 +128,8 @@ namespace exui {
             g.SetClip(RectF(2, 2, float(GetWidth() - 4), float(GetHeight() - 4)), CombineModeIntersect);
             const auto r = GetTextBounds(g);
             StringFormat format(m_multiline ? 0 : StringFormatFlagsNoWrap);
-            format.SetAlignment(m_hAlign);
+            // GetTextBounds already placed a single line; aligning it again would shift it twice.
+            format.SetAlignment(m_multiline ? m_hAlign : StringAlignmentNear);
             format.SetTrimming(m_trimming);
             // The single-line y position was calculated manually; multi-line uses the full viewport.
             widget_detail::DrawText(g, *this, r, format, m_fontStyle, ResolveTextColor());
