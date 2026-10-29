@@ -1,4 +1,5 @@
 #include "app/instances/Instances.h"
+#include "app/instances/Installer.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 
@@ -24,6 +25,7 @@ namespace Instances {
         using Clock = std::chrono::steady_clock;
 
         constexpr double SAVE_DELAY = 0.5;
+        constexpr double AUTO_SCAN = 5.0;
         const char* const FOLDERS = "gameFolders";
 
         std::thread worker;
@@ -41,6 +43,8 @@ namespace Instances {
         int running = 0;
         std::string activityText;
         std::unordered_map<std::string, Clock::time_point> pendingSaves;
+        Clock::time_point lastScan = Clock::now();
+        int scansInFlight = 0;
 
         struct Scan {
             std::vector<Entry> entries;
@@ -79,13 +83,24 @@ namespace Instances {
         }
 
         void apply(Scan& result) {
-            entries.clear();
+            std::vector<Entry> next;
             for (Entry& entry : result.entries) {
-                if (std::any_of(roots.begin(), roots.end(),
-                                [&](const Source& source) { return source.key == entry.source; })) {
-                    entries.push_back(std::move(entry));
+                if (std::none_of(roots.begin(), roots.end(),
+                                 [&](const Source& source) { return source.key == entry.source; })) {
+                    continue;
                 }
+                if (pendingSaves.count(entry.key) != 0) {
+                    for (const Entry& old : entries) {
+                        if (old.key == entry.key) {
+                            entry.info.settings = old.info.settings;
+                            entry.isolated = old.isolated;
+                            entry.gameDirectory = old.gameDirectory;
+                        }
+                    }
+                }
+                next.push_back(std::move(entry));
             }
+            entries = std::move(next);
             for (Source& source : roots) {
                 auto found = result.exists.find(source.key);
                 if (found != result.exists.end()) {
@@ -116,6 +131,23 @@ namespace Instances {
                 }
                 std::lock_guard<std::mutex> guard(lock);
                 finished.push_back(std::move(next));
+            }
+        }
+
+        void announce(const Scan& result) {
+            std::vector<std::string> found;
+            for (const Entry& entry : result.entries) {
+                if (std::none_of(entries.begin(), entries.end(),
+                                 [&](const Entry& old) { return old.key == entry.key; }) &&
+                    std::any_of(roots.begin(), roots.end(),
+                                [&](const Source& source) { return source.key == entry.source; })) {
+                    found.push_back(entry.info.id);
+                }
+            }
+            if (found.size() == 1) {
+                notify("发现新实例 " + found.front() + "，已加入列表", false);
+            } else if (found.size() > 1) {
+                notify("发现 " + std::to_string(found.size()) + " 个新实例，已加入列表", false);
             }
         }
 
@@ -329,6 +361,24 @@ namespace Instances {
                 ++it;
             }
         }
+        if (scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
+            std::chrono::duration<double>(now - lastScan).count() >= AUTO_SCAN) {
+            flushSaves();
+            std::vector<Source> all = roots;
+            blb::instance::isolation_mode isolation = mode;
+            lastScan = now;
+            scansInFlight++;
+            submit([all, isolation]() -> Continuation {
+                Scan fresh = scan(all, isolation);
+                return [fresh]() mutable {
+                    scansInFlight--;
+                    if (running == 0 && !Installer::running()) {
+                        announce(fresh);
+                    }
+                    apply(fresh);
+                };
+            });
+        }
     }
 
     void shutdown() {
@@ -408,9 +458,12 @@ namespace Instances {
         flushSaves();
         std::vector<Source> all = roots;
         blb::instance::isolation_mode isolation = mode;
+        lastScan = Clock::now();
+        scansInFlight++;
         submit([all, isolation, done]() -> Continuation {
             Scan fresh = scan(all, isolation);
             return [fresh, done]() mutable {
+                scansInFlight--;
                 apply(fresh);
                 if (done) {
                     done();
