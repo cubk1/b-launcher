@@ -22,6 +22,22 @@ namespace Appearance {
 
         const Theme* current = &THEMES[0];
 
+        // "uiStyle" picks the whole interface; "theme", "accent" and "lastDarkTheme" are the colors of
+        // the default one. Settings of another interface go under a key of their own.
+        const std::vector<UiStyle> UI_STYLES = {
+                {"default", "默认", true},
+                {"forgotten-melody", "忘却的旋律", false},
+        };
+
+        const UiStyle* findUiStyle(const std::string& key) {
+            for (const UiStyle& style : UI_STYLES) {
+                if (key == style.key) {
+                    return &style;
+                }
+            }
+            return nullptr;
+        }
+
         const Theme* find(const std::string& key) {
             for (const Theme& theme : THEMES) {
                 if (key == theme.key) {
@@ -79,6 +95,24 @@ namespace Appearance {
 
     const Theme& theme() {
         return *current;
+    }
+
+    const std::vector<UiStyle>& uiStyles() {
+        return UI_STYLES;
+    }
+
+    const UiStyle& uiStyle() {
+        const UiStyle* saved = findUiStyle(text("uiStyle", "default"));
+        return saved != nullptr && saved->available ? *saved : UI_STYLES[0];
+    }
+
+    void setUiStyle(const std::string& key) {
+        const UiStyle* next = findUiStyle(key);
+        if (next == nullptr || !next->available || next == &uiStyle()) {
+            return;
+        }
+        Config::data()["uiStyle"] = next->key;
+        Config::save();
     }
 
     void setTheme(const std::string& key) {
