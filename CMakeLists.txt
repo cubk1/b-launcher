@@ -83,6 +83,7 @@ target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE
 target_link_libraries(imgui PUBLIC freetype)
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
+list(FILTER UI_SOURCES EXCLUDE REGEX "/src/ui/imgui/screens/")
 find_program(PYTHON_ON_PATH NAMES python python3)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 set(FONT_PYTHON "")
@@ -123,7 +124,7 @@ if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 endif ()
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/shell/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER ui/imgui/screens/shell/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
         logoSvg assets/images/logo.svg
         forge assets/images/forge.png
         vanilla assets/images/vanilla.png
@@ -140,7 +141,7 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADE
         pcl assets/images/pcl.png
         backgroundSidebar assets/images/background-sidebar.jpg
         backgroundPanel assets/images/background-panel.jpg)
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEADER app/shell/EmbeddedSounds.h NAMESPACE EmbeddedSounds FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEADER ui/imgui/screens/shell/EmbeddedSounds.h NAMESPACE EmbeddedSounds FILES
         press assets/sounds/press.wav
         tick assets/sounds/tick.wav
         release assets/sounds/release.wav
@@ -150,7 +151,8 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/launch/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
         launcherAgent assets/launcher-agent.jar)
 
-file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp)
+file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp)
 add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
