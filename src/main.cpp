@@ -8,7 +8,7 @@
 #include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "app/launch/Game.h"
-#include "app/instances/Instances.h"
+#include "app/launch/ShortcutLaunch.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "app/system/Platform.h"
@@ -268,14 +268,13 @@ int main() {
     window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
     Platform::window = window.hwnd;
     Platform::claimLaunches();
-    bool quietLaunch = headless;
-    window.onCopyData = [&pendingLaunch, &quietLaunch](unsigned long long kind, const std::wstring& text) {
+    window.onCopyData = [](unsigned long long kind, const std::wstring& text) {
         if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
             return false;
         }
-        pendingLaunch = Platform::narrow(text);
-        quietLaunch = kind == Platform::LAUNCH_QUIET_MESSAGE;
-        if (!quietLaunch) {
+        bool quiet = kind == Platform::LAUNCH_QUIET_MESSAGE;
+        ShortcutLaunch::request(Platform::narrow(text), quiet);
+        if (!quiet) {
             Platform::showWindow();
         }
         return true;
@@ -291,6 +290,9 @@ int main() {
     Appearance::load();
     MainWindow::init();
     Services::start();
+    if (!pendingLaunch.empty()) {
+        ShortcutLaunch::request(pendingLaunch, headless);
+    }
     window.imguiContext = ImGui::GetCurrentContext();
     LogWindow::init(&window);
     Drop::attach(window.hwnd);
@@ -329,25 +331,10 @@ int main() {
         InstanceExport::poll();
         Drop::poll();
         Homepage::poll();
-
-        if (!pendingLaunch.empty() && !Instances::loading()) {
-            std::string key = pendingLaunch;
-            pendingLaunch.clear();
-            std::string name = key.substr(key.find('/') + 1);
-            bool failed = true;
-            if (Instances::find(key) == nullptr) {
-                Instances::notify("找不到实例 " + name + "，快捷方式可能已失效", true);
-            } else if (Game::state() != Game::State::Idle) {
-                Instances::notify("已有游戏正在启动或运行，没有启动 " + name, true);
-            } else {
-                Instances::select(key);
-                MainWindow::showHome();
-                Game::launch(key);
-                failed = Game::state() == Game::State::Idle;
-                launchSent = !failed;
-            }
-            launchFailed = failed;
-            if (failed && quietLaunch && !headless) {
+        if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
+            launchSent = outcome->launched;
+            launchFailed = !outcome->launched;
+            if (!outcome->launched && outcome->quiet && !headless) {
                 Platform::showWindow();
             }
         }

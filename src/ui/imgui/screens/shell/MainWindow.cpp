@@ -199,6 +199,7 @@ namespace MainWindow {
                         showHome();
                     }
                 },
+                [](const std::string&) { showHome(); },
         });
     }
 

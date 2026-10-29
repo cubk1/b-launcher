@@ -27,4 +27,10 @@ namespace Interface {
             handlers.installed(key, loadersChanged);
         }
     }
+
+    void showInstance(const std::string& key) {
+        if (handlers.showInstance) {
+            handlers.showInstance(key);
+        }
+    }
 }
