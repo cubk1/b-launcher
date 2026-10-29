@@ -209,6 +209,8 @@ namespace exui {
         void ApplyAero(bool enabled);
         void ApplyBlurBehind(bool enabled, const RECT& bounds, int diameter);
         void LayoutCaption();
+        // Loads the icons at the current scale and hands them to the window.
+        void UpdateIcons();
         POINT ToLogical(LPARAM lp) const noexcept;
         int PhysicalWidth() const noexcept {
             return ToPhysical(float(m_width));
