@@ -545,7 +545,8 @@ namespace MainWindow {
         const std::string& key = entry.key;
         if (!blocked && !NewUi::overlayCoversMouse() && NewUi::rightClick && NewUi::hit(ITEM_X, y, listW, ITEM_H)) {
             NewUi::rightClick = false;
-            InstancePage::openMenu(key, NewUi::mouseX, NewUi::mouseY);
+            UiSound::request(UiSound::PAGE);
+            openVersionSettings(key);
         }
         NavItemWidget item("nav#instance#" + key, Ui::glyph(0xf071), entry.info.id);
         bool current = Instances::selected() == key &&
