@@ -57,4 +57,25 @@ namespace ForgottenMelody {
                                          messageBackground());
         return exui::MsgBox::ResultCode(exui::MsgBox::Measure(text, exui::MsgBoxIcon::None, buttons, labels), pressed);
     }
+
+    bool createDialog(exui::Window& window, HWND parent, const std::wstring& title, int width, int height,
+                      uint32_t captionMask) {
+        if (!window.CreateHostWindow(parent, title, width, height, exui::SkinBytes(exui::Skin::DialogBackground),
+                                     0x808080, 7, captionMask, false)) {
+            return false;
+        }
+        window.SetWindowAnimationTypes(exui::WindowAnimationKind::ZoomFade, exui::WindowAnimationKind::ZoomFade);
+        window.SetControlAnimationsEnabled(false);
+        window.SetWindowAlpha(150);
+        window.SetBackgroundMode(exui::SkinBackgroundMode::EdgeFade);
+        return true;
+    }
+
+    void runModal(exui::Window& window, exui::Widget* focus) {
+        window.ShowWindowWithAnimation();
+        if (focus != nullptr) {
+            window.SetFocusedWidget(focus);
+        }
+        window.RunModalLoop(true);
+    }
 }

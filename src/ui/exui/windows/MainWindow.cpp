@@ -12,6 +12,7 @@
 #include "app/system/Services.h"
 #include "app/system/UiStyles.h"
 #include "ui/exui/Skins.h"
+#include "ui/exui/windows/AccountsWindow.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
@@ -180,7 +181,7 @@ namespace ForgottenMelody {
                     Platform::open(entry->gameDirectory);
                 }
                 break;
-            case ACCOUNT: showNotice(Notices::Kind::Info, L"账号设置还在开发中", 3000); break;
+            case ACCOUNT: showAccounts(GetHwnd()); break;
             case DOWNLOADS: showNotice(Notices::Kind::Info, L"下载中心还在开发中", 3000); break;
             case SETTINGS:
                 // 忘却的旋律 has no settings yet, so this is the way back.
