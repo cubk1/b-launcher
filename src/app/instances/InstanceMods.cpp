@@ -1,5 +1,6 @@
 #include "app/instances/InstanceMods.h"
 #include "app/shell/MainWindow.h"
+#include "app/shell/Textures.h"
 #include "app/instances/Mods.h"
 #include "app/shell/Page.h"
 #include "app/system/Platform.h"
@@ -140,8 +141,8 @@ namespace InstanceMods {
             }
             float iconX = Page::left() + 14.0f;
             float iconY = rowY + (Page::ROW_H - ICON) * 0.5f;
-            if (mod.icon != 0) {
-                UiRender::texture(mod.icon, iconX, iconY, ICON, ICON);
+            if (uint32_t icon = Textures::of(mod.icon)) {
+                UiRender::texture(icon, iconX, iconY, ICON, ICON);
             } else {
                 UiRender::roundRect(iconX, iconY, ICON, ICON, 6.0f, UiTheme::surfaceRaised());
                 UiWidgets::icon(Ui::glyph(0xf12e), iconX + ICON * 0.5f, iconY + ICON * 0.5f, UiTheme::textFaint(),

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/system/Pixels.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -107,7 +109,7 @@ namespace Addons {
     Fetched fetchProjectVersions(Source source, const std::string& projectId, const std::string& gameVersion,
                                  const std::string& loader);
 
-    uint32_t icon(const std::string& url);
+    std::shared_ptr<const Pixels> icon(const std::string& url);
     std::string count(long long value);
     std::vector<std::string> fileUrls(const std::string& url);
 

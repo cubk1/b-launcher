@@ -4,8 +4,6 @@
 #include "app/system/Redirect.h"
 #include "app/system/Notices.h"
 
-#include "ui/panel/UiImages.h"
-
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
@@ -69,7 +67,7 @@ namespace Accounts {
         bool scanRunning = false;
 
         struct Face {
-            uint32_t texture = 0;
+            std::shared_ptr<const Pixels> pixels;
             bool requested = false;
         };
         std::map<std::string, Face> faces;
@@ -300,7 +298,7 @@ namespace Accounts {
                             }
                         }
                         return [url, rgba] {
-                            faces[url].texture = UiImages::upload(rgba->data(), FACE_SIZE, FACE_SIZE);
+                            faces[url].pixels = std::make_shared<const Pixels>(Pixels{FACE_SIZE, FACE_SIZE, *rgba});
                         };
                     },
                     nullptr);
@@ -753,16 +751,16 @@ namespace Accounts {
                 });
     }
 
-    uint32_t face(const blb::auth::account& account) {
+    std::shared_ptr<const Pixels> face(const blb::auth::account& account) {
         if (account.type == blb::auth::account_type::offline || account.skin_url.empty()) {
-            return 0;
+            return nullptr;
         }
         Face& entry = faces[account.skin_url];
         if (!entry.requested) {
             entry.requested = true;
             fetchFace(account.skin_url);
         }
-        return entry.texture;
+        return entry.pixels;
     }
 
     std::shared_ptr<blb::auth::microsoft_authenticator> authenticator(const blb::auth::account& account) {

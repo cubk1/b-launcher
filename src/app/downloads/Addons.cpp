@@ -2,8 +2,6 @@
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/Modrinth.h"
 
-#include "ui/panel/UiImages.h"
-
 #include <core/base/cancellation.hpp>
 #include <core/network/http_client.hpp>
 
@@ -44,7 +42,7 @@ namespace Addons {
         blb::cancellation_source stopping;
 
         struct Icon {
-            uint32_t texture = 0;
+            std::shared_ptr<const Pixels> pixels;
             bool requested = false;
         };
         std::unordered_map<std::string, Icon> icons;
@@ -148,7 +146,9 @@ namespace Addons {
                 auto data = blb::net::http_get(fileUrls(url), token);
                 auto rgba = std::make_shared<std::vector<unsigned char>>();
                 if (data && decodeIcon(*data, *rgba)) {
-                    hand([url, rgba] { icons[url].texture = UiImages::upload(rgba->data(), ICON_SIZE, ICON_SIZE); });
+                    hand([url, rgba] {
+                        icons[url].pixels = std::make_shared<const Pixels>(Pixels{ICON_SIZE, ICON_SIZE, *rgba});
+                    });
                 }
             }
             if (SUCCEEDED(com)) {
@@ -212,9 +212,9 @@ namespace Addons {
                                             : Modrinth::fetchProjectVersions(projectId, gameVersion, loader);
     }
 
-    uint32_t icon(const std::string& url) {
+    std::shared_ptr<const Pixels> icon(const std::string& url) {
         if (url.empty()) {
-            return 0;
+            return nullptr;
         }
         Icon& entry = icons[url];
         if (!entry.requested) {
@@ -228,7 +228,7 @@ namespace Addons {
             iconQueue.push_back(url);
             iconWake.notify_one();
         }
-        return entry.texture;
+        return entry.pixels;
     }
 
     std::string count(long long value) {

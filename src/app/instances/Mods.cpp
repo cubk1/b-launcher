@@ -3,8 +3,6 @@
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
 
-#include "ui/panel/UiImages.h"
-
 #include <core/base/strings.hpp>
 
 #include <algorithm>
@@ -35,7 +33,7 @@ namespace Mods {
         std::map<std::string, List> lists;
         std::set<std::string> scanning;
         std::set<std::string> again;
-        std::map<std::string, uint32_t> icons;
+        std::map<std::string, std::shared_ptr<const Pixels>> icons;
 
         void run(std::function<Continuation()> work) {
             auto done = std::make_shared<std::atomic<bool>>(false);
@@ -115,13 +113,13 @@ namespace Mods {
                 if (std::filesystem::is_directory(directory, error)) {
                     found = blb::modpack::scan_mods(directory);
                 }
-                std::map<std::string, std::string> pictures;
+                std::map<std::string, std::shared_ptr<const Pixels>> pictures;
                 for (const blb::modpack::mod_info& mod : found) {
                     std::string keyOfIcon = iconKey(mod);
                     if (!mod.icon.empty() && known.count(keyOfIcon) == 0) {
                         auto bytes = blb::modpack::read_mod_icon(mod);
                         if (bytes) {
-                            pictures[keyOfIcon] = std::move(*bytes);
+                            pictures[keyOfIcon] = Pixels::decode(bytes->data(), bytes->size());
                         }
                     }
                 }
@@ -129,9 +127,7 @@ namespace Mods {
                     scanning.erase(key);
                     for (const auto& picture : pictures) {
                         if (icons.count(picture.first) == 0) {
-                            icons[picture.first] =
-                                    UiImages::uploadEncoded((const unsigned char*) picture.second.data(),
-                                                            (int) picture.second.size(), nullptr, nullptr);
+                            icons[picture.first] = picture.second;
                         }
                     }
                     List& list = lists[key];
@@ -143,7 +139,7 @@ namespace Mods {
                             mod.info.name = mod.info.id.empty() ? mod.info.file_name : mod.info.id;
                         }
                         auto icon = icons.find(iconKey(info));
-                        mod.icon = icon != icons.end() ? icon->second : 0;
+                        mod.icon = icon != icons.end() ? icon->second : nullptr;
                         list.mods.push_back(std::move(mod));
                     }
                     std::stable_sort(list.mods.begin(), list.mods.end(), [](const Mod& a, const Mod& b) {
