@@ -10,6 +10,8 @@ namespace Installer {
 
     namespace blb = b_launcher_base;
 
+    std::string loaderName(blb::install::loader_type type);
+
     struct Part {
         enum class Status { Waiting, Running, Done, Failed };
 

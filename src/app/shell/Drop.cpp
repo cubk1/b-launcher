@@ -1,5 +1,4 @@
 #include "app/shell/Drop.h"
-#include "app/instances/InstancePage.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/shell/MainWindow.h"
@@ -297,7 +296,7 @@ namespace Drop {
             setup.version = manifest.version.empty() ? std::string("未知") : manifest.version;
             setup.minecraft = manifest.minecraft;
             for (const blb::install::loader_request& loader : manifest.loaders) {
-                setup.loaders.push_back(InstancePage::loaderLabel(loader.type) +
+                setup.loaders.push_back(Installer::loaderName(loader.type) +
                                         (loader.version.empty() ? std::string() : " " + loader.version));
                 setup.pack.loaders.push_back(loader.type);
             }

@@ -3,7 +3,6 @@
 #include "app/shell/Drop.h"
 #include "app/system/Catalog.h"
 #include "app/shell/Icons.h"
-#include "app/instances/InstancePage.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/shell/MainWindow.h"
@@ -195,7 +194,7 @@ namespace NewInstanceScreen {
 
         std::string loaderLabelOf(const std::string& coreName) {
             if (auto type = blb::install::parse_loader_type(coreName)) {
-                return InstancePage::loaderLabel(*type);
+                return Installer::loaderName(*type);
             }
             return coreName;
         }
@@ -830,7 +829,7 @@ namespace NewInstanceScreen {
                 int index = rowIndex++;
                 RowAction action = Page::shown(y)
                         ? loaderRow("new#row#" + std::to_string((int) type), Icons::loader(type), 0xf1b2,
-                                    InstancePage::loaderLabel(type), status, color, enabled, picked, y, rowsBlocked,
+                                    Installer::loaderName(type), status, color, enabled, picked, y, rowsBlocked,
                                     rowCorners(index, loaderRows))
                         : RowAction::None;
                 if (action == RowAction::Open) {
@@ -852,7 +851,7 @@ namespace NewInstanceScreen {
             if (iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
                 steps.go(STEP_SETUP);
             }
-            std::string label = InstancePage::loaderLabel(picking);
+            std::string label = Installer::loaderName(picking);
             Page::title(label + " 版本", Page::left() + 30.0f, Page::TOP);
             float refreshX = Page::right() - 28.0f;
             if (iconButton("new#refresh2", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {

@@ -1,9 +1,7 @@
 #include "app/instances/Installer.h"
 #include "app/downloads/CurseForge.h"
-#include "app/instances/InstancePage.h"
 #include "app/instances/Instances.h"
-#include "app/shell/MainWindow.h"
-#include "app/instances/NewInstanceScreen.h"
+#include "app/system/Interface.h"
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
@@ -428,8 +426,7 @@ namespace Installer {
             tracked.push_back(Tracked{Part{"游戏本体"}, "core"});
             tracked.push_back(Tracked{Part{"游戏资源"}, "assets"});
             for (blb::install::loader_type loader : pack.loaders) {
-                tracked.push_back(Tracked{Part{InstancePage::loaderLabel(loader)},
-                                          std::string(blb::install::loader_name(loader))});
+                tracked.push_back(Tracked{Part{loaderName(loader)}, std::string(blb::install::loader_name(loader))});
             }
             tracked.push_back(Tracked{Part{"模组文件"}, "modpack-files"});
         }
@@ -511,7 +508,7 @@ namespace Installer {
                 tracked.push_back(Tracked{Part{"游戏本体"}, "core"});
                 tracked.push_back(Tracked{Part{"游戏资源"}, "assets"});
                 for (const blb::install::loader_request& loader : loaders) {
-                    tracked.push_back(Tracked{Part{InstancePage::loaderLabel(loader.type)},
+                    tracked.push_back(Tracked{Part{loaderName(loader.type)},
                                               std::string(blb::install::loader_name(loader.type))});
                 }
             }
@@ -584,8 +581,8 @@ namespace Installer {
             tracked.push_back(Tracked{Part{"游戏本体"}, "core"});
             tracked.push_back(Tracked{Part{"游戏资源"}, "assets"});
             for (const blb::install::loader_request& loader : loaders) {
-                tracked.push_back(Tracked{Part{InstancePage::loaderLabel(loader.type)},
-                                          std::string(blb::install::loader_name(loader.type))});
+                tracked.push_back(
+                        Tracked{Part{loaderName(loader.type)}, std::string(blb::install::loader_name(loader.type))});
             }
         }
         cancelling = std::make_shared<blb::cancellation_source>();
@@ -635,12 +632,7 @@ namespace Installer {
                 bool changedLoaders = modifying;
                 Instances::refresh([key, changedLoaders] {
                     Instances::select(key);
-                    NewInstanceScreen::reset();
-                    if (changedLoaders) {
-                        MainWindow::openVersionSettings(key);
-                    } else {
-                        MainWindow::showHome();
-                    }
+                    Interface::installed(key, changedLoaders);
                 });
             }
             return;
@@ -679,5 +671,22 @@ namespace Installer {
     void shutdown() {
         cancel();
         join();
+    }
+
+    std::string loaderName(blb::install::loader_type type) {
+        switch (type) {
+            case blb::install::loader_type::forge: return "Forge";
+            case blb::install::loader_type::neoforge: return "NeoForge";
+            case blb::install::loader_type::cleanroom: return "Cleanroom";
+            case blb::install::loader_type::fabric: return "Fabric";
+            case blb::install::loader_type::legacy_fabric: return "Legacy Fabric";
+            case blb::install::loader_type::quilt: return "Quilt";
+            case blb::install::loader_type::liteloader: return "LiteLoader";
+            case blb::install::loader_type::optifine: return "OptiFine";
+            case blb::install::loader_type::fabric_api: return "Fabric API";
+            case blb::install::loader_type::legacy_fabric_api: return "Legacy Fabric API";
+            case blb::install::loader_type::quilt_api: return "QSL";
+        }
+        return std::string(blb::install::loader_name(type));
     }
 }
