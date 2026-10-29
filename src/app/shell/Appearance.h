@@ -18,6 +18,16 @@ namespace Appearance {
     void setTheme(const std::string& key);
     void toggleLight();
 
+    struct UiStyle {
+        const char* key;
+        const char* label;
+        bool available;
+    };
+
+    const std::vector<UiStyle>& uiStyles();
+    const UiStyle& uiStyle();
+    void setUiStyle(const std::string& key);
+
     uint32_t accent();
     void setAccent(uint32_t argb);
     uint32_t defaultAccent();

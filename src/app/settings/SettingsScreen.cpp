@@ -337,10 +337,38 @@ namespace SettingsScreen {
         }
 
         int appearanceCount() {
-            return Appearance::backgroundImage() ? 8 : 7;
+            return Appearance::backgroundImage() ? 9 : 8;
+        }
+
+        void uiStyleRow(float y, bool blocked) {
+            Page::label("界面风格", y);
+            auto uiStyle = std::make_shared<ModeBinding>(
+                    "settings#uiStyle", [] { return std::string(Appearance::uiStyle().label); },
+                    [](const std::string& option) {
+                        for (const Appearance::UiStyle& candidate : Appearance::uiStyles()) {
+                            if (option == candidate.label) {
+                                Appearance::setUiStyle(candidate.key);
+                            }
+                        }
+                    },
+                    [] {
+                        std::vector<std::string> options;
+                        for (const Appearance::UiStyle& candidate : Appearance::uiStyles()) {
+                            options.push_back(candidate.label);
+                        }
+                        return options;
+                    });
+            float saved = UiRender::alphaMul;
+            UiRender::alphaMul = saved * 0.5f;
+            select("settings#uiStyle", uiStyle, y, true);
+            UiRender::alphaMul = saved;
+            explain("settings#uiStyle", "忘却的旋律，开发中", y, Page::controlRight() - SELECT_W - 8.0f, blocked);
         }
 
         void appearanceRows(float y, bool blocked) {
+            uiStyleRow(y, blocked);
+            y += Page::ROW_H;
+
             Page::label("主题", y);
             auto theme = std::make_shared<ModeBinding>(
                     "settings#theme", [] { return std::string(Appearance::theme().label); },
