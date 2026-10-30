@@ -15,6 +15,7 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/ModsWindow.h"
+#include "ui/exui/windows/ShortcutWindow.h"
 
 #include <core/auth/yggdrasil.hpp>
 
@@ -36,6 +37,7 @@ namespace ForgottenMelody {
             MODS,
             LOADERS,
             EXPORT,
+            SHORTCUT,
             // 游戏
             GAME,
             GAME_GROUP,
@@ -180,6 +182,7 @@ namespace ForgottenMelody {
                         {MODS, ControlKind::Button, {171, 96, 100, 30}, L"模组管理"},
                         {LOADERS, ControlKind::Button, {279, 96, 100, 30}, L"修改加载器"},
                         {EXPORT, ControlKind::Button, {387, 96, 100, 30}, L"导出整合包"},
+                        {SHORTCUT, ControlKind::Button, {495, 96, 100, 30}, L"生成快捷方式"},
                         // 游戏
                         {GAME_GROUP, ControlKind::Group, {151, 70, 579, 228}, L"游戏"},
                         {DIR_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"游戏目录"},
@@ -256,7 +259,7 @@ namespace ForgottenMelody {
                     return false;
                 }
                 AddControls(CONTROLS);
-                MoveInto(MANAGE, {MANAGE_GROUP, MODS, LOADERS, EXPORT});
+                MoveInto(MANAGE, {MANAGE_GROUP, MODS, LOADERS, EXPORT, SHORTCUT});
                 MoveInto(GAME,
                          {GAME_GROUP, DIR_LABEL, DIR, JAVA_LABEL, JAVA, VISIBILITY_LABEL, VISIBILITY, PRIORITY_LABEL,
                           PRIORITY, LOGS_LABEL, LOGS, PATCH_LABEL, PATCH, MEMORY_GROUP, AUTO_MEMORY, MAX_LABEL, MAX,
@@ -361,6 +364,7 @@ namespace ForgottenMelody {
                 }
                 switch (id) {
                     case MODS: showMods(GetHwnd(), key); break;
+                    case SHORTCUT: showShortcut(GetHwnd(), key); break;
                     case LOADERS:
                     case EXPORT: message(GetHwnd(), Text(id) + L"还在开发中", L"版本设置"); break;
                     case AUTO_MEMORY: {
