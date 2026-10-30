@@ -192,6 +192,11 @@ namespace ForgottenMelody {
 
             void setRows(std::vector<Row> next) {
                 rows = std::move(next);
+                // Only the icons of these rows stay; others are made again from those Addons keeps.
+                std::erase_if(icons, [&](const auto& icon) {
+                    return std::none_of(rows.begin(), rows.end(),
+                                        [&](const Row& row) { return row.icon == icon.first; });
+                });
                 scroll = 0;
                 hovered = pressed = -1;
                 layout();
