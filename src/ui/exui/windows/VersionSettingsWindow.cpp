@@ -15,6 +15,7 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/ExportWindow.h"
 #include "ui/exui/windows/ModsWindow.h"
 #include "ui/exui/windows/ShortcutWindow.h"
 
@@ -334,8 +335,8 @@ namespace ForgottenMelody {
                 switch (id) {
                     case MODS: showMods(GetHwnd(), key); break;
                     case SHORTCUT: showShortcut(GetHwnd(), key); break;
-                    case LOADERS:
-                    case EXPORT: message(GetHwnd(), Text(id) + L"还在开发中", L"版本设置"); break;
+                    case LOADERS: message(GetHwnd(), Text(id) + L"还在开发中", L"版本设置"); break;
+                    case EXPORT: showExport(GetHwnd(), key); break;
                     case AUTO_MEMORY: {
                         uint32_t memory = Checked(AUTO_MEMORY) ? 0 : automaticMemory();
                         edit([memory](Settings& s) { s.max_memory_mb = memory; });
@@ -600,6 +601,8 @@ namespace ForgottenMelody {
                             loader.type == blb::install::loader_type::liteloader;
                 }
                 FindControl(MODS)->SetEnabled(modded);
+                // Like the default interface, an instance that cannot be read is not exported.
+                FindControl(EXPORT)->SetEnabled(entry.info.valid);
             }
         };
     }
