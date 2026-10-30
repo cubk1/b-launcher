@@ -72,6 +72,9 @@ struct instance
 std::string_view isolation_name (isolation_mode mode) noexcept;
 std::optional<isolation_mode> parse_isolation (std::string_view text) noexcept;
 
+// The file beside an instance's version json that holds its settings.
+inline constexpr std::string_view settings_file = "blb-instance.json";
+
 class instance_manager
 {
 public:

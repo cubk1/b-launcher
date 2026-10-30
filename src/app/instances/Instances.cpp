@@ -1,6 +1,7 @@
 #include "app/instances/Instances.h"
 #include "app/instances/Installer.h"
 #include "app/system/Config.h"
+#include "app/system/FolderWatch.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
 
@@ -8,10 +9,13 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <cwctype>
 #include <deque>
+#include <filesystem>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -24,7 +28,8 @@ namespace Instances {
         using Clock = std::chrono::steady_clock;
 
         constexpr double SAVE_DELAY = 0.5;
-        constexpr double AUTO_SCAN = 5.0;
+        // Instances changed outside the launcher are read again once the change has been over for this long.
+        constexpr double SETTLE = 1.0;
         const char* const FOLDERS = "gameFolders";
 
         std::thread worker;
@@ -44,12 +49,17 @@ namespace Instances {
         // What runs on each instance being copied, renamed or removed.
         std::unordered_map<std::string, std::string> operating;
         std::unordered_map<std::string, Clock::time_point> pendingSaves;
-        Clock::time_point lastScan = Clock::now();
         int scansInFlight = 0;
+        // The game folders that exist, watched for instances changed outside the launcher, and when the last change
+        // that counts came, on the steady clock; 0 once a scan has read it.
+        FolderWatch watch;
+        std::atomic<Clock::rep> changedAt = 0;
 
         struct Scan {
             std::vector<Entry> entries;
             std::unordered_map<std::string, bool> exists;
+            // When it began reading: the changes before are in it.
+            Clock::rep startedAt = 0;
         };
 
         blb::instance::instance_manager managerFor(const std::filesystem::path& root) {
@@ -61,8 +71,57 @@ namespace Instances {
             entry.gameDirectory = with.game_directory(entry.info);
         }
 
+        bool sameName(const std::wstring& a, const std::wstring& b) {
+            return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+                              [](wchar_t x, wchar_t y) { return std::towlower(x) == std::towlower(y); });
+        }
+
+        // Whether a change in a game folder can change the instances: a version's folder coming or going, the json in
+        // it or the settings beside the json. What the game writes while it runs does not; an empty path is anything.
+        bool counts(const std::wstring& path, bool moved) {
+            if (path.empty()) {
+                return true;
+            }
+            std::vector<std::wstring> parts;
+            for (size_t start = 0;;) {
+                size_t slash = path.find(L'\\', start);
+                parts.push_back(path.substr(start, slash - start));
+                if (slash == std::wstring::npos) {
+                    break;
+                }
+                start = slash + 1;
+            }
+            if (!sameName(parts[0], L"versions")) {
+                return false;
+            }
+            if (parts.size() <= 2) {
+                return moved;
+            }
+            const std::wstring settings(blb::instance::settings_file.begin(), blb::instance::settings_file.end());
+            return parts.size() == 3 && (sameName(parts[2], parts[1] + L".json") || sameName(parts[2], settings));
+        }
+
+        // Watches the game folders that exist now, if they are not the ones watched already.
+        void follow() {
+            std::vector<std::filesystem::path> folders;
+            for (const Source& source : roots) {
+                if (source.exists) {
+                    folders.push_back(source.root);
+                }
+            }
+            if (folders == watch.folders()) {
+                return;
+            }
+            watch.start(folders, [](const std::filesystem::path&, const std::wstring& path, bool moved) {
+                if (counts(path, moved)) {
+                    changedAt = Clock::now().time_since_epoch().count();
+                }
+            });
+        }
+
         Scan scan(const std::vector<Source>& from, blb::instance::isolation_mode isolation) {
             Scan out;
+            out.startedAt = Clock::now().time_since_epoch().count();
             for (const Source& source : from) {
                 std::error_code error;
                 bool exists = std::filesystem::is_directory(source.root, error);
@@ -108,7 +167,13 @@ namespace Instances {
                     source.exists = found->second;
                 }
             }
+            // A change that came after the scan began is read by the next one.
+            Clock::rep seen = changedAt;
+            if (seen != 0 && seen <= result.startedAt) {
+                changedAt.compare_exchange_strong(seen, 0);
+            }
             scanned = true;
+            follow();
         }
 
         void runWorker() {
@@ -364,12 +429,13 @@ namespace Instances {
                 ++it;
             }
         }
-        if (scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
-            std::chrono::duration<double>(now - lastScan).count() >= AUTO_SCAN) {
+        // While the launcher changes instances itself, it reads them again when it is done anyway.
+        Clock::rep at = changedAt;
+        if (at != 0 && scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
+            std::chrono::duration<double>(now - Clock::time_point(Clock::duration(at))).count() >= SETTLE) {
             flushSaves();
             std::vector<Source> all = roots;
             blb::instance::isolation_mode isolation = mode;
-            lastScan = now;
             scansInFlight++;
             submit([all, isolation]() -> Continuation {
                 Scan fresh = scan(all, isolation);
@@ -385,6 +451,7 @@ namespace Instances {
     }
 
     void shutdown() {
+        watch.stop();
         flushSaves();
         {
             std::lock_guard<std::mutex> guard(lock);
@@ -466,7 +533,6 @@ namespace Instances {
         flushSaves();
         std::vector<Source> all = roots;
         blb::instance::isolation_mode isolation = mode;
-        lastScan = Clock::now();
         scansInFlight++;
         submit([all, isolation, done]() -> Continuation {
             Scan fresh = scan(all, isolation);
