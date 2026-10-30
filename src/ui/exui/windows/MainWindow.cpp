@@ -12,6 +12,7 @@
 #include "ui/exui/Skins.h"
 #include "ui/exui/windows/AccountsWindow.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/DownloadsWindow.h"
 #include "ui/exui/windows/LogWindow.h"
 #include "ui/exui/windows/SettingsWindow.h"
 #include "ui/exui/widgets/ComboBox.h"
@@ -223,7 +224,7 @@ namespace ForgottenMelody {
                 }
                 break;
             case ACCOUNT: showAccounts(GetHwnd()); break;
-            case DOWNLOADS: showNotice(Notices::Kind::Info, L"下载中心还在开发中", 3000); break;
+            case DOWNLOADS: showDownloads(GetHwnd()); break;
             case SETTINGS: showSettings(GetHwnd()); break;
         }
     }
