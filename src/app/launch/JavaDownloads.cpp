@@ -1,6 +1,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
+#include "app/system/Server.h"
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
@@ -34,7 +35,7 @@ namespace JavaDownloads {
     namespace {
         using Continuation = std::function<void()>;
 
-        const char* const LIST_URL = "https://cubk.cn/bl/jdks.json";
+        const std::string LIST_URL = Server::file("jdks.json");
         constexpr float DOWNLOAD_SHARE = 0.85f;
 
         struct Job {

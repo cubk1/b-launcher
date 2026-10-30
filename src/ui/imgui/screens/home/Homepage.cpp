@@ -10,6 +10,7 @@
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Platform.h"
+#include "app/system/Server.h"
 #include "ui/imgui/screens/home/WebImages.h"
 #include "ui/imgui/screens/home/XamlView.h"
 
@@ -74,7 +75,7 @@ namespace Homepage {
         constexpr int PRESET_COUNT = (int) (sizeof(PRESETS) / sizeof(PRESETS[0]));
         const char* const NONE_CHOICE = "无";
         const char* const ANNOUNCEMENT_CHOICE = "公告";
-        const char* const ANNOUNCEMENT_URL = "http://cubk.cn/bl/announcement.xaml";
+        const std::string ANNOUNCEMENT_URL = Server::file("announcement.xaml");
         const char* const FILE_CHOICE = "本地文件";
         const char* const URL_CHOICE = "自定义网址";
 
