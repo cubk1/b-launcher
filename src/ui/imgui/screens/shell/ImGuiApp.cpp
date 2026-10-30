@@ -311,7 +311,6 @@ namespace ImGuiApp {
             }
             Services::poll();
             Background::poll();
-            Drop::poll();
             Homepage::poll();
             if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
                 launchSent = outcome->launched;
@@ -445,7 +444,6 @@ namespace ImGuiApp {
         LogWindow::shutdown();
         icons.release();
         Homepage::shutdown();
-        Drop::shutdown();
         Background::shutdown();
         Services::stop();
         ImGui_ImplOpenGL3_Shutdown();

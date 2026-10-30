@@ -1,8 +1,8 @@
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "app/system/Platform.h"
-#include "ui/imgui/screens/shell/Drop.h"
 #include "app/system/Catalog.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -333,7 +333,7 @@ namespace NewInstanceScreen {
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
-                    Drop::importPack(picked.front());
+                    Drops::importPack(picked.front());
                 }
             }
             float filterX = importX - 8.0f - 170.0f;

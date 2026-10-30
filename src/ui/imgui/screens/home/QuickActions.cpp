@@ -3,7 +3,7 @@
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
-#include "ui/imgui/screens/shell/Drop.h"
+#include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -140,7 +140,7 @@ namespace QuickActions {
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
-                    Drop::importPack(picked.front());
+                    Drops::importPack(picked.front());
                 }
             } else if (id == "openFolder") {
                 const Instances::Entry* entry = Instances::find(Instances::selected());
