@@ -106,9 +106,15 @@ namespace Installer {
             return "正在安装";
         }
 
+        // A modpack without files skips their download without a word; the other parts do something even when
+        // they download nothing.
+        bool idle(const Tracked& part) {
+            return part.key == "modpack-files" && part.downloads.empty() && part.checked.second == 0;
+        }
+
         void describe(Tracked& part) {
             if (part.part.status == Part::Status::Done) {
-                part.part.detail = "完成";
+                part.part.detail = idle(part) ? "无需下载" : "完成";
                 return;
             }
             if (part.part.status == Part::Status::Failed) {
@@ -242,7 +248,7 @@ namespace Installer {
                     part->part.status = Part::Status::Failed;
                 } else if (stage == "done" && last) {
                     part->part.status = Part::Status::Done;
-                    part->part.fraction = 1.0f;
+                    part->part.fraction = idle(*part) ? -1.0f : 1.0f;
                 } else {
                     part->part.status = Part::Status::Running;
                 }
@@ -317,7 +323,7 @@ namespace Installer {
             for (Tracked& part : tracked) {
                 if (status == Part::Status::Done) {
                     part.part.status = Part::Status::Done;
-                    part.part.fraction = 1.0f;
+                    part.part.fraction = idle(part) ? -1.0f : 1.0f;
                 } else if (part.part.status != Part::Status::Done) {
                     part.part.status = status;
                 }
@@ -348,6 +354,14 @@ namespace Installer {
 
     double elapsed() {
         return busy ? std::chrono::duration<double>(Clock::now() - startedAt).count() : 0.0;
+    }
+
+    std::string lastError() {
+        if (busy) {
+            return std::string();
+        }
+        std::lock_guard<std::mutex> guard(lock);
+        return cancelled ? std::string() : failure;
     }
 
     std::vector<Part> parts() {

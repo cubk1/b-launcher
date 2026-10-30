@@ -26,6 +26,8 @@ namespace Installer {
     std::vector<Part> parts();
     std::string activity();
     double elapsed();
+    // Why the last install failed; empty while one goes on, and after one that went well or was cancelled.
+    std::string lastError();
 
     void start(const std::string& source, const std::string& minecraft,
                const std::vector<blb::install::loader_request>& loaders, const std::string& id);
