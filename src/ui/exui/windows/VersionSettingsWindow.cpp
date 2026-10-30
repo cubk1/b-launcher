@@ -14,6 +14,7 @@
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/ModsWindow.h"
 
 #include <core/auth/yggdrasil.hpp>
 
@@ -359,7 +360,7 @@ namespace ForgottenMelody {
                     return;
                 }
                 switch (id) {
-                    case MODS:
+                    case MODS: showMods(GetHwnd(), key); break;
                     case LOADERS:
                     case EXPORT: message(GetHwnd(), Text(id) + L"还在开发中", L"版本设置"); break;
                     case AUTO_MEMORY: {
