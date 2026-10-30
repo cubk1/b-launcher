@@ -17,7 +17,6 @@ namespace
 
 using json = nlohmann::json;
 constexpr log::logger s_log ("instance");
-constexpr std::string_view settings_file = "blb-instance.json";
 
 bool
 valid_id (std::string_view id)
