@@ -9,11 +9,10 @@
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "app/system/Platform.h"
-#include "app/system/Services.h"
-#include "app/system/UiStyles.h"
 #include "ui/exui/Skins.h"
 #include "ui/exui/windows/AccountsWindow.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/SettingsWindow.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
 
@@ -183,21 +182,7 @@ namespace ForgottenMelody {
                 break;
             case ACCOUNT: showAccounts(GetHwnd()); break;
             case DOWNLOADS: showNotice(Notices::Kind::Info, L"下载中心还在开发中", 3000); break;
-            case SETTINGS:
-                // 忘却的旋律 has no settings yet, so this is the way back.
-                if (message(GetHwnd(), L"设置窗口还在开发中，要切换回默认界面吗？\n切换后启动器会重启。", L"设置",
-                            exui::MsgBoxButtons::OkCancel, {L"取消", L"切换"}) != 0) {
-                    break;
-                }
-                if (Services::busy()) {
-                    showNotice(Notices::Kind::Failed, L"有游戏、安装或下载正在进行，完成后再切换", 4000);
-                    break;
-                }
-                UiStyles::set("default");
-                if (!Platform::restart()) {
-                    showNotice(Notices::Kind::Failed, L"重启失败，请手动重新打开启动器", 5000);
-                }
-                break;
+            case SETTINGS: showSettings(GetHwnd()); break;
         }
     }
 
