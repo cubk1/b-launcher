@@ -8,6 +8,7 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/system/Catalog.h"
 #include "app/system/Config.h"
@@ -19,6 +20,10 @@
 #include "ui/exui/widgets/ListView.h"
 #include "ui/exui/widgets/ScrollBar.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/InstallControls.h"
+
+#include <core/base/strings.hpp>
+#include <core/modpack/modpack.hpp>
 
 #include <algorithm>
 #include <filesystem>
@@ -39,7 +44,6 @@ namespace ForgottenMelody {
 
         enum : uint32_t {
             NEW_PANEL = SectionedForm::FIRST_CONTROL,
-            NEW_LATER,
             MOD_PANEL,
             MODPACK_PANEL,
             RESOURCE_PACK_PANEL,
@@ -72,6 +76,34 @@ namespace ForgottenMelody {
             VERSIONS_RETRY,
             STATUS,
             ACTION,
+            // 新建实例: a game version, then the instance and its loaders, and the install in their place.
+            PICK_VIEW,
+            SETUP_VIEW,
+            PROGRESS_VIEW,
+            GAME_SEARCH,
+            RELEASES,
+            SNAPSHOTS,
+            OLD_VERSIONS,
+            GAME_REFRESH,
+            IMPORT,
+            GAMES,
+            GAMES_RETRY,
+            PICK_STATUS,
+            NEXT_STEP,
+            SETUP_BACK,
+            SETUP_TITLE,
+            LOADERS_REFRESH,
+            NAME_LABEL,
+            NAME,
+            PLACE_LABEL,
+            PLACE,
+            // A name and a value on each of four rows.
+            INFO,
+            SETUP_STATUS = INFO + 8,
+            INSTALL,
+            LOADER_ROWS,
+            PROGRESS = LOADER_ROWS + LoaderRows::ID_COUNT,
+            FINISH = PROGRESS + InstallProgress::ID_COUNT,
         };
 
         struct KindInfo {
@@ -478,6 +510,45 @@ namespace ForgottenMelody {
             return !name.empty() ? name : version.number.empty() ? version.name : version.number;
         }
 
+        // The kinds of game versions listed, for the rest of the run; at first only 正式版.
+        bool showReleases = true, showSnapshots = false, showOld = false;
+
+        const wchar_t* gameTypeLabel(const std::string& type) {
+            return type == "release" ? L"正式版" : type.rfind("old_", 0) == 0 ? L"远古版" : L"快照版";
+        }
+
+        bool listedType(const std::string& type) {
+            return type == "release" ? showReleases : type.rfind("old_", 0) == 0 ? showOld : showSnapshots;
+        }
+
+        bool contains(const std::string& text, const std::string& part) {
+            auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c; };
+            return std::search(text.begin(), text.end(), part.begin(), part.end(),
+                               [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
+        }
+
+        // An instance from a modpack is named after its title, without what a folder name cannot have.
+        std::string folderName(const std::string& title) {
+            std::string out;
+            for (char c : title) {
+                if (std::string("\\/:*?\"<>|").find(c) == std::string::npos && (unsigned char) c >= 32) {
+                    out += c;
+                }
+            }
+            while (!out.empty() && (out.back() == ' ' || out.back() == '.')) {
+                out.pop_back();
+            }
+            size_t start = out.find_first_not_of(' ');
+            return start == std::string::npos ? std::string("modpack") : out.substr(start);
+        }
+
+        // A modpack to install, from a file or from a project, with what is shown of it.
+        struct PackSetup {
+            std::string title, version, minecraft;
+            std::vector<std::string> loaders;
+            Installer::Modpack pack;
+        };
+
         // 下载中心 in the frame of the 2014 window, its sections those of the default interface: 新建实例, then a
         // search of Modrinth or CurseForge for each kind of thing, which can follow the instance it is for, and the
         // page of a project with its versions.
@@ -485,7 +556,33 @@ namespace ForgottenMelody {
         public:
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
-                        {NEW_LATER, ControlKind::Label, {210, 295, 675, 30}, L"新建实例还在开发中"},
+                        // A game version
+                        {GAME_SEARCH, ControlKind::Edit, {225, 86, 200, 26}},
+                        {RELEASES, ControlKind::Check, {437, 86, 70, 26}, L"正式版"},
+                        {SNAPSHOTS, ControlKind::Check, {513, 86, 70, 26}, L"快照版"},
+                        {OLD_VERSIONS, ControlKind::Check, {589, 86, 70, 26}, L"远古版"},
+                        {GAME_REFRESH, ControlKind::Button, {683, 85, 80, 28}, L"刷新"},
+                        {IMPORT, ControlKind::Button, {769, 85, 100, 28}, L"导入整合包"},
+                        {GAMES, ControlKind::List, {225, 119, 645, 380}},
+                        {.id = GAMES_RETRY,
+                         .kind = ControlKind::Button,
+                         .bounds = {507, 310, 80, 30},
+                         .caption = L"重试",
+                         .visible = false},
+                        {PICK_STATUS, ControlKind::Label, {225, 510, 540, 26}},
+                        {NEXT_STEP, ControlKind::Button, {779, 509, 90, 28}, L"下一步"},
+                        // The instance
+                        {SETUP_BACK, ControlKind::Button, {225, 85, 60, 28}, L"返回"},
+                        {SETUP_TITLE, ControlKind::Label, {295, 86, 300, 26}},
+                        {LOADERS_REFRESH, ControlKind::Button, {749, 85, 120, 28}, L"刷新加载器版本"},
+                        // In the columns of the loaders' rows.
+                        {NAME_LABEL, ControlKind::Label, {225, 129, 115, 26}, L"名称"},
+                        {NAME, ControlKind::Edit, {345, 129, 300, 26}},
+                        {PLACE_LABEL, ControlKind::Label, {225, 163, 115, 26}, L"安装位置"},
+                        {PLACE, ControlKind::Combo, {345, 162, 300, 28}},
+                        {SETUP_STATUS, ControlKind::Label, {225, 510, 540, 26}},
+                        {INSTALL, ControlKind::Button, {779, 509, 90, 28}, L"安装"},
+                        {FINISH, ControlKind::Button, {779, 509, 90, 28}, L"取消"},
                         // The search
                         {SOURCE, ControlKind::Combo, {225, 85, 110, 28}},
                         {SEARCH, ControlKind::Edit, {341, 86, 300, 26}},
@@ -535,10 +632,51 @@ namespace ForgottenMelody {
                 auto top = std::make_shared<ProjectHeader>(295, 80, 448, 56);
                 header = top.get();
                 AddControl(HEADER, top);
+                for (uint32_t id : {PICK_VIEW, SETUP_VIEW, PROGRESS_VIEW}) {
+                    AddControl(id, std::make_shared<exui::Panel>(210, 75, 675, 470));
+                }
                 AddControls(CONTROLS);
-                MoveInto(NEW_PANEL, {NEW_LATER});
-                Control<exui::Label>(NEW_LATER).SetAlignment(Gdiplus::StringAlignmentCenter,
-                                                             Gdiplus::StringAlignmentCenter);
+                std::vector<exui::ControlSpec> info;
+                for (int i = 0; i < 4; i++) {
+                    info.push_back({.id = INFO + 2 * i,
+                                    .kind = ControlKind::Label,
+                                    .bounds = {225, 203 + i * LoaderRows::ROW_H, 115, 26}});
+                    info.push_back({.id = INFO + 2 * i + 1,
+                                    .kind = ControlKind::Label,
+                                    .bounds = {345, 203 + i * LoaderRows::ROW_H, 524, 26}});
+                }
+                AddControls(info);
+                AddControls(LoaderRows::controls(LOADER_ROWS, 225, 237, 645));
+                AddControls(InstallProgress::controls(PROGRESS, 225, 85, 645, 414));
+                MoveInto(PICK_VIEW,
+                         {GAME_SEARCH, RELEASES, SNAPSHOTS, OLD_VERSIONS, GAME_REFRESH, IMPORT, GAMES, GAMES_RETRY,
+                          PICK_STATUS, NEXT_STEP});
+                MoveInto(SETUP_VIEW,
+                         {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE, SETUP_STATUS,
+                          INSTALL});
+                for (uint32_t id = INFO; id < SETUP_STATUS; id++) {
+                    MoveInto(SETUP_VIEW, {id});
+                }
+                for (uint32_t id = LOADER_ROWS; id < PROGRESS; id++) {
+                    MoveInto(SETUP_VIEW, {id});
+                }
+                for (uint32_t id = PROGRESS; id <= FINISH; id++) {
+                    MoveInto(PROGRESS_VIEW, {id});
+                }
+                MoveInto(NEW_PANEL, {PICK_VIEW, SETUP_VIEW, PROGRESS_VIEW});
+                loaders.create();
+                progress.create();
+                auto& games = Control<exui::ListView>(GAMES);
+                games.InsertColumn(L"版本", 300);
+                games.InsertColumn(L"类型", 120);
+                games.InsertColumn(L"发布日期", 200);
+                SetChecked(RELEASES, showReleases);
+                SetChecked(SNAPSHOTS, showSnapshots);
+                SetChecked(OLD_VERSIONS, showOld);
+                Control<exui::EditBox>(GAME_SEARCH).OnTextChanged = [this](const std::wstring&) { refresh(); };
+                FindControl(GAME_SEARCH)->SetTooltipText(L"按版本号搜索");
+                FindControl(NAME)->SetTooltipText(L"实例的名称，也是它的文件夹名");
+                FindControl(PLACE)->SetTooltipText(L"实例装进哪个游戏目录");
                 MoveInto(SEARCH_VIEW,
                          {SOURCE, SEARCH, INSTANCE, VERSION, LOADER, CATEGORY, SORT, COUNT, RESULTS, RETRY, PREVIOUS,
                           PAGE, NEXT});
@@ -577,6 +715,12 @@ namespace ForgottenMelody {
 
         protected:
             void refresh() override {
+                // Followed in every section, so that an install that ends meanwhile is shown as it ended.
+                progress.refresh();
+                if (lastSection == 0) {
+                    showNew();
+                    return;
+                }
                 followTarget();
                 if (viewingProject) {
                     showProject();
@@ -606,7 +750,16 @@ namespace ForgottenMelody {
                 if (index < 0) {
                     return;
                 }
+                if (loaders.select(id, index)) {
+                    refresh();
+                    return;
+                }
                 switch (id) {
+                    case PLACE:
+                        if (index < (int) placeKeys.size()) {
+                            placeKey = placeKeys[index];
+                        }
+                        break;
                     case SOURCE: switchSource(index == 0 ? Source::Modrinth : Source::CurseForge); break;
                     case INSTANCE:
                     case PROJECT_INSTANCE:
@@ -661,6 +814,17 @@ namespace ForgottenMelody {
                     case BACK: showView(false); break;
                     case VERSIONS_RETRY: Addons::refreshVersions(source, project.id); break;
                     case ACTION: act(); break;
+                    case RELEASES: showReleases = Checked(RELEASES); break;
+                    case SNAPSHOTS: showSnapshots = Checked(SNAPSHOTS); break;
+                    case OLD_VERSIONS: showOld = Checked(OLD_VERSIONS); break;
+                    case GAME_REFRESH:
+                    case GAMES_RETRY: Catalog::refreshMinecraft(); break;
+                    case IMPORT: importPack(); break;
+                    case NEXT_STEP: chooseGame(); break;
+                    case SETUP_BACK: leaveSetup(); break;
+                    case LOADERS_REFRESH: loaders.reload(); break;
+                    case INSTALL: install(); break;
+                    case FINISH: finish(); break;
                 }
                 refresh();
             }
@@ -670,6 +834,8 @@ namespace ForgottenMelody {
                 FindControl(BROWSE)->SetVisible(index > 0);
                 if (index > 0) {
                     switchKind(KINDS[index - 1].kind);
+                } else {
+                    refresh();
                 }
             }
 
@@ -691,6 +857,18 @@ namespace ForgottenMelody {
             // What the combo boxes offer, behind their labels.
             std::vector<std::string> instanceKeys, versionChoices, categoryKeys;
             std::map<uint32_t, std::vector<std::wstring>> offered;
+            // 新建实例: the game version chosen or the modpack to install, and the section a modpack came from.
+            bool settingUp = false;
+            std::string minecraft;
+            std::optional<PackSetup> modpack;
+            int packSection = -1;
+            LoaderRows loaders{*this, LOADER_ROWS};
+            InstallProgress progress{*this, PROGRESS};
+            Rows shownGames;
+            std::vector<std::string> gameKeys, placeKeys;
+            std::string placeKey;
+            // The generated name last put in the name box, which follows the loaders until it is edited.
+            std::wstring nameShown;
 
             static bool usesInstance(Kind kind) {
                 return kind != Kind::Modpack;
@@ -1098,6 +1276,227 @@ namespace ForgottenMelody {
                                                 state != ProjectInstaller::State::Running);
             }
 
+            // 新建实例 shows the install while one goes on or until what it ended with is seen, otherwise the game
+            // versions or, once one is chosen, the instance to make of it.
+            void showNew() {
+                bool installing = progress.active();
+                FindControl(PICK_VIEW)->SetVisible(!installing && !settingUp);
+                FindControl(SETUP_VIEW)->SetVisible(!installing && settingUp);
+                FindControl(PROGRESS_VIEW)->SetVisible(installing);
+                if (installing) {
+                    setText(FINISH, !progress.hasEnded() ? L"取消" : progress.succeeded() ? L"完成" : L"返回");
+                } else if (settingUp) {
+                    showSetup();
+                } else {
+                    showGames();
+                }
+            }
+
+            void showGames() {
+                const Catalog::Versions& all = Catalog::minecraft();
+                std::string text = trimmed(Text(GAME_SEARCH));
+                Rows rows;
+                std::vector<std::string> keys;
+                for (const auto& version : all.list) {
+                    if (listedType(version.type) && contains(version.id, text)) {
+                        rows.push_back({Platform::widen(version.id), gameTypeLabel(version.type),
+                                        Platform::widen(version.release_time.substr(0, 10))});
+                        keys.push_back(version.id);
+                    }
+                }
+                size_t count = rows.size();
+                bool failed = all.list.empty() && all.status == Catalog::Status::Failed;
+                if (rows.empty()) {
+                    std::wstring none = failed ? L"获取版本列表失败：" + Platform::widen(all.error)
+                            : all.list.empty() ? L"正在获取版本列表…"
+                            : !text.empty()    ? L"没有找到“" + Platform::widen(text) + L"”"
+                                               : L"没有符合筛选的版本";
+                    rows.push_back({none, L"", L""});
+                    keys.emplace_back();
+                }
+                fill(Control<exui::ListView>(GAMES), shownGames, gameKeys, std::move(rows), std::move(keys));
+                FindControl(GAMES_RETRY)->SetVisible(failed);
+                setText(PICK_STATUS, count > 0 ? L"共 " + std::to_wstring(count) + L" 个版本" : L"");
+                FindControl(NEXT_STEP)->SetEnabled(!selectedKey(Control<exui::ListView>(GAMES), gameKeys).empty());
+            }
+
+            void chooseGame() {
+                std::string chosen = selectedKey(Control<exui::ListView>(GAMES), gameKeys);
+                if (chosen.empty()) {
+                    return;
+                }
+                modpack.reset();
+                packSection = -1;
+                minecraft = chosen;
+                loaders.reset(minecraft);
+                startSetup();
+            }
+
+            // A modpack from a file, read as the default interface reads one dropped on it.
+            void importPack() {
+                std::vector<std::filesystem::path> picked =
+                        Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
+                if (picked.empty()) {
+                    return;
+                }
+                auto manifest = blb::modpack::read_modpack(picked.front());
+                if (!manifest) {
+                    message(GetHwnd(), L"这个文件不是支持的整合包", L"导入整合包");
+                    return;
+                }
+                const blb::modpack::pack_manifest& read = *manifest;
+                PackSetup setup;
+                setup.title = read.name.empty() ? blb::path_to_utf8(picked.front().stem()) : read.name;
+                setup.version = read.version.empty() ? std::string("未知") : read.version;
+                setup.minecraft = read.minecraft;
+                for (const blb::install::loader_request& loader : read.loaders) {
+                    setup.loaders.push_back(Installer::loaderName(loader.type) +
+                                            (loader.version.empty() ? std::string() : " " + loader.version));
+                    setup.pack.loaders.push_back(loader.type);
+                }
+                setup.pack.minecraft = read.minecraft;
+                setup.pack.file = picked.front();
+                openPack(setup, -1);
+            }
+
+            void openPack(const PackSetup& setup, int from) {
+                modpack = setup;
+                packSection = from;
+                minecraft = setup.minecraft;
+                startSetup();
+            }
+
+            void startSetup() {
+                settingUp = true;
+                nameShown = Platform::widen(generatedName());
+                SetText(NAME, nameShown);
+                refresh();
+            }
+
+            // Back to the game versions, or to the project a modpack came from.
+            void leaveSetup() {
+                settingUp = false;
+                modpack.reset();
+                int from = packSection;
+                packSection = -1;
+                if (from > 0) {
+                    // Showing the section shows its search; the project is still the one the modpack came from.
+                    showSection(from);
+                    showView(true);
+                }
+            }
+
+            std::string generatedName() const {
+                if (modpack) {
+                    return folderName(modpack->title);
+                }
+                blb::install::install_request request;
+                request.minecraft = minecraft;
+                request.loaders = loaders.requests();
+                std::vector<blb::install::loader_info> infos = loaders.infos();
+                return blb::install::default_version_id(request, infos);
+            }
+
+            // The game directory chosen, else the launcher's own one, else the first.
+            const Instances::Source* targetSource() const {
+                if (const Instances::Source* chosen = Instances::source(placeKey)) {
+                    return chosen;
+                }
+                const Instances::Source* fallback = nullptr;
+                for (const Instances::Source& source : Instances::sources()) {
+                    if (source.key == "local" && source.exists) {
+                        return &source;
+                    }
+                    if (fallback == nullptr) {
+                        fallback = &source;
+                    }
+                }
+                return fallback;
+            }
+
+            void showSetup() {
+                bool pack = modpack.has_value();
+                setText(SETUP_TITLE, pack ? L"安装整合包" : L"新建实例");
+                FindControl(LOADERS_REFRESH)->SetVisible(!pack);
+
+                std::vector<std::wstring> places;
+                placeKeys.clear();
+                const Instances::Source* target = targetSource();
+                int selected = -1;
+                for (const Instances::Source& source : Instances::sources()) {
+                    places.push_back(Platform::widen(source.label));
+                    placeKeys.push_back(source.key);
+                    selected = target != nullptr && source.key == target->key ? (int) placeKeys.size() - 1 : selected;
+                }
+                setOptions(PLACE, places, selected);
+
+                std::vector<std::pair<std::wstring, std::wstring>> info;
+                if (pack) {
+                    std::string names;
+                    for (const std::string& loader : modpack->loaders) {
+                        names += (names.empty() ? "" : "、") + loader;
+                    }
+                    info = {{L"整合包", Platform::widen(modpack->title)},
+                            {L"版本", Platform::widen(modpack->version)},
+                            {L"游戏版本", minecraft.empty() ? L"未知" : L"Minecraft " + Platform::widen(minecraft)},
+                            {L"加载器", names.empty() ? L"无" : Platform::widen(names)}};
+                    loaders.hide();
+                } else {
+                    info = {{L"Minecraft", Platform::widen(minecraft)}};
+                    loaders.refresh(true);
+                }
+                for (int i = 0; i < 4; i++) {
+                    bool shown = i < (int) info.size();
+                    FindControl(INFO + 2 * i)->SetVisible(shown);
+                    FindControl(INFO + 2 * i + 1)->SetVisible(shown);
+                    if (shown) {
+                        setText(INFO + 2 * i, info[i].first);
+                        setText(INFO + 2 * i + 1, info[i].second);
+                    }
+                }
+
+                std::wstring generated = Platform::widen(generatedName());
+                if (Text(NAME) == nameShown && generated != nameShown) {
+                    SetText(NAME, generated);
+                }
+                nameShown = generated;
+                std::string problem = target == nullptr ? std::string("没有可用的游戏目录")
+                                                        : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
+                setText(SETUP_STATUS, Platform::widen(problem));
+                FindControl(INSTALL)->SetEnabled(problem.empty());
+            }
+
+            void install() {
+                const Instances::Source* target = targetSource();
+                if (target == nullptr || Installer::running()) {
+                    return;
+                }
+                std::string key = target->key;
+                std::string name = trimmed(Text(NAME));
+                if (modpack) {
+                    Installer::startModpack(key, modpack->pack, name);
+                } else {
+                    // An unchanged name is left to the installer, as in the default interface.
+                    Installer::start(key, minecraft, loaders.requests(),
+                                     name == generatedName() ? std::string() : name);
+                }
+            }
+
+            // Cancels the install, or leaves what it ended with: for the game versions once it went well, otherwise
+            // for the instance as it was set up.
+            void finish() {
+                if (!progress.hasEnded()) {
+                    progress.cancel();
+                    return;
+                }
+                if (progress.succeeded()) {
+                    settingUp = false;
+                    modpack.reset();
+                    packSection = -1;
+                }
+                progress.dismiss();
+            }
+
             // Installs the chosen version as the default interface does: a data pack is saved where one picks.
             void act() {
                 const Addons::Version* chosen = selectedVersion();
@@ -1107,9 +1506,40 @@ namespace ForgottenMelody {
                 // The list may be fetched again under a dialog, so the version is copied before one opens.
                 const Addons::Version version = *chosen;
                 switch (query.kind) {
-                    case Kind::Modpack:
-                        message(GetHwnd(), L"整合包的安装会和新建实例一起做好，现在还在开发中", L"下载中心");
+                    case Kind::Modpack: {
+                        const Addons::File* file = version.file();
+                        if (file == nullptr) {
+                            break;
+                        }
+                        if (Installer::running()) {
+                            message(GetHwnd(), L"正在安装，等它完成后再安装整合包", L"下载中心");
+                            break;
+                        }
+                        PackSetup setup;
+                        setup.title = project.title;
+                        setup.version = version.name.empty() ? version.number : version.name;
+                        setup.minecraft = version.gameVersions.empty() ? std::string() : version.gameVersions.front();
+                        setup.pack.minecraft = setup.minecraft;
+                        setup.pack.urls = Addons::fileUrls(file->url);
+                        setup.pack.sha1 = file->sha1;
+                        setup.pack.size = file->size;
+                        using blb::install::loader_type;
+                        const std::pair<const char*, loader_type> TYPES[] = {{"fabric", loader_type::fabric},
+                                                                             {"forge", loader_type::forge},
+                                                                             {"neoforge", loader_type::neoforge},
+                                                                             {"quilt", loader_type::quilt}};
+                        for (const std::string& tag : version.loaders) {
+                            setup.loaders.push_back(Modrinth::label(tag));
+                            for (const auto& [name, type] : TYPES) {
+                                if (tag == name) {
+                                    setup.pack.loaders.push_back(type);
+                                }
+                            }
+                        }
+                        openPack(setup, lastSection);
+                        showSection(0);
                         break;
+                    }
                     case Kind::Datapack: {
                         const Instances::Entry* entry = Instances::find(target);
                         std::filesystem::path start =
