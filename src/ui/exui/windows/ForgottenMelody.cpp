@@ -42,9 +42,12 @@ namespace ForgottenMelody {
             });
             Interface::connect({
                     [&window] { window.showNotice(Notices::Kind::Info, L"日志窗口还在开发中", 3000); },
-                    [&window](const std::string&, const std::string&) {
-                        window.showNotice(Notices::Kind::Failed, L"账号管理还在开发中，请先在默认界面添加账号", 5000);
+                    [&window](const std::string& login, const std::string& authServer) {
+                        window.askForAccount(login, authServer);
                     },
+                    // The main window shows the instance an install or a shortcut made current by itself.
+                    nullptr,
+                    nullptr,
             });
         }
 

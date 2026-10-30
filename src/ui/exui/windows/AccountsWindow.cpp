@@ -315,6 +315,8 @@ namespace ForgottenMelody {
         class AccountsWindow : public LiveForm {
         public:
             enum : uint32_t { LIST = 1, MICROSOFT, OFFLINE, EXTERNAL, IMPORT, REMOVE, CURRENT };
+            // Opens the login dialog once the window runs, as a window of its own runs a loop of its own.
+            static constexpr UINT OPEN_EXTERNAL = WM_APP + 1;
 
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
@@ -382,19 +384,7 @@ namespace ForgottenMelody {
                             return Platform::widen(Accounts::addOffline(Platform::narrow(name)));
                         });
                         break;
-                    case EXTERNAL: {
-                        ExternalDialog dialog;
-                        if (dialog.create(GetHwnd())) {
-                            runModal(dialog, dialog.FindControl(ExternalDialog::SERVER));
-                        }
-                        // A login the dialog left running ends with it.
-                        if (Accounts::serverLogin() == Accounts::ServerLogin::Done) {
-                            Accounts::finishServerLogin();
-                        } else if (Accounts::serverLogin() != Accounts::ServerLogin::Idle) {
-                            Accounts::cancelServerLogin();
-                        }
-                        break;
-                    }
+                    case EXTERNAL: external(); break;
                     case IMPORT: {
                         ImportWindow window;
                         if (window.create(GetHwnd())) {
@@ -422,10 +412,32 @@ namespace ForgottenMelody {
                 refresh();
             }
 
+            LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override {
+                if (msg == OPEN_EXTERNAL) {
+                    external();
+                    return 0;
+                }
+                return LiveForm::HandleMessage(msg, wp, lp);
+            }
+
         private:
             Rows shown;
             // The account of each row; empty for the row of a login in progress.
             std::vector<std::string> shownKeys;
+
+            void external() {
+                ExternalDialog dialog;
+                if (dialog.create(GetHwnd())) {
+                    runModal(dialog, dialog.FindControl(ExternalDialog::SERVER));
+                }
+                // A login the dialog left running ends with it.
+                if (Accounts::serverLogin() == Accounts::ServerLogin::Done) {
+                    Accounts::finishServerLogin();
+                } else if (Accounts::serverLogin() != Accounts::ServerLogin::Idle) {
+                    Accounts::cancelServerLogin();
+                }
+                refresh();
+            }
 
             std::string selectedKey() const {
                 return LiveForm::selectedKey(Control<exui::ListView>(LIST), shownKeys);
@@ -443,10 +455,22 @@ namespace ForgottenMelody {
         };
     }
 
-    void showAccounts(HWND parent) {
+    void showAccounts(HWND parent, const std::string& login, const std::string& authServer) {
         AccountsWindow window;
-        if (window.create(parent)) {
-            runModal(window);
+        if (!window.create(parent)) {
+            return;
         }
+        // Like the default interface: the kind of login and the server of the instance, without an account name
+        // that belongs to another server.
+        if (login == "yggdrasil" || login == "nide8") {
+            std::wstring server = Platform::widen(authServer);
+            if (!server.empty() && server != remembered.server) {
+                remembered.server = server;
+                remembered.user.clear();
+            }
+            remembered.nide8 = login == "nide8";
+            PostMessageW(window.GetHwnd(), AccountsWindow::OPEN_EXTERNAL, 0, 0);
+        }
+        runModal(window);
     }
 }
