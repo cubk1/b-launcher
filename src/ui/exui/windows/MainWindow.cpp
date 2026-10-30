@@ -202,7 +202,8 @@ namespace ForgottenMelody {
         while (!failures.empty() && GetHwnd() != nullptr) {
             std::wstring text = std::move(failures.front());
             failures.erase(failures.begin());
-            message(GetHwnd(), text, L"提示：");
+            // Over the dialog that is open, if any: one under it would hide behind it and still take its input.
+            message(modalWindow(GetHwnd()), text, L"提示：");
         }
         showingFailures = false;
     }

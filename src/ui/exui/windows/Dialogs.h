@@ -31,6 +31,8 @@ namespace ForgottenMelody {
     // Shows window, focused on focus if given, and returns once it is closed. Other windows stay enabled, but their
     // input is dropped meanwhile.
     void runModal(exui::Window& window, exui::Widget* focus = nullptr);
+    // The innermost window of runModal, the one that takes the input; fallback while there is none.
+    HWND modalWindow(HWND fallback);
 
     // W06's strip without a caption: a prompt, the name and 保存 / 取消, Enter saving and Esc closing it. save returns
     // a problem to show, or nothing to close the strip.

@@ -21,6 +21,9 @@ namespace ForgottenMelody {
         // EXUI's own timers use addresses as ids, so a small number never collides with them.
         constexpr UINT_PTR REFRESH_TIMER = 1;
 
+        // The windows shown by runModal, the innermost last.
+        std::vector<HWND> modals;
+
         class NameDialog : public exui::Form {
         public:
             enum : uint32_t { PROMPT = 1, NAME, SAVE, CANCEL };
@@ -141,7 +144,13 @@ namespace ForgottenMelody {
         if (focus != nullptr) {
             window.SetFocusedWidget(focus);
         }
+        modals.push_back(window.GetHwnd());
         window.RunModalLoop(true);
+        modals.pop_back();
+    }
+
+    HWND modalWindow(HWND fallback) {
+        return modals.empty() ? fallback : modals.back();
     }
 
     void askName(HWND parent, const std::wstring& title, const std::wstring& prompt, const std::wstring& name,
