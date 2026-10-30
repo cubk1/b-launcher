@@ -3,6 +3,9 @@
 #include "app/system/Notices.h"
 #include "ui/exui/Form.h"
 
+#include <core/modpack/modpack.hpp>
+
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -23,6 +26,11 @@ namespace ForgottenMelody {
         void askForAccount(const std::string& login, const std::string& authServer);
         // Opens the game log once the current message is done, as a game asks for it from a poll.
         void openLog();
+        // Whether files dropped on the window are taken: not while a dialog or a message box is open over it.
+        bool takesDrops() const;
+        // Opens 下载中心 on 新建实例 for a dropped modpack once the current message is done, as drops are acted on
+        // from a poll.
+        void openModpack(const std::filesystem::path& file, const b_launcher_base::modpack::pack_manifest& manifest);
 
     protected:
         LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override;
@@ -37,6 +45,8 @@ namespace ForgottenMelody {
         bool showingFailures = false;
         // How the game wants to log in while the account manager is due to open.
         std::optional<std::pair<std::string, std::string>> accountWanted;
+        // A dropped modpack while 下载中心 is due to open for it.
+        std::optional<std::pair<std::filesystem::path, b_launcher_base::modpack::pack_manifest>> droppedPack;
 
         void showFailures();
     };

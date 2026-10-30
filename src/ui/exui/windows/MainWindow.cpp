@@ -6,6 +6,7 @@
 #endif
 #include "ui/exui/windows/MainWindow.h"
 #include "app/accounts/Accounts.h"
+#include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "app/system/Platform.h"
@@ -29,7 +30,7 @@ namespace ForgottenMelody {
     namespace {
         using exui::ControlKind;
 
-        enum : uint32_t { LAUNCH = 1, DOWNLOADS, SETTINGS, INSTANCE, FOLDER, CREDIT, ACCOUNT, NOTICE };
+        enum : uint32_t { LAUNCH = 1, DOWNLOADS, SETTINGS, INSTANCE, FOLDER, CREDIT, ACCOUNT, NOTICE, DROP };
 
         constexpr Gdiplus::ARGB CREDIT_COLOR = 0xFEC0C0C0;
 
@@ -69,6 +70,7 @@ namespace ForgottenMelody {
         constexpr UINT SHOW_FAILURES = WM_APP + 1;
         constexpr UINT ASK_FOR_ACCOUNT = WM_APP + 2;
         constexpr UINT OPEN_LOG = WM_APP + 3;
+        constexpr UINT OPEN_MODPACK = WM_APP + 4;
 
         // One centered notice at a time, white with a dark glow to stand out from any background, hidden once its
         // duration is over.
@@ -114,6 +116,15 @@ namespace ForgottenMelody {
         account.SetColors(CREDIT_COLOR, 0xD20060C0, CREDIT_COLOR);
         // Notices go above 启动游戏, centered over it and 下载中心; failures get a message box.
         AddControl(NOTICE, std::make_shared<NoticeLine>(430, 283, 260, 25));
+        // Over everything while files are dragged over the window, saying what dropping them does, as the default
+        // interface does.
+        auto drop = std::make_shared<exui::Label>(14, 14, 692, 422, std::wstring());
+        drop->SetAlignment(Gdiplus::StringAlignmentCenter, Gdiplus::StringAlignmentCenter);
+        drop->SetFont(L"微软雅黑", 18, Gdiplus::FontStyleBold);
+        drop->SetBackgroundColor(0xE0FFFFFF);
+        drop->SetBorderColor(0x50000000);
+        drop->SetVisible(false);
+        AddControl(DROP, drop);
         refresh();
         return true;
     }
@@ -164,6 +175,19 @@ namespace ForgottenMelody {
             FindControl(LAUNCH)->SetEnabled(launchable);
         }
 
+        bool dragging = Drops::hovering();
+        auto& drop = Control<exui::Label>(DROP);
+        if (dragging) {
+            std::wstring promise = Platform::widen(Drops::promise());
+            if (promise != Text(DROP)) {
+                SetText(DROP, promise);
+                drop.SetTextColor(promise.rfind(L"松开", 0) == 0 ? 0xD2000000 : 0x96000000);
+            }
+        }
+        if (drop.IsVisible() != dragging) {
+            drop.SetVisible(dragging);
+        }
+
         // A message box runs a loop of its own, so failures wait for the end of this poll and for a shown window.
         if (!failures.empty() && !showingFailures && IsWindowVisible(GetHwnd())) {
             PostMessageW(GetHwnd(), SHOW_FAILURES, 0, 0);
@@ -186,11 +210,31 @@ namespace ForgottenMelody {
             showLog();
             return 0;
         }
+        if (msg == OPEN_MODPACK) {
+            if (std::optional<std::pair<std::filesystem::path, b_launcher_base::modpack::pack_manifest>> pack =
+                        std::exchange(droppedPack, {})) {
+                showModpack(GetHwnd(), pack->first, pack->second);
+            }
+            return 0;
+        }
+        if (msg == WM_DESTROY) {
+            Drops::detach();
+        }
         return Form::HandleMessage(msg, wp, lp);
     }
 
     void MainWindow::openLog() {
         PostMessageW(GetHwnd(), OPEN_LOG, 0, 0);
+    }
+
+    bool MainWindow::takesDrops() const {
+        return modalWindow(nullptr) == nullptr && !showingFailures;
+    }
+
+    void MainWindow::openModpack(const std::filesystem::path& file,
+                                 const b_launcher_base::modpack::pack_manifest& manifest) {
+        droppedPack = std::make_pair(file, manifest);
+        PostMessageW(GetHwnd(), OPEN_MODPACK, 0, 0);
     }
 
     void MainWindow::showFailures() {

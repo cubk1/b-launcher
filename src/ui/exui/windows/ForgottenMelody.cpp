@@ -5,6 +5,8 @@
 #define NOMINMAX
 #endif
 #include "ui/exui/windows/ForgottenMelody.h"
+#include "app/instances/Drops.h"
+#include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "app/launch/ShortcutLaunch.h"
@@ -62,6 +64,14 @@ namespace ForgottenMelody {
             Platform::claimLaunches();
             connect(window);
             Services::start();
+            // Files dropped on the main window go into its instance; a modpack opens 下载中心 on 新建实例.
+            Drops::attach(window.GetHwnd(),
+                          {[] { return Instances::selected(); },
+                           [&window](const std::filesystem::path& file,
+                                     const b_launcher_base::modpack::pack_manifest& manifest) {
+                               window.openModpack(file, manifest);
+                           },
+                           [&window] { return window.takesDrops(); }});
             if (!pendingLaunch.empty()) {
                 ShortcutLaunch::request(pendingLaunch, headless);
             }
