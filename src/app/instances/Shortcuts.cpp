@@ -1,4 +1,5 @@
 #include "app/instances/Shortcuts.h"
+#include "app/instances/Instances.h"
 #include "app/system/EmbeddedIcons.h"
 #include "app/system/Platform.h"
 
@@ -277,7 +278,14 @@ namespace Shortcuts {
         return drafts[instanceKey];
     }
 
-    bool create(const Instances::Entry& entry, const Draft& draft) {
+    bool create(const std::string& instanceKey) {
+        const Instances::Entry* found = Instances::find(instanceKey);
+        if (found == nullptr) {
+            return false;
+        }
+        // The instances may be read again while the file dialog is open, so the entry is copied before it.
+        const Instances::Entry entry = *found;
+        const Draft draft = drafts[instanceKey];
         if (draft.icon == Icon::Custom && draft.custom.empty()) {
             Instances::notify("先选择图标文件", true);
             return false;

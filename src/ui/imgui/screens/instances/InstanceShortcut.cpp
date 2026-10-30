@@ -187,7 +187,7 @@ namespace InstanceShortcut {
 
         float w = std::max(88.0f, Page::buttonWidth("生成", 0xf108));
         if (Page::button("shortcut#go", "生成", Page::right() - w, buttonTop, w, true, covered, 0xf108) &&
-            Shortcuts::create(entry, Shortcuts::draft(key))) {
+            Shortcuts::create(key)) {
             back = true;
         }
         return back;
