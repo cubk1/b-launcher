@@ -242,6 +242,7 @@ instance_manager::get (std::string_view id) const
     {
       out.valid = false;
       out.problem = resolved.err ().message;
+      out.chain = { std::string (id) };
       if (auto raw = meta::load_version (m_layout, id);
           raw && raw->inherits_from == id)
         out.minecraft_version = std::string (id);
@@ -252,6 +253,7 @@ instance_manager::get (std::string_view id) const
       out.type = resolved->type;
       out.release_time = resolved->release_time;
       out.loaders = install::detect_loaders (*resolved);
+      out.chain = resolved->chain;
     }
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
