@@ -64,7 +64,8 @@ namespace ForgottenMelody {
     };
 
     // The frame of the 2014 下载中心 window, for windows with sections: the sections listed on the left, the shown one
-    // on a backing beside them and named on the banner, and 完成 below. The frame's ids are below FIRST_CONTROL.
+    // on a backing beside them and named on the banner, and a button below that closes it. The frame's ids are below
+    // FIRST_CONTROL.
     class SectionedForm : public LiveForm {
     public:
         static constexpr uint32_t FIRST_CONTROL = 100;
@@ -74,13 +75,16 @@ namespace ForgottenMelody {
             uint32_t panel;
         };
 
-        // 下载中心's own measures by default: the banner above top, the sections and the backing down to bottom, the
-        // list listWidth wide and 完成 below them at the right. Without a list, a single section takes the width.
+        // 下载中心's own measures by default, the backing reaching further down over the room its big button took: the
+        // banner above top, the sections and the backing down to bottom, the list listWidth wide and the button that
+        // closes the window below them at the right, done its caption. Without a list, a single section takes the
+        // width.
         struct Frame {
             int width = 900, height = 600;
-            int top = 75, bottom = 525;
+            int top = 75, bottom = 545;
             int listWidth = 194;
-            int doneWidth = 110, doneHeight = 55;
+            int doneWidth = 80, doneHeight = 32;
+            std::wstring done = L"关闭";
         };
 
     protected:
