@@ -93,6 +93,16 @@ namespace exui {
         if (m_selectedRow >= 0) m_rowStates[m_selectedRow] = 1;
         Invalidate();
     }
+    void ListView::SetSelectedRows(const std::vector<int>& rows) {
+        std::fill(m_rowStates.begin(), m_rowStates.end(), uint8_t(0));
+        m_selectedRow = m_anchorRow = -1;
+        for (int row : rows) {
+            if (row < 0 || row >= GetRowCount()) continue;
+            m_rowStates[row] = 1;
+            if (m_selectedRow < 0) m_selectedRow = m_anchorRow = row;
+        }
+        Invalidate();
+    }
     void ListView::EnsureRowVisible(int row) {
         if (row < 0 || row >= GetRowCount()) return;
         Layout();
