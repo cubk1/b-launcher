@@ -1,12 +1,9 @@
 #include "ui/imgui/screens/instances/InstanceExport.h"
-#include "app/accounts/Accounts.h"
-#include "app/system/Config.h"
+#include "app/instances/Exports.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
-#include "app/system/Platform.h"
 
 #include "ui/imgui/panel/NewUi.h"
-#include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiRender.h"
@@ -17,44 +14,16 @@
 #include "ui/imgui/widget/TextFieldWidget.h"
 #include "ui/imgui/widget/ToggleWidget.h"
 
-#include <core/base/cancellation.hpp>
-#include <core/base/progress.hpp>
-#include <core/base/strings.hpp>
-#include <core/installer/game_installer.hpp>
-#include <core/meta/game_layout.hpp>
-#include <core/modpack/modpack.hpp>
-#include <core/network/mirror_provider.hpp>
-
-#include <cstdio>
-#include <functional>
-#include <map>
+#include <algorithm>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
-#include <vector>
 
 namespace InstanceExport {
 
-    namespace blb = b_launcher_base;
-    using Options = blb::modpack::export_options;
+    using Options = Exports::Options;
 
     namespace {
         constexpr float WIDE_FIELD = 300.0f;
-
-        std::map<std::string, Options> remembered;
-
-        std::thread worker;
-        std::shared_ptr<blb::cancellation_source> cancelling;
-        bool running = false;
-        std::string runningKey;
-        std::mutex lock;
-        bool done = false;
-        std::string failure;
-        bool cancelled = false;
-        std::filesystem::path written;
-        size_t warnings = 0;
-        std::string status;
 
         void tip(const std::string& text, float x, float y, float w, float h) {
             float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
@@ -73,55 +42,14 @@ namespace InstanceExport {
             return button.pressed;
         }
 
-        Options& optionsOf(const Instances::Entry& entry) {
-            auto found = remembered.find(entry.key);
-            if (found != remembered.end()) {
-                return found->second;
-            }
-            Options options;
-            options.name = entry.info.id;
-            if (const blb::auth::account* account = Accounts::current()) {
-                options.author = account->name;
-            }
-            const nlohmann::json& data = Config::data();
-            auto saved = data.find("exportOptions");
-            if (saved != data.end() && saved->is_object()) {
-                auto mine = saved->find(entry.key);
-                if (mine != saved->end() && mine->is_object()) {
-                    auto parsed = blb::modpack::parse_export_options(mine->dump());
-                    if (parsed) {
-                        options = *parsed;
-                    }
-                }
-            }
-            return remembered[entry.key] = options;
-        }
-
-        void save(const std::string& key) {
-            auto found = remembered.find(key);
-            if (found == remembered.end()) {
-                return;
-            }
-            nlohmann::json parsed =
-                    nlohmann::json::parse(blb::modpack::serialize_export_options(found->second), nullptr, false);
-            if (parsed.is_object()) {
-                Config::data()["exportOptions"][key] = parsed;
-                Config::save();
-            }
-        }
-
         void textRow(const std::string& key, const char* field, const char* label, const char* placeholder, float w,
                      std::string Options::* member, float rowY, bool blocked) {
             Page::label(label, rowY);
             auto value = std::make_shared<TextBinding>(
-                    std::string("export#") + field + "#" + key,
-                    [key, member] {
-                        auto found = remembered.find(key);
-                        return found != remembered.end() ? found->second.*member : std::string();
-                    },
+                    std::string("export#") + field + "#" + key, [key, member] { return Exports::options(key).*member; },
                     [key, member](const std::string& text) {
-                        remembered[key].*member = Ui::trim(text);
-                        save(key);
+                        Exports::options(key).*member = Ui::trim(text);
+                        Exports::save(key);
                     },
                     placeholder);
             value->limit = 200;
@@ -137,14 +65,10 @@ namespace InstanceExport {
             Page::label(label, rowY);
             std::string id = std::string("export#") + field + "#" + key;
             auto flag = std::make_shared<FlagBinding>(
-                    id,
-                    [key, member] {
-                        auto found = remembered.find(key);
-                        return found != remembered.end() && found->second.*member;
-                    },
+                    id, [key, member] { return Exports::options(key).*member; },
                     [key, member](bool on) {
-                        remembered[key].*member = on;
-                        save(key);
+                        Exports::options(key).*member = on;
+                        Exports::save(key);
                     });
             ToggleWidget widget(id, flag, true);
             widget.bounds(Page::controlRight() - 30.0f, rowY + (Page::ROW_H - 18.0f) * 0.5f, 30.0f, 18.0f)
@@ -157,102 +81,15 @@ namespace InstanceExport {
             }
         }
 
-        std::string fileName(const Options& options) {
-            std::string base = options.name.empty() ? std::string("modpack") : options.name;
-            if (!options.version.empty()) {
-                base += "-" + options.version;
-            }
-            std::string out;
-            for (char c : base) {
-                if (std::string("\\/:*?\"<>|").find(c) == std::string::npos && (unsigned char) c >= 32) {
-                    out += c;
-                }
-            }
-            return out + ".mrpack";
-        }
-
-        void start(const Instances::Entry& entry, const Options& options, const std::filesystem::path& output) {
-            const Instances::Source* source = Instances::source(entry.source);
-            if (running || source == nullptr) {
-                return;
-            }
-            if (worker.joinable()) {
-                worker.join();
-            }
-            running = true;
-            runningKey = entry.key;
-            {
-                std::lock_guard<std::mutex> guard(lock);
-                done = false;
-                failure.clear();
-                cancelled = false;
-                warnings = 0;
-                status = "正在准备";
-            }
-            cancelling = std::make_shared<blb::cancellation_source>();
-            blb::cancellation_token token = cancelling->token();
-            std::filesystem::path root = source->root;
-            std::string id = entry.info.id;
-            std::filesystem::path gameDirectory = entry.gameDirectory;
-            worker = std::thread([root, id, gameDirectory, output, options, token] {
-                std::string error;
-                size_t warned = 0;
-                bool wasCancelled = false;
-                try {
-                    blb::function_progress_sink sink([](const blb::progress_event& event) {
-                        char text[64];
-                        if (event.task == "export:hash") {
-                            std::snprintf(text, sizeof(text), "正在查找文件来源 %llu/%llu",
-                                          (unsigned long long) event.done_items,
-                                          (unsigned long long) event.total_items);
-                        } else if (event.total_bytes > 0) {
-                            std::snprintf(text, sizeof(text), "正在打包 %d%%",
-                                          (int) (event.done_bytes * 100 / event.total_bytes));
-                        } else {
-                            std::snprintf(text, sizeof(text), "正在打包");
-                        }
-                        std::lock_guard<std::mutex> guard(lock);
-                        status = text;
-                    });
-                    blb::install::install_options installOptions;
-                    installOptions.mirror = blb::net::make_bmclapi_provider();
-                    blb::install::game_installer installer(blb::meta::game_layout(root), installOptions);
-                    auto report =
-                            blb::modpack::export_modpack(installer, id, gameDirectory, output, options, &sink, token);
-                    if (report) {
-                        warned = report->warnings.size();
-                    } else {
-                        error = report.err().message;
-                        wasCancelled = report.err().code == blb::errc::cancelled;
-                    }
-                } catch (const std::exception& exception) {
-                    error = exception.what();
-                }
-                if (!error.empty()) {
-                    std::error_code removeError;
-                    std::filesystem::remove(output, removeError);
-                }
-                std::lock_guard<std::mutex> guard(lock);
-                failure = error;
-                cancelled = wasCancelled || token.is_cancelled();
-                written = output;
-                warnings = warned;
-                done = true;
-            });
-        }
-
         void exportButton(const Instances::Entry& entry, bool blocked) {
             float y = MainWindow::height() - 28.0f - Page::FIELD_H;
-            bool mine = running && runningKey == entry.key;
+            bool running = Exports::running();
+            bool mine = running && Exports::runningKey() == entry.key;
             std::string label = mine ? "取消" : "导出";
             float w = std::max(88.0f, Page::buttonWidth(label, mine ? 0 : 0xf56e));
             float x = Page::right() - w;
             if (mine) {
-                std::string now;
-                {
-                    std::lock_guard<std::mutex> guard(lock);
-                    now = status;
-                }
+                std::string now = Exports::status();
                 float nowW = UiFont::width(now, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY(now, x - 14.0f - nowW, y, Page::FIELD_H, UiTheme::textSecondary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
@@ -265,15 +102,9 @@ namespace InstanceExport {
             }
             if (Page::button("export#go", label, x, y, w, !mine, blocked || (running && !mine), mine ? 0 : 0xf56e)) {
                 if (mine) {
-                    if (cancelling) {
-                        cancelling->cancel();
-                    }
-                    return;
-                }
-                const Options& options = optionsOf(entry);
-                if (std::optional<std::filesystem::path> output =
-                            Platform::pickSavePack(b_launcher_base::path_from_utf8(fileName(options)))) {
-                    start(entry, options, *output);
+                    Exports::cancel();
+                } else {
+                    Exports::start(entry.key);
                 }
             }
         }
@@ -288,7 +119,7 @@ namespace InstanceExport {
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
         UiRender::textY(UiFont::fitEnd(entry.info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::right() - nameX),
                         nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-        optionsOf(entry);
+        Exports::options(key);
 
         const int packCount = 4;
         const int contentCount = 8;
@@ -297,7 +128,7 @@ namespace InstanceExport {
         float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
         Page::Scroll body("export#body#" + key, Page::TOP + 40.0f, buttonTop - 14.0f, contentH);
         bool outside = body.begin();
-        bool blocked = outside || covered || (running && runningKey == key);
+        bool blocked = outside || covered || (Exports::running() && Exports::runningKey() == key);
         float y = body.top - body.offset;
 
         if (Page::shown(y, Page::CAPTION_H + packCount * Page::ROW_H)) {
@@ -340,48 +171,5 @@ namespace InstanceExport {
 
         exportButton(entry, covered);
         return back;
-    }
-
-    void poll() {
-        if (!running) {
-            return;
-        }
-        std::string error;
-        bool wasCancelled;
-        std::filesystem::path file;
-        size_t warned;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            if (!done) {
-                return;
-            }
-            error = failure;
-            wasCancelled = cancelled;
-            file = written;
-            warned = warnings;
-        }
-        if (worker.joinable()) {
-            worker.join();
-        }
-        running = false;
-        if (wasCancelled) {
-            return;
-        }
-        if (!error.empty()) {
-            Notifications::add(Notifications::FAILED, "导出失败：" + error, 5000);
-            return;
-        }
-        (void) warned;
-        Notifications::add(Notifications::DONE, "已导出 " + blb::path_to_utf8(file.filename()), 4000);
-        Platform::reveal(file);
-    }
-
-    void shutdown() {
-        if (running && cancelling) {
-            cancelling->cancel();
-        }
-        if (worker.joinable()) {
-            worker.join();
-        }
     }
 }
