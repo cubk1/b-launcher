@@ -1,5 +1,5 @@
 #include "ui/imgui/screens/shell/Icons.h"
-#include "ui/imgui/screens/shell/EmbeddedIcons.h"
+#include "app/system/EmbeddedIcons.h"
 
 #include "ui/imgui/panel/UiImages.h"
 
@@ -14,28 +14,6 @@ namespace Icons {
             texture = UiImages::uploadEncoded(data, (int) size, nullptr, nullptr);
         }
         return texture;
-    }
-
-    Encoded encoded(loaders::loader_type type) {
-        switch (type) {
-            case loaders::loader_type::forge: return {EmbeddedIcons::forge, EmbeddedIcons::forgeSize};
-            case loaders::loader_type::neoforge: return {EmbeddedIcons::neoforge, EmbeddedIcons::neoforgeSize};
-            case loaders::loader_type::cleanroom: return {EmbeddedIcons::cleanroom, EmbeddedIcons::cleanroomSize};
-            case loaders::loader_type::fabric:
-            case loaders::loader_type::fabric_api: return {EmbeddedIcons::fabric, EmbeddedIcons::fabricSize};
-            case loaders::loader_type::legacy_fabric:
-            case loaders::loader_type::legacy_fabric_api:
-                return {EmbeddedIcons::legacyFabric, EmbeddedIcons::legacyFabricSize};
-            case loaders::loader_type::quilt:
-            case loaders::loader_type::quilt_api: return {EmbeddedIcons::quilt, EmbeddedIcons::quiltSize};
-            case loaders::loader_type::optifine: return {EmbeddedIcons::optifine, EmbeddedIcons::optifineSize};
-            case loaders::loader_type::liteloader: return {EmbeddedIcons::liteloader, EmbeddedIcons::liteloaderSize};
-        }
-        return {};
-    }
-
-    Encoded encodedVanilla() {
-        return {EmbeddedIcons::vanilla, EmbeddedIcons::vanillaSize};
     }
 
     uint32_t forge() {
