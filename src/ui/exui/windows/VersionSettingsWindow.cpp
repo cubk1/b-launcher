@@ -13,6 +13,7 @@
 #include "app/system/Platform.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/EditBox.h"
+#include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/ModsWindow.h"
 #include "ui/exui/windows/ShortcutWindow.h"
@@ -31,15 +32,15 @@ namespace ForgottenMelody {
         using Settings = blb::instance::instance_settings;
 
         enum : uint32_t {
+            PAGE = SectionedForm::FIRST_CONTROL,
+            SCROLL,
             // 管理
-            MANAGE = SectionedForm::FIRST_CONTROL,
             MANAGE_GROUP,
             MODS,
             LOADERS,
             EXPORT,
             SHORTCUT,
             // 游戏
-            GAME,
             GAME_GROUP,
             DIR_LABEL,
             DIR,
@@ -53,6 +54,7 @@ namespace ForgottenMelody {
             LOGS,
             PATCH_LABEL,
             PATCH,
+            // 内存
             MEMORY_GROUP,
             AUTO_MEMORY,
             MAX_LABEL,
@@ -60,7 +62,6 @@ namespace ForgottenMelody {
             MAX_UNIT,
             MAX_HINT,
             // 窗口
-            WINDOW,
             WINDOW_GROUP,
             SIZE_LABEL,
             WIDTH,
@@ -69,7 +70,6 @@ namespace ForgottenMelody {
             SIZE_HINT,
             FULLSCREEN,
             // 服务器
-            SERVER,
             SERVER_GROUP,
             LOGIN_LABEL,
             LOGIN,
@@ -79,12 +79,10 @@ namespace ForgottenMelody {
             JOIN_LABEL,
             JOIN,
             // 其他
-            OTHER,
             OTHER_GROUP,
             NOTES_LABEL,
             NOTES,
             // 高级设置
-            ADVANCED,
             COMMANDS_GROUP,
             GAME_ARGS_LABEL,
             GAME_ARGS,
@@ -155,141 +153,115 @@ namespace ForgottenMelody {
             return index == 0 ? std::nullopt : std::optional<bool>(index == 1);
         }
 
-        // The section shown last, for the rest of the run; 游戏 at first.
-        int lastSection = 1;
-
-        // Smaller than 下载中心, as it opens over the settings and the instance manager, with a narrower list for the
-        // short names of its sections.
-        const SectionedForm::Frame FRAME = {.width = 760,
-                                            .height = 540,
+        // The frame of the settings without the list of sections: one page, as the default interface has it.
+        const SectionedForm::Frame FRAME = {.width = 620,
+                                            .height = 480,
                                             .top = 60,
-                                            .bottom = 485,
-                                            .listWidth = 120,
+                                            .bottom = 425,
+                                            .listWidth = 0,
                                             .doneWidth = 80,
                                             .doneHeight = 32};
-        // Where the sections' panels start.
-        constexpr int LEFT = 13 + 120 + 3;
+        // The page's height, and the rows from the one after the server on, which move up a row while there is none.
+        constexpr int PAGE_HEIGHT = 1208, ROW = 33, BELOW_SERVER = 633;
 
-        // The version settings of the default interface, its groups as sections. Every change applies at once.
+        // The groups of the default interface down the page, the advanced ones after the others; the bounds count
+        // from the top left of the scrolled page.
+        const exui::ControlSpec CONTROLS[] = {
+                // 管理
+                {MANAGE_GROUP, ControlKind::Group, {12, 10, 556, 72}, L"管理"},
+                {MODS, ControlKind::Button, {32, 36, 100, 30}, L"模组管理"},
+                {LOADERS, ControlKind::Button, {140, 36, 100, 30}, L"修改加载器"},
+                {EXPORT, ControlKind::Button, {248, 36, 100, 30}, L"导出整合包"},
+                {SHORTCUT, ControlKind::Button, {356, 36, 100, 30}, L"生成快捷方式"},
+                // 游戏
+                {GAME_GROUP, ControlKind::Group, {12, 92, 556, 228}, L"游戏"},
+                {DIR_LABEL, ControlKind::Label, {32, 117, 95, 26}, L"游戏目录"},
+                {DIR, ControlKind::Combo, {132, 117, 250, 26}},
+                {JAVA_LABEL, ControlKind::Label, {32, 150, 95, 26}, L"Java"},
+                {JAVA, ControlKind::Combo, {132, 150, 350, 26}},
+                {VISIBILITY_LABEL, ControlKind::Label, {32, 183, 95, 26}, L"启动器可见性"},
+                {VISIBILITY, ControlKind::Combo, {132, 183, 250, 26}},
+                {PRIORITY_LABEL, ControlKind::Label, {32, 216, 95, 26}, L"进程优先级"},
+                {PRIORITY, ControlKind::Combo, {132, 216, 250, 26}},
+                {LOGS_LABEL, ControlKind::Label, {32, 249, 95, 26}, L"显示游戏日志"},
+                {LOGS, ControlKind::Combo, {132, 249, 250, 26}},
+                {PATCH_LABEL, ControlKind::Label, {32, 282, 95, 26}, L"启动器补丁"},
+                {PATCH, ControlKind::Combo, {132, 282, 250, 26}},
+                // 内存
+                {MEMORY_GROUP, ControlKind::Group, {12, 330, 556, 96}, L"内存"},
+                {AUTO_MEMORY, ControlKind::Check, {32, 355, 200, 26}, L"自动分配"},
+                {MAX_LABEL, ControlKind::Label, {32, 388, 95, 26}, L"最大内存"},
+                {MAX, ControlKind::Edit, {132, 388, 80, 26}},
+                {MAX_UNIT, ControlKind::Label, {217, 388, 30, 26}, L"MB"},
+                {MAX_HINT, ControlKind::Label, {256, 388, 290, 26}},
+                // 窗口
+                {WINDOW_GROUP, ControlKind::Group, {12, 436, 556, 96}, L"窗口"},
+                {SIZE_LABEL, ControlKind::Label, {32, 461, 95, 26}, L"窗口大小"},
+                {WIDTH, ControlKind::Edit, {132, 461, 70, 26}},
+                {TIMES, ControlKind::Label, {207, 461, 15, 26}, L"×"},
+                {HEIGHT, ControlKind::Edit, {227, 461, 70, 26}},
+                {SIZE_HINT, ControlKind::Label, {307, 461, 240, 26}, L"留空则使用游戏默认的大小"},
+                {FULLSCREEN, ControlKind::Check, {32, 494, 200, 26}, L"全屏启动"},
+                // 服务器
+                {SERVER_GROUP, ControlKind::Group, {12, 542, 556, 129}, L"服务器"},
+                {LOGIN_LABEL, ControlKind::Label, {32, 567, 95, 26}, L"登录方式"},
+                {LOGIN, ControlKind::Combo, {132, 567, 250, 26}},
+                {AUTH_LABEL, ControlKind::Label, {32, 600, 95, 26}},
+                {AUTH, ControlKind::Edit, {132, 600, 260, 26}},
+                {AUTH_PRESET, ControlKind::Button, {397, 598, 134, 30}},
+                {JOIN_LABEL, ControlKind::Label, {32, 633, 95, 26}, L"自动加入服务器"},
+                {JOIN, ControlKind::Edit, {132, 633, 300, 26}},
+                // 其他
+                {OTHER_GROUP, ControlKind::Group, {12, 681, 556, 105}, L"其他"},
+                {NOTES_LABEL, ControlKind::Label, {32, 706, 95, 26}, L"备注"},
+                {NOTES, ControlKind::Edit, {132, 706, 416, 70}},
+                // 高级设置
+                {COMMANDS_GROUP, ControlKind::Group, {12, 796, 556, 160}, L"自定义命令"},
+                {GAME_ARGS_LABEL, ControlKind::Label, {32, 821, 95, 26}, L"游戏参数"},
+                {GAME_ARGS, ControlKind::Edit, {132, 821, 416, 26}},
+                {PRE_LAUNCH_LABEL, ControlKind::Label, {32, 854, 95, 26}, L"启动前命令"},
+                {PRE_LAUNCH, ControlKind::Edit, {132, 854, 416, 26}},
+                {WRAPPER_LABEL, ControlKind::Label, {32, 887, 95, 26}, L"包装命令"},
+                {WRAPPER, ControlKind::Edit, {132, 887, 416, 26}},
+                {POST_EXIT_LABEL, ControlKind::Label, {32, 920, 95, 26}, L"退出后命令"},
+                {POST_EXIT, ControlKind::Edit, {132, 920, 416, 26}},
+                {JVM_GROUP, ControlKind::Group, {12, 966, 556, 127}, L"Java 虚拟机"},
+                {JVM_LABEL, ControlKind::Label, {32, 991, 95, 26}, L"JVM 参数"},
+                {JVM, ControlKind::Edit, {132, 991, 416, 26}},
+                {MIN_LABEL, ControlKind::Label, {32, 1024, 95, 26}, L"最小内存"},
+                {MIN, ControlKind::Edit, {132, 1024, 80, 26}},
+                {MIN_UNIT, ControlKind::Label, {217, 1024, 30, 26}, L"MB"},
+                {ENVIRONMENT_LABEL, ControlKind::Label, {32, 1057, 95, 26}, L"环境变量"},
+                {ENVIRONMENT, ControlKind::Edit, {132, 1057, 416, 26}},
+                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1103, 556, 95}, L"兼容性"},
+                {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {32, 1128, 250, 26}, L"不添加默认 JVM 参数"},
+                {NO_INTEGRITY_CHECK, ControlKind::Check, {32, 1161, 250, 26}, L"不检查游戏完整性"},
+        };
+
+        // The version settings of the default interface on one page that scrolls, in the frame of the settings.
+        // Every change applies at once.
         class VersionSettingsWindow : public SectionedForm {
         public:
             explicit VersionSettingsWindow(std::string instance) : key(std::move(instance)) {}
 
             bool create(HWND parent) {
-                static const exui::ControlSpec CONTROLS[] = {
-                        // 管理
-                        {MANAGE_GROUP, ControlKind::Group, {151, 70, 579, 72}, L"管理"},
-                        {MODS, ControlKind::Button, {171, 96, 100, 30}, L"模组管理"},
-                        {LOADERS, ControlKind::Button, {279, 96, 100, 30}, L"修改加载器"},
-                        {EXPORT, ControlKind::Button, {387, 96, 100, 30}, L"导出整合包"},
-                        {SHORTCUT, ControlKind::Button, {495, 96, 100, 30}, L"生成快捷方式"},
-                        // 游戏
-                        {GAME_GROUP, ControlKind::Group, {151, 70, 579, 228}, L"游戏"},
-                        {DIR_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"游戏目录"},
-                        {DIR, ControlKind::Combo, {271, 95, 250, 26}},
-                        {JAVA_LABEL, ControlKind::Label, {171, 128, 95, 26}, L"Java"},
-                        {JAVA, ControlKind::Combo, {271, 128, 350, 26}},
-                        {VISIBILITY_LABEL, ControlKind::Label, {171, 161, 95, 26}, L"启动器可见性"},
-                        {VISIBILITY, ControlKind::Combo, {271, 161, 250, 26}},
-                        {PRIORITY_LABEL, ControlKind::Label, {171, 194, 95, 26}, L"进程优先级"},
-                        {PRIORITY, ControlKind::Combo, {271, 194, 250, 26}},
-                        {LOGS_LABEL, ControlKind::Label, {171, 227, 95, 26}, L"显示游戏日志"},
-                        {LOGS, ControlKind::Combo, {271, 227, 250, 26}},
-                        {PATCH_LABEL, ControlKind::Label, {171, 260, 95, 26}, L"启动器补丁"},
-                        {PATCH, ControlKind::Combo, {271, 260, 250, 26}},
-                        {MEMORY_GROUP, ControlKind::Group, {151, 308, 579, 90}, L"内存"},
-                        {AUTO_MEMORY, ControlKind::Check, {171, 333, 200, 26}, L"自动分配"},
-                        {MAX_LABEL, ControlKind::Label, {171, 366, 95, 26}, L"最大内存"},
-                        {MAX, ControlKind::Edit, {271, 366, 80, 26}},
-                        {MAX_UNIT, ControlKind::Label, {356, 366, 30, 26}, L"MB"},
-                        {MAX_HINT, ControlKind::Label, {395, 366, 330, 26}},
-                        // 窗口
-                        {WINDOW_GROUP, ControlKind::Group, {151, 70, 579, 96}, L"窗口"},
-                        {SIZE_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"窗口大小"},
-                        {WIDTH, ControlKind::Edit, {271, 95, 70, 26}},
-                        {TIMES, ControlKind::Label, {346, 95, 15, 26}, L"×"},
-                        {HEIGHT, ControlKind::Edit, {366, 95, 70, 26}},
-                        {SIZE_HINT, ControlKind::Label, {446, 95, 270, 26}, L"留空则使用游戏默认的大小"},
-                        {FULLSCREEN, ControlKind::Check, {171, 128, 200, 26}, L"全屏启动"},
-                        // 服务器
-                        {SERVER_GROUP, ControlKind::Group, {151, 70, 579, 129}, L"服务器"},
-                        {LOGIN_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"登录方式"},
-                        {LOGIN, ControlKind::Combo, {271, 95, 250, 26}},
-                        {AUTH_LABEL, ControlKind::Label, {171, 128, 95, 26}},
-                        {AUTH, ControlKind::Edit, {271, 128, 300, 26}},
-                        {AUTH_PRESET, ControlKind::Button, {576, 126, 134, 30}},
-                        {JOIN_LABEL, ControlKind::Label, {171, 161, 95, 26}, L"自动加入服务器"},
-                        {JOIN, ControlKind::Edit, {271, 161, 300, 26}},
-                        // 其他
-                        {OTHER_GROUP, ControlKind::Group, {151, 70, 579, 105}, L"其他"},
-                        {NOTES_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"备注"},
-                        {NOTES, ControlKind::Edit, {271, 95, 439, 70}},
-                        // 高级设置
-                        {COMMANDS_GROUP, ControlKind::Group, {151, 70, 579, 160}, L"自定义命令"},
-                        {GAME_ARGS_LABEL, ControlKind::Label, {171, 95, 95, 26}, L"游戏参数"},
-                        {GAME_ARGS, ControlKind::Edit, {271, 95, 439, 26}},
-                        {PRE_LAUNCH_LABEL, ControlKind::Label, {171, 128, 95, 26}, L"启动前命令"},
-                        {PRE_LAUNCH, ControlKind::Edit, {271, 128, 439, 26}},
-                        {WRAPPER_LABEL, ControlKind::Label, {171, 161, 95, 26}, L"包装命令"},
-                        {WRAPPER, ControlKind::Edit, {271, 161, 439, 26}},
-                        {POST_EXIT_LABEL, ControlKind::Label, {171, 194, 95, 26}, L"退出后命令"},
-                        {POST_EXIT, ControlKind::Edit, {271, 194, 439, 26}},
-                        {JVM_GROUP, ControlKind::Group, {151, 238, 579, 127}, L"Java 虚拟机"},
-                        {JVM_LABEL, ControlKind::Label, {171, 263, 95, 26}, L"JVM 参数"},
-                        {JVM, ControlKind::Edit, {271, 263, 439, 26}},
-                        {MIN_LABEL, ControlKind::Label, {171, 296, 95, 26}, L"最小内存"},
-                        {MIN, ControlKind::Edit, {271, 296, 80, 26}},
-                        {MIN_UNIT, ControlKind::Label, {356, 296, 30, 26}, L"MB"},
-                        {ENVIRONMENT_LABEL, ControlKind::Label, {171, 329, 95, 26}, L"环境变量"},
-                        {ENVIRONMENT, ControlKind::Edit, {271, 329, 439, 26}},
-                        {COMPATIBILITY_GROUP, ControlKind::Group, {151, 373, 579, 95}, L"兼容性"},
-                        {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {171, 398, 250, 26}, L"不添加默认 JVM 参数"},
-                        {NO_INTEGRITY_CHECK, ControlKind::Check, {171, 431, 250, 26}, L"不检查游戏完整性"},
-                };
                 const Instances::Entry* entry = Instances::find(key);
                 if (entry == nullptr ||
-                    !createFrame(parent, L"版本设置", Platform::widen(entry->info.id),
-                                 {{L"管理", MANAGE},
-                                  {L"游戏", GAME},
-                                  {L"窗口", WINDOW},
-                                  {L"服务器", SERVER},
-                                  {L"其他", OTHER},
-                                  {L"高级设置", ADVANCED}},
-                                 FRAME)) {
+                    !createFrame(parent, L"版本设置", Platform::widen(entry->info.id), {{L"版本设置", PAGE}}, FRAME)) {
                     return false;
                 }
+                const RECT backing = FindControl(PAGE)->GetBounds();
+                auto scroll = std::make_shared<exui::ScrollPanel>(
+                        backing.left, backing.top, backing.right - backing.left, backing.bottom - backing.top);
+                page = scroll.get();
+                AddControl(SCROLL, scroll);
+                MoveInto(PAGE, {SCROLL});
                 AddControls(CONTROLS);
-                MoveInto(MANAGE, {MANAGE_GROUP, MODS, LOADERS, EXPORT, SHORTCUT});
-                MoveInto(GAME,
-                         {GAME_GROUP, DIR_LABEL, DIR, JAVA_LABEL, JAVA, VISIBILITY_LABEL, VISIBILITY, PRIORITY_LABEL,
-                          PRIORITY, LOGS_LABEL, LOGS, PATCH_LABEL, PATCH, MEMORY_GROUP, AUTO_MEMORY, MAX_LABEL, MAX,
-                          MAX_UNIT, MAX_HINT});
-                MoveInto(WINDOW, {WINDOW_GROUP, SIZE_LABEL, WIDTH, TIMES, HEIGHT, SIZE_HINT, FULLSCREEN});
-                MoveInto(SERVER, {SERVER_GROUP, LOGIN_LABEL, LOGIN, AUTH_LABEL, AUTH, AUTH_PRESET, JOIN_LABEL, JOIN});
-                MoveInto(OTHER, {OTHER_GROUP, NOTES_LABEL, NOTES});
-                MoveInto(ADVANCED,
-                         {COMMANDS_GROUP,
-                          GAME_ARGS_LABEL,
-                          GAME_ARGS,
-                          PRE_LAUNCH_LABEL,
-                          PRE_LAUNCH,
-                          WRAPPER_LABEL,
-                          WRAPPER,
-                          POST_EXIT_LABEL,
-                          POST_EXIT,
-                          JVM_GROUP,
-                          JVM_LABEL,
-                          JVM,
-                          MIN_LABEL,
-                          MIN,
-                          MIN_UNIT,
-                          ENVIRONMENT_LABEL,
-                          ENVIRONMENT,
-                          COMPATIBILITY_GROUP,
-                          NO_DEFAULT_JVM_ARGS,
-                          NO_INTEGRITY_CHECK});
+                for (const exui::ControlSpec& spec : CONTROLS) {
+                    MoveInto(page->GetContent(), {spec.id});
+                }
                 fill(*entry);
-                showSection(lastSection);
+                showSection(0);
                 startRefreshing();
                 return true;
             }
@@ -313,14 +285,10 @@ namespace ForgottenMelody {
                 for (uint32_t id : {AUTH_LABEL, AUTH, AUTH_PRESET}) {
                     FindControl(id)->SetVisible(server);
                 }
-                // Without the server row the one below moves up, as in the default interface. Bounds inside a section
-                // count from the corner of its panel.
-                int joinY = (server ? 161 : 128) - FRAME.top;
-                if (FindControl(JOIN)->GetY() != joinY) {
-                    FindControl(JOIN_LABEL)->SetBounds(171 - LEFT, joinY, 95, 26);
-                    FindControl(JOIN)->SetBounds(271 - LEFT, joinY, 300, 26);
-                    FindControl(SERVER_GROUP)->SetBounds(151 - LEFT, 70 - FRAME.top, 579, server ? 129 : 96);
+                if (!laidOut || server != withServer) {
+                    layout(server);
                 }
+                revealFocus();
                 std::wstring authLabel = nide8 ? L"服务器 ID" : L"认证服务器";
                 if (Text(AUTH_LABEL) != authLabel) {
                     SetText(AUTH_LABEL, authLabel);
@@ -399,12 +367,45 @@ namespace ForgottenMelody {
                 refresh();
             }
 
-            void sectionShown(int index) override {
-                lastSection = index;
-            }
-
         private:
             std::string key;
+            exui::ScrollPanel* page = nullptr;
+            bool laidOut = false, withServer = false;
+            // The control that had the focus at the last refresh.
+            exui::Widget* focused = nullptr;
+
+            // Puts every control where the table has it, those below the server row a row higher while there is
+            // none, as the default interface does.
+            void layout(bool server) {
+                laidOut = true;
+                withServer = server;
+                const int shift = server ? 0 : ROW;
+                for (const exui::ControlSpec& spec : CONTROLS) {
+                    const Gdiplus::Rect& at = spec.bounds;
+                    int height = spec.id == SERVER_GROUP ? at.Height - shift : at.Height;
+                    FindControl(spec.id)->SetBounds(at.X, at.Y >= BELOW_SERVER ? at.Y - shift : at.Y, at.Width, height);
+                }
+                page->SetContentHeight(PAGE_HEIGHT - shift);
+            }
+
+            // Tab may move the focus to a control scrolled out of sight; the page then scrolls to it.
+            void revealFocus() {
+                exui::Widget* now = GetFocusedWidget();
+                if (now == focused) {
+                    return;
+                }
+                focused = now;
+                if (now == nullptr || now->GetParent() != &page->GetContent()) {
+                    return;
+                }
+                int top = now->GetY(), bottom = now->GetY() + now->GetHeight();
+                int view = page->GetHeight(), scrolled = page->GetScrollPosition();
+                if (top < scrolled) {
+                    page->ScrollTo(top - 30);
+                } else if (bottom > scrolled + view) {
+                    page->ScrollTo(bottom - view + 12);
+                }
+            }
             // The paths behind the Java choices: none for 自动选择, then the ones found and the one chosen by hand.
             std::vector<std::filesystem::path> javaPaths;
             std::vector<std::wstring> shownJavas;

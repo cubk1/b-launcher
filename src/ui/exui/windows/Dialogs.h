@@ -75,7 +75,7 @@ namespace ForgottenMelody {
         };
 
         // 下载中心's own measures by default: the banner above top, the sections and the backing down to bottom, the
-        // list listWidth wide and 完成 below them at the right.
+        // list listWidth wide and 完成 below them at the right. Without a list, a single section takes the width.
         struct Frame {
             int width = 900, height = 600;
             int top = 75, bottom = 525;

@@ -185,15 +185,17 @@ namespace ForgottenMelody {
         subject = title;
 
         const int height = frame.bottom - frame.top;
-        const int left = 13 + frame.listWidth + 3, right = frame.width - 15;
-        auto names = std::make_shared<exui::ListView>(13, frame.top, frame.listWidth, height);
-        names->SetHeaderVisible(false);
-        names->SetRowHeight(30);
-        names->InsertColumn(L"", frame.listWidth - 4);
-        for (const Section& section : sections) {
-            names->InsertRow({section.name});
+        const int left = frame.listWidth > 0 ? 13 + frame.listWidth + 3 : 13, right = frame.width - 15;
+        if (frame.listWidth > 0) {
+            auto names = std::make_shared<exui::ListView>(13, frame.top, frame.listWidth, height);
+            names->SetHeaderVisible(false);
+            names->SetRowHeight(30);
+            names->InsertColumn(L"", frame.listWidth - 4);
+            for (const Section& section : sections) {
+                names->InsertRow({section.name});
+            }
+            AddControl(SECTIONS, names);
         }
-        AddControl(SECTIONS, names);
         // 打开下载's button, moved right to line up with the backing.
         auto done = std::make_shared<exui::Button>(right - frame.doneWidth, frame.height - 15 - frame.doneHeight,
                                                    frame.doneWidth, frame.doneHeight, L"完成");
@@ -220,9 +222,9 @@ namespace ForgottenMelody {
             FindControl(sections[i].panel)->SetVisible(i == index);
         }
         SetText(TITLE, subject.empty() ? sections[index].name : subject + L" · " + sections[index].name);
-        auto& names = Control<exui::ListView>(SECTIONS);
-        if (names.GetSelectedRow() != index) {
-            names.SetSelectedRow(index);
+        auto* names = dynamic_cast<exui::ListView*>(FindControl(SECTIONS));
+        if (names != nullptr && names->GetSelectedRow() != index) {
+            names->SetSelectedRow(index);
         }
         sectionShown(index);
     }
