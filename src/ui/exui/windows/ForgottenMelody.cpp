@@ -14,6 +14,7 @@
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
 #include "ui/exui/Resources.h"
+#include "ui/exui/windows/LogWindow.h"
 #include "ui/exui/windows/MainWindow.h"
 
 #include <ole2.h>
@@ -41,7 +42,7 @@ namespace ForgottenMelody {
                     },
             });
             Interface::connect({
-                    [&window] { window.showNotice(Notices::Kind::Info, L"日志窗口还在开发中", 3000); },
+                    [&window] { window.openLog(); },
                     [&window](const std::string& login, const std::string& authServer) {
                         window.askForAccount(login, authServer);
                     },
@@ -112,6 +113,7 @@ namespace ForgottenMelody {
                 window.ShowWindowWithAnimation();
             }
             window.RunModalLoop();
+            closeLog();
             Platform::window = nullptr;
             disconnect();
             Config::save();

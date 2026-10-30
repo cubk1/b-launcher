@@ -21,6 +21,8 @@ namespace ForgottenMelody {
         void showNotice(Notices::Kind kind, const std::wstring& text, long long durationMs);
         // Opens the account manager for a game that has no account to log in with, after the failures that say so.
         void askForAccount(const std::string& login, const std::string& authServer);
+        // Opens the game log once the current message is done, as a game asks for it from a poll.
+        void openLog();
 
     protected:
         LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override;
