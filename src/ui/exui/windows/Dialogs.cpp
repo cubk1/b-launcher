@@ -274,10 +274,16 @@ namespace ForgottenMelody {
 
     void LiveForm::fill(exui::ListView& list, Rows& shown, std::vector<std::string>& shownKeys, Rows rows,
                         std::vector<std::string> keys) {
-        std::string kept = selectedKey(list, shownKeys);
+        std::vector<std::string> kept = selectedKeys(list, shownKeys);
         if (fill(list, shown, std::move(rows)) && !kept.empty()) {
-            auto at = std::find(keys.begin(), keys.end(), kept);
-            list.SetSelectedRow(at != keys.end() ? (int) (at - keys.begin()) : -1);
+            std::vector<int> again;
+            for (const std::string& key : kept) {
+                auto at = std::find(keys.begin(), keys.end(), key);
+                if (at != keys.end()) {
+                    again.push_back((int) (at - keys.begin()));
+                }
+            }
+            list.SetSelectedRows(again);
         }
         shownKeys = std::move(keys);
     }
@@ -285,5 +291,20 @@ namespace ForgottenMelody {
     std::string LiveForm::selectedKey(const exui::ListView& list, const std::vector<std::string>& shownKeys) {
         int row = list.GetSelectedRow();
         return row >= 0 && row < (int) shownKeys.size() ? shownKeys[row] : std::string();
+    }
+
+    std::vector<std::string> LiveForm::selectedKeys(const exui::ListView& list,
+                                                    const std::vector<std::string>& shownKeys) {
+        std::vector<std::string> keys;
+        if (std::string current = selectedKey(list, shownKeys); !current.empty()) {
+            keys.push_back(current);
+        }
+        for (int row : list.GetSelectedRows()) {
+            if (row < (int) shownKeys.size() && !shownKeys[row].empty() &&
+                std::find(keys.begin(), keys.end(), shownKeys[row]) == keys.end()) {
+                keys.push_back(shownKeys[row]);
+            }
+        }
+        return keys;
     }
 }

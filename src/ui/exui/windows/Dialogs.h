@@ -52,12 +52,15 @@ namespace ForgottenMelody {
         // Shows rows in the list and returns whether they changed. As many rows as before are only rewritten, so
         // that the list keeps its selection and scroll while, say, a progress goes on.
         static bool fill(exui::ListView& list, Rows& shown, Rows rows);
-        // The same for rows with a key each: the key selected before stays selected wherever its row went, and
-        // nothing is once it is gone.
+        // The same for rows with a key each: the keys selected before stay selected wherever their rows went, and
+        // those that are gone are no longer.
         static void fill(exui::ListView& list, Rows& shown, std::vector<std::string>& shownKeys, Rows rows,
                          std::vector<std::string> keys);
-        // The key of the selected row, or nothing.
+        // The key of the current row, or nothing.
         static std::string selectedKey(const exui::ListView& list, const std::vector<std::string>& shownKeys);
+        // The keys of all selected rows, the current one first.
+        static std::vector<std::string> selectedKeys(const exui::ListView& list,
+                                                     const std::vector<std::string>& shownKeys);
     };
 
     // The frame of the 2014 下载中心 window, for windows with sections: the sections listed on the left, the shown one
