@@ -77,6 +77,8 @@ namespace exui {
         bool OnMouseDown(int localX, int localY, UINT button) override;
         bool OnMouseUp(int localX, int localY, UINT button) override;
         void Activate() override;
+        // Only the text is the link; the rest of the bounds lets the pointer through.
+        bool HitsPoint(int localX, int localY) const override;
 
     private:
         std::wstring m_targetUrl;
