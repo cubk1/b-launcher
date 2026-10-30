@@ -4,7 +4,6 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/Drop.h"
-#include "ui/imgui/screens/instances/InstanceExport.h"
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
@@ -312,7 +311,6 @@ namespace ImGuiApp {
             }
             Services::poll();
             Background::poll();
-            InstanceExport::poll();
             Drop::poll();
             Homepage::poll();
             if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
@@ -448,7 +446,6 @@ namespace ImGuiApp {
         icons.release();
         Homepage::shutdown();
         Drop::shutdown();
-        InstanceExport::shutdown();
         Background::shutdown();
         Services::stop();
         ImGui_ImplOpenGL3_Shutdown();

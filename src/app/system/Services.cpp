@@ -2,6 +2,7 @@
 #include "app/accounts/Accounts.h"
 #include "app/downloads/Addons.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/instances/Exports.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/Mods.h"
@@ -30,6 +31,7 @@ namespace Services {
         ProjectInstaller::poll();
         Installer::poll();
         Mods::poll();
+        Exports::poll();
         Updates::poll();
         JavaDownloads::poll();
         ShortcutLaunch::poll();
@@ -38,6 +40,7 @@ namespace Services {
     void stop() {
         Updates::shutdown();
         JavaDownloads::shutdown();
+        Exports::shutdown();
         Mods::shutdown();
         Installer::shutdown();
         ProjectInstaller::shutdown();
@@ -50,6 +53,6 @@ namespace Services {
 
     bool busy() {
         return Game::state() != Game::State::Idle || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || !Instances::activity().empty();
+                ProjectInstaller::busy() || Exports::running() || !Instances::activity().empty();
     }
 }
