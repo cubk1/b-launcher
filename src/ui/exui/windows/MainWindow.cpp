@@ -12,6 +12,7 @@
 #include "ui/exui/Skins.h"
 #include "ui/exui/windows/AccountsWindow.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/LogWindow.h"
 #include "ui/exui/windows/SettingsWindow.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
@@ -66,6 +67,7 @@ namespace ForgottenMelody {
 
         constexpr UINT SHOW_FAILURES = WM_APP + 1;
         constexpr UINT ASK_FOR_ACCOUNT = WM_APP + 2;
+        constexpr UINT OPEN_LOG = WM_APP + 3;
 
         // One centered notice at a time, white with a dark glow to stand out from any background, hidden once its
         // duration is over.
@@ -168,7 +170,15 @@ namespace ForgottenMelody {
             }
             return 0;
         }
+        if (msg == OPEN_LOG) {
+            showLog();
+            return 0;
+        }
         return Form::HandleMessage(msg, wp, lp);
+    }
+
+    void MainWindow::openLog() {
+        PostMessageW(GetHwnd(), OPEN_LOG, 0, 0);
     }
 
     void MainWindow::showFailures() {
