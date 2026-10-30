@@ -2,6 +2,7 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "app/system/About.h"
 #include "app/system/Catalog.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
@@ -48,10 +49,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-
-#ifndef B_LAUNCHER_VERSION
-#define B_LAUNCHER_VERSION "0.0.0"
-#endif
 
 namespace SettingsScreen {
 
@@ -464,8 +461,7 @@ namespace SettingsScreen {
             y += Page::ROW_H;
 
             textRow(
-                    "settings#brandTitle", "左上角标题",
-                    "侧栏左上角标志旁边的文字，留空使用默认标题；",
+                    "settings#brandTitle", "左上角标题", "侧栏左上角标志旁边的文字，留空使用默认标题；",
                     [] { return Appearance::customBrandTitle(); },
                     [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
                     Appearance::defaultBrandTitle());
@@ -880,42 +876,13 @@ namespace SettingsScreen {
             javaViews.end();
         }
 
-        struct Link {
-            const char* name;
-            const char* value;
-            const char* url;
-        };
+        using About::Link;
 
-        const Link PROJECT[] = {
-                {"作者", "cubk", "https://cubk.cn/"},
-                {"GitHub", "cubk1/b-launcher", "https://github.com/cubk1/b-launcher"},
-        };
-
-        const Link THANKS[] = {
-                {"BMCLAPI", "提供下载源", "https://www.bangbang93.com/"},
-                {"PCL", "提供主页系统", "https://github.com/Meloong-Git/PCL"},
-        };
-
-        const Link CREDITS[] = {
-                {"Dear ImGui", "MIT", "https://github.com/ocornut/imgui"},
-                {"FreeType", "FreeType License", "https://freetype.org"},
-                {"libcurl", "curl License", "https://curl.se"},
-                {"zlib-ng", "zlib License", "https://github.com/zlib-ng/zlib-ng"},
-                {"minizip-ng", "zlib License", "https://github.com/zlib-ng/minizip-ng"},
-                {"simdjson", "Apache-2.0", "https://github.com/simdjson/simdjson"},
-                {"JSON for Modern C++", "MIT", "https://github.com/nlohmann/json"},
-                {"reproc", "MIT", "https://github.com/DaanDeMeyer/reproc"},
-                {"stb", "MIT", "https://github.com/nothings/stb"},
-                {"nanosvg", "zlib License", "https://github.com/memononen/nanosvg"},
-                {"Font Awesome Free", "SIL OFL 1.1", "https://fontawesome.com"},
-        };
-
-        constexpr int PROJECT_COUNT = (int) (sizeof(PROJECT) / sizeof(PROJECT[0]));
-        constexpr int THANKS_COUNT = (int) (sizeof(THANKS) / sizeof(THANKS[0]));
-        constexpr int CREDIT_COUNT = (int) (sizeof(CREDITS) / sizeof(CREDITS[0]));
+        constexpr int PROJECT_COUNT = (int) std::size(About::PROJECT);
+        constexpr int THANKS_COUNT = (int) std::size(About::THANKS);
+        constexpr int CREDIT_COUNT = (int) std::size(About::CREDITS);
 
         constexpr float HERO_H = 72.0f;
-        const char* const REPOSITORY = "https://github.com/cubk1/b-launcher";
         constexpr float LOGO = 32.0f;
 
         void quietButton(float x, float y, float w, const std::string& text, bool spinning) {
@@ -990,7 +957,7 @@ namespace SettingsScreen {
             }
             if (!blocked && NewUi::click(linkX, y, linkW, h)) {
                 UiSound::request(UiSound::PAGE);
-                Platform::openUrl(REPOSITORY);
+                Platform::openUrl(About::REPOSITORY_URL);
             }
         }
 
@@ -998,14 +965,14 @@ namespace SettingsScreen {
             UiRender::roundRect(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::surface());
             UiRender::outline(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::outlineSoft());
             Logo::draw(mainX() + 20.0f, y + (HERO_H - LOGO) * 0.5f, LOGO);
-            const std::string name = "B Launcher\xE2\x84\xA2";
+            const std::string name = About::BRAND;
             float textX = mainX() + 20.0f + LOGO + 14.0f;
             float titleY = y + (HERO_H - 24.0f - 2.0f - 16.0f) * 0.5f;
             float x = textX;
             UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += tag(std::string("v") + B_LAUNCHER_VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f,
-                     UiTheme::accentSoft(40), UiTheme::accentText());
+            x += tag(std::string("v") + About::VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
+                     UiTheme::accentText());
             tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);
         }
@@ -1274,9 +1241,9 @@ namespace SettingsScreen {
                 hero(y, blocked);
             }
             y += HERO_H + Page::GAP;
-            y = linkCard("项目", "settings#project#", PROJECT, PROJECT_COUNT, y, blocked);
-            y = linkCard("鸣谢", "settings#thanks#", THANKS, THANKS_COUNT, y, blocked);
-            linkCard("开源组件", "settings#credit#", CREDITS, CREDIT_COUNT, y, blocked);
+            y = linkCard("项目", "settings#project#", About::PROJECT, PROJECT_COUNT, y, blocked);
+            y = linkCard("鸣谢", "settings#thanks#", About::THANKS, THANKS_COUNT, y, blocked);
+            linkCard("开源组件", "settings#credit#", About::CREDITS, CREDIT_COUNT, y, blocked);
             body.end();
         }
     }

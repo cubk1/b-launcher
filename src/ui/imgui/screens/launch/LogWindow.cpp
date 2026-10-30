@@ -2,6 +2,7 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "app/launch/GameLog.h"
+#include "app/system/About.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Platform.h"
@@ -61,7 +62,7 @@ namespace LogWindow {
         BorderlessWindow window;
         ULONGLONG hiddenAt = 0;
         constexpr ULONGLONG RELEASE_AFTER = 10000;
-        std::wstring logTitle = L"游戏日志 - B Launcher";
+        std::wstring logTitle = L"游戏日志 - " + Platform::widen(About::NAME);
         ImGuiContext* context = nullptr;
         bool created = false;
         bool shown = false;

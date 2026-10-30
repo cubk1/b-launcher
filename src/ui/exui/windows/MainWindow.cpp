@@ -6,6 +6,7 @@
 #endif
 #include "ui/exui/windows/MainWindow.h"
 #include "app/accounts/Accounts.h"
+#include "app/system/About.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
@@ -20,10 +21,6 @@
 #include "ui/exui/widgets/Label.h"
 
 #include <algorithm>
-
-#ifndef B_LAUNCHER_VERSION
-#define B_LAUNCHER_VERSION "0.0.0"
-#endif
 
 namespace ForgottenMelody {
 
@@ -51,7 +48,7 @@ namespace ForgottenMelody {
                 {.id = CREDIT,
                  .kind = ControlKind::Hyperlink,
                  .bounds = {10, 423, 250, 25},
-                 .caption = L"B Launcher " B_LAUNCHER_VERSION L" by cubk",
+                 .caption = Platform::widen(std::string(About::NAME) + " " + About::VERSION + " by " + About::AUTHOR),
                  .textColor = CREDIT_COLOR},
                 {.id = ACCOUNT,
                  .kind = ControlKind::Hyperlink,
@@ -100,8 +97,9 @@ namespace ForgottenMelody {
     }
 
     bool MainWindow::create() {
-        if (!CreateHostWindow(nullptr, L"B Launcher", 720, 450, exui::SkinBytes(exui::Skin::MainBackground), 0xFFFFFF,
-                              7, exui::CaptionButtonMask::Minimize | exui::CaptionButtonMask::Close, false)) {
+        if (!CreateHostWindow(nullptr, Platform::widen(About::NAME), 720, 450,
+                              exui::SkinBytes(exui::Skin::MainBackground), 0xFFFFFF, 7,
+                              exui::CaptionButtonMask::Minimize | exui::CaptionButtonMask::Close, false)) {
             return false;
         }
         // The main window stretches its skin; the edge fade into the base color is for dialogs.
@@ -109,7 +107,7 @@ namespace ForgottenMelody {
         SetWindowAnimationTypes(exui::WindowAnimationKind::ZoomFade, exui::WindowAnimationKind::ZoomFade, false);
         AddControls(CONTROLS);
         FindControl(LAUNCH)->SetFont(L"微软雅黑", 25, Gdiplus::FontStyleBold);
-        Control<exui::Hyperlink>(CREDIT).SetTargetUrl(L"https://github.com/cubk1/b-launcher");
+        Control<exui::Hyperlink>(CREDIT).SetTargetUrl(Platform::widen(About::REPOSITORY_URL));
         auto& account = Control<exui::Hyperlink>(ACCOUNT);
         account.SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
         // It opens the account settings rather than a page, so it never turns to the visited color.

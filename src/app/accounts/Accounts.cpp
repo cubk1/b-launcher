@@ -1,4 +1,5 @@
 #include "app/accounts/Accounts.h"
+#include "app/system/About.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Redirect.h"
@@ -159,8 +160,8 @@ namespace Accounts {
         }
 
         std::string resultPage(const Redirect::Query&) {
-            return "<!doctype html><html><head><meta charset=\"utf-8\"><title>B Launcher</title></head>"
-                   "<body><script>window.close()</script></body></html>";
+            return std::string("<!doctype html><html><head><meta charset=\"utf-8\"><title>") + About::NAME +
+                    "</title></head><body><script>window.close()</script></body></html>";
         }
 
         Continuation loginFailed(const blb::error& error) {

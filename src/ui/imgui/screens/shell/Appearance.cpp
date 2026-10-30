@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/shell/Appearance.h"
+#include "app/system/About.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/EmbeddedSounds.h"
 
@@ -170,7 +171,7 @@ namespace Appearance {
     }
 
     const char* defaultWindowTitle() {
-        return "B Launcher";
+        return About::NAME;
     }
 
     std::string customWindowTitle() {
@@ -188,7 +189,7 @@ namespace Appearance {
     }
 
     const char* defaultBrandTitle() {
-        return "B Launcher\xE2\x84\xA2";
+        return About::BRAND;
     }
 
     std::string customBrandTitle() {
