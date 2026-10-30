@@ -16,6 +16,7 @@
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/ExportWindow.h"
+#include "ui/exui/windows/LoadersWindow.h"
 #include "ui/exui/windows/ModsWindow.h"
 #include "ui/exui/windows/ShortcutWindow.h"
 
@@ -330,7 +331,7 @@ namespace ForgottenMelody {
                 switch (id) {
                     case MODS: showMods(GetHwnd(), key); break;
                     case SHORTCUT: showShortcut(GetHwnd(), key); break;
-                    case LOADERS: message(GetHwnd(), Text(id) + L"还在开发中", L"版本设置"); break;
+                    case LOADERS: showLoaders(GetHwnd(), key); break;
                     case EXPORT: showExport(GetHwnd(), key); break;
                     case AUTO_MEMORY: {
                         uint32_t memory = Checked(AUTO_MEMORY) ? 0 : automaticMemory();

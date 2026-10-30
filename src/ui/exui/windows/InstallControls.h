@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ForgottenMelody {
@@ -72,7 +73,11 @@ namespace ForgottenMelody {
 
         static std::vector<exui::ControlSpec> controls(uint32_t firstId, int x, int y, int width, int height);
 
-        InstallProgress(exui::Form& form, uint32_t firstId) : form(form), first(firstId) {}
+        // what names the work in what it ended with, such as 安装 in 安装完成.
+        InstallProgress(exui::Form& form, uint32_t firstId, std::wstring what = L"安装")
+            : form(form),
+              first(firstId),
+              what(std::move(what)) {}
 
         // The columns of the list, once the controls are made.
         void create();
@@ -93,6 +98,7 @@ namespace ForgottenMelody {
     private:
         exui::Form& form;
         uint32_t first;
+        std::wstring what;
         std::vector<Installer::Part> parts;
         std::string activity;
         double elapsed = 0.0;

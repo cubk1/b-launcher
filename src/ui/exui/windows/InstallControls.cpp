@@ -286,11 +286,14 @@ namespace ForgottenMelody {
             return;
         }
 
-        bool done = succeeded();
-        std::wstring status = !ended ? Platform::widen(activity)
-                : done               ? L"安装完成"
-                : !error.empty()     ? L"安装失败：" + Platform::widen(error)
-                                     : L"已取消安装";
+        // The installer says 安装完成 for a while before it stops, whatever it did.
+        bool done = !parts.empty() && std::all_of(parts.begin(), parts.end(), [](const Installer::Part& part) {
+            return part.status == Installer::Part::Status::Done;
+        });
+        std::wstring status = done ? what + L"完成"
+                : !ended           ? Platform::widen(activity)
+                : !error.empty()   ? what + L"失败：" + Platform::widen(error)
+                                   : L"已取消" + what;
         if (form.Text(first) != status) {
             form.SetText(first, status);
         }
@@ -310,7 +313,11 @@ namespace ForgottenMelody {
             switch (part.status) {
                 // A part with nothing to do has no share to show.
                 case Installer::Part::Status::Done: amount = part.fraction >= 0.0f ? L"100%" : L""; break;
-                case Installer::Part::Status::Failed: amount = L"失败"; break;
+                case Installer::Part::Status::Failed:
+                    // Cancelling fails the part that was going on; the reason of a failure is on top.
+                    amount = ended && error.empty() ? L"已取消" : L"失败";
+                    detail.clear();
+                    break;
                 case Installer::Part::Status::Running:
                     if (ended) {
                         // The installer leaves the parts as they were when it fails or is cancelled.
