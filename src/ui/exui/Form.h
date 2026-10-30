@@ -67,6 +67,8 @@ namespace exui {
         Widget& AddControl(uint32_t id, std::shared_ptr<Widget> widget);
         // Makes the controls children of parent; they keep their place in the window.
         void MoveInto(uint32_t parent, std::initializer_list<uint32_t> ids);
+        // The same for a parent that is no control, such as the content of a ScrollPanel.
+        void MoveInto(Widget& parent, std::initializer_list<uint32_t> ids);
         // Radio buttons uncheck each other only within their group.
         void GroupRadios(std::initializer_list<uint32_t> ids);
 

@@ -122,9 +122,12 @@ namespace exui {
     }
 
     void Form::MoveInto(uint32_t parent, std::initializer_list<uint32_t> ids) {
-        if (auto* target = FindControl(parent))
-            for (const auto id : ids)
-                MoveInto(*target, FindControl(id));
+        if (auto* target = FindControl(parent)) MoveInto(*target, ids);
+    }
+
+    void Form::MoveInto(Widget& parent, std::initializer_list<uint32_t> ids) {
+        for (const auto id : ids)
+            MoveInto(parent, FindControl(id));
     }
 
     void Form::GroupRadios(std::initializer_list<uint32_t> ids) {
