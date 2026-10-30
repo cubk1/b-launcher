@@ -47,6 +47,9 @@ namespace exui {
             return m_singleSelection;
         }
         std::vector<int> GetSelectedRows() const;
+        // Selects these rows, the first being the current one, and no others; invalid indices are skipped. Does not
+        // notify.
+        void SetSelectedRows(const std::vector<int>& rows);
         bool IsRowSelected(int row) const noexcept {
             return row >= 0 && row < GetRowCount() && m_rowStates[row];
         }
