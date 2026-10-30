@@ -134,7 +134,7 @@ namespace ForgottenMelody {
         }
         window.SetWindowAnimationTypes(exui::WindowAnimationKind::ZoomFade, exui::WindowAnimationKind::ZoomFade);
         window.SetControlAnimationsEnabled(false);
-        window.SetWindowAlpha(150);
+        window.SetWindowAlpha(230);
         window.SetBackgroundMode(exui::SkinBackgroundMode::EdgeFade);
         return true;
     }
