@@ -15,6 +15,9 @@
 #include <cstring>
 #include <cwctype>
 #include <deque>
+#include <map>
+#include <optional>
+#include <set>
 #include <filesystem>
 #include <mutex>
 #include <thread>
@@ -50,16 +53,23 @@ namespace Instances {
         std::unordered_map<std::string, std::string> operating;
         std::unordered_map<std::string, Clock::time_point> pendingSaves;
         int scansInFlight = 0;
-        // The game folders that exist, watched for instances changed outside the launcher, and when the last change
-        // that counts came, on the steady clock; 0 once a scan has read it.
+
+        // What changed in the game folders since they were last read: the versions touched, by game folder, or
+        // everything when there is no telling which.
+        struct Changes {
+            std::map<std::filesystem::path, std::set<std::string>> versions;
+            bool everything = false;
+        };
+        // The game folders that exist, watched for instances changed outside the launcher. The changes are filled on
+        // the watcher's thread, and changedAt is when the last came, on the steady clock, 0 once they are taken.
         FolderWatch watch;
+        std::mutex changesLock;
+        Changes changes;
         std::atomic<Clock::rep> changedAt = 0;
 
         struct Scan {
             std::vector<Entry> entries;
             std::unordered_map<std::string, bool> exists;
-            // When it began reading: the changes before are in it.
-            Clock::rep startedAt = 0;
         };
 
         blb::instance::instance_manager managerFor(const std::filesystem::path& root) {
@@ -76,11 +86,12 @@ namespace Instances {
                               [](wchar_t x, wchar_t y) { return std::towlower(x) == std::towlower(y); });
         }
 
-        // Whether a change in a game folder can change the instances: a version's folder coming or going, the json in
-        // it or the settings beside the json. What the game writes while it runs does not; an empty path is anything.
-        bool counts(const std::wstring& path, bool moved) {
+        // What a change in a game folder touches: the version whose folder comes or goes, or whose json or settings
+        // beside the json change, or everything (an empty name) when the versions folder itself moves or when there is
+        // no telling. What the game writes while it runs touches nothing.
+        std::optional<std::wstring> touched(const std::wstring& path, bool moved) {
             if (path.empty()) {
-                return true;
+                return std::wstring();
             }
             std::vector<std::wstring> parts;
             for (size_t start = 0;;) {
@@ -91,14 +102,17 @@ namespace Instances {
                 }
                 start = slash + 1;
             }
-            if (!sameName(parts[0], L"versions")) {
-                return false;
+            if (!sameName(parts[0], L"versions") || (parts.size() <= 2 && !moved)) {
+                return std::nullopt;
             }
             if (parts.size() <= 2) {
-                return moved;
+                return parts.size() == 1 ? std::wstring() : parts[1];
             }
             const std::wstring settings(blb::instance::settings_file.begin(), blb::instance::settings_file.end());
-            return parts.size() == 3 && (sameName(parts[2], parts[1] + L".json") || sameName(parts[2], settings));
+            if (parts.size() == 3 && (sameName(parts[2], parts[1] + L".json") || sameName(parts[2], settings))) {
+                return parts[1];
+            }
+            return std::nullopt;
         }
 
         // Watches the game folders that exist now, if they are not the ones watched already.
@@ -112,16 +126,30 @@ namespace Instances {
             if (folders == watch.folders()) {
                 return;
             }
-            watch.start(folders, [](const std::filesystem::path&, const std::wstring& path, bool moved) {
-                if (counts(path, moved)) {
-                    changedAt = Clock::now().time_since_epoch().count();
+            watch.start(folders, [](const std::filesystem::path& folder, const std::wstring& path, bool moved) {
+                std::optional<std::wstring> version = touched(path, moved);
+                if (!version) {
+                    return;
                 }
+                {
+                    std::lock_guard<std::mutex> guard(changesLock);
+                    if (version->empty()) {
+                        changes.everything = true;
+                    } else {
+                        changes.versions[folder].insert(blb::path_to_utf8(std::filesystem::path(*version)));
+                    }
+                }
+                changedAt = Clock::now().time_since_epoch().count();
             });
         }
 
         Scan scan(const std::vector<Source>& from, blb::instance::isolation_mode isolation) {
             Scan out;
-            out.startedAt = Clock::now().time_since_epoch().count();
+            // It reads what changed so far.
+            {
+                std::lock_guard<std::mutex> guard(changesLock);
+                changes = Changes();
+            }
             for (const Source& source : from) {
                 std::error_code error;
                 bool exists = std::filesystem::is_directory(source.root, error);
@@ -167,11 +195,6 @@ namespace Instances {
                     source.exists = found->second;
                 }
             }
-            // A change that came after the scan began is read by the next one.
-            Clock::rep seen = changedAt;
-            if (seen != 0 && seen <= result.startedAt) {
-                changedAt.compare_exchange_strong(seen, 0);
-            }
             scanned = true;
             follow();
         }
@@ -200,9 +223,10 @@ namespace Instances {
             }
         }
 
-        void announce(const Scan& result) {
+        // Tells of the instances read that the list does not have yet.
+        void announce(const std::vector<Entry>& read) {
             std::vector<std::string> found;
-            for (const Entry& entry : result.entries) {
+            for (const Entry& entry : read) {
                 if (std::none_of(entries.begin(), entries.end(),
                                  [&](const Entry& old) { return old.key == entry.key; }) &&
                     std::any_of(roots.begin(), roots.end(),
@@ -343,6 +367,105 @@ namespace Instances {
             pendingSaves.clear();
         }
 
+        std::string lowered(std::string text) {
+            for (char& c : text) {
+                c = c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c;
+            }
+            return text;
+        }
+
+        // The instances to read again, by game folder, after their versions changed: those versions, the instances
+        // made of them, and those that did not resolve, which may have lacked one of them.
+        std::map<std::string, std::set<std::string>>
+        affected(const std::map<std::filesystem::path, std::set<std::string>>& versions) {
+            std::map<std::string, std::set<std::string>> out;
+            for (const auto& [folder, changed] : versions) {
+                auto source = std::find_if(roots.begin(), roots.end(),
+                                           [&](const Source& root) { return root.root == folder; });
+                if (source == roots.end()) {
+                    continue;
+                }
+                std::set<std::string>& ids = out[source->key];
+                std::set<std::string> names;
+                for (const std::string& id : changed) {
+                    ids.insert(id);
+                    names.insert(lowered(id));
+                }
+                for (const Entry& entry : entries) {
+                    if (entry.source == source->key &&
+                        (!entry.info.valid ||
+                         std::any_of(entry.info.chain.begin(), entry.info.chain.end(),
+                                     [&](const std::string& id) { return names.count(lowered(id)) != 0; }))) {
+                        ids.insert(entry.info.id);
+                    }
+                }
+            }
+            return out;
+        }
+
+        // Instances read again one by one: those read, and those found gone.
+        struct Update {
+            std::vector<Entry> read;
+            std::vector<std::string> gone;
+        };
+
+        Update reread(const std::vector<Source>& from, const std::map<std::string, std::set<std::string>>& ids,
+                      blb::instance::isolation_mode isolation) {
+            Update out;
+            for (const Source& source : from) {
+                auto wanted = ids.find(source.key);
+                if (wanted == ids.end()) {
+                    continue;
+                }
+                blb::instance::instance_manager with(blb::meta::game_layout(source.root), isolation);
+                for (const std::string& id : wanted->second) {
+                    auto info = with.get(id);
+                    if (!info) {
+                        out.gone.push_back(keyOf(source.key, id));
+                        continue;
+                    }
+                    Entry entry;
+                    entry.source = source.key;
+                    entry.key = keyOf(source.key, id);
+                    entry.info = std::move(*info);
+                    place(entry, with);
+                    out.read.push_back(std::move(entry));
+                }
+            }
+            return out;
+        }
+
+        // Takes in instances read again, keeping the settings still to be saved, in the order of a scan: by game
+        // folder, then by name.
+        void merge(Update& update) {
+            for (Entry& entry : update.read) {
+                Entry* old = findMutable(entry.key);
+                if (old == nullptr) {
+                    if (sourceMutable(entry.source) != nullptr) {
+                        entries.push_back(std::move(entry));
+                    }
+                    continue;
+                }
+                if (pendingSaves.count(entry.key) != 0) {
+                    entry.info.settings = old->info.settings;
+                    entry.isolated = old->isolated;
+                    entry.gameDirectory = old->gameDirectory;
+                }
+                *old = std::move(entry);
+            }
+            for (const std::string& key : update.gone) {
+                std::erase_if(entries, [&](const Entry& entry) { return entry.key == key; });
+            }
+            auto rank = [](const std::string& source) {
+                return std::find_if(roots.begin(), roots.end(),
+                                    [&](const Source& root) { return root.key == source; }) -
+                        roots.begin();
+            };
+            std::stable_sort(entries.begin(), entries.end(), [&](const Entry& a, const Entry& b) {
+                return rank(a.source) != rank(b.source) ? rank(a.source) < rank(b.source) : a.info.id < b.info.id;
+            });
+        }
+
         void operate(const std::string& key, const std::string& activity, const std::string& success,
                      const std::string& failure,
                      std::function<blb::result<void>(const blb::instance::instance_manager&, const std::string& id)>
@@ -432,21 +555,44 @@ namespace Instances {
         // While the launcher changes instances itself, it reads them again when it is done anyway.
         Clock::rep at = changedAt;
         if (at != 0 && scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
-            std::chrono::duration<double>(now - Clock::time_point(Clock::duration(at))).count() >= SETTLE) {
+            std::chrono::duration<double>(now - Clock::time_point(Clock::duration(at))).count() >= SETTLE &&
+            changedAt.compare_exchange_strong(at, 0)) {
+            Changes taken;
+            {
+                std::lock_guard<std::mutex> guard(changesLock);
+                taken = std::move(changes);
+                changes = Changes();
+            }
             flushSaves();
             std::vector<Source> all = roots;
             blb::instance::isolation_mode isolation = mode;
-            scansInFlight++;
-            submit([all, isolation]() -> Continuation {
-                Scan fresh = scan(all, isolation);
-                return [fresh]() mutable {
-                    scansInFlight--;
-                    if (running == 0 && !Installer::running()) {
-                        announce(fresh);
-                    }
-                    apply(fresh);
-                };
-            });
+            if (taken.everything) {
+                scansInFlight++;
+                submit([all, isolation]() -> Continuation {
+                    Scan fresh = scan(all, isolation);
+                    return [fresh]() mutable {
+                        scansInFlight--;
+                        if (running == 0 && !Installer::running()) {
+                            announce(fresh.entries);
+                        }
+                        apply(fresh);
+                    };
+                });
+            } else if (!taken.versions.empty()) {
+                // Only the instances the changes touch are read again.
+                std::map<std::string, std::set<std::string>> ids = affected(taken.versions);
+                scansInFlight++;
+                submit([all, isolation, ids]() -> Continuation {
+                    Update update = reread(all, ids, isolation);
+                    return [update]() mutable {
+                        scansInFlight--;
+                        if (running == 0 && !Installer::running()) {
+                            announce(update.read);
+                        }
+                        merge(update);
+                    };
+                });
+            }
         }
     }
 

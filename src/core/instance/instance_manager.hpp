@@ -61,6 +61,9 @@ struct instance
   instance_settings settings;
   bool valid = true;
   std::string problem;
+  // The versions it is made of, the one it inherits from first and itself
+  // last; only itself when it does not resolve.
+  std::vector<std::string> chain;
 
   bool
   modded () const noexcept
