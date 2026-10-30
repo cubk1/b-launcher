@@ -65,6 +65,7 @@ namespace ForgottenMelody {
         }
 
         constexpr UINT SHOW_FAILURES = WM_APP + 1;
+        constexpr UINT ASK_FOR_ACCOUNT = WM_APP + 2;
 
         // One centered notice at a time, white with a dark glow to stand out from any background, hidden once its
         // duration is over.
@@ -156,20 +157,40 @@ namespace ForgottenMelody {
     }
 
     LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wp, LPARAM lp) {
-        if (msg != SHOW_FAILURES) {
-            return Form::HandleMessage(msg, wp, lp);
+        if (msg == SHOW_FAILURES) {
+            showFailures();
+            return 0;
         }
-        // Failures that arrive meanwhile join the queue rather than open a second box.
-        if (!showingFailures) {
-            showingFailures = true;
-            while (!failures.empty() && GetHwnd() != nullptr) {
-                std::wstring text = std::move(failures.front());
-                failures.erase(failures.begin());
-                message(GetHwnd(), text, L"提示：");
+        if (msg == ASK_FOR_ACCOUNT) {
+            showFailures();
+            if (std::optional<std::pair<std::string, std::string>> wanted = std::exchange(accountWanted, {})) {
+                showAccounts(GetHwnd(), wanted->first, wanted->second);
             }
-            showingFailures = false;
+            return 0;
         }
-        return 0;
+        return Form::HandleMessage(msg, wp, lp);
+    }
+
+    void MainWindow::showFailures() {
+        // Failures that arrive meanwhile join the queue rather than open a second box.
+        if (showingFailures) {
+            return;
+        }
+        showingFailures = true;
+        while (!failures.empty() && GetHwnd() != nullptr) {
+            std::wstring text = std::move(failures.front());
+            failures.erase(failures.begin());
+            message(GetHwnd(), text, L"提示：");
+        }
+        showingFailures = false;
+    }
+
+    void MainWindow::askForAccount(const std::string& login, const std::string& authServer) {
+        // Once, however often the game asks before the manager opens.
+        if (!accountWanted) {
+            PostMessageW(GetHwnd(), ASK_FOR_ACCOUNT, 0, 0);
+        }
+        accountWanted = std::make_pair(login, authServer);
     }
 
     void MainWindow::OnAction(uint32_t id) {
