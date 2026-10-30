@@ -561,10 +561,10 @@ namespace exui {
     bool EditBox::OnMouseWheel(int delta, int, int) {
         if (!IsMultiline() || !IsEnabled()) return false;
         LayoutScrollBars();
-        if (m_vScrollBar->GetMaxPosition() > 0) {
-            Measure m;
-            m_vScrollBar->ScrollBy(int(LineHeight(m.g)) * (delta > 0 ? -3 : 3)); // three lines per notch
-        }
+        // Text that fits leaves the wheel to what holds the box, such as a scrolled page.
+        if (m_vScrollBar->GetMaxPosition() <= 0) return false;
+        Measure m;
+        m_vScrollBar->ScrollBy(int(LineHeight(m.g)) * (delta > 0 ? -3 : 3)); // three lines per notch
         return true;
     }
 
