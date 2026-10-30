@@ -320,13 +320,13 @@ namespace ForgottenMelody {
 
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
-                        {LIST, ControlKind::List, {18, 35, 682, 360}},
+                        {LIST, ControlKind::List, {18, 35, 684, 360}},
                         {MICROSOFT, ControlKind::Button, {20, 402, 100, 35}, L"添加微软账号"},
                         {OFFLINE, ControlKind::Button, {130, 402, 100, 35}, L"添加离线账号"},
                         {EXTERNAL, ControlKind::Button, {240, 402, 90, 35}, L"外置登录"},
                         {IMPORT, ControlKind::Button, {340, 402, 90, 35}, L"导入"},
-                        {REMOVE, ControlKind::Button, {490, 402, 90, 35}, L"删除"},
-                        {CURRENT, ControlKind::Button, {600, 402, 90, 35}, L"设为当前"},
+                        {REMOVE, ControlKind::Button, {500, 402, 90, 35}, L"删除"},
+                        {CURRENT, ControlKind::Button, {610, 402, 90, 35}, L"设为当前"},
                 };
                 if (!createDialog(*this, parent, L"账号管理", 720, 450)) {
                     return false;
@@ -335,7 +335,7 @@ namespace ForgottenMelody {
                 auto& list = Control<exui::ListView>(LIST);
                 list.InsertColumn(L"名称", 160);
                 list.InsertColumn(L"类型", 160);
-                list.InsertColumn(L"状态", 355);
+                list.InsertColumn(L"状态", 350);
                 startRefreshing();
                 return true;
             }

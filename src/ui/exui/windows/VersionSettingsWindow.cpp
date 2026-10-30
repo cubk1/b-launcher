@@ -165,16 +165,17 @@ namespace ForgottenMelody {
         constexpr int PAGE_HEIGHT = 1208, ROW = 33, BELOW_SERVER = 633;
 
         // The groups of the default interface down the page, the advanced ones after the others; the bounds count
-        // from the top left of the scrolled page.
+        // from the top left of the scrolled page. The groups keep 12 pixels from both sides of the backing, the
+        // scroll bar running in the right margin, and their fields 20 from both sides of the groups.
         const exui::ControlSpec CONTROLS[] = {
                 // 管理
-                {MANAGE_GROUP, ControlKind::Group, {12, 10, 556, 72}, L"管理"},
+                {MANAGE_GROUP, ControlKind::Group, {12, 10, 566, 72}, L"管理"},
                 {MODS, ControlKind::Button, {32, 36, 100, 30}, L"模组管理"},
                 {LOADERS, ControlKind::Button, {140, 36, 100, 30}, L"修改加载器"},
                 {EXPORT, ControlKind::Button, {248, 36, 100, 30}, L"导出整合包"},
                 {SHORTCUT, ControlKind::Button, {356, 36, 100, 30}, L"生成快捷方式"},
                 // 游戏
-                {GAME_GROUP, ControlKind::Group, {12, 92, 556, 228}, L"游戏"},
+                {GAME_GROUP, ControlKind::Group, {12, 92, 566, 228}, L"游戏"},
                 {DIR_LABEL, ControlKind::Label, {32, 117, 95, 26}, L"游戏目录"},
                 {DIR, ControlKind::Combo, {132, 117, 250, 26}},
                 {JAVA_LABEL, ControlKind::Label, {32, 150, 95, 26}, L"Java"},
@@ -188,14 +189,14 @@ namespace ForgottenMelody {
                 {PATCH_LABEL, ControlKind::Label, {32, 282, 95, 26}, L"启动器补丁"},
                 {PATCH, ControlKind::Combo, {132, 282, 250, 26}},
                 // 内存
-                {MEMORY_GROUP, ControlKind::Group, {12, 330, 556, 96}, L"内存"},
+                {MEMORY_GROUP, ControlKind::Group, {12, 330, 566, 96}, L"内存"},
                 {AUTO_MEMORY, ControlKind::Check, {32, 355, 200, 26}, L"自动分配"},
                 {MAX_LABEL, ControlKind::Label, {32, 388, 95, 26}, L"最大内存"},
                 {MAX, ControlKind::Edit, {132, 388, 80, 26}},
                 {MAX_UNIT, ControlKind::Label, {217, 388, 30, 26}, L"MB"},
                 {MAX_HINT, ControlKind::Label, {256, 388, 290, 26}},
                 // 窗口
-                {WINDOW_GROUP, ControlKind::Group, {12, 436, 556, 96}, L"窗口"},
+                {WINDOW_GROUP, ControlKind::Group, {12, 436, 566, 96}, L"窗口"},
                 {SIZE_LABEL, ControlKind::Label, {32, 461, 95, 26}, L"窗口大小"},
                 {WIDTH, ControlKind::Edit, {132, 461, 70, 26}},
                 {TIMES, ControlKind::Label, {207, 461, 15, 26}, L"×"},
@@ -203,7 +204,7 @@ namespace ForgottenMelody {
                 {SIZE_HINT, ControlKind::Label, {307, 461, 240, 26}, L"留空则使用游戏默认的大小"},
                 {FULLSCREEN, ControlKind::Check, {32, 494, 200, 26}, L"全屏启动"},
                 // 服务器
-                {SERVER_GROUP, ControlKind::Group, {12, 542, 556, 129}, L"服务器"},
+                {SERVER_GROUP, ControlKind::Group, {12, 542, 566, 129}, L"服务器"},
                 {LOGIN_LABEL, ControlKind::Label, {32, 567, 95, 26}, L"登录方式"},
                 {LOGIN, ControlKind::Combo, {132, 567, 250, 26}},
                 {AUTH_LABEL, ControlKind::Label, {32, 600, 95, 26}},
@@ -212,28 +213,28 @@ namespace ForgottenMelody {
                 {JOIN_LABEL, ControlKind::Label, {32, 633, 95, 26}, L"自动加入服务器"},
                 {JOIN, ControlKind::Edit, {132, 633, 300, 26}},
                 // 其他
-                {OTHER_GROUP, ControlKind::Group, {12, 681, 556, 105}, L"其他"},
+                {OTHER_GROUP, ControlKind::Group, {12, 681, 566, 105}, L"其他"},
                 {NOTES_LABEL, ControlKind::Label, {32, 706, 95, 26}, L"备注"},
-                {NOTES, ControlKind::Edit, {132, 706, 416, 70}},
+                {NOTES, ControlKind::Edit, {132, 706, 426, 70}},
                 // 高级设置
-                {COMMANDS_GROUP, ControlKind::Group, {12, 796, 556, 160}, L"自定义命令"},
+                {COMMANDS_GROUP, ControlKind::Group, {12, 796, 566, 160}, L"自定义命令"},
                 {GAME_ARGS_LABEL, ControlKind::Label, {32, 821, 95, 26}, L"游戏参数"},
-                {GAME_ARGS, ControlKind::Edit, {132, 821, 416, 26}},
+                {GAME_ARGS, ControlKind::Edit, {132, 821, 426, 26}},
                 {PRE_LAUNCH_LABEL, ControlKind::Label, {32, 854, 95, 26}, L"启动前命令"},
-                {PRE_LAUNCH, ControlKind::Edit, {132, 854, 416, 26}},
+                {PRE_LAUNCH, ControlKind::Edit, {132, 854, 426, 26}},
                 {WRAPPER_LABEL, ControlKind::Label, {32, 887, 95, 26}, L"包装命令"},
-                {WRAPPER, ControlKind::Edit, {132, 887, 416, 26}},
+                {WRAPPER, ControlKind::Edit, {132, 887, 426, 26}},
                 {POST_EXIT_LABEL, ControlKind::Label, {32, 920, 95, 26}, L"退出后命令"},
-                {POST_EXIT, ControlKind::Edit, {132, 920, 416, 26}},
-                {JVM_GROUP, ControlKind::Group, {12, 966, 556, 127}, L"Java 虚拟机"},
+                {POST_EXIT, ControlKind::Edit, {132, 920, 426, 26}},
+                {JVM_GROUP, ControlKind::Group, {12, 966, 566, 127}, L"Java 虚拟机"},
                 {JVM_LABEL, ControlKind::Label, {32, 991, 95, 26}, L"JVM 参数"},
-                {JVM, ControlKind::Edit, {132, 991, 416, 26}},
+                {JVM, ControlKind::Edit, {132, 991, 426, 26}},
                 {MIN_LABEL, ControlKind::Label, {32, 1024, 95, 26}, L"最小内存"},
                 {MIN, ControlKind::Edit, {132, 1024, 80, 26}},
                 {MIN_UNIT, ControlKind::Label, {217, 1024, 30, 26}, L"MB"},
                 {ENVIRONMENT_LABEL, ControlKind::Label, {32, 1057, 95, 26}, L"环境变量"},
-                {ENVIRONMENT, ControlKind::Edit, {132, 1057, 416, 26}},
-                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1103, 556, 95}, L"兼容性"},
+                {ENVIRONMENT, ControlKind::Edit, {132, 1057, 426, 26}},
+                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1103, 566, 95}, L"兼容性"},
                 {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {32, 1128, 250, 26}, L"不添加默认 JVM 参数"},
                 {NO_INTEGRITY_CHECK, ControlKind::Check, {32, 1161, 250, 26}, L"不检查游戏完整性"},
         };

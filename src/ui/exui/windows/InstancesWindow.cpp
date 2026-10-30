@@ -47,19 +47,19 @@ namespace ForgottenMelody {
                         {DIRECTORIES, ControlKind::List, {18, 35, 160, 360}},
                         {ADD_DIRECTORY, ControlKind::Button, {18, 402, 77, 35}, L"添加目录"},
                         {REMOVE_DIRECTORY, ControlKind::Button, {101, 402, 77, 35}, L"移除目录"},
-                        {LIST, ControlKind::List, {186, 35, 514, 360}},
+                        {LIST, ControlKind::List, {186, 35, 516, 360}},
                         // Over the list of a 当前目录 without .minecraft.
                         {.id = CREATE,
                          .kind = ControlKind::Button,
-                         .bounds = {378, 195, 130, 35},
+                         .bounds = {379, 195, 130, 35},
                          .caption = L"新建 .minecraft",
                          .visible = false},
                         {SETTINGS, ControlKind::Button, {186, 402, 76, 35}, L"版本设置"},
                         {FOLDER, ControlKind::Button, {268, 402, 76, 35}, L"打开目录"},
                         {RENAME, ControlKind::Button, {350, 402, 76, 35}, L"重命名"},
                         {COPY, ControlKind::Button, {432, 402, 76, 35}, L"复制"},
-                        {REMOVE, ControlKind::Button, {542, 402, 76, 35}, L"删除"},
-                        {CURRENT, ControlKind::Button, {624, 402, 76, 35}, L"设为当前"},
+                        {REMOVE, ControlKind::Button, {544, 402, 76, 35}, L"删除"},
+                        {CURRENT, ControlKind::Button, {626, 402, 76, 35}, L"设为当前"},
                 };
                 if (!createDialog(*this, parent, L"实例管理", 720, 450)) {
                     return false;

@@ -94,16 +94,16 @@ namespace ForgottenMelody {
 
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
-                        {LIST, ControlKind::List, {18, 35, 682, 330}},
+                        {LIST, ControlKind::List, {18, 35, 684, 330}},
                         {STATUS, ControlKind::Label, {20, 370, 680, 26}},
                         {SEARCH_LABEL, ControlKind::Label, {18, 406, 32, 26}, L"搜索"},
                         {SEARCH, ControlKind::Edit, {52, 406, 120, 26}},
                         {ADD, ControlKind::Button, {180, 402, 70, 35}, L"添加"},
                         {FOLDER, ControlKind::Button, {256, 402, 90, 35}, L"打开文件夹"},
                         {RESCAN, ControlKind::Button, {352, 402, 60, 35}, L"刷新"},
-                        {HOMEPAGE, ControlKind::Button, {470, 402, 70, 35}, L"主页"},
-                        {TOGGLE, ControlKind::Button, {546, 402, 76, 35}, L"禁用"},
-                        {REMOVE, ControlKind::Button, {628, 402, 72, 35}, L"删除"},
+                        {HOMEPAGE, ControlKind::Button, {472, 402, 70, 35}, L"主页"},
+                        {TOGGLE, ControlKind::Button, {548, 402, 76, 35}, L"禁用"},
+                        {REMOVE, ControlKind::Button, {630, 402, 72, 35}, L"删除"},
                 };
                 if (!createDialog(*this, parent, L"模组管理", 720, 450)) {
                     return false;

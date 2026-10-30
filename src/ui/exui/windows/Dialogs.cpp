@@ -185,12 +185,15 @@ namespace ForgottenMelody {
         subject = title;
 
         const int height = frame.bottom - frame.top;
-        const int left = frame.listWidth > 0 ? 13 + frame.listWidth + 3 : 13, right = frame.width - 15;
+        // As much room on the left as on the right: 下载中心's list started 2 pixels further left, and now ends where
+        // it did, so the backing stays in place.
+        const int edge = 15;
+        const int left = frame.listWidth > 0 ? 13 + frame.listWidth + 3 : edge, right = frame.width - edge;
         if (frame.listWidth > 0) {
-            auto names = std::make_shared<exui::ListView>(13, frame.top, frame.listWidth, height);
+            auto names = std::make_shared<exui::ListView>(edge, frame.top, frame.listWidth - 2, height);
             names->SetHeaderVisible(false);
             names->SetRowHeight(30);
-            names->InsertColumn(L"", frame.listWidth - 4);
+            names->InsertColumn(L"", frame.listWidth - 6);
             for (const Section& section : sections) {
                 names->InsertRow({section.name});
             }
