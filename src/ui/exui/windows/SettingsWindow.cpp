@@ -9,6 +9,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
+#include "app/system/About.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
@@ -30,10 +31,6 @@
 #include <span>
 #include <string>
 #include <vector>
-
-#ifndef B_LAUNCHER_VERSION
-#define B_LAUNCHER_VERSION "0.0.0"
-#endif
 
 namespace ForgottenMelody {
 
@@ -227,33 +224,6 @@ namespace ForgottenMelody {
                 CAPE_IMAGE,  CAPE_IMAGE_PICK,  PLAYER_LABEL,    PLAYER,          SKIN_TRUSTED,
         };
 
-        struct Link {
-            const wchar_t* name;
-            const wchar_t* value;
-            const wchar_t* url;
-        };
-        const Link PROJECT_LINKS[] = {
-                {L"作者", L"cubk", L"https://cubk.cn/"},
-                {L"GitHub", L"cubk1/b-launcher", L"https://github.com/cubk1/b-launcher"},
-        };
-        const Link THANKS_LINKS[] = {
-                {L"BMCLAPI", L"提供下载源", L"https://www.bangbang93.com/"},
-                {L"PCL", L"提供主页系统", L"https://github.com/Meloong-Git/PCL"},
-        };
-        const Link CREDIT_LINKS[] = {
-                {L"Dear ImGui", L"MIT", L"https://github.com/ocornut/imgui"},
-                {L"FreeType", L"FreeType License", L"https://freetype.org"},
-                {L"libcurl", L"curl License", L"https://curl.se"},
-                {L"zlib-ng", L"zlib License", L"https://github.com/zlib-ng/zlib-ng"},
-                {L"minizip-ng", L"zlib License", L"https://github.com/zlib-ng/minizip-ng"},
-                {L"simdjson", L"Apache-2.0", L"https://github.com/simdjson/simdjson"},
-                {L"JSON for Modern C++", L"MIT", L"https://github.com/nlohmann/json"},
-                {L"reproc", L"MIT", L"https://github.com/DaanDeMeyer/reproc"},
-                {L"stb", L"MIT", L"https://github.com/nothings/stb"},
-                {L"nanosvg", L"zlib License", L"https://github.com/memononen/nanosvg"},
-                {L"Font Awesome Free", L"SIL OFL 1.1", L"https://fontawesome.com"},
-        };
-
         // Text that says less than the text around it.
         constexpr Gdiplus::ARGB MUTED = 0x96000000;
 
@@ -353,14 +323,14 @@ namespace ForgottenMelody {
                         {.id = PRODUCT,
                          .kind = ControlKind::Label,
                          .bounds = {240, 88, 200, 36},
-                         .caption = L"B Launcher™",
+                         .caption = Platform::widen(About::BRAND),
                          .font = L"微软雅黑",
                          .fontSize = 22,
                          .fontStyle = Gdiplus::FontStyleBold},
                         {.id = PRODUCT_VERSION,
                          .kind = ControlKind::Label,
                          .bounds = {400, 97, 120, 22},
-                         .caption = L"v" B_LAUNCHER_VERSION,
+                         .caption = L"v" + Platform::widen(About::VERSION),
                          .textColor = MUTED},
                         {.id = TAGLINE,
                          .kind = ControlKind::Label,
@@ -857,20 +827,20 @@ namespace ForgottenMelody {
             }
 
             // A link of 关于: a name and a value, of which the one that names the page opens it.
-            void addLink(uint32_t& id, const Link& link, int x, int y, int valueX, bool valueOpens) {
+            void addLink(uint32_t& id, const About::Link& link, int x, int y, int valueX, bool valueOpens) {
                 uint32_t name = id++, value = id++;
                 AddControl({.id = name,
                             .kind = valueOpens ? ControlKind::Label : ControlKind::Hyperlink,
                             .bounds = {x, y, valueX - x - 5, 22},
-                            .caption = link.name});
+                            .caption = Platform::widen(link.name)});
                 AddControl({.id = value,
                             .kind = valueOpens ? ControlKind::Hyperlink : ControlKind::Label,
                             .bounds = {valueX, y, x + 295 - valueX, 22},
-                            .caption = link.value,
+                            .caption = Platform::widen(link.value),
                             .textColor = valueOpens ? 0xD2000000 : MUTED});
                 auto& hyperlink = Control<exui::Hyperlink>(valueOpens ? value : name);
-                hyperlink.SetTargetUrl(link.url);
-                hyperlink.SetTooltipText(link.url);
+                hyperlink.SetTargetUrl(Platform::widen(link.url));
+                hyperlink.SetTooltipText(Platform::widen(link.url));
                 // Only the text opens the page.
                 RECT bounds = hyperlink.GetBounds();
                 int width = (int) std::ceil(exui::widget_detail::UnboundedTextWidth(hyperlink)) + 2;
@@ -885,16 +855,16 @@ namespace ForgottenMelody {
                 Control<exui::Label>(UPDATE_STATUS)
                         .SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
                 uint32_t id = LINKS;
-                for (int i = 0; i < (int) std::size(PROJECT_LINKS); i++) {
-                    addLink(id, PROJECT_LINKS[i], 245, 175 + 30 * i, 320, true);
+                for (int i = 0; i < (int) std::size(About::PROJECT); i++) {
+                    addLink(id, About::PROJECT[i], 245, 175 + 30 * i, 320, true);
                 }
-                for (int i = 0; i < (int) std::size(THANKS_LINKS); i++) {
-                    addLink(id, THANKS_LINKS[i], 575, 175 + 30 * i, 670, false);
+                for (int i = 0; i < (int) std::size(About::THANKS); i++) {
+                    addLink(id, About::THANKS[i], 575, 175 + 30 * i, 670, false);
                 }
                 // Two columns of six.
-                for (int i = 0; i < (int) std::size(CREDIT_LINKS); i++) {
+                for (int i = 0; i < (int) std::size(About::CREDITS); i++) {
                     int x = i < 6 ? 245 : 575;
-                    addLink(id, CREDIT_LINKS[i], x, 287 + 30 * (i % 6), x + 160, false);
+                    addLink(id, About::CREDITS[i], x, 287 + 30 * (i % 6), x + 160, false);
                 }
             }
 

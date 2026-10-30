@@ -1,5 +1,6 @@
 #include "app/instances/Shortcuts.h"
 #include "app/instances/Instances.h"
+#include "app/system/About.h"
 #include "app/system/EmbeddedIcons.h"
 #include "app/system/Platform.h"
 
@@ -300,7 +301,7 @@ namespace Shortcuts {
         Platform::Shortcut shortcut;
         shortcut.file = *target;
         shortcut.arguments = "--launch \"" + entry.key + "\"" + (draft.headless ? " --headless" : "");
-        shortcut.description = "用 B Launcher 启动 " + entry.info.id;
+        shortcut.description = "用 " + std::string(About::NAME) + " 启动 " + entry.info.id;
         shortcut.relative = Platform::insideLauncher(*target);
         if (draft.icon != Icon::Launcher) {
             std::string bytes = iconBytes(entry, draft);

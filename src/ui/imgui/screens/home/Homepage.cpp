@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/accounts/Accounts.h"
+#include "app/system/About.h"
 #include "app/system/Config.h"
 #include "app/launch/Game.h"
 #include "app/instances/Instances.h"
@@ -584,7 +585,7 @@ namespace Homepage {
                         MainWindow::showDownloads();
                     }
                 } else if (type == "内存优化" || type == "清理垃圾") {
-                    notify("B Launcher 没有" + type + "功能", false);
+                    notify(std::string(About::NAME) + " 没有" + type + "功能", false);
                 } else if (!type.empty()) {
                     notify("暂不支持主页事件：" + type, false);
                 }

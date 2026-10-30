@@ -1,4 +1,5 @@
 #include "app/system/Updates.h"
+#include "app/system/About.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
 
@@ -13,17 +14,12 @@
 #include <thread>
 #include <vector>
 
-#ifndef B_LAUNCHER_VERSION
-#define B_LAUNCHER_VERSION "0.0.0"
-#endif
-
 namespace Updates {
 
     namespace blb = b_launcher_base;
 
     namespace {
         const char* const CONFIG_URL = "https://cubk.cn/bl/config.json";
-        const char* const RELEASES_URL = "https://github.com/cubk1/b-launcher/releases";
 
         struct Result {
             bool ok = false;
@@ -41,7 +37,7 @@ namespace Updates {
         bool finished = false;
         Result result;
         std::string latestVersion;
-        std::string downloadUrl = RELEASES_URL;
+        std::string downloadUrl = About::RELEASES_URL;
 
         std::vector<int> parts(const std::string& version) {
             std::vector<int> out;
@@ -158,8 +154,8 @@ namespace Updates {
             return;
         }
         latestVersion = done.version;
-        downloadUrl = done.url.empty() ? std::string(RELEASES_URL) : done.url;
-        current = newer(done.version, B_LAUNCHER_VERSION) ? State::Available : State::Latest;
+        downloadUrl = done.url.empty() ? std::string(About::RELEASES_URL) : done.url;
+        current = newer(done.version, About::VERSION) ? State::Available : State::Latest;
         if (current == State::Available && notifyFound) {
             Notices::add(Notices::Kind::Info, "发现新版本 v" + latestVersion + "，可在 设置 → 关于 中下载", 6000);
         }
