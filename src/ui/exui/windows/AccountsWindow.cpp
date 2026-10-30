@@ -12,7 +12,6 @@
 #include "ui/exui/widgets/ListView.h"
 #include "ui/exui/windows/Dialogs.h"
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -21,106 +20,13 @@ namespace ForgottenMelody {
     namespace {
         namespace blb = b_launcher_base;
         using exui::ControlKind;
-        using Rows = std::vector<std::vector<std::wstring>>;
-
-        // EXUI's own timers use addresses as ids, so a small number never collides with them.
-        constexpr UINT_PTR REFRESH_TIMER = 1;
-
-        // A window that follows the services while it is open.
-        class LiveForm : public exui::Form {
-        protected:
-            virtual void refresh() = 0;
-
-            void startRefreshing() {
-                refresh();
-                SetTimer(GetHwnd(), REFRESH_TIMER, 100, nullptr);
-            }
-
-            LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override {
-                if (msg == WM_TIMER && wp == REFRESH_TIMER) {
-                    refresh();
-                    return 0;
-                }
-                return Form::HandleMessage(msg, wp, lp);
-            }
-
-            // Rebuilds the list only when its rows change, so that it keeps its selection and scroll.
-            static bool fill(exui::ListView& list, Rows& shown, Rows rows) {
-                if (rows == shown) {
-                    return false;
-                }
-                shown = std::move(rows);
-                list.ClearRows();
-                for (const auto& row : shown) {
-                    list.InsertRow(row);
-                }
-                return true;
-            }
-        };
-
-        // W06's 输入游戏名字 strip, without a caption; Esc closes it.
-        class OfflineDialog : public exui::Form {
-        public:
-            enum : uint32_t { PROMPT = 1, NAME, SAVE, CANCEL };
-
-            bool create(HWND parent) {
-                static const exui::ControlSpec CONTROLS[] = {
-                        {PROMPT, ControlKind::Label, {15, 15, 80, 25}, L"输入游戏名字"},
-                        {NAME, ControlKind::Edit, {105, 15, 100, 25}},
-                        {SAVE, ControlKind::Button, {215, 15, 70, 25}, L"保存"},
-                        {CANCEL, ControlKind::Button, {290, 15, 70, 25}, L"取消"},
-                };
-                if (!createDialog(*this, parent, L"添加离线账号", 375, 58, 0)) {
-                    return false;
-                }
-                AddControls(CONTROLS);
-                return true;
-            }
-
-        protected:
-            LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override {
-                if (msg == WM_KEYDOWN && wp == VK_RETURN) {
-                    save();
-                    return 0;
-                }
-                if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
-                    CloseWindow();
-                    return 0;
-                }
-                return Form::HandleMessage(msg, wp, lp);
-            }
-
-            void OnAction(uint32_t id) override {
-                if (id == SAVE) {
-                    save();
-                } else if (id == CANCEL) {
-                    CloseWindow();
-                }
-            }
-
-        private:
-            void save() {
-                std::string problem = Accounts::addOffline(Platform::narrow(Text(NAME)));
-                if (!problem.empty()) {
-                    message(GetHwnd(), Platform::widen(problem), L"添加离线账号");
-                    return;
-                }
-                CloseWindow();
-            }
-        };
+        using Rows = LiveForm::Rows;
 
         // What was typed into the login dialog last, but the password, for the rest of the run.
         struct Typed {
             bool nide8 = false;
             std::wstring server, user;
         } remembered;
-
-        std::string trimmed(const std::wstring& text) {
-            std::string value = Platform::narrow(text);
-            value.erase(0, value.find_first_not_of(" \t"));
-            value.erase(value.find_last_not_of(" \t") + 1);
-            return value;
-        }
 
         // The profiles of a server account, picked from a short list.
         class ProfileDialog : public exui::Form {
@@ -451,15 +357,7 @@ namespace ForgottenMelody {
                                     login == Accounts::Login::Browser ? L"请在浏览器中完成登录" : L"正在登录"});
                     keys.emplace_back();
                 }
-                auto& list = Control<exui::ListView>(LIST);
-                std::string kept = selectedKey();
-                if (fill(list, shown, std::move(rows))) {
-                    auto at = std::find(keys.begin(), keys.end(), kept);
-                    if (!kept.empty() && at != keys.end()) {
-                        list.SetSelectedRow((int) (at - keys.begin()));
-                    }
-                }
-                shownKeys = std::move(keys);
+                fill(Control<exui::ListView>(LIST), shown, shownKeys, std::move(rows), std::move(keys));
 
                 std::string key = selectedKey();
                 FindControl(REMOVE)->SetEnabled(!key.empty());
@@ -479,13 +377,11 @@ namespace ForgottenMelody {
                             Accounts::cancelLogin();
                         }
                         break;
-                    case OFFLINE: {
-                        OfflineDialog dialog;
-                        if (dialog.create(GetHwnd())) {
-                            runModal(dialog, dialog.FindControl(OfflineDialog::NAME));
-                        }
+                    case OFFLINE:
+                        askName(GetHwnd(), L"添加离线账号", L"输入游戏名字", L"", [](const std::wstring& name) {
+                            return Platform::widen(Accounts::addOffline(Platform::narrow(name)));
+                        });
                         break;
-                    }
                     case EXTERNAL: {
                         ExternalDialog dialog;
                         if (dialog.create(GetHwnd())) {
@@ -507,11 +403,13 @@ namespace ForgottenMelody {
                         break;
                     }
                     case REMOVE: {
-                        const auto* account = Accounts::find(selectedKey());
+                        // The list keeps refreshing under the question, so the account is taken before it.
+                        std::string key = selectedKey();
+                        const auto* account = Accounts::find(key);
                         if (account != nullptr &&
                             message(GetHwnd(), L"要删除账号 " + Platform::widen(account->name) + L" 吗？", L"账号管理",
                                     exui::MsgBoxButtons::OkCancel, {L"取消", L"删除"}) == 0) {
-                            Accounts::remove(selectedKey());
+                            Accounts::remove(key);
                         }
                         break;
                     }
@@ -530,8 +428,7 @@ namespace ForgottenMelody {
             std::vector<std::string> shownKeys;
 
             std::string selectedKey() const {
-                int row = Control<exui::ListView>(LIST).GetSelectedRow();
-                return row >= 0 && row < (int) shownKeys.size() ? shownKeys[row] : std::string();
+                return LiveForm::selectedKey(Control<exui::ListView>(LIST), shownKeys);
             }
 
             static std::wstring statusOf(const std::string& key, bool current) {
