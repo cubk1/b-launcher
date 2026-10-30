@@ -549,6 +549,22 @@ namespace ForgottenMelody {
             Installer::Modpack pack;
         };
 
+        // A modpack in a file, as the default interface takes one dropped on it.
+        PackSetup packOf(const std::filesystem::path& file, const blb::modpack::pack_manifest& read) {
+            PackSetup setup;
+            setup.title = read.name.empty() ? blb::path_to_utf8(file.stem()) : read.name;
+            setup.version = read.version.empty() ? std::string("未知") : read.version;
+            setup.minecraft = read.minecraft;
+            for (const blb::install::loader_request& loader : read.loaders) {
+                setup.loaders.push_back(Installer::loaderName(loader.type) +
+                                        (loader.version.empty() ? std::string() : " " + loader.version));
+                setup.pack.loaders.push_back(loader.type);
+            }
+            setup.pack.minecraft = read.minecraft;
+            setup.pack.file = file;
+            return setup;
+        }
+
         // 下载中心 in the frame of the 2014 window, its sections those of the default interface: 新建实例, then a
         // search of Modrinth or CurseForge for each kind of thing, which can follow the instance it is for, and the
         // page of a project with its versions.
@@ -711,6 +727,12 @@ namespace ForgottenMelody {
                 showSection(lastSection);
                 startRefreshing();
                 return true;
+            }
+
+            // 新建实例 set up for a modpack in a file.
+            void showPack(const std::filesystem::path& file, const blb::modpack::pack_manifest& manifest) {
+                openPack(packOf(file, manifest), -1);
+                showSection(0);
             }
 
         protected:
@@ -1344,19 +1366,7 @@ namespace ForgottenMelody {
                     message(GetHwnd(), L"这个文件不是支持的整合包", L"导入整合包");
                     return;
                 }
-                const blb::modpack::pack_manifest& read = *manifest;
-                PackSetup setup;
-                setup.title = read.name.empty() ? blb::path_to_utf8(picked.front().stem()) : read.name;
-                setup.version = read.version.empty() ? std::string("未知") : read.version;
-                setup.minecraft = read.minecraft;
-                for (const blb::install::loader_request& loader : read.loaders) {
-                    setup.loaders.push_back(Installer::loaderName(loader.type) +
-                                            (loader.version.empty() ? std::string() : " " + loader.version));
-                    setup.pack.loaders.push_back(loader.type);
-                }
-                setup.pack.minecraft = read.minecraft;
-                setup.pack.file = picked.front();
-                openPack(setup, -1);
+                openPack(packOf(picked.front(), *manifest), -1);
             }
 
             void openPack(const PackSetup& setup, int from) {
@@ -1558,6 +1568,15 @@ namespace ForgottenMelody {
     void showDownloads(HWND parent) {
         DownloadsWindow window;
         if (window.create(parent)) {
+            runModal(window);
+        }
+    }
+
+    void showModpack(HWND parent, const std::filesystem::path& file,
+                     const b_launcher_base::modpack::pack_manifest& manifest) {
+        DownloadsWindow window;
+        if (window.create(parent)) {
+            window.showPack(file, manifest);
             runModal(window);
         }
     }
