@@ -25,7 +25,9 @@ namespace ForgottenMelody {
     int message(HWND parent, const std::wstring& text, const std::wstring& title,
                 exui::MsgBoxButtons buttons = exui::MsgBoxButtons::Ok, const std::vector<std::wstring>& labels = {});
 
-    // Creates window in the look of the 2014 dialogs: the dialog skin at 150 alpha, fading into gray at its edges.
+    // Creates window in the look of the 2014 dialogs: the dialog skin, fading into gray at its edges. It is at 230 alpha
+    // rather than their 150, which relied on Windows 7 blurring what is behind; without the blur, the text of the
+    // window under a dialog shows through.
     bool createDialog(exui::Window& window, HWND parent, const std::wstring& title, int width, int height,
                       uint32_t captionMask = exui::CaptionButtonMask::Close);
     // Shows window, focused on focus if given, and returns once it is closed. Other windows stay enabled, but their
