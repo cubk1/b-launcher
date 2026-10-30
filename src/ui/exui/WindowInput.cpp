@@ -41,7 +41,7 @@ namespace exui {
                 const int cx = x - child.GetX(), cy = y - child.GetY();
                 if (!child.IsVisible() || !child.IsEnabled() || !child.Contains(cx, cy)) continue;
                 if (auto* inner = HitTest(child, cx, cy)) return inner;
-                if (!child.IsTransparentToPointer()) return &child;
+                if (!child.IsTransparentToPointer() && child.HitsPoint(cx, cy)) return &child;
             }
             return nullptr;
         }

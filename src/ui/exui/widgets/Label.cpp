@@ -1,6 +1,7 @@
 #include "ui/exui/widgets/Label.h"
 #include "ui/exui/Window.h"
 #include <shellapi.h>
+#include <algorithm>
 #include <cmath>
 
 namespace exui {
@@ -193,9 +194,18 @@ namespace exui {
     bool Hyperlink::OnMouseUp(int x, int y, UINT button) {
         if (button != VK_LBUTTON || !m_armed) return false;
         m_armed = false;
-        m_state = Contains(x, y) ? WidgetState::Hover : WidgetState::Normal;
+        m_state = Contains(x, y) && HitsPoint(x, y) ? WidgetState::Hover : WidgetState::Normal;
         Invalidate();
         return true;
+    }
+    bool Hyperlink::HitsPoint(int x, int y) const {
+        if (m_caption.empty() || m_multiline) return true;
+        Bitmap scratch(1, 1, PixelFormat32bppPARGB);
+        Graphics g(&scratch);
+        const RectF text = GetTextBounds(g);
+        const float width = std::min(widget_detail::UnboundedTextWidth(*this), float(GetWidth() - 4));
+        // A pixel of slack around the text.
+        return x >= text.X - 1 && x <= text.X + width + 1 && y >= text.Y - 1 && y <= text.Y + text.Height + 1;
     }
     void Hyperlink::Activate() {
         if (!IsEffectivelyEnabled() || !IsEffectivelyVisible()) return;

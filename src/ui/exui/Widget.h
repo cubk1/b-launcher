@@ -107,6 +107,11 @@ namespace exui {
         bool IsTransparentToPointer() const noexcept {
             return !m_paints;
         }
+        // Whether the pointer at (x, y), in the widget's coordinates and within its bounds, is on it; elsewhere it
+        // reaches what lies below.
+        virtual bool HitsPoint(int, int) const {
+            return true;
+        }
         void SetActivationKind(ActivationKind kind) noexcept {
             m_activation = kind;
         }
