@@ -28,6 +28,15 @@ namespace exui {
             return false;
         }
 
+        // Part of an independent window: in one, or owned by one.
+        bool InIndependent(HWND hwnd) {
+            for (hwnd = GetAncestor(hwnd, GA_ROOT); hwnd; hwnd = GetWindow(hwnd, GW_OWNER)) {
+                const Window* window = Window::FromHandle(hwnd);
+                if (window && window->IsIndependent()) return true;
+            }
+            return false;
+        }
+
         void InvalidateTree(const Widget& widget) {
             widget.Invalidate();
             for (const auto& child : widget.GetChildren())
@@ -272,7 +281,8 @@ namespace exui {
             if (GetMessageW(&message, nullptr, 0, 0) <= 0) return; // WM_QUIT is consumed, not reposted
             const bool input = (message.message >= WM_KEYFIRST && message.message <= WM_KEYLAST) ||
                     (message.message >= WM_MOUSEFIRST && message.message <= WM_MOUSELAST);
-            if (filterExternalInput && input && !OwnedBy(message.hwnd, target)) continue;
+            if (filterExternalInput && input && !OwnedBy(message.hwnd, target) && !InIndependent(message.hwnd))
+                continue;
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }

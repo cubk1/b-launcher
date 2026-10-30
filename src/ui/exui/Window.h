@@ -113,6 +113,14 @@ namespace exui {
         // as an open dropdown, still get theirs.
         void RunModalLoop(bool filterExternalInput = false);
         bool WaitForWindowAnimation();
+        // An independent window, and what it owns, keep their input under the filtering modal loops of other
+        // windows, like a tool window that stays usable beside the dialogs.
+        void SetIndependent(bool independent) noexcept {
+            m_independent = independent;
+        }
+        bool IsIndependent() const noexcept {
+            return m_independent;
+        }
 
         // Animation
         void SetWindowAnimationTypes(WindowAnimationKind opening, WindowAnimationKind closing,
@@ -293,6 +301,7 @@ namespace exui {
         bool m_animationsEnabled = true, m_controlAnimationsEnabled = true, m_timerRunning = false;
         std::vector<HWND> m_animationChildren;
         bool m_destroying = false;
+        bool m_independent = false;
         std::shared_ptr<char> m_lifetime = std::make_shared<char>();
     };
 
