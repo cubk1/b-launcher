@@ -27,6 +27,10 @@ namespace Addons {
     };
 
     constexpr int PAGE_SIZE = 20;
+    // How many searches, a page each, and how many projects' versions a source keeps: those used last. Others are
+    // fetched again when they are wanted.
+    constexpr size_t KEPT_SEARCHES = 10;
+    constexpr size_t KEPT_VERSION_LISTS = 3;
 
     struct Hit {
         std::string id;

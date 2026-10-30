@@ -1,4 +1,5 @@
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/Recent.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/format.hpp>
@@ -51,6 +52,7 @@ namespace CurseForge {
         std::map<int, std::vector<Category>> categoryLists;
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
+        Recent searchUse, versionUse;
 
         void run(std::function<Continuation(blb::cancellation_token)> work,
                  std::function<Continuation(const std::string&)> fail) {
@@ -477,6 +479,7 @@ namespace CurseForge {
 
     const Results& search(const Query& query) {
         std::string key = queryKey(query);
+        searchUse.use(key);
         auto found = searches.find(key);
         if (found == searches.end()) {
             fetchSearch(query);
@@ -508,6 +511,7 @@ namespace CurseForge {
     }
 
     const Versions& versions(const std::string& projectId) {
+        versionUse.use(projectId);
         auto found = versionLists.find(projectId);
         if (found == versionLists.end()) {
             fetchVersions(projectId);
@@ -574,6 +578,11 @@ namespace CurseForge {
                 next();
             }
         }
+        // What is still loading is written when it arrives.
+        searchUse.trim(searches, Addons::KEPT_SEARCHES,
+                       [](const Results& results) { return results.status != Status::Loading; });
+        versionUse.trim(versionLists, Addons::KEPT_VERSION_LISTS,
+                        [](const Versions& versions) { return versions.status != Status::Loading; });
     }
 
     void shutdown() {
