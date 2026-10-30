@@ -2,6 +2,7 @@
 #include "app/accounts/Accounts.h"
 #include "app/downloads/Addons.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/instances/Drops.h"
 #include "app/instances/Exports.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
@@ -32,6 +33,7 @@ namespace Services {
         Installer::poll();
         Mods::poll();
         Exports::poll();
+        Drops::poll();
         Updates::poll();
         JavaDownloads::poll();
         ShortcutLaunch::poll();
@@ -39,6 +41,7 @@ namespace Services {
 
     void stop() {
         Updates::shutdown();
+        Drops::shutdown();
         JavaDownloads::shutdown();
         Exports::shutdown();
         Mods::shutdown();

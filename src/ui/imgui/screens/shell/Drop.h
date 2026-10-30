@@ -1,13 +1,8 @@
 #pragma once
 
-#include <filesystem>
-
 namespace Drop {
 
+    // Takes the files dropped on the window through Drops, the new instance screen setting up a modpack.
     void attach(void* window);
-    void detach();
     void draw(float width, float height);
-    void poll();
-    void importPack(const std::filesystem::path& file);
-    void shutdown();
 }
