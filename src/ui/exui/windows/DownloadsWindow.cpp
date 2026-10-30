@@ -485,7 +485,7 @@ namespace ForgottenMelody {
         public:
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
-                        {NEW_LATER, ControlKind::Label, {210, 285, 675, 30}, L"新建实例还在开发中"},
+                        {NEW_LATER, ControlKind::Label, {210, 295, 675, 30}, L"新建实例还在开发中"},
                         // The search
                         {SOURCE, ControlKind::Combo, {225, 85, 110, 28}},
                         {SEARCH, ControlKind::Edit, {341, 86, 300, 26}},
@@ -495,12 +495,12 @@ namespace ForgottenMelody {
                         {CATEGORY, ControlKind::Combo, {477, 119, 150, 28}},
                         {SORT, ControlKind::Combo, {633, 119, 110, 28}},
                         {COUNT, ControlKind::Label, {749, 120, 120, 26}},
-                        {PREVIOUS, ControlKind::Button, {411, 489, 80, 28}, L"上一页"},
-                        {PAGE, ControlKind::Label, {497, 490, 100, 26}},
-                        {NEXT, ControlKind::Button, {603, 489, 80, 28}, L"下一页"},
+                        {PREVIOUS, ControlKind::Button, {411, 509, 80, 28}, L"上一页"},
+                        {PAGE, ControlKind::Label, {497, 510, 100, 26}},
+                        {NEXT, ControlKind::Button, {603, 509, 80, 28}, L"下一页"},
                         {.id = RETRY,
                          .kind = ControlKind::Button,
-                         .bounds = {507, 330, 80, 30},
+                         .bounds = {507, 340, 80, 30},
                          .caption = L"重试",
                          .visible = false},
                         // A project
@@ -509,14 +509,14 @@ namespace ForgottenMelody {
                         {PROJECT_INSTANCE, ControlKind::Combo, {225, 142, 222, 28}},
                         {PROJECT_VERSION, ControlKind::Combo, {453, 142, 120, 28}},
                         {PROJECT_LOADER, ControlKind::Combo, {579, 142, 120, 28}},
-                        {VERSIONS, ControlKind::List, {225, 176, 645, 303}},
+                        {VERSIONS, ControlKind::List, {225, 176, 645, 323}},
                         {.id = VERSIONS_RETRY,
                          .kind = ControlKind::Button,
-                         .bounds = {507, 340, 80, 30},
+                         .bounds = {507, 350, 80, 30},
                          .caption = L"重试",
                          .visible = false},
-                        {STATUS, ControlKind::Label, {225, 490, 540, 26}},
-                        {ACTION, ControlKind::Button, {779, 489, 90, 28}, L"安装"},
+                        {STATUS, ControlKind::Label, {225, 510, 540, 26}},
+                        {ACTION, ControlKind::Button, {779, 509, 90, 28}, L"安装"},
                 };
                 std::vector<Section> sections = {{L"新建实例", NEW_PANEL}};
                 for (const KindInfo& info : KINDS) {
@@ -525,10 +525,10 @@ namespace ForgottenMelody {
                 if (!createFrame(parent, L"下载中心", L"", sections)) {
                     return false;
                 }
-                AddControl(BROWSE, std::make_shared<exui::Panel>(210, 75, 675, 450));
-                AddControl(SEARCH_VIEW, std::make_shared<exui::Panel>(210, 75, 675, 450));
-                AddControl(PROJECT_VIEW, std::make_shared<exui::Panel>(210, 75, 675, 450));
-                auto list = std::make_shared<ProjectList>(225, 153, 645, 330);
+                AddControl(BROWSE, std::make_shared<exui::Panel>(210, 75, 675, 470));
+                AddControl(SEARCH_VIEW, std::make_shared<exui::Panel>(210, 75, 675, 470));
+                AddControl(PROJECT_VIEW, std::make_shared<exui::Panel>(210, 75, 675, 470));
+                auto list = std::make_shared<ProjectList>(225, 153, 645, 350);
                 results = list.get();
                 results->OnOpen = [this](int index) { openProject(index); };
                 AddControl(RESULTS, list);

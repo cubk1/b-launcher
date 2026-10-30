@@ -155,13 +155,8 @@ namespace ForgottenMelody {
         }
 
         // The frame of the settings without the list of sections: one page, as the default interface has it.
-        const SectionedForm::Frame FRAME = {.width = 620,
-                                            .height = 480,
-                                            .top = 60,
-                                            .bottom = 425,
-                                            .listWidth = 0,
-                                            .doneWidth = 80,
-                                            .doneHeight = 32};
+        const SectionedForm::Frame FRAME = {
+                .width = 620, .height = 480, .top = 60, .bottom = 425, .listWidth = 0, .done = L"完成"};
         // The page's height, and the rows from the one after the server on, which move up a row while there is none.
         constexpr int PAGE_HEIGHT = 1208, ROW = 33, BELOW_SERVER = 633;
 

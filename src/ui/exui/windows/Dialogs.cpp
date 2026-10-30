@@ -208,10 +208,12 @@ namespace ForgottenMelody {
             }
             AddControl(SECTIONS, names);
         }
-        // 打开下载's button, moved right to line up with the backing.
-        auto done = std::make_shared<exui::Button>(right - frame.doneWidth, frame.height - 15 - frame.doneHeight,
-                                                   frame.doneWidth, frame.doneHeight, L"完成");
-        done->SetFont(L"宋体", frame.doneHeight >= 50 ? 15.0f : 12.0f);
+        // Where 打开下载 was, but the size of the other buttons: in line with the backing's right edge, halfway down
+        // the strip between the backing and the frame's line.
+        auto done = std::make_shared<exui::Button>(
+                right - frame.doneWidth, frame.bottom + (frame.height - 7 - frame.bottom - frame.doneHeight) / 2,
+                frame.doneWidth, frame.doneHeight, frame.done);
+        done->SetFont(L"宋体", 12.0f);
         AddControl(DONE, done);
         auto banner = std::make_shared<exui::Label>(25, (frame.top - 50) / 2, 600, 50, std::wstring(), 0xFEFFFFFF);
         banner->SetFont(L"微软雅黑", 22, Gdiplus::FontStyleBold);
