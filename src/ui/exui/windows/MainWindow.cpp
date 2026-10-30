@@ -120,14 +120,25 @@ namespace ForgottenMelody {
     void MainWindow::refresh() {
         const std::vector<Instances::Entry>& entries = Instances::list();
         auto& combo = Control<exui::ComboBox>(INSTANCE);
-        if (!std::equal(entries.begin(), entries.end(), instanceKeys.begin(), instanceKeys.end(),
-                        [](const Instances::Entry& entry, const std::string& key) { return entry.key == key; })) {
+        // Until the instances are first read, the list says so and takes no choice.
+        bool loading = Instances::loading();
+        if (loading != listLoading ||
+            (!loading &&
+             !std::equal(entries.begin(), entries.end(), instanceKeys.begin(), instanceKeys.end(),
+                         [](const Instances::Entry& entry, const std::string& key) { return entry.key == key; }))) {
+            listLoading = loading;
             instanceKeys.clear();
             combo.ClearItems();
-            for (const Instances::Entry& entry : entries) {
-                instanceKeys.push_back(entry.key);
-                combo.AddItem(Platform::widen(entry.info.id));
+            if (loading) {
+                combo.AddItem(L"正在读取…");
+                combo.SetSelectedIndex(0);
+            } else {
+                for (const Instances::Entry& entry : entries) {
+                    instanceKeys.push_back(entry.key);
+                    combo.AddItem(Platform::widen(entry.info.id));
+                }
             }
+            combo.SetEnabled(!loading);
         }
         auto selected = std::find(instanceKeys.begin(), instanceKeys.end(), Instances::selected());
         int index = selected == instanceKeys.end() ? -1 : (int) (selected - instanceKeys.begin());

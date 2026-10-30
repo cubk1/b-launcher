@@ -30,8 +30,9 @@ namespace ForgottenMelody {
         void OnSelection(uint32_t id, int index) override;
 
     private:
-        // The keys of the instance list, in its order.
+        // The keys of the instance list, in its order, and whether it says the instances are still being read.
         std::vector<std::string> instanceKeys;
+        bool listLoading = false;
         std::vector<std::wstring> failures;
         bool showingFailures = false;
         // How the game wants to log in while the account manager is due to open.
