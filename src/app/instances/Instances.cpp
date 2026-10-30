@@ -41,6 +41,8 @@ namespace Instances {
         bool scanned = false;
         int running = 0;
         std::string activityText;
+        // What runs on each instance being copied, renamed or removed.
+        std::unordered_map<std::string, std::string> operating;
         std::unordered_map<std::string, Clock::time_point> pendingSaves;
         Clock::time_point lastScan = Clock::now();
         int scansInFlight = 0;
@@ -296,15 +298,17 @@ namespace Instances {
             blb::instance::isolation_mode isolation = mode;
             running++;
             activityText = activity + " " + id;
+            operating[key] = activity;
             std::string notice = Notices::live(Notices::Kind::Info, activityText);
-            submit([with, id, all, isolation, success, failure, notice, operation, done]() -> Continuation {
+            submit([key, with, id, all, isolation, success, failure, notice, operation, done]() -> Continuation {
                 blb::result<void> outcome = operation(with, id);
                 std::string error = outcome ? std::string() : outcome.err().message;
                 Scan fresh = scan(all, isolation);
-                return [success, failure, notice, done, error, fresh]() mutable {
+                return [key, success, failure, notice, done, error, fresh]() mutable {
                     if (--running == 0) {
                         activityText.clear();
                     }
+                    operating.erase(key);
                     apply(fresh);
                     if (error.empty()) {
                         Notices::finish(notice, Notices::Kind::Done, success, 2500);
@@ -398,6 +402,11 @@ namespace Instances {
 
     const std::string& activity() {
         return activityText;
+    }
+
+    std::string activityOf(const std::string& key) {
+        auto found = operating.find(key);
+        return found != operating.end() ? found->second : std::string();
     }
 
     const std::vector<Source>& sources() {

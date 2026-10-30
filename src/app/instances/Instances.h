@@ -33,6 +33,8 @@ namespace Instances {
 
     bool loading();
     const std::string& activity();
+    // What is being done to an instance, such as 正在删除; empty when nothing is.
+    std::string activityOf(const std::string& key);
     const std::vector<Source>& sources();
     const Source* source(const std::string& key);
     const std::vector<Entry>& list();
