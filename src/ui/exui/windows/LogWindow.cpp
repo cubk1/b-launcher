@@ -581,27 +581,27 @@ namespace ForgottenMelody {
 
             bool create() {
                 static const exui::ControlSpec CONTROLS[] = {
-                        {STATUS, ControlKind::Label, {20, 370, 598, 26}},
+                        {STATUS, ControlKind::Label, {20, 370, 600, 26}},
                         {.id = BOTTOM,
                          .kind = ControlKind::Button,
-                         .bounds = {624, 369, 76, 28},
+                         .bounds = {626, 369, 76, 28},
                          .caption = L"回到底部",
                          .visible = false},
                         {SEARCH_LABEL, ControlKind::Label, {18, 406, 32, 26}, L"搜索"},
                         {SEARCH, ControlKind::Edit, {52, 406, 146, 26}},
                         {PREVIOUS, ControlKind::Button, {204, 402, 70, 35}, L"上一个"},
                         {NEXT, ControlKind::Button, {280, 402, 70, 35}, L"下一个"},
-                        {PAUSE, ControlKind::Button, {378, 402, 76, 35}, L"暂停"},
-                        {COPY, ControlKind::Button, {460, 402, 76, 35}, L"复制"},
-                        {EXPORT, ControlKind::Button, {542, 402, 76, 35}, L"导出"},
-                        {CLEAR, ControlKind::Button, {624, 402, 76, 35}, L"清空"},
+                        {PAUSE, ControlKind::Button, {380, 402, 76, 35}, L"暂停"},
+                        {COPY, ControlKind::Button, {462, 402, 76, 35}, L"复制"},
+                        {EXPORT, ControlKind::Button, {544, 402, 76, 35}, L"导出"},
+                        {CLEAR, ControlKind::Button, {626, 402, 76, 35}, L"清空"},
                 };
                 if (!createDialog(*this, nullptr, L"游戏日志", 720, 450,
                                   exui::CaptionButtonMask::Minimize | exui::CaptionButtonMask::Close)) {
                     return false;
                 }
                 SetIndependent(true);
-                auto lines = std::make_shared<LogView>(18, 35, 682, 330);
+                auto lines = std::make_shared<LogView>(18, 35, 684, 330);
                 view = lines.get();
                 view->OnCopy = [this] { copy(); };
                 AddControl(VIEW, lines);
