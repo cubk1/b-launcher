@@ -48,6 +48,7 @@ private:
     static LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT handle(UINT msg, WPARAM wParam, LPARAM lParam);
     void applyFrame();
+    void applyRegion();
     bool createGlContext(HGLRC share);
 
     int minWidth = 0;

@@ -81,10 +81,19 @@ void BorderlessWindow::resize(int clientWidth, int clientHeight) {
     width = clientWidth;
     height = clientHeight;
     SetWindowPos(hwnd, nullptr, x, y, clientWidth, clientHeight, SWP_NOZORDER | SWP_NOACTIVATE);
-    if (regionCorners) {
-        SetWindowRgn(hwnd, CreateRoundRectRgn(0, 0, width + 1, height + 1, FALLBACK_RADIUS * 2, FALLBACK_RADIUS * 2),
-                     TRUE);
+    applyRegion();
+}
+
+void BorderlessWindow::applyRegion() {
+    if (!regionCorners) {
+        return;
     }
+    // A maximized window is square to the screen; a region of another size would cut the window off.
+    if (IsZoomed(hwnd)) {
+        SetWindowRgn(hwnd, nullptr, TRUE);
+        return;
+    }
+    SetWindowRgn(hwnd, CreateRoundRectRgn(0, 0, width + 1, height + 1, FALLBACK_RADIUS * 2, FALLBACK_RADIUS * 2), TRUE);
 }
 
 void BorderlessWindow::setMinimumSize(int clientWidth, int clientHeight) {
@@ -102,9 +111,9 @@ void BorderlessWindow::applyFrame() {
     DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR_, &none, sizeof(none));
     int corner = DWMWCP_ROUND_;
     if (FAILED(DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_, &corner, sizeof(corner)))) {
+        // Before Windows 11 the corners are rounded by a region, which follows the size of the window.
         regionCorners = true;
-        SetWindowRgn(hwnd, CreateRoundRectRgn(0, 0, width + 1, height + 1, FALLBACK_RADIUS * 2, FALLBACK_RADIUS * 2),
-                     TRUE);
+        applyRegion();
     }
     setDarkMode(true);
 }
@@ -308,6 +317,7 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (resizable && wParam != SIZE_MINIMIZED) {
                 width = LOWORD(lParam);
                 height = HIWORD(lParam);
+                applyRegion();
                 if (inSizeMove) {
                     modalFrame();
                 }
