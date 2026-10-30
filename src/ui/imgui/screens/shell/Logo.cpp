@@ -1,5 +1,5 @@
 #include "ui/imgui/screens/shell/Logo.h"
-#include "ui/imgui/screens/shell/EmbeddedIcons.h"
+#include "app/system/EmbeddedIcons.h"
 
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/UiImages.h"

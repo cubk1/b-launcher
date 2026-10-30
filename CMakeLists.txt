@@ -124,7 +124,7 @@ if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 endif ()
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER ui/imgui/screens/shell/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
+embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/system/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
         logoSvg assets/images/logo.svg
         forge assets/images/forge.png
         vanilla assets/images/vanilla.png
