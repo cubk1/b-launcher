@@ -1,6 +1,7 @@
 #include "app/system/Updates.h"
 #include "app/system/About.h"
 #include "app/system/Platform.h"
+#include "app/system/Server.h"
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
@@ -19,7 +20,7 @@ namespace Updates {
     namespace blb = b_launcher_base;
 
     namespace {
-        const char* const CONFIG_URL = "https://cubk.cn/bl/config.json";
+        const std::string CONFIG_URL = Server::file("config.json");
 
         struct Result {
             bool ok = false;
