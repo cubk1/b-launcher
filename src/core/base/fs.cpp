@@ -596,7 +596,7 @@ is_inside (const path &root, const path &target)
       = fs::absolute (target).lexically_relative (fs::absolute (root));
   if (relative.empty () || relative.is_absolute ())
     return false;
-  const path &first = *relative.begin ();
+  const path first = *relative.begin ();
   return first != path ("..") && first != path (".");
 }
 

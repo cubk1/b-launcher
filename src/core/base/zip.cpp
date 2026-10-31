@@ -179,13 +179,14 @@ zip_reader::extract_current (const std::filesystem::path &target)
 {
   if (target.has_parent_path ())
     BLB_TRY (fs::create_directories (target.parent_path ()));
-  BLB_TRY_ASSIGN (
-      auto file, fs::native_file::open (target, fs::native_file::mode::write));
+  auto temp = fs::temp_sibling (target);
+  BLB_TRY_ASSIGN (auto file,
+                  fs::native_file::open (temp, fs::native_file::mode::write));
   auto rc = mz_zip_reader_entry_open (m_handle);
   if (rc != MZ_OK)
     {
       (void)file.close ();
-      (void)fs::remove_file (target);
+      (void)fs::remove_file (temp);
       return zip_error ("cannot open zip entry", rc);
     }
   std::vector<char> buffer (256u << 10);
@@ -207,11 +208,12 @@ zip_reader::extract_current (const std::filesystem::path &target)
   else
     (void)file.close ();
   if (written && read >= 0 && rc == MZ_OK)
-    return ok ();
-  (void)fs::remove_file (target);
+    written = fs::rename_file (temp, target);
+  else if (written)
+    written = zip_error ("cannot read zip entry", read < 0 ? read : rc);
   if (!written)
-    return written;
-  return zip_error ("cannot read zip entry", read < 0 ? read : rc);
+    (void)fs::remove_file (temp);
+  return written;
 }
 
 result<std::string>
