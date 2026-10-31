@@ -40,25 +40,6 @@ namespace ServerStatus {
 
         constexpr uint32_t ICON_LIMIT = 256;
 
-        bool iconFits(const std::string& png) {
-            static const unsigned char SIGNATURE[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
-            if (png.size() < 24 || png.compare(12, 4, "IHDR") != 0) {
-                return false;
-            }
-            for (size_t i = 0; i < sizeof(SIGNATURE); i++) {
-                if ((unsigned char) png[i] != SIGNATURE[i]) {
-                    return false;
-                }
-            }
-            auto number = [&png](size_t at) {
-                return ((uint32_t) (unsigned char) png[at] << 24) | ((uint32_t) (unsigned char) png[at + 1] << 16) |
-                        ((uint32_t) (unsigned char) png[at + 2] << 8) | (uint32_t) (unsigned char) png[at + 3];
-            };
-            uint32_t width = number(16);
-            uint32_t height = number(20);
-            return width > 0 && height > 0 && width <= ICON_LIMIT && height <= ICON_LIMIT;
-        }
-
         std::string describe(const blb::error& error) {
             switch (error.code) {
                 case blb::errc::invalid_argument: return "服务器地址无效";
@@ -82,8 +63,8 @@ namespace ServerStatus {
             out.online = status->online;
             out.max = status->max;
             out.latency = (int) status->latency.count();
-            if (iconFits(status->favicon)) {
-                out.favicon = Pixels::decode(status->favicon.data(), status->favicon.size());
+            if (!status->favicon.empty()) {
+                out.favicon = Pixels::decodePng(status->favicon.data(), status->favicon.size(), ICON_LIMIT);
             }
             return out;
         }

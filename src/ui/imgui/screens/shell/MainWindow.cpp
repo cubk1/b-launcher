@@ -111,6 +111,8 @@ namespace MainWindow {
     static std::string dragKey;
     static float dragGrab = 0.0f;
     static std::string landKey;
+    static std::string arrangeSource;
+    static std::vector<std::string> arrangeKeys;
     static float layoutWidth = MIN_WIDTH;
     static float layoutHeight = MIN_HEIGHT;
     static bool layoutMaximized = false;
@@ -743,7 +745,8 @@ namespace MainWindow {
         std::string moved = keys[from];
         keys.erase(keys.begin() + from);
         keys.insert(keys.begin() + to, moved);
-        Instances::arrange(source, keys);
+        arrangeSource = source;
+        arrangeKeys = std::move(keys);
     }
 
     static void placeholderRow(const Instances::Source& source, float y, bool blocked, bool searching) {
@@ -920,6 +923,11 @@ namespace MainWindow {
         }
         if (dragging && !carried) {
             dragKey.clear();
+        }
+        if (!arrangeSource.empty()) {
+            Instances::arrange(arrangeSource, arrangeKeys);
+            arrangeSource.clear();
+            arrangeKeys.clear();
         }
         if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
             UiRender::scissor(0, LIST_TOP, sideW, viewH);

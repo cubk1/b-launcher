@@ -211,7 +211,9 @@ namespace Instances {
             for (size_t i : order) {
                 sorted.push_back(std::move(entries[i]));
             }
-            entries = std::move(sorted);
+            for (size_t i = 0; i < sorted.size(); i++) {
+                entries[i] = std::move(sorted[i]);
+            }
         }
 
         void saveOrder() {

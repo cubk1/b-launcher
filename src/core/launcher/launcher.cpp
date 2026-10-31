@@ -11,6 +11,7 @@
 
 #include "core/base/win_util.hpp"
 
+#include <algorithm>
 #include <mutex>
 
 #if defined(_WIN32)
@@ -59,6 +60,18 @@ since (clock::time_point start)
                                                                 - start);
 }
 
+bool
+argument_file_name (std::string_view name)
+{
+  if (name.size () != 20 || !name.starts_with ("launch-")
+      || !name.ends_with (".args"))
+    return false;
+  auto id = name.substr (7, 8);
+  return std::all_of (id.begin (), id.end (), [] (char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+  });
+}
+
 void
 forget_argument_files (const std::filesystem::path &directory)
 {
@@ -66,13 +79,8 @@ forget_argument_files (const std::filesystem::path &directory)
                - static_cast<std::int64_t> (24 * 3600)
                      * fs::mtime_ticks_per_second ();
   for (const auto &[name, st] : fs::list_directory (directory))
-    {
-      bool ours = name == "launch.args"
-                  || (name.size () == 20 && name.starts_with ("launch-")
-                      && name.ends_with (".args"));
-      if (ours && !st.is_directory && st.mtime < stale)
-        (void)fs::remove_file (directory / path_from_utf8 (name));
-    }
+    if (argument_file_name (name) && !st.is_directory && st.mtime < stale)
+      (void)fs::remove_file (directory / path_from_utf8 (name));
 }
 
 std::vector<install::planned_file>
@@ -302,7 +310,8 @@ game_launcher::prepare (const launch_settings &settings,
       content += quote_argument_file_entry (out.command.main_class) + "\n";
       for (const auto &arg : out.command.game_args)
         content += quote_argument_file_entry (arg) + "\n";
-      auto folder = layout.version_dir (settings.version_id);
+      auto folder = layout.cache () / "launch";
+      BLB_TRY (fs::create_directories (folder));
       forget_argument_files (folder);
       auto file
           = folder
