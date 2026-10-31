@@ -628,6 +628,34 @@ namespace MainWindow {
         }
     }
 
+    static void playing(const std::string& key, float y) {
+        Game::State state = Game::state(key);
+        float shown = UiState::motion("nav#playing#" + key, state != Game::State::Idle ? 1.0f : 0.0f, 14.0f);
+        if (shown < 0.01f) {
+            return;
+        }
+        size_t count = 0;
+        for (const Game::Session& session : Game::sessionsOf(key)) {
+            count += session.state == Game::State::Running ? 1 : 0;
+        }
+        float cx = UiRender::lerp(ITEM_X + listW - 13.0f, ITEM_X + listW - 7.0f, fold);
+        float cy = UiRender::lerp(y + ITEM_H * 0.5f, y + 7.0f, fold);
+        float savedAlpha = UiRender::alphaMul;
+        UiRender::alphaMul = savedAlpha * shown;
+        if (state == Game::State::Preparing) {
+            Page::spinner(cx, cy, 4.5f, UiTheme::accent());
+        } else {
+            UiRender::circle(cx, cy, 3.5f, UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au);
+        }
+        if (count > 1 && fold < 0.5f) {
+            std::string text = std::to_string(count);
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiRender::textY(text, cx - 9.0f - textW, y, ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_SMALL);
+        }
+        UiRender::alphaMul = savedAlpha;
+    }
+
     static void instanceRow(const Instances::Entry& entry, float y, bool blocked) {
         const std::string& key = entry.key;
         if (!blocked && !NewUi::overlayCoversMouse() && NewUi::rightClick && NewUi::hit(ITEM_X, y, listW, ITEM_H)) {
@@ -645,6 +673,7 @@ namespace MainWindow {
         }
         item.block(blocked);
         item.paint();
+        playing(key, y);
         if (item.pressed) {
             Instances::select(key);
             pages.go(PAGE_HOME);

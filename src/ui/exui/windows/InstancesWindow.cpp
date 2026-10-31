@@ -137,8 +137,7 @@ namespace ForgottenMelody {
                 // it only to be copied, renamed or removed in turn, and one in play is not changed under the game.
                 std::string key = selectedKey();
                 bool usable = !key.empty() && Instances::activityOf(key).empty();
-                bool free = usable && Instances::activity().empty() &&
-                        (Game::state() == Game::State::Idle || Game::instance() != key);
+                bool free = usable && Instances::activity().empty() && Game::state(key) == Game::State::Idle;
                 FindControl(SETTINGS)->SetEnabled(usable);
                 // The instance's folder, or the directory's while no instance is chosen.
                 FindControl(FOLDER)->SetEnabled(usable || (key.empty() && source != nullptr && source->exists));
@@ -147,8 +146,11 @@ namespace ForgottenMelody {
                 FindControl(REMOVE)->SetEnabled(free);
                 FindControl(CURRENT)->SetEnabled(usable && key != Instances::selected());
                 // A directory goes with its instances, so not while one of them is worked on or played.
-                bool playing = Game::state() != Game::State::Idle && Instances::find(Game::instance()) != nullptr &&
-                        Instances::find(Game::instance())->source == directory;
+                bool playing = false;
+                for (const Game::Session& session : Game::sessions()) {
+                    const Instances::Entry* played = Instances::find(session.instance);
+                    playing = playing || (played != nullptr && played->source == directory);
+                }
                 FindControl(REMOVE_DIRECTORY)
                         ->SetEnabled(source != nullptr && source->custom && Instances::activity().empty() && !playing);
             }
@@ -279,7 +281,7 @@ namespace ForgottenMelody {
                 if (std::string activity = Instances::activityOf(key); !activity.empty()) {
                     return Platform::widen(activity);
                 }
-                if (Game::state() != Game::State::Idle && Game::instance() == key) {
+                if (Game::state(key) != Game::State::Idle) {
                     return L"运行中";
                 }
                 return key == Instances::selected() ? L"当前" : L"";

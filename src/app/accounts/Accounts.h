@@ -44,6 +44,8 @@ namespace Accounts {
 
     std::string kindOf(const blb::auth::account& account);
     const blb::auth::account* pick(const std::string& login, const std::string& server);
+    const blb::auth::account* pick(const std::string& login, const std::string& server, const std::string& preferred);
+    bool suits(const blb::auth::account& account, const std::string& login, const std::string& server);
     std::string requirement(const std::string& login, const std::string& server);
 
     void refresh(const std::string& key);

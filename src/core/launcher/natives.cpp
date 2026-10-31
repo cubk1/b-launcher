@@ -9,7 +9,9 @@
 
 #include <atomic>
 #include <mutex>
+#include <system_error>
 #include <unordered_set>
+#include <vector>
 
 namespace b_launcher_base::launch
 {
@@ -46,37 +48,13 @@ collect_native_archives (const meta::version &resolved,
   return out;
 }
 
-result<natives_report>
-prepare_natives (const meta::version &resolved,
-                 const meta::game_layout &layout,
-                 const meta::rule_context &context,
-                 const std::filesystem::path &directory, thread_pool *pool)
+namespace
 {
-  natives_report report;
-  auto archives = collect_native_archives (resolved, layout, context);
-  report.archives = archives.size ();
 
-  sha1 signature;
-  for (const auto &archive : archives)
-    {
-      auto st = fs::stat (archive.jar);
-      if (!st.exists)
-        return make_error (errc::not_found,
-                           sformat ("native library '{}' is missing",
-                                    path_to_utf8 (archive.jar)));
-      signature.update (path_to_utf8 (archive.jar));
-      signature.update (sformat ("|{}|{}\n", st.size, st.mtime));
-    }
-  auto stamp = to_hex (signature.finish ());
-  auto stamp_file = directory / stamp_name;
-  if (auto existing = fs::read_file (stamp_file);
-      existing && *existing == stamp)
-    {
-      report.reused = true;
-      return report;
-    }
-
-  BLB_TRY (fs::remove_all (directory));
+result<std::size_t>
+extract_into (const std::vector<native_archive> &archives,
+              const std::filesystem::path &directory, thread_pool *pool)
+{
   BLB_TRY (fs::create_directories (directory));
   std::atomic<std::size_t> extracted { 0 };
   std::mutex error_mutex;
@@ -127,8 +105,99 @@ prepare_natives (const meta::version &resolved,
       });
   if (failure)
     return *failure;
-  report.extracted = extracted.load ();
-  BLB_TRY (fs::write_file (stamp_file, stamp));
+  return extracted.load ();
+}
+
+bool
+stamped (const std::filesystem::path &directory, const std::string &stamp)
+{
+  auto existing = fs::read_file (directory / stamp_name);
+  return existing && *existing == stamp;
+}
+
+bool
+discard (const std::filesystem::path &directory)
+{
+  std::error_code error;
+  if (!std::filesystem::exists (directory, error))
+    return !error;
+  auto aside = directory;
+  aside += "-gone-" + random_bytes_hex (4);
+  std::filesystem::rename (directory, aside, error);
+  if (error)
+    return false;
+  (void)fs::remove_all (aside);
+  return true;
+}
+
+void
+forget_spares (const std::filesystem::path &directory)
+{
+  std::error_code error;
+  auto prefix = directory.filename ().wstring () + L"-";
+  std::vector<std::filesystem::path> spares;
+  for (std::filesystem::directory_iterator
+           it (directory.parent_path (), error),
+       end;
+       !error && it != end; it.increment (error))
+    {
+      auto name = it->path ().filename ().wstring ();
+      if (it->is_directory (error) && name.starts_with (prefix))
+        spares.push_back (it->path ());
+    }
+  for (const auto &spare : spares)
+    (void)discard (spare);
+}
+
+}
+
+result<natives_report>
+prepare_natives (const meta::version &resolved,
+                 const meta::game_layout &layout,
+                 const meta::rule_context &context,
+                 const std::filesystem::path &directory, thread_pool *pool)
+{
+  natives_report report;
+  auto archives = collect_native_archives (resolved, layout, context);
+  report.archives = archives.size ();
+
+  sha1 signature;
+  for (const auto &archive : archives)
+    {
+      auto st = fs::stat (archive.jar);
+      if (!st.exists)
+        return make_error (errc::not_found,
+                           sformat ("native library '{}' is missing",
+                                    path_to_utf8 (archive.jar)));
+      signature.update (path_to_utf8 (archive.jar));
+      signature.update (sformat ("|{}|{}\n", st.size, st.mtime));
+    }
+  auto stamp = to_hex (signature.finish ());
+  auto spare = directory;
+  spare += "-" + stamp.substr (0, 12);
+  for (const auto &candidate : { directory, spare })
+    if (stamped (candidate, stamp))
+      {
+        report.reused = true;
+        report.directory = candidate;
+        return report;
+      }
+
+  report.directory = directory;
+  if (!discard (directory))
+    {
+      s_log.debug ("natives in {} are in use, extracting beside them",
+                   path_to_utf8 (directory));
+      report.directory = spare;
+      if (!discard (spare))
+        return make_error (errc::io, sformat ("cannot replace natives in {}",
+                                              path_to_utf8 (spare)));
+    }
+  BLB_TRY_ASSIGN (report.extracted,
+                  extract_into (archives, report.directory, pool));
+  if (report.directory == directory)
+    forget_spares (directory);
+  BLB_TRY (fs::write_file (report.directory / stamp_name, stamp));
   s_log.debug ("extracted {} native files from {} archives", report.extracted,
                report.archives);
   return report;

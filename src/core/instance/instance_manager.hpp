@@ -37,6 +37,7 @@ struct instance_settings
   std::string server;
   std::string login;
   std::string auth_server;
+  std::string account;
   std::string notes;
   std::string wrapper;
   std::string pre_launch;

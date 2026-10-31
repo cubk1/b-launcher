@@ -182,6 +182,7 @@ game_launcher::prepare (const launch_settings &settings,
   auto game_dir = settings.game_directory.empty () ? layout.root ()
                                                    : settings.game_directory;
   auto natives_dir = layout.natives_dir (settings.version_id);
+  auto natives_used = natives_dir;
   auto host_rules = meta::rule_context::current ();
   BLB_TRY (fs::create_directories (game_dir));
 
@@ -241,7 +242,9 @@ game_launcher::prepare (const launch_settings &settings,
     if (!native_files.empty ())
       BLB_TRY (installer.ensure_files (native_files, callbacks.progress, t,
                                        "natives"));
-    BLB_TRY (prepare_natives (out.version, layout, host_rules, natives_dir));
+    BLB_TRY_ASSIGN (auto natives, prepare_natives (out.version, layout,
+                                                   host_rules, natives_dir));
+    natives_used = natives.directory;
     out.timings.natives = since (begin);
     return {};
   });
@@ -257,7 +260,9 @@ game_launcher::prepare (const launch_settings &settings,
       if (!extra.empty ())
         BLB_TRY (installer.ensure_files (std::move (extra), callbacks.progress,
                                          token, "natives"));
-      BLB_TRY (prepare_natives (out.version, layout, java_rules, natives_dir));
+      BLB_TRY_ASSIGN (auto natives, prepare_natives (out.version, layout,
+                                                     java_rules, natives_dir));
+      natives_used = natives.directory;
     }
 
   launch_context ctx;
@@ -266,7 +271,7 @@ game_launcher::prepare (const launch_settings &settings,
   ctx.account = out.account;
   ctx.java = out.java;
   ctx.game_directory = game_dir;
-  ctx.natives_directory = natives_dir;
+  ctx.natives_directory = natives_used;
   ctx.rules = java_rules;
   ctx.settings = settings;
   BLB_TRY_ASSIGN (out.command, build_launch_command (ctx));

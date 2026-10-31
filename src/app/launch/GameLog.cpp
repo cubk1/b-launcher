@@ -8,9 +8,11 @@
 #endif
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -18,20 +20,43 @@ namespace GameLog {
 
     namespace {
 
-        std::mutex lock;
-        std::vector<Line> pending;
-        bool restart = false;
-        std::string pendingTitle;
-        uint64_t pendingDropped = 0;
-
         struct Event {
             bool open = false;
             std::string text;
         };
-        Event events[2];
-        bool xml[2] = {false, false};
 
-        Level lastLevel[2] = {Level::Info, Level::Info};
+        struct Log {
+            int id = 0;
+            std::string name;
+            Event events[2];
+            bool xml[2] = {false, false};
+            Level lastLevel[2] = {Level::Info, Level::Info};
+            std::vector<Line> pending;
+            uint64_t pendingDropped = 0;
+            std::deque<Line> kept;
+            std::vector<Line> waiting;
+            uint64_t firstNumber = 0;
+            uint64_t droppedCount = 0;
+            size_t counts[LEVEL_COUNT] = {};
+            bool paused = false;
+        };
+
+        std::mutex lock;
+        std::vector<std::shared_ptr<Log>> logs;
+        std::shared_ptr<Log> current;
+        int nextId = 1;
+        uint64_t generationNumber = 0;
+        const std::deque<Line> nothing;
+        const std::string unnamed;
+
+        std::shared_ptr<Log> find(int id) {
+            for (const std::shared_ptr<Log>& log : logs) {
+                if (log->id == id) {
+                    return log;
+                }
+            }
+            return nullptr;
+        }
 
         bool validUtf8(std::string_view text) {
             size_t i = 0;
@@ -117,24 +142,24 @@ namespace GameLog {
                     (startsWith(text.substr(i), "at ") || startsWith(text.substr(i), "... "));
         }
 
-        void push(std::string text, Level level) {
-            pending.push_back(Line{std::move(text), level});
-            if (pending.size() > MAX_LINES + MAX_LINES / 4) {
-                size_t extra = pending.size() - MAX_LINES;
-                pending.erase(pending.begin(), pending.begin() + (ptrdiff_t) extra);
-                pendingDropped += extra;
+        void push(Log& log, std::string text, Level level) {
+            log.pending.push_back(Line{std::move(text), level});
+            if (log.pending.size() > MAX_LINES + MAX_LINES / 4) {
+                size_t extra = log.pending.size() - MAX_LINES;
+                log.pending.erase(log.pending.begin(), log.pending.begin() + (ptrdiff_t) extra);
+                log.pendingDropped += extra;
             }
         }
 
-        void plain(std::string_view raw, int stream) {
+        void plain(Log& log, std::string_view raw, int stream) {
             std::string text = toUtf8(raw);
             Level level;
             if (!levelIn(text, level)) {
-                level = continuation(text) ? lastLevel[stream] : (stream == 1 ? Level::Warn : Level::Info);
+                level = continuation(text) ? log.lastLevel[stream] : (stream == 1 ? Level::Warn : Level::Info);
             }
-            lastLevel[stream] = level;
+            log.lastLevel[stream] = level;
             std::lock_guard<std::mutex> guard(lock);
-            push(std::move(text), level);
+            push(log, std::move(text), level);
         }
 
         std::string attribute(const std::string& event, const char* name) {
@@ -169,7 +194,7 @@ namespace GameLog {
             return Level::Info;
         }
 
-        void event(const std::string& raw, int stream) {
+        void event(Log& log, const std::string& raw, int stream) {
             std::string text = toUtf8(raw);
             std::string levelName = attribute(text, "level");
             Level level = levelNamed(levelName);
@@ -188,7 +213,7 @@ namespace GameLog {
                     (levelName.empty() ? std::string("INFO") : levelName) + "]: ";
             std::string message = cdata(text, "log4j:Message");
             std::string throwable = cdata(text, "log4j:Throwable");
-            lastLevel[stream] = level;
+            log.lastLevel[stream] = level;
             std::lock_guard<std::mutex> guard(lock);
             bool firstLine = true;
             auto emit = [&](const std::string& body, bool prefixed) {
@@ -201,7 +226,7 @@ namespace GameLog {
                         line.pop_back();
                     }
                     if (!(newline == std::string::npos && line.empty() && !firstLine)) {
-                        push(prefixed && firstLine ? prefix + line : line, level);
+                        push(log, prefixed && firstLine ? prefix + line : line, level);
                     }
                     firstLine = false;
                     if (newline == std::string::npos) {
@@ -216,75 +241,68 @@ namespace GameLog {
             }
         }
 
-        std::deque<Line> kept;
-        std::vector<Line> waiting;
-        uint64_t firstNumber = 0;
-        uint64_t generationNumber = 0;
-        uint64_t droppedCount = 0;
-        size_t counts[LEVEL_COUNT] = {};
-        std::string name;
-        bool pausedNow = false;
-        bool started = false;
-
-        void trim() {
-            while (kept.size() + waiting.size() > MAX_LINES && !kept.empty()) {
-                counts[(int) kept.front().level]--;
-                kept.pop_front();
-                firstNumber++;
-                droppedCount++;
+        void trim(Log& log) {
+            while (log.kept.size() + log.waiting.size() > MAX_LINES && !log.kept.empty()) {
+                log.counts[(int) log.kept.front().level]--;
+                log.kept.pop_front();
+                log.firstNumber++;
+                log.droppedCount++;
             }
-            if (waiting.size() > MAX_LINES) {
-                size_t extra = waiting.size() - MAX_LINES;
-                waiting.erase(waiting.begin(), waiting.begin() + (ptrdiff_t) extra);
-                droppedCount += extra;
+            if (log.waiting.size() > MAX_LINES) {
+                size_t extra = log.waiting.size() - MAX_LINES;
+                log.waiting.erase(log.waiting.begin(), log.waiting.begin() + (ptrdiff_t) extra);
+                log.droppedCount += extra;
             }
         }
 
-        void keep(std::vector<Line>& lines) {
+        void keep(Log& log, std::vector<Line>& lines) {
             for (Line& line : lines) {
-                counts[(int) line.level]++;
-                kept.push_back(std::move(line));
+                log.counts[(int) line.level]++;
+                log.kept.push_back(std::move(line));
             }
             lines.clear();
         }
-
-        void reset() {
-            kept.clear();
-            waiting.clear();
-            firstNumber = 0;
-            droppedCount = 0;
-            for (size_t& count : counts) {
-                count = 0;
-            }
-            generationNumber++;
-        }
     }
 
-    void begin(const std::string& title) {
+    int begin(const std::string& title, int replace) {
+        auto log = std::make_shared<Log>();
+        log->name = title;
         std::lock_guard<std::mutex> guard(lock);
-        pending.clear();
-        pendingDropped = 0;
-        restart = true;
-        pendingTitle = title;
-        events[0] = Event();
-        events[1] = Event();
-        xml[0] = false;
-        xml[1] = false;
-        lastLevel[0] = Level::Info;
-        lastLevel[1] = Level::Info;
+        log->id = nextId++;
+        auto at = std::find_if(logs.begin(), logs.end(),
+                               [replace](const std::shared_ptr<Log>& old) { return old->id == replace; });
+        if (replace != 0 && at != logs.end()) {
+            *at = log;
+        } else {
+            logs.push_back(log);
+            while (logs.size() > MAX_LOGS) {
+                logs.erase(logs.begin());
+            }
+        }
+        current = log;
+        generationNumber++;
+        return log->id;
     }
 
-    void feed(std::string_view line, bool error) {
+    void feed(int id, std::string_view line, bool error) {
+        std::shared_ptr<Log> log;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            log = find(id);
+        }
+        if (log == nullptr) {
+            return;
+        }
         int stream = error ? 1 : 0;
-        Event& event = events[stream];
+        Event& event = log->events[stream];
         size_t indent = line.find_first_not_of(" \t");
         std::string_view trimmed = indent == std::string_view::npos ? std::string_view() : line.substr(indent);
         if (!event.open && startsWith(trimmed, "<log4j:Event")) {
             event.open = true;
             event.text.clear();
-            xml[stream] = true;
+            log->xml[stream] = true;
         }
-        if (!event.open && xml[stream] && trimmed.empty()) {
+        if (!event.open && log->xml[stream] && trimmed.empty()) {
             return;
         }
         if (event.open) {
@@ -292,64 +310,102 @@ namespace GameLog {
             event.text += '\n';
             if (line.find("</log4j:Event>") != std::string_view::npos) {
                 event.open = false;
-                GameLog::event(event.text, stream);
+                GameLog::event(*log, event.text, stream);
             } else if (event.text.size() > (4u << 20)) {
                 event.open = false;
-                plain(event.text, stream);
+                plain(*log, event.text, stream);
             }
             return;
         }
-        plain(line, stream);
+        plain(*log, line, stream);
     }
 
-    void note(const std::string& text) {
+    void note(int id, const std::string& text) {
         std::lock_guard<std::mutex> guard(lock);
-        push("[b-launcher] " + text, Level::Launcher);
+        if (std::shared_ptr<Log> log = find(id)) {
+            push(*log, "[b-launcher] " + text, Level::Launcher);
+        }
     }
 
     void poll() {
-        std::vector<Line> arrived;
-        uint64_t lost = 0;
-        bool startOver = false;
-        std::string title;
+        std::vector<std::pair<std::shared_ptr<Log>, std::vector<Line>>> arrived;
+        std::vector<uint64_t> lost;
         {
             std::lock_guard<std::mutex> guard(lock);
-            arrived.swap(pending);
-            lost = pendingDropped;
-            pendingDropped = 0;
-            startOver = restart;
-            restart = false;
-            title = pendingTitle;
+            for (const std::shared_ptr<Log>& log : logs) {
+                if (log->pending.empty() && log->pendingDropped == 0) {
+                    continue;
+                }
+                arrived.emplace_back(log, std::vector<Line>());
+                arrived.back().second.swap(log->pending);
+                lost.push_back(log->pendingDropped);
+                log->pendingDropped = 0;
+            }
         }
-        if (startOver) {
-            reset();
-            name = title;
-            started = true;
+        for (size_t i = 0; i < arrived.size(); i++) {
+            Log& log = *arrived[i].first;
+            std::vector<Line>& lines = arrived[i].second;
+            log.droppedCount += lost[i];
+            if (log.paused) {
+                for (Line& line : lines) {
+                    log.waiting.push_back(std::move(line));
+                }
+            } else {
+                keep(log, lines);
+            }
+            trim(log);
         }
-        droppedCount += lost;
-        if (arrived.empty()) {
+    }
+
+    std::vector<Tab> tabs() {
+        std::lock_guard<std::mutex> guard(lock);
+        std::vector<Tab> out;
+        for (const std::shared_ptr<Log>& log : logs) {
+            out.push_back(Tab{log->id, log->name});
+        }
+        return out;
+    }
+
+    int shown() {
+        return current != nullptr ? current->id : 0;
+    }
+
+    void show(int id) {
+        std::lock_guard<std::mutex> guard(lock);
+        std::shared_ptr<Log> log = find(id);
+        if (log == nullptr || log == current) {
             return;
         }
-        if (pausedNow) {
-            for (Line& line : arrived) {
-                waiting.push_back(std::move(line));
-            }
-        } else {
-            keep(arrived);
+        current = log;
+        generationNumber++;
+    }
+
+    void close(int id) {
+        std::lock_guard<std::mutex> guard(lock);
+        auto at =
+                std::find_if(logs.begin(), logs.end(), [id](const std::shared_ptr<Log>& log) { return log->id == id; });
+        if (at == logs.end()) {
+            return;
         }
-        trim();
+        bool wasShown = *at == current;
+        size_t index = (size_t) (at - logs.begin());
+        logs.erase(at);
+        if (wasShown) {
+            current = logs.empty() ? nullptr : logs[std::min(index, logs.size() - 1)];
+            generationNumber++;
+        }
     }
 
     const std::deque<Line>& lines() {
-        return kept;
+        return current != nullptr ? current->kept : nothing;
     }
 
     uint64_t first() {
-        return firstNumber;
+        return current != nullptr ? current->firstNumber : 0;
     }
 
     uint64_t end() {
-        return firstNumber + kept.size();
+        return current != nullptr ? current->firstNumber + current->kept.size() : 0;
     }
 
     uint64_t generation() {
@@ -357,41 +413,51 @@ namespace GameLog {
     }
 
     size_t count(Level level) {
-        return counts[(int) level];
+        return current != nullptr ? current->counts[(int) level] : 0;
     }
 
     const std::string& title() {
-        return name;
+        return current != nullptr ? current->name : unnamed;
     }
 
     bool any() {
-        return started;
+        return current != nullptr;
     }
 
     bool paused() {
-        return pausedNow;
+        return current != nullptr && current->paused;
     }
 
     void setPaused(bool paused) {
-        if (pausedNow == paused) {
+        if (current == nullptr || current->paused == paused) {
             return;
         }
-        pausedNow = paused;
+        current->paused = paused;
         if (!paused) {
-            keep(waiting);
-            trim();
+            keep(*current, current->waiting);
+            trim(*current);
         }
     }
 
     size_t held() {
-        return waiting.size();
+        return current != nullptr ? current->waiting.size() : 0;
     }
 
     uint64_t dropped() {
-        return droppedCount;
+        return current != nullptr ? current->droppedCount : 0;
     }
 
     void clear() {
-        reset();
+        if (current == nullptr) {
+            return;
+        }
+        current->kept.clear();
+        current->waiting.clear();
+        current->firstNumber = 0;
+        current->droppedCount = 0;
+        for (size_t& count : current->counts) {
+            count = 0;
+        }
+        generationNumber++;
     }
 }

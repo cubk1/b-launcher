@@ -411,7 +411,7 @@ namespace ForgottenMelody {
 
             void show(const Addons::Hit& hit) {
                 title = Platform::widen(hit.title);
-                std::string line = hit.author.empty() ? std::string() : "by " + hit.author + "  ·  ";
+                std::string line = hit.author.empty() ? std::string() : "by " + hit.author + "  -  ";
                 byline = Platform::widen(line + Addons::count(hit.downloads) + " 次下载");
                 description = Platform::widen(hit.description);
                 iconUrl = hit.iconUrl;
@@ -1149,7 +1149,7 @@ namespace ForgottenMelody {
                     for (const Addons::Hit& hit : shown.hits) {
                         std::string byline = hit.author.empty() ? std::string() : "by " + hit.author;
                         for (const std::string& category : hit.categories) {
-                            byline += "  · " + (source == Source::Modrinth ? Modrinth::label(category) : category);
+                            byline += "  - " + (source == Source::Modrinth ? Modrinth::label(category) : category);
                         }
                         rows.push_back({Platform::widen(hit.title), Platform::widen(byline),
                                         Platform::widen(hit.description),

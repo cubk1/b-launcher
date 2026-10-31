@@ -585,6 +585,18 @@ namespace Accounts {
         return nullptr;
     }
 
+    const blb::auth::account* pick(const std::string& login, const std::string& server, const std::string& preferred) {
+        const blb::auth::account* wanted = preferred.empty() ? nullptr : find(preferred);
+        if (wanted != nullptr && matches(*wanted, login, server)) {
+            return wanted;
+        }
+        return pick(login, server);
+    }
+
+    bool suits(const blb::auth::account& account, const std::string& login, const std::string& server) {
+        return matches(account, login, server);
+    }
+
     std::string requirement(const std::string& login, const std::string& server) {
         std::string wanted(blb::trim(server));
         if (login == "microsoft") {

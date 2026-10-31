@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/instances/InstancePage.h"
+#include "app/accounts/Accounts.h"
 #include "app/system/Catalog.h"
 #include "app/launch/Game.h"
 #include "ui/imgui/screens/shell/Icons.h"
@@ -12,6 +13,7 @@
 #include "app/instances/Mods.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "ui/imgui/screens/shell/Page.h"
+#include "ui/imgui/screens/shell/Textures.h"
 #include "app/launch/Patches.h"
 #include "app/system/Platform.h"
 
@@ -460,7 +462,7 @@ namespace InstancePage {
             const Platform::Memory& memory = memoryNow();
             uint32_t used = memory.totalMb - std::min(memory.availableMb, memory.totalMb);
             uint32_t allocation = allocationOf(entry.info.settings, memory.totalMb);
-            bool running = Game::state() != Game::State::Idle && Game::instance() == entry.key;
+            bool running = Game::state(entry.key) != Game::State::Idle;
             std::string text;
             uint32_t color;
             if (!running && allocation > memory.availableMb) {
@@ -763,7 +765,55 @@ namespace InstancePage {
         }
 
         int serverCount(const Instances::Entry& entry) {
-            return needsAuthServer(entry) ? 3 : 2;
+            return needsAuthServer(entry) ? 4 : 3;
+        }
+
+        const char* const FOLLOW_ACCOUNT = "跟随当前账号";
+
+        std::string accountLabel(const blb::auth::account& account) {
+            return account.name + "（" + Accounts::kindOf(account) + "）";
+        }
+
+        std::shared_ptr<ModeBinding> accountSetting(const std::string& id) {
+            auto binding = std::make_shared<ModeBinding>(
+                    owner(id, "account"),
+                    [id] {
+                        const Settings* settings = settingsOf(id);
+                        const blb::auth::account* bound = settings != nullptr && !settings->account.empty()
+                                ? Accounts::find(settings->account)
+                                : nullptr;
+                        if (bound == nullptr || !Accounts::suits(*bound, settings->login, settings->auth_server)) {
+                            return std::string(FOLLOW_ACCOUNT);
+                        }
+                        return accountLabel(*bound);
+                    },
+                    [id](const std::string& label) {
+                        std::string chosen;
+                        for (const blb::auth::account& account : Accounts::list()) {
+                            if (accountLabel(account) == label) {
+                                chosen = Accounts::keyOf(account);
+                            }
+                        }
+                        Game::setAccount(id, chosen);
+                    },
+                    [id] {
+                        std::vector<std::string> labels = {FOLLOW_ACCOUNT};
+                        const Settings* settings = settingsOf(id);
+                        for (const blb::auth::account& account : Accounts::list()) {
+                            if (settings == nullptr ||
+                                Accounts::suits(account, settings->login, settings->auth_server)) {
+                                labels.push_back(accountLabel(account));
+                            }
+                        }
+                        return labels;
+                    });
+            binding->icon(FOLLOW_ACCOUNT, 0xf0c1);
+            for (const blb::auth::account& account : Accounts::list()) {
+                if (uint32_t face = Textures::of(Accounts::face(account))) {
+                    binding->image(accountLabel(account), face);
+                }
+            }
+            return binding;
         }
 
         std::shared_ptr<ModeBinding> loginSetting(const std::string& id) {
@@ -807,6 +857,11 @@ namespace InstancePage {
 
             Page::label("登录方式", rowY);
             select("instance#login", loginSetting(id), Page::controlRight() - WIDE_FIELD, rowY, WIDE_FIELD, blocked);
+            rowY += Page::ROW_H;
+
+            Page::label("启动账号", rowY);
+            select("instance#account", accountSetting(id), Page::controlRight() - WIDE_FIELD, rowY, WIDE_FIELD,
+                   blocked);
             rowY += Page::ROW_H;
 
             if (needsAuthServer(entry)) {
@@ -1183,7 +1238,7 @@ namespace InstancePage {
                                     })->enabledIf([id] { return MainWindow::shownInstance() != id; }));
                     items.push_back(ActionMenuItem::make("测试游戏", 0xf188, [id] {
                                         Game::launch(id, true);
-                                    })->enabledIf([] { return Game::state() == Game::State::Idle; }));
+                                    })->enabledIf([id] { return Game::state(id) != Game::State::Preparing; }));
                     items.push_back(ActionMenuItem::make("生成快捷方式", 0xf108, [id] { openShortcut(id); }));
                     items.push_back(ActionMenuItem::make("打开游戏目录", 0xf07c, [id] {
                         if (const Instances::Entry* entry = Instances::find(id)) {

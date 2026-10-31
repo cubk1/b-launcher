@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
+#include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "app/system/About.h"
 #include "ui/imgui/screens/shell/Icons.h"
@@ -39,6 +40,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace LogWindow {
 
@@ -313,6 +316,76 @@ namespace LogWindow {
             return button.pressed;
         }
 
+        std::vector<std::pair<float, float>> tabSpans;
+
+        uint32_t liveColor(Game::State state) {
+            if (state == Game::State::Preparing) {
+                return UiTheme::accent();
+            }
+            return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
+        }
+
+        void tabs(float x, float limit) {
+            std::vector<GameLog::Tab> list = GameLog::tabs();
+            std::vector<Game::Session> sessions = Game::sessions();
+            const float tabH = 28.0f;
+            const float gap = 4.0f;
+            float top = (TITLE_H - tabH) * 0.5f;
+            float each = std::clamp((limit - x - gap * (list.size() - 1)) / list.size(), 72.0f, 200.0f);
+            for (const GameLog::Tab& tab : list) {
+                if (x + 48.0f > limit) {
+                    break;
+                }
+                float tabW = std::min(each, limit - x);
+                Game::State state = Game::State::Idle;
+                for (const Game::Session& session : sessions) {
+                    if (session.log == tab.id && state != Game::State::Preparing) {
+                        state = session.state;
+                    }
+                }
+                bool live = state != Game::State::Idle;
+                bool active = tab.id == GameLog::shown();
+                bool over = NewUi::hit(x, top, tabW, tabH);
+                std::string id = "log#tab#" + std::to_string(tab.id);
+                float lit = UiState::motion(id, active ? 1.0f : (over ? 0.5f : 0.0f), 18.0f);
+                if (lit > 0.001f) {
+                    UiRender::roundRect(x, top, tabW, tabH, 8.0f,
+                                        UiRender::mix(UiTheme::clear(), UiTheme::navHover(), lit));
+                }
+                float textX = x + 10.0f;
+                if (live) {
+                    UiRender::circle(textX + 3.0f, top + tabH * 0.5f, 3.0f, liveColor(state));
+                    textX += 12.0f;
+                }
+                float closeRoom = live ? 0.0f : 20.0f;
+                std::string text = UiFont::fitEnd(tab.title, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                                  std::max(0.0f, x + tabW - 8.0f - closeRoom - textX));
+                UiRender::textY(text, textX, top, tabH,
+                                UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), active ? 1.0f : lit),
+                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                if (text != tab.title && over) {
+                    tip(tab.title, x, top, tabW, tabH);
+                }
+                float closeX = x + tabW - 22.0f;
+                if (!live && (over || active)) {
+                    bool closing = NewUi::hit(closeX, top + 4.0f, 18.0f, tabH - 8.0f);
+                    UiWidgets::icon(Ui::glyph(0xf00d), closeX + 9.0f, top + tabH * 0.5f,
+                                    closing ? UiTheme::textPrimary() : UiTheme::textMuted(), 8.0f);
+                    if (NewUi::click(closeX, top + 4.0f, 18.0f, tabH - 8.0f)) {
+                        GameLog::close(tab.id);
+                        tabSpans.emplace_back(x, tabW);
+                        return;
+                    }
+                }
+                if (NewUi::click(x, top, tabW, tabH)) {
+                    UiSound::request(UiSound::TICK);
+                    GameLog::show(tab.id);
+                }
+                tabSpans.emplace_back(x, tabW);
+                x += tabW + gap;
+            }
+        }
+
         void titleBar() {
             float w = width();
             Logo::draw(PAD + 2.0f, (TITLE_H - 18.0f) * 0.5f, 18.0f);
@@ -320,7 +393,10 @@ namespace LogWindow {
             const char* title = "游戏日志";
             UiRender::textY(title, x, 0.0f, TITLE_H, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
             x += UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 10.0f;
-            if (!GameLog::title().empty()) {
+            tabSpans.clear();
+            if (GameLog::tabs().size() > 1) {
+                tabs(x, w - 130.0f);
+            } else if (!GameLog::title().empty()) {
                 UiRender::textY(
                         UiFont::fitEnd(GameLog::title(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w - 130.0f - x), x,
                         0.0f, TITLE_H, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -748,6 +824,11 @@ namespace LogWindow {
             window.isDragArea = [](int x, int y) {
                 float lx = x / layoutScale;
                 float ly = y / layoutScale;
+                for (const std::pair<float, float>& span : tabSpans) {
+                    if (lx >= span.first && lx <= span.first + span.second) {
+                        return false;
+                    }
+                }
                 return ly < TITLE_H && lx < width() - 110.0f;
             };
             int w = (int) (START_W * layoutScale + 0.5f);

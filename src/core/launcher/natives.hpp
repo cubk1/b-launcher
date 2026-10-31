@@ -24,6 +24,7 @@ struct natives_report
   std::size_t archives = 0;
   std::size_t extracted = 0;
   bool reused = false;
+  std::filesystem::path directory;
 };
 
 std::vector<native_archive>

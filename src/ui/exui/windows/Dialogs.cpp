@@ -235,7 +235,7 @@ namespace ForgottenMelody {
         for (int i = 0; i < (int) sections.size(); i++) {
             FindControl(sections[i].panel)->SetVisible(i == index);
         }
-        SetText(TITLE, subject.empty() ? sections[index].name : subject + L" · " + sections[index].name);
+        SetText(TITLE, subject.empty() ? sections[index].name : subject + L" - " + sections[index].name);
         auto* names = dynamic_cast<exui::ListView*>(FindControl(SECTIONS));
         if (names != nullptr && names->GetSelectedRow() != index) {
             names->SetSelectedRow(index);

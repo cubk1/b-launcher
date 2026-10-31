@@ -58,7 +58,7 @@ namespace Services {
     }
 
     bool busy() {
-        return Game::state() != Game::State::Idle || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || Exports::running() || !Instances::activity().empty();
+        return Game::active() || Installer::running() || JavaDownloads::busy() || ProjectInstaller::busy() ||
+                Exports::running() || !Instances::activity().empty();
     }
 }

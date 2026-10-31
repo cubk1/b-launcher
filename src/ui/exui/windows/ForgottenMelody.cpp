@@ -104,10 +104,10 @@ namespace ForgottenMelody {
                     }
                 }
                 if (headless) {
-                    if (launchSent && Game::state() == Game::State::Running) {
+                    if (launchSent && Game::running()) {
                         headless = false;
                         window.CloseWindow();
-                    } else if (launchFailed || (launchSent && Game::state() == Game::State::Idle)) {
+                    } else if (launchFailed || (launchSent && !Game::active())) {
                         headless = false;
                         Game::setQuiet(false);
                         window.ShowWindowWithAnimation();

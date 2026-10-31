@@ -58,6 +58,8 @@ settings_to_json (const instance_settings &s)
     out["login"] = s.login;
   if (!s.auth_server.empty ())
     out["authServer"] = s.auth_server;
+  if (!s.account.empty ())
+    out["account"] = s.account;
   if (!s.notes.empty ())
     out["notes"] = s.notes;
   if (!s.wrapper.empty ())
@@ -116,6 +118,7 @@ settings_from_json (const json &doc)
   s.server = doc.value ("server", std::string ());
   s.login = doc.value ("login", std::string ());
   s.auth_server = doc.value ("authServer", std::string ());
+  s.account = doc.value ("account", std::string ());
   s.notes = doc.value ("notes", std::string ());
   s.wrapper = doc.value ("wrapper", std::string ());
   s.pre_launch = doc.value ("preLaunch", std::string ());

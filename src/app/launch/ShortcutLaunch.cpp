@@ -40,13 +40,12 @@ namespace ShortcutLaunch {
         bool launched = false;
         if (Instances::find(key) == nullptr) {
             Instances::notify("找不到实例 " + name + "，快捷方式可能已失效", true);
-        } else if (Game::state() != Game::State::Idle) {
-            Instances::notify("已有游戏正在启动或运行，没有启动 " + name, true);
+        } else if (Game::state(key) != Game::State::Idle) {
+            Instances::notify(name + " 已在启动或运行中", true);
         } else {
             Instances::select(key);
             Interface::showInstance(key);
-            Game::launch(key);
-            launched = Game::state() != Game::State::Idle;
+            launched = Game::launch(key) != 0;
         }
         done = Outcome{launched, pendingQuiet};
     }

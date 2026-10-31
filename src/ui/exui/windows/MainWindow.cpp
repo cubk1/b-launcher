@@ -158,12 +158,12 @@ namespace ForgottenMelody {
 
         const auto* current = Accounts::current();
         std::wstring account = current == nullptr ? std::wstring(L"还没有账号")
-                                                  : Platform::widen(current->name + " · " + Accounts::kindOf(*current));
+                                                  : Platform::widen(current->name + " - " + Accounts::kindOf(*current));
         if (account != Text(ACCOUNT)) {
             SetText(ACCOUNT, account);
         }
 
-        Game::State state = Game::state();
+        Game::State state = Game::state(Instances::selected());
         std::wstring caption = launchCaption(state);
         if (caption != Text(LAUNCH)) {
             SetText(LAUNCH, caption);

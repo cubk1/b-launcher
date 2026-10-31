@@ -454,10 +454,6 @@ namespace Homepage {
 
         void launch(const std::string& data) {
             std::string version = Ui::trim(data.substr(0, data.find('|')));
-            if (Game::state() != Game::State::Idle) {
-                notify("游戏正在启动或运行中", false);
-                return;
-            }
             const Instances::Entry* chosen = nullptr;
             const Instances::Entry* current = Instances::find(Instances::selected());
             if (version.empty() || (current != nullptr && current->info.id == version)) {
@@ -473,6 +469,10 @@ namespace Homepage {
             }
             if (chosen == nullptr) {
                 notify("没有找到版本 " + version + "，请先安装它", true);
+                return;
+            }
+            if (Game::state(chosen->key) != Game::State::Idle) {
+                notify(chosen->info.id + " 已在启动或运行中", false);
                 return;
             }
             Instances::select(chosen->key);
@@ -781,15 +781,17 @@ namespace Homepage {
             float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
             float cx = (panelLeft + panelRight) * 0.5f;
             bool covered = blocked || modal.open;
-            if (listH > 0.0f && bottom - top - listH - gap < LOGO_MIN + TOP_PAD) {
-                Page::Scroll body("homepage#widgets", top, bottom, listH + 2.0f * TOP_PAD, left, right - left);
+            float floor = listH > 0.0f ? bottom - reserve : bottom;
+            if (listH > 0.0f && floor - top - listH - gap < LOGO_MIN + TOP_PAD) {
+                Page::Scroll body("homepage#widgets", top, bottom, listH + 2.0f * TOP_PAD + reserve, left,
+                                  right - left);
                 bool outside = body.begin();
                 HomeWidgets::draw(cx - QUICK_W * 0.5f, body.top - body.offset + TOP_PAD, QUICK_W, covered || outside);
                 body.end();
             } else {
-                float size = std::clamp(std::min(panelRight - panelLeft, bottom - top - listH - gap) * 0.46f, LOGO_MIN,
+                float size = std::clamp(std::min(panelRight - panelLeft, floor - top - listH - gap) * 0.46f, LOGO_MIN,
                                         360.0f);
-                float logoY = (top + bottom - size - gap - listH) * 0.5f - 8.0f;
+                float logoY = (top + floor - size - gap - listH) * 0.5f - 8.0f;
                 float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
                                                             : (UiTheme::isLight() ? 0.12f : 0.09f);
                 Logo::draw(cx - size * 0.5f, logoY, size, faint);

@@ -403,10 +403,10 @@ namespace ImGuiApp {
             auto started = std::chrono::steady_clock::now();
             frame();
             if (headless) {
-                if (launchSent && Game::state() == Game::State::Running) {
+                if (launchSent && Game::running()) {
                     headless = false;
                     window.close();
-                } else if (launchFailed || (launchSent && Game::state() == Game::State::Idle)) {
+                } else if (launchFailed || (launchSent && !Game::active())) {
                     headless = false;
                     Game::setQuiet(false);
                     window.show(startMaximized);
@@ -427,7 +427,7 @@ namespace ImGuiApp {
                 frameMs = refreshMs(window.hwnd);
             }
             bool lively = UiState::animating() || Notifications::active() || sinceMs(lastInput) < INPUT_GRACE_MS ||
-                    Game::state() == Game::State::Preparing;
+                    Game::preparing();
             if (lively && foreground()) {
                 holdUntil(started, frameMs);
             } else {

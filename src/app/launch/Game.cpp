@@ -37,47 +37,56 @@ namespace Game {
 
         constexpr std::chrono::milliseconds WATCH_INTERVAL{250};
 
-        State current = State::Idle;
-        std::string key;
-        std::string name;
-        std::thread preparer;
-        std::shared_ptr<blb::cancellation_source> cancelling;
-        std::atomic<float> fraction{-1.0f};
-
-        std::mutex lock;
-        bool prepared = false;
-        std::optional<blb::process> started;
-        std::string failure;
-        bool cancelled = false;
-
-        std::string javaUsed;
-        std::string accountKey;
-        std::optional<blb::auth::account> refreshedAccount;
-        bool accountExpired = false;
-
-        blb::process game;
-        bool killed = false;
-        Clock::time_point nextWatch;
-
-        std::string visibility;
-        std::string postExit;
-        Platform::Environment variables;
-        std::filesystem::path commandDirectory;
-        bool hidden = false;
-        bool quiet = false;
-
         const char* const NODES[] = {"auth", "integrity", "java", "natives", "command"};
         const char* const LABELS[] = {"验证账户", "检查游戏文件", "准备 Java", "准备本地库", "运行启动前命令"};
         constexpr int NODE_COUNT = 5;
 
-        std::mutex stepLock;
-        std::vector<Step> stepList;
+        struct Live {
+            int id = 0;
+            std::string key;
+            std::string name;
+            std::string accountKey;
+            std::string accountName;
+            int log = 0;
+            State state = State::Preparing;
+            std::thread preparer;
+            std::shared_ptr<blb::cancellation_source> cancelling;
+            std::atomic<float> fraction{-1.0f};
 
-        void resetSteps(bool command) {
-            std::lock_guard<std::mutex> guard(stepLock);
-            stepList.clear();
+            std::mutex lock;
+            bool prepared = false;
+            std::optional<blb::process> started;
+            std::string failure;
+            bool cancelled = false;
+            std::string javaUsed;
+            std::optional<blb::auth::account> refreshedAccount;
+            bool accountExpired = false;
+
+            std::mutex stepLock;
+            std::vector<Step> steps;
+
+            blb::process game;
+            bool killed = false;
+            Clock::time_point nextWatch;
+            Clock::time_point since;
+
+            std::string visibility;
+            std::string postExit;
+            Platform::Environment variables;
+            std::filesystem::path commandDirectory;
+        };
+
+        std::vector<std::unique_ptr<Live>> lives;
+        std::map<std::string, int> lastLog;
+        int nextId = 1;
+        bool hidden = false;
+        bool quiet = false;
+
+        void resetSteps(Live& live, bool command) {
+            std::lock_guard<std::mutex> guard(live.stepLock);
+            live.steps.clear();
             for (int i = 0; i < NODE_COUNT - (command ? 0 : 1); i++) {
-                stepList.push_back(Step{LABELS[i], Step::Status::Waiting, std::string()});
+                live.steps.push_back(Step{LABELS[i], Step::Status::Waiting, std::string()});
             }
         }
 
@@ -146,13 +155,15 @@ namespace Game {
 
         class Progress final : public blb::progress_sink {
         public:
+            explicit Progress(Live& live) : live(live) {}
+
             void on_stage(std::string_view task, std::string_view stage) override {
-                std::lock_guard<std::mutex> guard(stepLock);
-                for (int i = 0; i < NODE_COUNT && i < (int) stepList.size(); i++) {
+                std::lock_guard<std::mutex> guard(live.stepLock);
+                for (int i = 0; i < NODE_COUNT && i < (int) live.steps.size(); i++) {
                     if (task != NODES[i]) {
                         continue;
                     }
-                    Step& step = stepList[i];
+                    Step& step = live.steps[i];
                     step.status = stage == "start" ? Step::Status::Running
                             : stage == "done"      ? Step::Status::Done
                                                    : Step::Status::Failed;
@@ -178,10 +189,10 @@ namespace Game {
                     }
                 }
                 {
-                    std::lock_guard<std::mutex> guard(stepLock);
+                    std::lock_guard<std::mutex> guard(live.stepLock);
                     int index = stepOfTask(task);
-                    if (index < (int) stepList.size() && stepList[index].status != Step::Status::Done) {
-                        stepList[index].detail = detail;
+                    if (index < (int) live.steps.size() && live.steps[index].status != Step::Status::Done) {
+                        live.steps[index].detail = detail;
                     }
                 }
                 if (!download) {
@@ -199,154 +210,282 @@ namespace Game {
                     done += size.second.first;
                     total += size.second.second;
                 }
-                fraction.store(total > 0 ? (float) ((double) std::min(done, total) / (double) total) : -1.0f);
+                live.fraction.store(total > 0 ? (float) ((double) std::min(done, total) / (double) total) : -1.0f);
             }
 
         private:
+            Live& live;
             std::mutex tasks;
             std::map<std::string, std::pair<uint64_t, uint64_t>> sizes;
         };
 
-        void join() {
-            if (preparer.joinable()) {
-                preparer.join();
+        void join(Live& live) {
+            if (live.preparer.joinable()) {
+                live.preparer.join();
             }
         }
 
-        void finishPreparing() {
-            join();
-            std::optional<blb::process> game_;
-            std::string error;
-            bool wasCancelled;
+        void takeAccount(Live& live) {
             std::optional<blb::auth::account> fresh;
             bool expired;
             {
-                std::lock_guard<std::mutex> guard(lock);
-                game_ = std::move(started);
-                started.reset();
-                error = failure;
-                wasCancelled = cancelled;
-                prepared = false;
-                if (!javaUsed.empty()) {
-                    variables.emplace_back("INST_JAVA", javaUsed);
-                }
-                fresh = std::move(refreshedAccount);
-                refreshedAccount.reset();
-                expired = accountExpired;
+                std::lock_guard<std::mutex> guard(live.lock);
+                fresh = std::move(live.refreshedAccount);
+                live.refreshedAccount.reset();
+                expired = live.accountExpired;
+                live.accountExpired = false;
             }
             if (fresh) {
                 Accounts::refreshed(*fresh);
             }
             if (expired) {
-                Accounts::markExpired(accountKey);
+                Accounts::markExpired(live.accountKey);
             }
-            if (game_ && game_->valid()) {
-                game = std::move(*game_);
-                killed = false;
-                current = State::Running;
-                nextWatch = Clock::now() + WATCH_INTERVAL;
-                Notices::add(Notices::Kind::Done, "已启动 " + name, 2500);
+        }
+
+        void finishPreparing(Live& live) {
+            join(live);
+            std::optional<blb::process> game;
+            std::string error;
+            bool wasCancelled;
+            {
+                std::lock_guard<std::mutex> guard(live.lock);
+                game = std::move(live.started);
+                live.started.reset();
+                error = live.failure;
+                wasCancelled = live.cancelled;
+                live.prepared = false;
+                if (!live.javaUsed.empty()) {
+                    live.variables.emplace_back("INST_JAVA", live.javaUsed);
+                }
+            }
+            takeAccount(live);
+            if (game && game->valid()) {
+                live.game = std::move(*game);
+                live.killed = false;
+                live.state = State::Running;
+                live.since = Clock::now();
+                live.nextWatch = Clock::now() + WATCH_INTERVAL;
+                Notices::add(Notices::Kind::Done, "已启动 " + live.name, 2500);
                 if (quiet) {
                     return;
                 }
-                if (visibility == "minimize") {
+                if (live.visibility == "minimize") {
                     Platform::minimizeWindow();
-                } else if (visibility == "hide") {
+                } else if (live.visibility == "hide") {
                     Platform::hideWindow();
                     hidden = true;
-                } else if (visibility == "close") {
+                } else if (live.visibility == "close") {
                     Platform::closeWindow();
                 }
                 return;
             }
-            current = State::Idle;
-            key.clear();
+            live.state = State::Idle;
             if (wasCancelled) {
-                GameLog::note("已取消启动");
+                GameLog::note(live.log, "已取消启动");
                 Notices::add(Notices::Kind::Info, "已取消启动", 2000);
             } else {
-                GameLog::note("启动失败：" + (error.empty() ? std::string("游戏没有启动") : error));
-                Notices::add(Notices::Kind::Failed,
-                             "启动失败：" + (error.empty() ? std::string("游戏没有启动") : error), 5000);
+                std::string reason = error.empty() ? std::string("游戏没有启动") : error;
+                GameLog::note(live.log, "启动失败：" + reason);
+                Notices::add(Notices::Kind::Failed, "启动失败：" + reason, 5000);
             }
         }
 
-        void watchGame() {
-            if (Clock::now() < nextWatch) {
+        void watch(Live& live) {
+            if (Clock::now() < live.nextWatch) {
                 return;
             }
-            nextWatch = Clock::now() + WATCH_INTERVAL;
-            if (game.running()) {
+            live.nextWatch = Clock::now() + WATCH_INTERVAL;
+            if (live.game.running()) {
                 return;
             }
-            auto exit = game.wait(std::chrono::milliseconds(0));
+            auto exit = live.game.wait(std::chrono::milliseconds(0));
             int code = exit ? *exit : 0;
-            current = State::Idle;
-            game = blb::process();
-            if (hidden) {
-                hidden = false;
-                Platform::showWindow();
-            }
-            if (!postExit.empty()) {
-                std::string problem = Platform::startCommand(postExit, variables, commandDirectory);
+            live.state = State::Idle;
+            live.game = blb::process();
+            if (!live.postExit.empty()) {
+                std::string problem = Platform::startCommand(live.postExit, live.variables, live.commandDirectory);
                 if (!problem.empty()) {
                     Notices::add(Notices::Kind::Failed, "退出后命令：" + problem, 5000);
                 }
             }
-            GameLog::note(killed ? std::string("游戏已被结束") : "游戏已退出，退出代码 " + std::to_string(code));
-            if (killed) {
-                Notices::add(Notices::Kind::Info, "已结束 " + name, 2000);
+            GameLog::note(live.log,
+                          live.killed ? std::string("游戏已被结束") : "游戏已退出，退出代码 " + std::to_string(code));
+            if (live.killed) {
+                Notices::add(Notices::Kind::Info, "已结束 " + live.name, 2000);
             } else if (code != 0) {
-                Notices::add(Notices::Kind::Failed, name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
+                Notices::add(Notices::Kind::Failed, live.name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
+                GameLog::show(live.log);
                 Interface::showLog();
             }
-            key.clear();
+        }
+
+        void kill(Live& live) {
+            if (live.state != State::Running) {
+                return;
+            }
+            live.killed = true;
+            auto result = live.game.kill();
+            if (!result) {
+                live.killed = false;
+                Notices::add(Notices::Kind::Failed, "无法结束游戏：" + result.err().message, 4000);
+            }
+            live.nextWatch = Clock::now();
+        }
+
+        Session snapshot(const Live& live) {
+            Session out;
+            out.id = live.id;
+            out.instance = live.key;
+            out.name = live.name;
+            out.account = live.accountName;
+            out.accountKey = live.accountKey;
+            out.state = live.state;
+            out.log = live.log;
+            if (live.state == State::Running) {
+                out.uptime = std::chrono::duration<double>(Clock::now() - live.since).count();
+            }
+            return out;
+        }
+
+        Live* preparingOf(const std::string& key) {
+            for (const std::unique_ptr<Live>& live : lives) {
+                if (live->key == key && live->state == State::Preparing) {
+                    return live.get();
+                }
+            }
+            return nullptr;
+        }
+
+        int logFor(const std::string& key) {
+            auto found = lastLog.find(key);
+            if (found == lastLog.end()) {
+                return 0;
+            }
+            for (const std::unique_ptr<Live>& live : lives) {
+                if (live->log == found->second) {
+                    return 0;
+                }
+            }
+            return found->second;
         }
     }
 
-    State state() {
-        return current;
+    State state(const std::string& key) {
+        State out = State::Idle;
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->key != key) {
+                continue;
+            }
+            if (live->state == State::Preparing) {
+                return State::Preparing;
+            }
+            if (live->state == State::Running) {
+                out = State::Running;
+            }
+        }
+        return out;
     }
 
-    float progress() {
-        return current == State::Preparing ? fraction.load() : -1.0f;
+    float progress(const std::string& key) {
+        Live* live = preparingOf(key);
+        return live != nullptr ? live->fraction.load() : -1.0f;
     }
 
-    const std::string& instance() {
-        return key;
-    }
-
-    std::vector<Step> steps() {
-        if (current != State::Preparing) {
+    std::vector<Step> steps(const std::string& key) {
+        Live* live = preparingOf(key);
+        if (live == nullptr) {
             return {};
         }
-        std::lock_guard<std::mutex> guard(stepLock);
-        return stepList;
+        std::lock_guard<std::mutex> guard(live->stepLock);
+        return live->steps;
     }
 
-    void launch(const std::string& target, bool test) {
-        if (current != State::Idle) {
+    std::vector<Session> sessions() {
+        std::vector<Session> out;
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->state != State::Idle) {
+                out.push_back(snapshot(*live));
+            }
+        }
+        return out;
+    }
+
+    std::vector<Session> sessionsOf(const std::string& key) {
+        std::vector<Session> out;
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->key == key && live->state != State::Idle) {
+                out.push_back(snapshot(*live));
+            }
+        }
+        return out;
+    }
+
+    bool preparing() {
+        return std::any_of(lives.begin(), lives.end(),
+                           [](const std::unique_ptr<Live>& live) { return live->state == State::Preparing; });
+    }
+
+    bool running() {
+        return std::any_of(lives.begin(), lives.end(),
+                           [](const std::unique_ptr<Live>& live) { return live->state == State::Running; });
+    }
+
+    bool active() {
+        return std::any_of(lives.begin(), lives.end(),
+                           [](const std::unique_ptr<Live>& live) { return live->state != State::Idle; });
+    }
+
+    bool inUse(const std::string& accountKey) {
+        return std::any_of(lives.begin(), lives.end(), [&](const std::unique_ptr<Live>& live) {
+            return live->state != State::Idle && live->accountKey == accountKey;
+        });
+    }
+
+    std::string accountOf(const std::string& key) {
+        const Instances::Entry* entry = Instances::find(key);
+        if (entry == nullptr) {
+            return std::string();
+        }
+        const blb::instance::instance_settings& settings = entry->info.settings;
+        const blb::auth::account* account = Accounts::pick(settings.login, settings.auth_server, settings.account);
+        return account != nullptr ? Accounts::keyOf(*account) : std::string();
+    }
+
+    void setAccount(const std::string& key, const std::string& accountKey) {
+        const Instances::Entry* entry = Instances::find(key);
+        if (entry == nullptr || entry->info.settings.account == accountKey) {
             return;
         }
+        Instances::editSettings(
+                key, [accountKey](blb::instance::instance_settings& settings) { settings.account = accountKey; });
+    }
+
+    int launch(const std::string& target, bool test, const std::string& who) {
         const Instances::Entry* entry = Instances::find(target);
         const Instances::Source* source = entry != nullptr ? Instances::source(entry->source) : nullptr;
-        if (source == nullptr) {
-            return;
+        if (source == nullptr || preparingOf(target) != nullptr) {
+            return 0;
         }
         if (!entry->info.valid) {
             Instances::notify("无法启动 " + entry->info.id + "：" + entry->info.problem, true);
-            return;
+            return 0;
         }
         const std::string& login = entry->info.settings.login;
         const std::string& authServer = entry->info.settings.auth_server;
-        const blb::auth::account* account = Accounts::pick(login, authServer);
+        const blb::auth::account* account = who.empty() ? nullptr : Accounts::find(who);
+        if (account == nullptr || !Accounts::suits(*account, login, authServer)) {
+            account = Accounts::pick(login, authServer, entry->info.settings.account);
+        }
         if (account == nullptr) {
             Instances::notify(Accounts::requirement(login, authServer), true);
             Interface::needAccount(login, authServer);
-            return;
+            return 0;
         }
         const blb::auth::account* chosen = Accounts::current();
         bool substituted = chosen != nullptr && Accounts::keyOf(*chosen) != Accounts::keyOf(*account);
+        size_t alongside = sessionsOf(target).size();
+        bool shared = inUse(Accounts::keyOf(*account));
         blb::instance::instance_manager manager(blb::meta::game_layout(source->root), Instances::isolation());
         blb::launch::launch_settings settings = manager.launch_settings_for(entry->info);
         std::filesystem::path root = source->root;
@@ -373,50 +512,50 @@ namespace Game {
         LaunchDefaults::Language language = LaunchDefaults::language();
         std::string minecraft = entry->info.minecraft_version;
         int priority = priorityLevel(options.process_priority);
-        visibility = options.launcher_visibility;
-        postExit = options.post_exit;
-        variables = instanceVariables(*entry);
-        commandDirectory = entry->gameDirectory;
-        settings.environment.insert(settings.environment.begin(), variables.begin(), variables.end());
+        auto made = std::make_unique<Live>();
+        Live& live = *made;
+        live.id = nextId++;
+        live.key = target;
+        live.name = entry->info.id;
+        live.accountKey = Accounts::keyOf(*account);
+        live.accountName = account->name;
+        live.visibility = options.launcher_visibility;
+        live.postExit = options.post_exit;
+        live.variables = instanceVariables(*entry);
+        live.commandDirectory = entry->gameDirectory;
+        settings.environment.insert(settings.environment.begin(), live.variables.begin(), live.variables.end());
 
-        join();
-        key = target;
-        name = entry->info.id;
-        GameLog::begin(name);
-        GameLog::note("正在启动 " + name + "（Minecraft " + entry->info.minecraft_version + "）");
+        int log = GameLog::begin(live.name + "（" + account->name + "）", logFor(target));
+        live.log = log;
+        lastLog[target] = log;
+        GameLog::note(log,
+                      "正在启动 " + live.name + "（Minecraft " + entry->info.minecraft_version + "），账户 " +
+                              account->name + "（" + Accounts::kindOf(*account) + "）");
         if (!patchJar.empty()) {
-            GameLog::note("已启用启动器补丁");
+            GameLog::note(log, "已启用启动器补丁");
         }
-        if (substituted) {
-            GameLog::note("这个实例指定了登录方式，使用账户 " + account->name + "（" + Accounts::kindOf(*account) +
-                          "）");
+        if (substituted && entry->info.settings.account.empty()) {
+            GameLog::note(log, "这个实例指定了登录方式，没有使用当前账户");
+        }
+        if (alongside > 0) {
+            GameLog::note(log, "这个实例已有 " + std::to_string(alongside) + " 个在运行");
+            Notices::add(Notices::Kind::Info, live.name + " 已在运行", 4000);
         }
         const std::optional<bool>& showLogs = entry->info.settings.show_logs;
         if (test || (!quiet && (showLogs ? *showLogs : LaunchDefaults::showLogs()))) {
             Interface::showLog();
         }
-        current = State::Preparing;
-        fraction.store(-1.0f);
-        resetSteps(!preLaunch.empty());
-        cancelling = std::make_shared<blb::cancellation_source>();
-        blb::cancellation_token token = cancelling->token();
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            prepared = false;
-            started.reset();
-            failure.clear();
-            cancelled = false;
-            javaUsed.clear();
-            refreshedAccount.reset();
-            accountExpired = false;
-        }
+        resetSteps(live, !preLaunch.empty());
+        live.cancelling = std::make_shared<blb::cancellation_source>();
+        blb::cancellation_token token = live.cancelling->token();
         blb::auth::account player = *account;
-        accountKey = Accounts::keyOf(player);
         std::shared_ptr<blb::auth::microsoft_authenticator> authenticator = Accounts::authenticator(player);
-        Platform::Environment commandVariables = variables;
-        std::filesystem::path directory = commandDirectory;
-        preparer = std::thread([root, settings, player, authenticator, token, preLaunch, priority, commandVariables,
-                                directory, language, minecraft, patchJar, patchPlan]() mutable {
+        Platform::Environment commandVariables = live.variables;
+        std::filesystem::path directory = live.commandDirectory;
+        Live* self = &live;
+        lives.push_back(std::move(made));
+        self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
+                                      commandVariables, directory, language, minecraft, patchJar, patchPlan]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;
@@ -428,7 +567,7 @@ namespace Game {
                     }
                     std::string warning = Patches::resolve(patchPlan, token);
                     if (!warning.empty()) {
-                        GameLog::note(warning);
+                        GameLog::note(log, warning);
                     }
                     std::vector<std::string> agent = Patches::arguments(patchJar, patchPlan);
                     settings.jvm_args.insert(settings.jvm_args.begin(), agent.begin(), agent.end());
@@ -440,31 +579,31 @@ namespace Game {
                 if (authenticator) {
                     launcher.set_authenticator(authenticator);
                 }
-                Progress sink;
+                Progress sink(*self);
                 blb::launch::launch_callbacks callbacks;
                 callbacks.progress = &sink;
-                callbacks.on_output = [](std::string_view text, blb::output_stream stream) {
-                    GameLog::feed(text, stream == blb::output_stream::err);
+                callbacks.on_output = [log](std::string_view text, blb::output_stream stream) {
+                    GameLog::feed(log, text, stream == blb::output_stream::err);
                 };
-                callbacks.on_account_refreshed = [](const blb::auth::account& account) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    refreshedAccount = account;
+                callbacks.on_account_refreshed = [self](const blb::auth::account& account) {
+                    std::lock_guard<std::mutex> guard(self->lock);
+                    self->refreshedAccount = account;
                 };
                 auto ready = launcher.prepare(settings, player, callbacks, token);
                 if (!ready) {
                     wasCancelled = ready.err().code == blb::errc::cancelled || token.is_cancelled();
                     error = Accounts::describe(ready.err());
                     if (ready.err().code == blb::errc::auth_expired) {
-                        std::lock_guard<std::mutex> guard(lock);
-                        accountExpired = true;
+                        std::lock_guard<std::mutex> guard(self->lock);
+                        self->accountExpired = true;
                     }
                 } else {
                     std::string java = blb::path_to_utf8(ready->java.executable);
-                    GameLog::note("Java：" + java + "（" + ready->java.version + "）");
+                    GameLog::note(log, "Java：" + java + "（" + ready->java.version + "）");
                     ready->command.environment.insert(ready->command.environment.begin(), {"INST_JAVA", java});
                     {
-                        std::lock_guard<std::mutex> guard(lock);
-                        javaUsed = java;
+                        std::lock_guard<std::mutex> guard(self->lock);
+                        self->javaUsed = java;
                     }
                     LaunchDefaults::applyLanguage(language, directory, minecraft);
                     if (!preLaunch.empty()) {
@@ -499,68 +638,76 @@ namespace Game {
             } catch (const std::exception& exception) {
                 error = exception.what();
             }
-            std::lock_guard<std::mutex> guard(lock);
-            started = std::move(game_);
-            failure = error;
-            cancelled = wasCancelled;
-            prepared = true;
+            std::lock_guard<std::mutex> guard(self->lock);
+            self->started = std::move(game_);
+            self->failure = error;
+            self->cancelled = wasCancelled;
+            self->prepared = true;
         });
+        return self->id;
     }
 
     void setQuiet(bool on) {
         quiet = on;
     }
 
-    void cancel() {
-        if (current == State::Preparing && cancelling) {
-            cancelling->cancel();
+    void cancel(const std::string& key) {
+        if (Live* live = preparingOf(key); live != nullptr && live->cancelling) {
+            live->cancelling->cancel();
         }
     }
 
-    void stop() {
-        if (current != State::Running) {
-            return;
+    void stop(const std::string& key) {
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->key == key) {
+                kill(*live);
+            }
         }
-        killed = true;
-        auto result = game.kill();
-        if (!result) {
-            killed = false;
-            Notices::add(Notices::Kind::Failed, "无法结束游戏：" + result.err().message, 4000);
+    }
+
+    void stop(int session) {
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->id == session) {
+                kill(*live);
+            }
         }
-        nextWatch = Clock::now();
     }
 
     void poll() {
-        if (current == State::Preparing) {
-            bool ready;
-            {
-                std::lock_guard<std::mutex> guard(lock);
-                ready = prepared;
+        for (size_t i = 0; i < lives.size(); i++) {
+            Live& live = *lives[i];
+            if (live.state == State::Preparing) {
+                bool ready;
+                {
+                    std::lock_guard<std::mutex> guard(live.lock);
+                    ready = live.prepared;
+                }
+                if (ready) {
+                    finishPreparing(live);
+                }
+            } else if (live.state == State::Running) {
+                watch(live);
             }
-            if (ready) {
-                finishPreparing();
-            }
-        } else if (current == State::Running) {
-            watchGame();
+        }
+        std::erase_if(lives, [](const std::unique_ptr<Live>& live) { return live->state == State::Idle; });
+        if (hidden && !running()) {
+            hidden = false;
+            Platform::showWindow();
         }
     }
 
     void shutdown() {
-        if (current == State::Preparing && cancelling) {
-            cancelling->cancel();
+        for (const std::unique_ptr<Live>& live : lives) {
+            if (live->state == State::Preparing && live->cancelling) {
+                live->cancelling->cancel();
+            }
         }
-        join();
-        std::optional<blb::auth::account> fresh;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            fresh = std::move(refreshedAccount);
-            refreshedAccount.reset();
-        }
-        if (fresh) {
-            Accounts::refreshed(*fresh);
-        }
-        if (current == State::Running) {
-            game.detach();
+        for (const std::unique_ptr<Live>& live : lives) {
+            join(*live);
+            takeAccount(*live);
+            if (live->state == State::Running) {
+                live->game.detach();
+            }
         }
     }
 }

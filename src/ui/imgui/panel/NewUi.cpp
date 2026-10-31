@@ -289,7 +289,9 @@ namespace NewUi {
         aboveW = nextAboveW;
         aboveH = nextAboveH;
         nextAboveActive = false;
-        UiOverlays::beginFrame();
+        if (overlaysEnabled) {
+            UiOverlays::beginFrame();
+        }
         bool outside = overlaysEnabled && !UiOverlays::isEmpty() && !UiOverlays::blocks(mouseX, mouseY);
         dismissClick = pendingClick && outside;
         if (dismissClick) {
@@ -481,7 +483,7 @@ namespace NewUi {
         if (!rawHit(x, y, w, h)) {
             return false;
         }
-        if (!subOwner.empty() && !drawingOverlay && !drawingDialog) {
+        if (overlaysEnabled && !subOwner.empty() && !drawingOverlay && !drawingDialog) {
             return false;
         }
         if (drawingOverlay) {
@@ -490,7 +492,7 @@ namespace NewUi {
         if (windowBlocks()) {
             return false;
         }
-        return !overlayBlocks(mouseX, mouseY) && !UiOverlays::blocks(mouseX, mouseY);
+        return !overlayBlocks(mouseX, mouseY) && (!overlaysEnabled || !UiOverlays::blocks(mouseX, mouseY));
     }
 
     bool windowBlocks() {
@@ -567,7 +569,7 @@ namespace NewUi {
     }
 
     bool click(float x, float y, float w, float h) {
-        if (!subOwner.empty() && !drawingOverlay && !drawingDialog) {
+        if (overlaysEnabled && !subOwner.empty() && !drawingOverlay && !drawingDialog) {
             return false;
         }
         if (!pendingClick || clickConsumed) {
