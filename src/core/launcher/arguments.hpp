@@ -46,7 +46,7 @@ struct launch_settings
   std::string server;
   std::string quick_play_world;
   std::string launcher_name = "b-launcher-base";
-  std::string launcher_version = "0.2.0";
+  std::string launcher_version = "0.3.0";
   install::verify_mode verify = install::verify_mode::cached_hash;
   bool check_integrity = true;
   bool default_jvm_tuning = true;
