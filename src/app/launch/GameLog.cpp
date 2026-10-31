@@ -39,6 +39,7 @@ namespace GameLog {
             uint64_t droppedCount = 0;
             size_t counts[LEVEL_COUNT] = {};
             bool paused = false;
+            bool live = true;
         };
 
         std::mutex lock;
@@ -276,7 +277,12 @@ namespace GameLog {
         } else {
             logs.push_back(log);
             while (logs.size() > MAX_LOGS) {
-                logs.erase(logs.begin());
+                auto ended = std::find_if(logs.begin(), logs.end(),
+                                          [](const std::shared_ptr<Log>& old) { return !old->live; });
+                if (ended == logs.end()) {
+                    break;
+                }
+                logs.erase(ended);
             }
         }
         current = log;
@@ -324,6 +330,13 @@ namespace GameLog {
         std::lock_guard<std::mutex> guard(lock);
         if (std::shared_ptr<Log> log = find(id)) {
             push(*log, "[b-launcher] " + text, Level::Launcher);
+        }
+    }
+
+    void finish(int id) {
+        std::lock_guard<std::mutex> guard(lock);
+        if (std::shared_ptr<Log> log = find(id)) {
+            log->live = false;
         }
     }
 

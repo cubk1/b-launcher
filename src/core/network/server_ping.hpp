@@ -35,6 +35,6 @@ struct server_status
 result<server_status> ping_server (std::string_view address,
                                    cancellation_token token = {},
                                    std::chrono::milliseconds timeout
-                                   = std::chrono::milliseconds (5000));
+                                   = std::chrono::milliseconds (8000));
 
 }

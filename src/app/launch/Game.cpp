@@ -281,6 +281,7 @@ namespace Game {
                 return;
             }
             live.state = State::Idle;
+            GameLog::finish(live.log);
             if (wasCancelled) {
                 GameLog::note(live.log, "已取消启动");
                 Notices::add(Notices::Kind::Info, "已取消启动", 2000);
@@ -303,6 +304,7 @@ namespace Game {
             int code = exit ? *exit : 0;
             live.state = State::Idle;
             live.game = blb::process();
+            GameLog::finish(live.log);
             if (!live.postExit.empty()) {
                 std::string problem = Platform::startCommand(live.postExit, live.variables, live.commandDirectory);
                 if (!problem.empty()) {

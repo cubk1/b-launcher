@@ -1,5 +1,6 @@
 #include <core/base/format.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/hash.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/thread_pool.hpp>
@@ -38,6 +39,45 @@ struct completion
   bool retryable = true;
   std::uint64_t bytes = 0;
 };
+
+std::mutex claims_mutex;
+std::unordered_set<std::string> claims;
+
+std::string
+claim_key (const std::filesystem::path &target)
+{
+  return to_lower (path_to_utf8 (target.lexically_normal ()));
+}
+
+bool
+try_claim (const std::string &key)
+{
+  std::lock_guard lock (claims_mutex);
+  return claims.insert (key).second;
+}
+
+void
+release_claim (const std::string &key)
+{
+  std::lock_guard lock (claims_mutex);
+  claims.erase (key);
+}
+
+bool
+already_there (const download_task &task)
+{
+  auto st = fs::stat (task.target);
+  if (!st.exists || st.is_directory)
+    return false;
+  if (task.size >= 0 && static_cast<std::int64_t> (st.size) != task.size)
+    return false;
+  if (task.sha1)
+    {
+      auto digest = sha1_file (task.target);
+      return digest && *digest == *task.sha1;
+    }
+  return task.size >= 0;
+}
 
 }
 
@@ -947,6 +987,22 @@ struct download_client::impl
     active.clear ();
     jobs.clear ();
     bool cancelled = false;
+    std::vector<std::string> keys (tasks.size ());
+    std::vector<bool> owned (tasks.size (), false);
+    std::deque<std::pair<std::size_t, unsigned>> waiting;
+    auto claim = [&] (std::size_t index) {
+      if (owned[index])
+        return true;
+      if (keys[index].empty ())
+        keys[index] = claim_key (tasks[index].target);
+      owned[index] = try_claim (keys[index]);
+      return static_cast<bool> (owned[index]);
+    };
+    auto release = [&] (std::size_t index) {
+      if (owned[index])
+        release_claim (keys[index]);
+      owned[index] = false;
+    };
 
     for (;;)
       {
@@ -960,6 +1016,7 @@ struct download_client::impl
             const auto &task = tasks[c.index];
             if (!c.failure)
               {
+                release (c.index);
                 ++report.succeeded;
                 report.bytes += c.bytes;
                 if (progress)
@@ -982,6 +1039,7 @@ struct download_client::impl
               }
             s_log.warn ("download failed {}: {}", path_to_utf8 (task.target),
                         c.failure->to_string ());
+            release (c.index);
             report.failures.push_back (
                 { c.index, std::move (c.url), std::move (*c.failure) });
           }
@@ -1014,6 +1072,35 @@ struct download_client::impl
               report.failures.push_back (
                   { index, {}, make_error (errc::cancelled, "cancelled") });
             pending.clear ();
+            for (auto &[index, attempt] : waiting)
+              report.failures.push_back (
+                  { index, {}, make_error (errc::cancelled, "cancelled") });
+            waiting.clear ();
+          }
+
+        for (std::size_t n = waiting.size (); !cancelled && n > 0; --n)
+          {
+            auto entry = waiting.front ();
+            waiting.pop_front ();
+            if (!claim (entry.first))
+              {
+                waiting.push_back (entry);
+                continue;
+              }
+            const auto &task = tasks[entry.first];
+            if (!already_there (task))
+              {
+                pending.push_front (entry);
+                continue;
+              }
+            release (entry.first);
+            ++report.succeeded;
+            if (progress)
+              {
+                if (task.size > 0)
+                  progress->add_done (static_cast<std::uint64_t> (task.size));
+                progress->item_done ();
+              }
           }
 
         bool backlogged = io_backlog.load () >= io_backlog_limit;
@@ -1026,6 +1113,11 @@ struct download_client::impl
           {
             auto [index, attempt] = pending.front ();
             pending.pop_front ();
+            if (!claim (index))
+              {
+                waiting.emplace_back (index, attempt);
+                continue;
+              }
             if (tasks[index].size >= split_threshold)
               {
                 open_job (tasks[index], index, attempt, settings, proxy);
@@ -1097,7 +1189,7 @@ struct download_client::impl
           }
 
         if (active.empty () && pending.empty () && jobs.empty ()
-            && io_outstanding.load () == 0)
+            && waiting.empty () && io_outstanding.load () == 0)
           {
             std::lock_guard lock (completion_mutex);
             if (completions.empty ())
@@ -1148,10 +1240,14 @@ struct download_client::impl
           }
         if (progress)
           progress->report ();
-        curl_multi_poll (multi, nullptr, 0,
-                         active.empty () && !backlogged ? 5 : 100, nullptr);
+        curl_multi_poll (
+            multi, nullptr, 0,
+            active.empty () && !backlogged && waiting.empty () ? 5 : 100,
+            nullptr);
       }
 
+    for (std::size_t i = 0; i < tasks.size (); ++i)
+      release (i);
     progress = nullptr;
     report.elapsed = std::chrono::duration_cast<std::chrono::milliseconds> (
         std::chrono::steady_clock::now () - started);

@@ -59,6 +59,22 @@ since (clock::time_point start)
                                                                 - start);
 }
 
+void
+forget_argument_files (const std::filesystem::path &directory)
+{
+  auto stale = fs::mtime_now ()
+               - static_cast<std::int64_t> (24 * 3600)
+                     * fs::mtime_ticks_per_second ();
+  for (const auto &[name, st] : fs::list_directory (directory))
+    {
+      bool ours = name == "launch.args"
+                  || (name.size () == 20 && name.starts_with ("launch-")
+                      && name.ends_with (".args"));
+      if (ours && !st.is_directory && st.mtime < stale)
+        (void)fs::remove_file (directory / path_from_utf8 (name));
+    }
+}
+
 std::vector<install::planned_file>
 split_natives (std::vector<install::planned_file> &files)
 {
@@ -286,7 +302,11 @@ game_launcher::prepare (const launch_settings &settings,
       content += quote_argument_file_entry (out.command.main_class) + "\n";
       for (const auto &arg : out.command.game_args)
         content += quote_argument_file_entry (arg) + "\n";
-      auto file = layout.version_dir (settings.version_id) / "launch.args";
+      auto folder = layout.version_dir (settings.version_id);
+      forget_argument_files (folder);
+      auto file
+          = folder
+            / path_from_utf8 ("launch-" + random_bytes_hex (4) + ".args");
       BLB_TRY (fs::write_file_atomic (file, argument_file_text (content)));
       out.command.argument_file = file;
     }

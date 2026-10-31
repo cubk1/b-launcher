@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -39,6 +40,7 @@ namespace
 using clock = std::chrono::steady_clock;
 
 constexpr std::uint32_t max_packet = 4u << 20;
+constexpr std::size_t max_favicon = 256u << 10;
 constexpr auto attempt_limit = std::chrono::milliseconds (2500);
 
 #if defined(_WIN32)
@@ -402,6 +404,59 @@ lookup_srv (const std::string &host)
 #endif
 }
 
+struct lookup_state
+{
+  std::mutex mutex;
+  std::condition_variable finished;
+  bool done = false;
+  result<std::vector<endpoint>> endpoints;
+};
+
+result<std::vector<endpoint>>
+resolve_address (const server_address &address)
+{
+  if (address.explicit_port || ip_literal (address.host))
+    return resolve (address.host, address.port);
+  auto direct = std::make_shared<result<std::vector<endpoint>>> ();
+  std::thread plain (
+      [direct, address] { *direct = resolve (address.host, address.port); });
+  auto srv = lookup_srv (address.host);
+  if (srv && (srv->host != address.host || srv->port != address.port))
+    {
+      plain.detach ();
+      return resolve (srv->host, srv->port);
+    }
+  plain.join ();
+  return std::move (*direct);
+}
+
+result<std::vector<endpoint>>
+lookup (const server_address &address, clock::time_point deadline,
+        const cancellation_token &token)
+{
+  auto state = std::make_shared<lookup_state> ();
+  std::thread ([state, address] {
+    auto found = resolve_address (address);
+    std::lock_guard lock (state->mutex);
+    state->endpoints = std::move (found);
+    state->done = true;
+    state->finished.notify_all ();
+  }).detach ();
+  std::unique_lock lock (state->mutex);
+  while (!state->done)
+    {
+      if (token.is_cancelled ())
+        return make_error (errc::cancelled, "operation cancelled");
+      auto now = clock::now ();
+      if (now >= deadline)
+        return make_error (errc::timeout, "server did not respond in time");
+      state->finished.wait_for (
+          lock, std::min<clock::duration> (deadline - now,
+                                           std::chrono::milliseconds (100)));
+    }
+  return std::move (state->endpoints);
+}
+
 void
 put_varint (std::string &out, std::uint32_t value)
 {
@@ -622,7 +677,7 @@ read_status (const nlohmann::json &doc)
       std::string_view value = favicon->get_ref<const std::string &> ();
       auto comma = value.find (',');
       if (value.starts_with ("data:image/png;base64")
-          && comma != std::string_view::npos)
+          && comma != std::string_view::npos && value.size () <= max_favicon)
         {
           std::string encoded;
           for (char c : value.substr (comma + 1))
@@ -684,48 +739,23 @@ result<server_status>
 ping_server (std::string_view text, cancellation_token token,
              std::chrono::milliseconds timeout)
 {
+  BLB_TRY (token.check ());
   auto address = parse_server_address (text);
   if (!address)
     return make_error (errc::invalid_argument, "invalid server address");
   start_sockets ();
-  std::string host = address->host;
-  std::uint16_t port = address->port;
-  result<std::vector<endpoint>> endpoints;
-  if (address->explicit_port || ip_literal (host))
-    endpoints = resolve (host, port);
-  else
-    {
-      auto direct = std::make_shared<result<std::vector<endpoint>>> ();
-      std::thread lookup (
-          [direct, host, port] { *direct = resolve (host, port); });
-      auto srv = lookup_srv (host);
-      if (srv && (srv->host != host || srv->port != port))
-        {
-          lookup.detach ();
-          host = srv->host;
-          port = srv->port;
-          endpoints = resolve (host, port);
-        }
-      else
-        {
-          lookup.join ();
-          endpoints = std::move (*direct);
-        }
-    }
-  BLB_TRY (token.check ());
-  if (!endpoints)
-    return std::move (endpoints).err ();
   auto deadline = clock::now () + timeout;
+  BLB_TRY_ASSIGN (auto endpoints, lookup (*address, deadline, token));
   BLB_TRY_ASSIGN (auto connected,
-                  open_connection (*endpoints, deadline, token));
+                  open_connection (endpoints, deadline, token));
   stream io { connected.get (), deadline, token, {} };
 
   std::string handshake;
   put_varint (handshake, 0x00);
   put_varint (handshake, static_cast<std::uint32_t> (-1));
-  put_string (handshake, host);
-  handshake.push_back (static_cast<char> (port >> 8));
-  handshake.push_back (static_cast<char> (port & 0xFF));
+  put_string (handshake, address->host);
+  handshake.push_back (static_cast<char> (address->port >> 8));
+  handshake.push_back (static_cast<char> (address->port & 0xFF));
   put_varint (handshake, 1);
   std::string request;
   put_varint (request, 0x00);

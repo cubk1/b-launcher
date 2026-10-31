@@ -21,6 +21,7 @@
 #include <set>
 #include <filesystem>
 #include <mutex>
+#include <numeric>
 #include <thread>
 #include <unordered_map>
 
@@ -179,21 +180,38 @@ namespace Instances {
                              roots.begin());
         }
 
-        size_t positionOf(const Entry& entry) {
-            auto found = arranged.find(entry.source);
-            if (found == arranged.end()) {
-                return SIZE_MAX;
-            }
-            auto at = std::find(found->second.begin(), found->second.end(), entry.info.id);
-            return at == found->second.end() ? SIZE_MAX : (size_t) (at - found->second.begin());
-        }
-
         void sortEntries() {
-            std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
-                size_t rankA = rankOf(a.source);
-                size_t rankB = rankOf(b.source);
-                return rankA != rankB ? rankA < rankB : positionOf(a) < positionOf(b);
-            });
+            std::unordered_map<std::string, size_t> ranks;
+            for (size_t i = 0; i < roots.size(); i++) {
+                ranks.emplace(roots[i].key, i);
+            }
+            std::unordered_map<std::string, std::unordered_map<std::string, size_t>> positions;
+            for (const auto& [source, ids] : arranged) {
+                std::unordered_map<std::string, size_t>& at = positions[source];
+                for (size_t i = 0; i < ids.size(); i++) {
+                    at.emplace(ids[i], i);
+                }
+            }
+            std::vector<std::pair<size_t, size_t>> keys(entries.size());
+            for (size_t i = 0; i < entries.size(); i++) {
+                auto rank = ranks.find(entries[i].source);
+                size_t position = SIZE_MAX;
+                if (auto group = positions.find(entries[i].source); group != positions.end()) {
+                    if (auto found = group->second.find(entries[i].info.id); found != group->second.end()) {
+                        position = found->second;
+                    }
+                }
+                keys[i] = {rank != ranks.end() ? rank->second : roots.size(), position};
+            }
+            std::vector<size_t> order(entries.size());
+            std::iota(order.begin(), order.end(), (size_t) 0);
+            std::stable_sort(order.begin(), order.end(), [&keys](size_t a, size_t b) { return keys[a] < keys[b]; });
+            std::vector<Entry> sorted;
+            sorted.reserve(entries.size());
+            for (size_t i : order) {
+                sorted.push_back(std::move(entries[i]));
+            }
+            entries = std::move(sorted);
         }
 
         void saveOrder() {
@@ -716,11 +734,15 @@ namespace Instances {
     }
 
     void arrange(const std::string& source, const std::vector<std::string>& keys) {
+        std::unordered_map<std::string, const Entry*> byKey;
+        for (const Entry& entry : entries) {
+            byKey.emplace(entry.key, &entry);
+        }
         std::vector<std::string> ids;
         for (const std::string& key : keys) {
-            const Entry* entry = findMutable(key);
-            if (entry != nullptr && entry->source == source) {
-                ids.push_back(entry->info.id);
+            auto found = byKey.find(key);
+            if (found != byKey.end() && found->second->source == source) {
+                ids.push_back(found->second->info.id);
             }
         }
         arranged[source] = ids;

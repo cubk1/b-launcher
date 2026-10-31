@@ -27,6 +27,7 @@ namespace GameLog {
     int begin(const std::string& title, int replace = 0);
     void feed(int log, std::string_view line, bool error);
     void note(int log, const std::string& text);
+    void finish(int log);
 
     void poll();
     std::vector<Tab> tabs();
