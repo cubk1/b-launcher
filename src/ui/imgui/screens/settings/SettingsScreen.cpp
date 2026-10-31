@@ -341,7 +341,10 @@ namespace SettingsScreen {
         }
 
         void uiStyleRow(float y, bool blocked) {
-            Page::label("界面风格", y);
+            const std::string label = "界面风格";
+            Page::label(label, y);
+            float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
+            std::string doc = "忘却的旋律，开发中";
             auto uiStyle = std::make_shared<ModeBinding>(
                     "settings#uiStyle", [] { return std::string(UiStyles::current().label); },
                     [](const std::string& option) {
@@ -370,13 +373,17 @@ namespace SettingsScreen {
                     Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
                 }
                 std::string hint = busy ? "任务进行中，暂不能重启" : "重启后生效";
-                float hintW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                labelRight = x - 12.0f - hintW;
-                UiRender::textY(hint, labelRight, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                labelRight -= 8.0f;
+                float hintX = x - 12.0f - UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                if (hintX >= labelEnd) {
+                    UiRender::textY(hint, hintX, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    labelRight = hintX - 8.0f;
+                } else {
+                    doc += "。" + hint;
+                    labelRight = x - 8.0f;
+                }
             }
-            explain("settings#uiStyle", "忘却的旋律，开发中", y, labelRight, blocked);
+            explain("settings#uiStyle", doc, y, std::max(labelEnd - 12.0f, labelRight), blocked);
         }
 
         void appearanceRows(float y, bool blocked) {
