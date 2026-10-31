@@ -46,6 +46,10 @@ std::shared_ptr<const Pixels> Pixels::decodePng(const void* data, size_t size, u
         }
         const unsigned char* type = bytes + at + 4;
         const unsigned char* body = bytes + at + 8;
+        bool first = at == sizeof(SIGNATURE);
+        if (std::memcmp(type, "CgBI", 4) == 0 || (first && std::memcmp(type, "IHDR", 4) != 0)) {
+            return nullptr;
+        }
         if (std::memcmp(type, "IHDR", 4) == 0 && length >= 13) {
             width = number(at + 8);
             height = number(at + 12);
