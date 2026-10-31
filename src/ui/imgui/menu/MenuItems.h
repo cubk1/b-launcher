@@ -85,6 +85,7 @@ public:
     int trailGlyph;
     int terminalKind;
     uint32_t imageTexture;
+    float imageRadius;
     MenuItems children;
 
     ActionMenuItem(const std::string& text, int glyph, std::function<void()> action);
@@ -100,7 +101,7 @@ public:
     std::shared_ptr<ActionMenuItem> confirmFirst();
     std::shared_ptr<ActionMenuItem> trailing(int codepoint);
     std::shared_ptr<ActionMenuItem> terminalIcon(int kind);
-    std::shared_ptr<ActionMenuItem> image(uint32_t texture);
+    std::shared_ptr<ActionMenuItem> image(uint32_t texture, float radius = 0.0f);
     std::shared_ptr<ActionMenuItem> nest(const MenuItems& items);
     std::shared_ptr<ActionMenuItem> keepOpen();
 

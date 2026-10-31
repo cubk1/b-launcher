@@ -1,6 +1,6 @@
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
-#include "ui/imgui/screens/shell/Appearance.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "app/instances/Drops.h"
@@ -253,14 +253,7 @@ namespace QuickActions {
         if (list.empty()) {
             return;
         }
-        float h = list.size() * ROW_H;
-        if (Appearance::backgroundImage()) {
-            UiRender::blur(x, y, w, h, 12.0f, 8, true);
-            UiRender::roundRect(x, y, w, h, 12.0f, (UiTheme::surface() & 0x00FFFFFFu) | 0x80000000u);
-        } else {
-            UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
-        }
-        UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
+        HomeWidgets::panel(x, y, w, list.size() * ROW_H);
         for (size_t i = 1; i < list.size(); i++) {
             UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * ROW_H, UiTheme::outlineSoft());
         }

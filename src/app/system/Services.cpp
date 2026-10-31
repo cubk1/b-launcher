@@ -11,6 +11,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/system/Catalog.h"
+#include "app/system/ServerStatus.h"
 #include "app/system/Updates.h"
 
 namespace Services {
@@ -37,9 +38,11 @@ namespace Services {
         Updates::poll();
         JavaDownloads::poll();
         ShortcutLaunch::poll();
+        ServerStatus::poll();
     }
 
     void stop() {
+        ServerStatus::shutdown();
         Updates::shutdown();
         Drops::shutdown();
         JavaDownloads::shutdown();

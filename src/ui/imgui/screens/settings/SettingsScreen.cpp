@@ -4,6 +4,7 @@
 #include "ui/imgui/screens/shell/Background.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
+#include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
 #include "ui/imgui/screens/shell/Icons.h"
@@ -533,8 +534,11 @@ namespace SettingsScreen {
 
         int homepageCount() {
             int kind = Homepage::source();
-            return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL || kind == Homepage::SOURCE_NONE ? 2
-                                                                                                                  : 1;
+            if (kind == Homepage::SOURCE_NONE) {
+                return 2 + (HomeWidgets::enabled(HomeWidgets::QUICK) ? 1 : 0) +
+                        (HomeWidgets::enabled(HomeWidgets::SERVER) ? 2 : 0);
+            }
+            return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL ? 2 : 1;
         }
 
         void homepageFileRow(float y, bool blocked) {
@@ -571,11 +575,34 @@ namespace SettingsScreen {
                    y, blocked);
             y += Page::ROW_H;
             if (Homepage::source() == Homepage::SOURCE_NONE) {
-                Page::label("快捷操作", y);
-                select("settings#quickActions", QuickActions::choice(), y, blocked);
-                explain("settings#quickActions",
-                        "显示在主页标志下方，可以多选，拖动右侧的手柄调整顺序；全部取消就不显示。", y,
+                Page::label("主页组件", y);
+                select("settings#homeWidgets", HomeWidgets::choice(), y, blocked);
+                explain("settings#homeWidgets",
+                        "显示在主页标志下方，可以多选，拖动右侧的手柄调整顺序；全部取消就只显示标志。", y,
                         Page::controlRight() - SELECT_W - 8.0f, blocked);
+                if (HomeWidgets::enabled(HomeWidgets::QUICK)) {
+                    y += Page::ROW_H;
+                    Page::label("快捷操作", y);
+                    select("settings#quickActions", QuickActions::choice(), y, blocked);
+                    explain("settings#quickActions", "快捷操作卡片里的按钮，可以多选，拖动右侧的手柄调整顺序。", y,
+                            Page::controlRight() - SELECT_W - 8.0f, blocked);
+                }
+                if (HomeWidgets::enabled(HomeWidgets::SERVER)) {
+                    y += Page::ROW_H;
+                    textRow(
+                            "settings#serverAddress", "服务器地址",
+                            "要显示状态的 Minecraft 服务器，可以带端口，例如 mc.example.com:25565；不带端口时会先查询 "
+                            "SRV 记录。",
+                            [] { return HomeWidgets::serverAddress(); },
+                            [](const std::string& value) { HomeWidgets::setServerAddress(value); }, y, blocked,
+                            "例如 mc.example.com");
+                    y += Page::ROW_H;
+                    textRow(
+                            "settings#serverName", "服务器名称", "卡片上显示的名字，留空就显示服务器地址。",
+                            [] { return HomeWidgets::serverName(); },
+                            [](const std::string& value) { HomeWidgets::setServerName(value); }, y, blocked,
+                            "使用服务器地址");
+                }
             } else if (Homepage::source() == Homepage::SOURCE_FILE) {
                 homepageFileRow(y, blocked);
             } else if (Homepage::source() == Homepage::SOURCE_URL) {

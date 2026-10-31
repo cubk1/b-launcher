@@ -1,4 +1,5 @@
 #include "MenuItems.h"
+#include "../gl/ShaderUtil.h"
 #include "../panel/NewUi.h"
 #include "../panel/UiCommon.h"
 #include "../panel/UiFont.h"
@@ -117,7 +118,8 @@ ActionMenuItem::ActionMenuItem(const std::string& text, int glyph, std::function
       stayOpen(false),
       trailGlyph(0),
       terminalKind(-1),
-      imageTexture(0) {}
+      imageTexture(0),
+      imageRadius(0.0f) {}
 
 std::shared_ptr<ActionMenuItem> ActionMenuItem::make(const std::string& text, int glyph, std::function<void()> action) {
     return std::make_shared<ActionMenuItem>(text, glyph, std::move(action));
@@ -163,8 +165,9 @@ std::shared_ptr<ActionMenuItem> ActionMenuItem::trailing(int codepoint) {
     return shared_from_this();
 }
 
-std::shared_ptr<ActionMenuItem> ActionMenuItem::image(uint32_t texture) {
+std::shared_ptr<ActionMenuItem> ActionMenuItem::image(uint32_t texture, float radius) {
     imageTexture = texture;
+    imageRadius = radius;
     return shared_from_this();
 }
 
@@ -238,6 +241,13 @@ void ActionMenuItem::itemTrail(bool hovered) {
 }
 
 bool ActionMenuItem::itemIcon(float cx, float cy, uint32_t tint) {
+    if (imageTexture != 0 && imageRadius > 0.0f) {
+        ShaderUtil::roundTex(UiRender::transformX(cx - 8.0f), UiRender::transformY(cy - 8.0f),
+                             UiRender::transformW(16.0f), UiRender::transformW(16.0f),
+                             UiRender::transformW(imageRadius), imageTexture, 0.0f, 0.0f, 1.0f, 1.0f,
+                             UiRender::applyAlpha(0xFFFFFFFFu));
+        return true;
+    }
     if (imageTexture != 0) {
         UiRender::texture(imageTexture, cx - 8.0f, cy - 8.0f, 16.0f, 16.0f);
         return true;

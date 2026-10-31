@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
 #include <cwctype>
 #include <deque>
@@ -34,6 +35,7 @@ namespace Instances {
         // Instances changed outside the launcher are read again once the change has been over for this long.
         constexpr double SETTLE = 1.0;
         const char* const FOLDERS = "gameFolders";
+        const char* const ORDER = "instanceOrder";
 
         std::thread worker;
         std::mutex lock;
@@ -45,6 +47,7 @@ namespace Instances {
         std::vector<Source> roots;
         blb::instance::isolation_mode mode = blb::instance::isolation_mode::modded;
         std::vector<Entry> entries;
+        std::map<std::string, std::vector<std::string>> arranged;
         std::string selection;
         bool scanned = false;
         int running = 0;
@@ -170,6 +173,36 @@ namespace Instances {
             return out;
         }
 
+        size_t rankOf(const std::string& source) {
+            return (size_t) (std::find_if(roots.begin(), roots.end(),
+                                          [&](const Source& root) { return root.key == source; }) -
+                             roots.begin());
+        }
+
+        size_t positionOf(const Entry& entry) {
+            auto found = arranged.find(entry.source);
+            if (found == arranged.end()) {
+                return SIZE_MAX;
+            }
+            auto at = std::find(found->second.begin(), found->second.end(), entry.info.id);
+            return at == found->second.end() ? SIZE_MAX : (size_t) (at - found->second.begin());
+        }
+
+        void sortEntries() {
+            std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+                size_t rankA = rankOf(a.source);
+                size_t rankB = rankOf(b.source);
+                return rankA != rankB ? rankA < rankB : positionOf(a) < positionOf(b);
+            });
+        }
+
+        void saveOrder() {
+            Config::data()[ORDER] = arranged;
+            if (!Config::save()) {
+                notify("无法保存启动器配置", true);
+            }
+        }
+
         void apply(Scan& result) {
             std::vector<Entry> next;
             for (Entry& entry : result.entries) {
@@ -189,6 +222,7 @@ namespace Instances {
                 next.push_back(std::move(entry));
             }
             entries = std::move(next);
+            sortEntries();
             for (Source& source : roots) {
                 auto found = result.exists.find(source.key);
                 if (found != result.exists.end()) {
@@ -257,6 +291,19 @@ namespace Instances {
             if (auto it = doc.find("isolation"); it != doc.end() && it->is_string()) {
                 if (auto parsed = blb::instance::parse_isolation(it->get<std::string>())) {
                     mode = *parsed;
+                }
+            }
+            if (auto it = doc.find(ORDER); it != doc.end() && it->is_object()) {
+                for (auto group = it->begin(); group != it->end(); ++group) {
+                    if (!group.value().is_array()) {
+                        continue;
+                    }
+                    std::vector<std::string>& ids = arranged[group.key()];
+                    for (const nlohmann::json& id : group.value()) {
+                        if (id.is_string()) {
+                            ids.push_back(id.get<std::string>());
+                        }
+                    }
                 }
             }
         }
@@ -456,14 +503,12 @@ namespace Instances {
             for (const std::string& key : update.gone) {
                 std::erase_if(entries, [&](const Entry& entry) { return entry.key == key; });
             }
-            auto rank = [](const std::string& source) {
-                return std::find_if(roots.begin(), roots.end(),
-                                    [&](const Source& root) { return root.key == source; }) -
-                        roots.begin();
-            };
-            std::stable_sort(entries.begin(), entries.end(), [&](const Entry& a, const Entry& b) {
-                return rank(a.source) != rank(b.source) ? rank(a.source) < rank(b.source) : a.info.id < b.info.id;
+            std::stable_sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+                size_t rankA = rankOf(a.source);
+                size_t rankB = rankOf(b.source);
+                return rankA != rankB ? rankA < rankB : a.info.id < b.info.id;
             });
+            sortEntries();
         }
 
         void operate(const std::string& key, const std::string& activity, const std::string& success,
@@ -513,6 +558,22 @@ namespace Instances {
         std::string sourceOf(const std::string& key) {
             size_t slash = key.find('/');
             return slash == std::string::npos ? std::string() : key.substr(0, slash);
+        }
+
+        void rearrange(const std::string& key, const std::function<void(std::vector<std::string>&, size_t)>& edit) {
+            size_t slash = key.find('/');
+            auto found = arranged.find(sourceOf(key));
+            if (slash == std::string::npos || found == arranged.end()) {
+                return;
+            }
+            std::vector<std::string>& ids = found->second;
+            auto at = std::find(ids.begin(), ids.end(), key.substr(slash + 1));
+            if (at == ids.end()) {
+                return;
+            }
+            edit(ids, (size_t) (at - ids.begin()));
+            sortEntries();
+            saveOrder();
         }
     }
 
@@ -654,6 +715,19 @@ namespace Instances {
         saveConfig();
     }
 
+    void arrange(const std::string& source, const std::vector<std::string>& keys) {
+        std::vector<std::string> ids;
+        for (const std::string& key : keys) {
+            const Entry* entry = findMutable(key);
+            if (entry != nullptr && entry->source == source) {
+                ids.push_back(entry->info.id);
+            }
+        }
+        arranged[source] = ids;
+        sortEntries();
+        saveOrder();
+    }
+
     blb::instance::isolation_mode isolation() {
         return mode;
     }
@@ -738,6 +812,9 @@ namespace Instances {
         std::string label = found->label;
         flushSaves();
         roots.erase(found);
+        if (arranged.erase(key) != 0) {
+            saveOrder();
+        }
         entries.erase(
                 std::remove_if(entries.begin(), entries.end(), [&](const Entry& entry) { return entry.source == key; }),
                 entries.end());
@@ -764,9 +841,12 @@ namespace Instances {
                 [to](const blb::instance::instance_manager& with, const std::string& id) {
                     return with.rename(id, to);
                 },
-                [key, renamed, done](const std::string& error) {
+                [key, renamed, to, done](const std::string& error) {
                     if (error.empty() && selection == key) {
                         select(renamed);
+                    }
+                    if (error.empty()) {
+                        rearrange(key, [to](std::vector<std::string>& ids, size_t at) { ids[at] = to; });
                     }
                     if (done) {
                         done(error);
@@ -780,7 +860,16 @@ namespace Instances {
                 [to](const blb::instance::instance_manager& with, const std::string& id) {
                     return with.duplicate(id, to, true);
                 },
-                std::move(done));
+                [key, to, done](const std::string& error) {
+                    if (error.empty()) {
+                        rearrange(key, [to](std::vector<std::string>& ids, size_t at) {
+                            ids.insert(ids.begin() + (long long) at + 1, to);
+                        });
+                    }
+                    if (done) {
+                        done(error);
+                    }
+                });
     }
 
     void remove(const std::string& key, Done done) {
@@ -790,7 +879,16 @@ namespace Instances {
         operate(
                 key, "正在删除", "已删除 " + name, "删除失败：",
                 [](const blb::instance::instance_manager& with, const std::string& id) { return with.remove(id); },
-                std::move(done));
+                [key, done](const std::string& error) {
+                    if (error.empty()) {
+                        rearrange(key, [](std::vector<std::string>& ids, size_t at) {
+                            ids.erase(ids.begin() + (long long) at);
+                        });
+                    }
+                    if (done) {
+                        done(error);
+                    }
+                });
     }
 
     std::string checkId(const std::string& source, const std::string& id) {

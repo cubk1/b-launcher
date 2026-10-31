@@ -6,7 +6,7 @@
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Logo.h"
-#include "ui/imgui/screens/home/QuickActions.h"
+#include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Platform.h"
@@ -93,6 +93,7 @@ namespace Homepage {
         constexpr float TOP_GAP = 10.0f;
         constexpr float QUICK_W = 360.0f;
         constexpr float QUICK_GAP = 28.0f;
+        constexpr float LOGO_MIN = 96.0f;
         constexpr double URL_SETTLE = 0.8;
 
         struct View {
@@ -776,17 +777,25 @@ namespace Homepage {
         if (announcement || (views.size() <= 1 && source() == SOURCE_NONE)) {
             float panelLeft = MainWindow::sidebarWidth();
             float panelRight = MainWindow::width();
-            float listH = announcement ? 0.0f : QuickActions::height();
+            float listH = announcement ? 0.0f : HomeWidgets::height();
             float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
-            float size =
-                    std::clamp(std::min(panelRight - panelLeft, bottom - top - listH - gap) * 0.46f, 96.0f, 360.0f);
             float cx = (panelLeft + panelRight) * 0.5f;
-            float logoY = (top + bottom - size - gap - listH) * 0.5f - 8.0f;
-            float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
-                                                        : (UiTheme::isLight() ? 0.12f : 0.09f);
-            Logo::draw(cx - size * 0.5f, logoY, size, faint);
-            if (listH > 0.0f) {
-                QuickActions::draw(cx - QUICK_W * 0.5f, logoY + size + gap, QUICK_W, blocked || modal.open);
+            bool covered = blocked || modal.open;
+            if (listH > 0.0f && bottom - top - listH - gap < LOGO_MIN + TOP_PAD) {
+                Page::Scroll body("homepage#widgets", top, bottom, listH + 2.0f * TOP_PAD, left, right - left);
+                bool outside = body.begin();
+                HomeWidgets::draw(cx - QUICK_W * 0.5f, body.top - body.offset + TOP_PAD, QUICK_W, covered || outside);
+                body.end();
+            } else {
+                float size = std::clamp(std::min(panelRight - panelLeft, bottom - top - listH - gap) * 0.46f, LOGO_MIN,
+                                        360.0f);
+                float logoY = (top + bottom - size - gap - listH) * 0.5f - 8.0f;
+                float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
+                                                            : (UiTheme::isLight() ? 0.12f : 0.09f);
+                Logo::draw(cx - size * 0.5f, logoY, size, faint);
+                if (listH > 0.0f) {
+                    HomeWidgets::draw(cx - QUICK_W * 0.5f, logoY + size + gap, QUICK_W, covered);
+                }
             }
             if (!announcement) {
                 if (modal.open) {

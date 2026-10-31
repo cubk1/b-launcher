@@ -43,6 +43,7 @@ namespace Instances {
 
     const std::string& selected();
     void select(const std::string& key);
+    void arrange(const std::string& source, const std::vector<std::string>& keys);
 
     blb::instance::isolation_mode isolation();
     void setIsolation(blb::instance::isolation_mode mode);

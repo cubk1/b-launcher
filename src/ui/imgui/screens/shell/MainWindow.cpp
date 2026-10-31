@@ -100,6 +100,17 @@ namespace MainWindow {
     static std::set<std::string> collapsed;
     static bool collapsedLoaded = false;
     static bool scrollRestored = false;
+    static const double HOLD_TIME = 0.4;
+    static const double HOLD_QUIET = 0.12;
+    static const float HOLD_SLOP = 6.0f;
+    static const float DRAG_EDGE = 28.0f;
+    static std::string holdKey;
+    static double holdAt = 0.0;
+    static float holdX = 0.0f;
+    static float holdY = 0.0f;
+    static std::string dragKey;
+    static float dragGrab = 0.0f;
+    static std::string landKey;
     static float layoutWidth = MIN_WIDTH;
     static float layoutHeight = MIN_HEIGHT;
     static bool layoutMaximized = false;
@@ -637,7 +648,73 @@ namespace MainWindow {
         if (item.pressed) {
             Instances::select(key);
             pages.go(PAGE_HOME);
+            holdKey = key;
+            holdAt = ImGui::GetTime();
+            holdX = NewUi::mouseX;
+            holdY = NewUi::mouseY;
         }
+    }
+
+    static std::string shiftId(const std::string& key) {
+        return "sidebar#shift#" + key;
+    }
+
+    static void raised(float y, float amount) {
+        if (amount <= 0.001f) {
+            return;
+        }
+        float savedAlpha = UiRender::alphaMul;
+        UiRender::alphaMul = savedAlpha * amount;
+        UiRender::shadow(ITEM_X, y, listW, ITEM_H, 8.0f, 6.0f, 2.0f, UiTheme::shadow());
+        UiRender::roundRect(ITEM_X, y, listW, ITEM_H, 8.0f, UiTheme::surfaceRaised());
+        UiRender::alphaMul = savedAlpha;
+    }
+
+    static float holding() {
+        float t = (float) ((ImGui::GetTime() - holdAt - HOLD_QUIET) / (HOLD_TIME - HOLD_QUIET));
+        t = std::clamp(t, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+
+    static void carry(const std::string& source, const std::vector<const Instances::Entry*>& rows, int from, int to,
+                      float top, float viewH) {
+        int last = (int) rows.size() - 1;
+        float y = UiRender::clamp(NewUi::mouseY - dragGrab, top - 6.0f, top + last * ITEM_STEP + 6.0f);
+        UiState::put("sidebar#lift", 1.0f);
+        UiRender::scissor(0, LIST_TOP, sideW, viewH);
+        raised(y, 1.0f);
+        instanceRow(*rows[from], y, true);
+        UiRender::unscissor();
+        bool cancel = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        if (NewUi::mouseDown && !cancel) {
+            return;
+        }
+        if (cancel) {
+            to = from;
+        }
+        UiState::put(shiftId(rows[from]->key), y - (top + to * ITEM_STEP));
+        for (int r = 0; r <= last; r++) {
+            if (r == from) {
+                continue;
+            }
+            int moved = from < to && r > from && r <= to ? -1 : (from > to && r >= to && r < from ? 1 : 0);
+            std::string id = shiftId(rows[r]->key);
+            UiState::put(id, UiState::getOrDefault(id, 0.0f) - moved * ITEM_STEP);
+        }
+        landKey = dragKey;
+        dragKey.clear();
+        UiSound::request(UiSound::RELEASE);
+        if (from == to) {
+            return;
+        }
+        std::vector<std::string> keys;
+        for (const Instances::Entry* row : rows) {
+            keys.push_back(row->key);
+        }
+        std::string moved = keys[from];
+        keys.erase(keys.begin() + from);
+        keys.insert(keys.begin() + to, moved);
+        Instances::arrange(source, keys);
     }
 
     static void placeholderRow(const Instances::Source& source, float y, bool blocked, bool searching) {
@@ -699,6 +776,17 @@ namespace MainWindow {
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - LIST_TOP;
         float maxScroll = std::max(0.0f, contentH - viewH);
+        if (searching) {
+            holdKey.clear();
+            dragKey.clear();
+        }
+        if (!holdKey.empty() &&
+            (!NewUi::mouseDown || std::abs(NewUi::mouseX - holdX) > HOLD_SLOP ||
+             std::abs(NewUi::mouseY - holdY) > HOLD_SLOP)) {
+            holdKey.clear();
+        }
+        bool lifting = !holdKey.empty() && dragKey.empty() && ImGui::GetTime() - holdAt >= HOLD_TIME;
+        bool dragging = !dragKey.empty();
         float room = UiState::motion("sidebar#scrollRoom", maxScroll > 0.5f ? 1.0f : 0.0f, 14.0f);
         fullListW = UiRender::snapLayout(ITEM_W - SCROLL_ROOM * room);
         listW = UiRender::snapLayout(itemW - SCROLL_ROOM * room * (1.0f - fold));
@@ -713,21 +801,40 @@ namespace MainWindow {
         if (NewUi::hit(0, LIST_TOP, sideW, viewH) && ImGui::GetIO().MouseWheel != 0.0f) {
             listScroll -= ImGui::GetIO().MouseWheel * ITEM_STEP;
         }
+        if (dragging) {
+            float step = 10.0f * ImGui::GetIO().DeltaTime;
+            if (NewUi::mouseY < LIST_TOP + DRAG_EDGE) {
+                listScroll -= std::min(60.0f, LIST_TOP + DRAG_EDGE - NewUi::mouseY) * step;
+            } else if (NewUi::mouseY > listBottom - DRAG_EDGE) {
+                listScroll += std::min(60.0f, NewUi::mouseY - (listBottom - DRAG_EDGE)) * step;
+            }
+        }
         listScroll = UiRender::clamp(listScroll, 0, maxScroll);
         listSmooth = UiRender::clamp(UiRender::approach(listSmooth, listScroll, 18.0f), 0, maxScroll);
 
         float cursor = LIST_TOP - UiRender::snapLayout(listSmooth);
+        bool carried = false;
         for (size_t i = 0; i < sources.size(); i++) {
             const Instances::Source& source = sources[i];
             UiRender::scissor(0, LIST_TOP, sideW, viewH);
             bool headerBlocked = !NewUi::rawHit(0, std::max(LIST_TOP, cursor), sideW,
                                                 std::min(listBottom, cursor + GROUP_H) - std::max(LIST_TOP, cursor));
-            groupHeader(source, grouped[i].size(), cursor, opens[i], headerBlocked);
+            groupHeader(source, grouped[i].size(), cursor, opens[i], headerBlocked || dragging);
             UiRender::unscissor();
             cursor += GROUP_H;
 
-            int rows = groupRows(grouped[i]);
+            const std::vector<const Instances::Entry*>& entries = grouped[i];
+            int rows = groupRows(entries);
             float shownH = rows * ITEM_STEP * opens[i];
+            int from = -1;
+            int to = -1;
+            for (size_t r = 0; dragging && r < entries.size(); r++) {
+                if (entries[r]->key == dragKey) {
+                    from = (int) r;
+                    to = std::clamp(Ui::round((NewUi::mouseY - dragGrab - cursor) / ITEM_STEP), 0,
+                                    (int) entries.size() - 1);
+                }
+            }
             float clipTop = std::max(LIST_TOP, cursor);
             float clipBottom = std::min(listBottom, cursor + shownH);
             if (clipBottom > clipTop + 0.5f) {
@@ -736,23 +843,58 @@ namespace MainWindow {
                 float savedAlpha = UiRender::alphaMul;
                 UiRender::alphaMul = savedAlpha * opens[i];
                 float rowY = cursor;
-                if (grouped[i].empty()) {
+                if (entries.empty()) {
                     placeholderRow(source, rowY, blocked, searching);
                 }
-                for (const Instances::Entry* entry : grouped[i]) {
-                    if (rowY + ITEM_H >= clipTop && rowY <= clipBottom) {
-                        instanceRow(*entry, rowY, blocked);
+                for (size_t r = 0; r < entries.size(); r++) {
+                    const Instances::Entry& entry = *entries[r];
+                    int index = (int) r;
+                    if (lifting && entry.key == holdKey) {
+                        dragKey = holdKey;
+                        dragGrab = NewUi::mouseY - rowY;
+                        holdKey.clear();
+                        lifting = false;
+                        from = index;
+                        to = index;
+                        landKey.clear();
+                        UiSound::request(UiSound::PRESS);
+                    }
+                    float target = 0.0f;
+                    if (from >= 0 && from < to && index > from && index <= to) {
+                        target = -ITEM_STEP;
+                    } else if (from >= 0 && from > to && index >= to && index < from) {
+                        target = ITEM_STEP;
+                    }
+                    float y = rowY + UiState::motion(shiftId(entry.key), target, 20.0f);
+                    if (index != from && y + ITEM_H >= clipTop && y <= clipBottom) {
+                        if (entry.key == holdKey) {
+                            raised(y, holding());
+                        } else if (entry.key == landKey) {
+                            float settle = UiState::motion("sidebar#lift", 0.0f, 14.0f);
+                            raised(y, settle);
+                            if (settle <= 0.001f) {
+                                landKey.clear();
+                            }
+                        }
+                        instanceRow(entry, y, blocked || dragging || from >= 0);
                     }
                     rowY += ITEM_STEP;
                 }
                 UiRender::alphaMul = savedAlpha;
                 UiRender::unscissor();
             }
+            if (from >= 0) {
+                carried = true;
+                carry(source.key, entries, from, to, cursor, viewH);
+            }
             cursor += shownH + GROUP_GAP;
+        }
+        if (dragging && !carried) {
+            dragKey.clear();
         }
         if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
             UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            addFolderRow(cursor, !NewUi::rawHit(0, LIST_TOP, sideW, viewH));
+            addFolderRow(cursor, dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH));
             UiRender::unscissor();
         }
 
