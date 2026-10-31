@@ -395,6 +395,7 @@ namespace ImGuiApp {
                     released = true;
                     releaseMemory();
                 }
+                Services::poll();
                 LogWindow::frame(scale);
                 Sleep(LogWindow::isOpen() ? 15 : 10);
                 continue;

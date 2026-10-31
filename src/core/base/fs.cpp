@@ -569,6 +569,37 @@ same_file (const path &a, const path &b) noexcept
 #endif
 }
 
+bool
+safe_relative (std::string_view relative) noexcept
+{
+  if (relative.empty () || relative.front () == '/'
+      || relative.front () == '\\'
+      || relative.find (':') != std::string_view::npos)
+    return false;
+  std::size_t start = 0;
+  while (start <= relative.size ())
+    {
+      auto end = relative.find_first_of ("/\\", start);
+      if (end == std::string_view::npos)
+        end = relative.size ();
+      if (relative.substr (start, end - start) == "..")
+        return false;
+      start = end + 1;
+    }
+  return true;
+}
+
+bool
+is_inside (const path &root, const path &target)
+{
+  auto relative
+      = fs::absolute (target).lexically_relative (fs::absolute (root));
+  if (relative.empty () || relative.is_absolute ())
+    return false;
+  const path &first = *relative.begin ();
+  return first != path ("..") && first != path (".");
+}
+
 path
 current_directory ()
 {

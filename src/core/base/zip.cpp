@@ -9,7 +9,9 @@
 #include <mz_zip.h>
 #include <mz_zip_rw.h>
 
+#include <cstdint>
 #include <ctime>
+#include <vector>
 
 namespace b_launcher_base
 {
@@ -175,8 +177,41 @@ zip_reader::read_current ()
 result<void>
 zip_reader::extract_current (const std::filesystem::path &target)
 {
-  BLB_TRY_ASSIGN (auto data, read_current ());
-  return fs::write_file (target, data);
+  if (target.has_parent_path ())
+    BLB_TRY (fs::create_directories (target.parent_path ()));
+  BLB_TRY_ASSIGN (
+      auto file, fs::native_file::open (target, fs::native_file::mode::write));
+  auto rc = mz_zip_reader_entry_open (m_handle);
+  if (rc != MZ_OK)
+    {
+      (void)file.close ();
+      (void)fs::remove_file (target);
+      return zip_error ("cannot open zip entry", rc);
+    }
+  std::vector<char> buffer (256u << 10);
+  result<void> written = ok ();
+  std::int32_t read = 0;
+  while ((read = mz_zip_reader_entry_read (
+              m_handle, buffer.data (),
+              static_cast<std::int32_t> (buffer.size ())))
+         > 0)
+    {
+      written
+          = file.write_all (buffer.data (), static_cast<std::size_t> (read));
+      if (!written)
+        break;
+    }
+  rc = mz_zip_reader_entry_close (m_handle);
+  if (written)
+    written = file.close ();
+  else
+    (void)file.close ();
+  if (written && read >= 0 && rc == MZ_OK)
+    return ok ();
+  (void)fs::remove_file (target);
+  if (!written)
+    return written;
+  return zip_error ("cannot read zip entry", read < 0 ? read : rc);
 }
 
 result<std::string>

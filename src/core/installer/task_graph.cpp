@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -76,10 +77,25 @@ task_graph::run (cancellation_token token, progress_sink *sink)
       auto started = std::chrono::steady_clock::now ();
       if (sink)
         sink->on_stage (m_nodes[id].name, "start");
-      auto outcome
-          = child.is_cancelled ()
-                ? result<void> (make_error (errc::cancelled, "cancelled"))
-                : m_nodes[id].fn (child);
+      auto outcome = [&] () -> result<void> {
+        if (child.is_cancelled ())
+          return make_error (errc::cancelled, "cancelled");
+        try
+          {
+            return m_nodes[id].fn (child);
+          }
+        catch (const std::exception &e)
+          {
+            return make_error (
+                errc::unknown,
+                sformat ("task '{}' failed: {}", m_nodes[id].name, e.what ()));
+          }
+        catch (...)
+          {
+            return make_error (errc::unknown,
+                               sformat ("task '{}' failed", m_nodes[id].name));
+          }
+      }();
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds> (
                     std::chrono::steady_clock::now () - started)
                     .count ();

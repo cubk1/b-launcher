@@ -284,7 +284,7 @@ loader_installer::install (const install_request &request, progress_sink *sink,
   standalone.jar.clear ();
   standalone.client_version = request.minecraft;
   BLB_TRY (meta::save_version (layout, standalone));
-  if (!vanilla_existed)
+  if (!vanilla_existed && id != request.minecraft)
     (void)fs::remove_all (layout.version_dir (request.minecraft));
   BLB_TRY_ASSIGN (auto final_version, meta::resolve_version (layout, id));
   BLB_TRY (installer.complete_version (final_version,

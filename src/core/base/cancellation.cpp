@@ -4,6 +4,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace b_launcher_base
@@ -17,8 +18,11 @@ struct cancel_state
   std::atomic<bool> cancelled { false };
   std::mutex mutex;
   std::condition_variable cv;
+  std::condition_variable finished;
   std::vector<std::pair<std::uint64_t, std::function<void ()>>> callbacks;
   std::uint64_t next_id = 1;
+  std::uint64_t running = 0;
+  std::thread::id runner;
 };
 
 }
@@ -91,16 +95,29 @@ cancellation_source::cancellation_source ()
 void
 cancellation_source::cancel ()
 {
-  std::vector<std::pair<std::uint64_t, std::function<void ()>>> callbacks;
-  {
-    std::lock_guard lock (m_state->mutex);
-    if (m_state->cancelled.exchange (true, std::memory_order_acq_rel))
-      return;
-    callbacks.swap (m_state->callbacks);
-  }
+  std::unique_lock lock (m_state->mutex);
+  if (m_state->cancelled.exchange (true, std::memory_order_acq_rel))
+    return;
   m_state->cv.notify_all ();
-  for (auto &entry : callbacks)
-    entry.second ();
+  m_state->runner = std::this_thread::get_id ();
+  while (!m_state->callbacks.empty ())
+    {
+      auto entry = std::move (m_state->callbacks.front ());
+      m_state->callbacks.erase (m_state->callbacks.begin ());
+      m_state->running = entry.first;
+      lock.unlock ();
+      try
+        {
+          entry.second ();
+        }
+      catch (...)
+        {
+        }
+      entry.second = nullptr;
+      lock.lock ();
+      m_state->running = 0;
+      m_state->finished.notify_all ();
+    }
 }
 
 bool
@@ -155,9 +172,13 @@ cancellation_registration::reset ()
   if (!m_state)
     return;
   {
-    std::lock_guard lock (m_state->mutex);
+    std::unique_lock lock (m_state->mutex);
     std::erase_if (m_state->callbacks,
                    [this] (const auto &entry) { return entry.first == m_id; });
+    if (m_state->running == m_id
+        && m_state->runner != std::this_thread::get_id ())
+      m_state->finished.wait (lock,
+                              [this] { return m_state->running != m_id; });
   }
   m_state.reset ();
   m_id = 0;

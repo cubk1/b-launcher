@@ -23,6 +23,7 @@ namespace
 
 constexpr log::logger s_log ("download");
 constexpr std::size_t staging_limit = 1u << 20;
+constexpr std::uint64_t io_backlog_limit = 32u << 20;
 
 constexpr std::int64_t split_threshold = 5 << 20;
 constexpr unsigned split_connections = 8;
@@ -106,6 +107,7 @@ struct download_client::impl
   std::mutex completion_mutex;
   std::vector<completion> completions;
   std::atomic<std::size_t> io_outstanding { 0 };
+  std::atomic<std::uint64_t> io_backlog { 0 };
   std::mutex dir_mutex;
   std::unordered_set<std::string> known_dirs;
   std::unordered_map<CURL *, std::unique_ptr<transfer>> active;
@@ -394,8 +396,10 @@ struct download_client::impl
   finish_buffered (std::unique_ptr<transfer> t)
   {
     ++io_outstanding;
+    std::uint64_t held = t->buffer.capacity ();
+    io_backlog += held;
     auto *raw = t.release ();
-    thread_pool::io ().post ([this, raw] {
+    thread_pool::io ().post ([this, raw, held] {
       std::unique_ptr<transfer> t (raw);
       const auto &task = *t->task;
       completion done { t->index,     t->attempt, t->url,
@@ -438,6 +442,8 @@ struct download_client::impl
         }
       if (done.failure && progress)
         progress->sub_done (t->received);
+      t.reset ();
+      io_backlog -= held;
       push_completion (std::move (done));
       --io_outstanding;
     });
@@ -795,7 +801,7 @@ struct download_client::impl
       return fail_job (job, std::move (reason), false);
     s_log.debug ("range of {} again after: {}",
                  path_to_utf8 (job.task->target), reason.message);
-    if (job.no_ranges && seg.pos > seg.begin)
+    if ((job.no_ranges || seg.pos >= seg.end) && seg.pos > seg.begin)
       {
         if (progress)
           progress->sub_done (seg.pos - seg.begin);
@@ -1010,11 +1016,13 @@ struct download_client::impl
             pending.clear ();
           }
 
-        if (!cancelled)
+        bool backlogged = io_backlog.load () >= io_backlog_limit;
+
+        if (!cancelled && !backlogged)
           schedule_segments (settings, proxy);
 
-        while (!cancelled && active.size () < options.concurrency
-               && !pending.empty ())
+        while (!cancelled && !backlogged
+               && active.size () < options.concurrency && !pending.empty ())
           {
             auto [index, attempt] = pending.front ();
             pending.pop_front ();
@@ -1037,7 +1045,7 @@ struct download_client::impl
             active.emplace (easy, std::move (t));
           }
 
-        if (!cancelled && pending.empty () && !active.empty ()
+        if (!cancelled && !backlogged && pending.empty () && !active.empty ()
             && active.size () < options.concurrency)
           {
             auto now = std::chrono::steady_clock::now ();
@@ -1140,8 +1148,8 @@ struct download_client::impl
           }
         if (progress)
           progress->report ();
-        curl_multi_poll (multi, nullptr, 0, active.empty () ? 5 : 100,
-                         nullptr);
+        curl_multi_poll (multi, nullptr, 0,
+                         active.empty () && !backlogged ? 5 : 100, nullptr);
       }
 
     progress = nullptr;

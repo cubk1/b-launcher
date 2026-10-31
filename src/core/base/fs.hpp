@@ -49,6 +49,8 @@ path temp_sibling (const path &target);
 bool same_volume (const path &a, const path &b) noexcept;
 bool same_file (const path &a, const path &b) noexcept;
 path absolute (const path &target);
+bool safe_relative (std::string_view relative) noexcept;
+bool is_inside (const path &root, const path &target);
 path real_path (const path &target);
 path current_directory ();
 result<void> copy_tree (const path &from, const path &to);

@@ -100,14 +100,16 @@ prepare_natives (const meta::version &resolved,
                 for (const auto &prefix : archive.exclude)
                   if (entry.name.starts_with (prefix))
                     return true;
-                if (entry.name.find ("..") != std::string::npos)
+                if (!fs::safe_relative (entry.name))
+                  return true;
+                auto target = directory / path_from_utf8 (entry.name);
+                if (!fs::is_inside (directory, target))
                   return true;
                 {
                   std::lock_guard lock (error_mutex);
                   if (!claimed.insert (to_lower (entry.name)).second)
                     return true;
                 }
-                auto target = directory / path_from_utf8 (entry.name);
                 if (auto w = zip.extract_current (target); !w)
                   {
                     std::lock_guard lock (error_mutex);

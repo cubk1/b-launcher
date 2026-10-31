@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
 #include <core/modpack/modpack.hpp>
@@ -322,14 +323,7 @@ namespace detail
 bool
 safe_relative (std::string_view path)
 {
-  if (path.empty () || path.front () == '/' || path.front () == '\\')
-    return false;
-  if (path.size () > 1 && path[1] == ':')
-    return false;
-  for (auto part : split (replace_all (path, "\\", "/"), '/'))
-    if (part == "..")
-      return false;
-  return true;
+  return fs::safe_relative (path);
 }
 
 }
