@@ -45,11 +45,7 @@ namespace Shortcuts {
         }
 
         std::string safeName(const std::string& name) {
-            std::string out;
-            for (char c : name) {
-                bool bad = (unsigned char) c < 32 || std::string("<>:\"/\\|?*").find(c) != std::string::npos;
-                out += bad ? '_' : c;
-            }
+            std::string out = blb::fs::filter_filename(name, '_');
             return out.empty() ? std::string("Minecraft") : out;
         }
 

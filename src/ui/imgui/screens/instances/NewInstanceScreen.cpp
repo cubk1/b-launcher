@@ -5,6 +5,7 @@
 #include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
+#include "app/instances/InstanceSettings.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 
@@ -256,23 +257,9 @@ namespace NewInstanceScreen {
             }
         }
 
-        std::string folderName(const std::string& title) {
-            std::string out;
-            for (char c : title) {
-                if (std::string("\\/:*?\"<>|").find(c) == std::string::npos && (unsigned char) c >= 32) {
-                    out += c;
-                }
-            }
-            while (!out.empty() && (out.back() == ' ' || out.back() == '.')) {
-                out.pop_back();
-            }
-            size_t start = out.find_first_not_of(' ');
-            return start == std::string::npos ? std::string("modpack") : out.substr(start);
-        }
-
         std::string generatedName() {
             if (modpack) {
-                return folderName(modpack->title);
+                return InstanceSettings::modpackName(modpack->title);
             }
             blb::install::install_request request;
             request.minecraft = minecraft;

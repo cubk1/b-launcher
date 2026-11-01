@@ -1,6 +1,7 @@
 #include "app/instances/InstanceSettings.h"
 #include "app/system/Catalog.h"
 
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 
 #include <algorithm>
@@ -12,6 +13,14 @@ namespace InstanceSettings {
 
     namespace {
         constexpr uint32_t MEMORY_STEP = 256;
+
+        std::string cleanFilename(const std::string& text) {
+            std::string out = blb::fs::filter_filename(text);
+            while (!out.empty() && (out.back() == '.' || out.back() == ' ')) {
+                out.pop_back();
+            }
+            return std::string(blb::trim(out));
+        }
 
         bool samePath(const std::filesystem::path& a, const std::filesystem::path& b) {
             if (a.empty() || b.empty()) {
@@ -104,17 +113,13 @@ namespace InstanceSettings {
                 samePath(chosen, java.home);
     }
 
+    std::string modpackName(const std::string& title) {
+        std::string out = cleanFilename(title);
+        return out.empty() ? std::string("modpack") : out;
+    }
+
     std::string optionsFile(const std::string& text) {
-        std::string out;
-        for (char c : blb::trim(text)) {
-            if ((unsigned char) c >= 0x20 && std::string_view("\\/:*?\"<>|").find(c) == std::string_view::npos) {
-                out += c;
-            }
-        }
-        while (!out.empty() && (out.back() == '.' || out.back() == ' ')) {
-            out.pop_back();
-        }
-        out = std::string(blb::trim(out));
+        std::string out = cleanFilename(text);
         return blb::iequals(out, "options.txt") ? std::string() : out;
     }
 

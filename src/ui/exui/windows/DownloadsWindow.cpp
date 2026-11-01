@@ -10,6 +10,7 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
+#include "app/instances/InstanceSettings.h"
 #include "app/system/Catalog.h"
 #include "app/system/Config.h"
 #include "app/system/Pixels.h"
@@ -530,21 +531,6 @@ namespace ForgottenMelody {
             auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c; };
             return std::search(text.begin(), text.end(), part.begin(), part.end(),
                                [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
-        }
-
-        // An instance from a modpack is named after its title, without what a folder name cannot have.
-        std::string folderName(const std::string& title) {
-            std::string out;
-            for (char c : title) {
-                if (std::string("\\/:*?\"<>|").find(c) == std::string::npos && (unsigned char) c >= 32) {
-                    out += c;
-                }
-            }
-            while (!out.empty() && (out.back() == ' ' || out.back() == '.')) {
-                out.pop_back();
-            }
-            size_t start = out.find_first_not_of(' ');
-            return start == std::string::npos ? std::string("modpack") : out.substr(start);
         }
 
         // A modpack to install, from a file or from a project, with what is shown of it.
@@ -1408,7 +1394,7 @@ namespace ForgottenMelody {
 
             std::string generatedName() const {
                 if (modpack) {
-                    return folderName(modpack->title);
+                    return InstanceSettings::modpackName(modpack->title);
                 }
                 blb::install::install_request request;
                 request.minecraft = minecraft;

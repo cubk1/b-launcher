@@ -589,6 +589,18 @@ safe_relative (std::string_view relative) noexcept
   return true;
 }
 
+namespace
+{
+
+bool
+filename_character (unsigned char c) noexcept
+{
+  return c >= 32 && std::string_view ("/\\:*?\"<>|").find (c)
+                        == std::string_view::npos;
+}
+
+}
+
 component_error
 check_component (std::string_view name) noexcept
 {
@@ -597,8 +609,7 @@ check_component (std::string_view name) noexcept
   if (name == "." || name == "..")
     return component_error::dot;
   for (unsigned char c : name)
-    if (c < 32 || std::string_view ("/\\:*?\"<>|").find (c)
-                      != std::string_view::npos)
+    if (!filename_character (c))
       return component_error::invalid_character;
   if (name.back () == '.' || name.back () == ' ')
     return component_error::trailing_dot_or_space;
@@ -624,6 +635,19 @@ safe_filename (std::string_view name) noexcept
            && (iequals (stem.substr (0, 3), "com")
                || iequals (stem.substr (0, 3), "lpt"))
            && stem[3] >= '1' && stem[3] <= '9');
+}
+
+std::string
+filter_filename (std::string_view name, char replacement)
+{
+  std::string out;
+  out.reserve (name.size ());
+  for (unsigned char c : name)
+    if (filename_character (c))
+      out += static_cast<char> (c);
+    else if (replacement != '\0')
+      out += replacement;
+  return out;
 }
 
 bool

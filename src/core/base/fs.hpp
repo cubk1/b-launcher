@@ -67,6 +67,9 @@ component_error check_component (std::string_view name) noexcept;
 bool safe_component (std::string_view name) noexcept;
 // Download filenames additionally reject DEL and Windows device names.
 bool safe_filename (std::string_view name) noexcept;
+// Filter invalid name characters; a zero replacement removes them.
+// Does not trim, validate the full name, or choose an empty-name fallback.
+std::string filter_filename (std::string_view name, char replacement = '\0');
 // Lexical containment is separate from checking existing links/reparse points.
 bool is_inside (const path &root, const path &target);
 path real_path (const path &target);
