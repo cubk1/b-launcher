@@ -461,11 +461,14 @@ namespace GameLog {
     }
 
     void clear() {
+        std::lock_guard<std::mutex> guard(lock);
         if (current == nullptr) {
             return;
         }
         current->kept.clear();
         current->waiting.clear();
+        current->pending.clear();
+        current->pendingDropped = 0;
         current->firstNumber = 0;
         current->droppedCount = 0;
         for (size_t& count : current->counts) {
