@@ -642,6 +642,40 @@ namespace InstancePage {
             }
         }
 
+        void optionsRow(const Instances::Entry& entry, float rowY, bool blocked) {
+            const std::string& id = entry.key;
+            bool usable = Patches::enabled(entry.info.settings.patch);
+            bool off = blocked || !usable;
+            float shade = UiState::motion(owner(id, "optionsFile#shade"), usable ? 1.0f : 0.4f, 16.0f);
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * shade;
+            Page::label("游戏设置文件", rowY);
+            float fieldX = Page::controlRight() - SELECT_W;
+            textField(textSetting(
+                              id, "optionsFile", "options.txt", [](const Settings& s) { return s.options_file; },
+                              [](Settings& s, const std::string& value) {
+                                  s.options_file = InstanceSettings::optionsFile(value);
+                              }),
+                      fieldX, rowY, SELECT_W, off);
+            std::string named = InstanceSettings::versionOptionsFile(entry.info.minecraft_version);
+            std::string preset = "按版本命名";
+            float presetW = Page::buttonWidth(preset);
+            float presetX = fieldX - 8.0f - presetW;
+            if (Page::button("instance#optionsPreset", preset, presetX, rowY + Page::FIELD_Y, presetW, false,
+                             off || named.empty())) {
+                if (NewUi::textEditing == owner(id, "optionsFile")) {
+                    NewUi::cancelTextEdit();
+                }
+                edit(id, [named](Settings& s) { s.options_file = named; });
+            }
+            UiRender::alphaMul = savedAlpha;
+            explain(id, "optionsFile",
+                    usable ? "游戏的按键、视频、语言等设置改存到这个文件，留空则使用 options.txt。多个实例共用一个游戏"
+                             "目录时，可以各自保留一份设置。"
+                           : "需要为这个实例启用启动器补丁，这项设置才能使用。",
+                    rowY, presetX - 8.0f, blocked);
+        }
+
         void gameRows(const Instances::Entry& entry, float y, bool blocked) {
             const std::string& id = entry.key;
             float rowY = y;
@@ -730,6 +764,9 @@ namespace InstancePage {
                     },
                     [followPatch] { return std::vector<std::string>{followPatch, "启用", "不启用"}; });
             select("instance#patch", patch, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
+            rowY += Page::ROW_H;
+
+            optionsRow(entry, rowY, blocked);
         }
 
         void windowRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -974,7 +1011,7 @@ namespace InstancePage {
             header(entry);
 
             const int manage = manageCount(entry);
-            const int gameCount = 6;
+            const int gameCount = 7;
             const int memoryCount = 2;
             const int windowCount = 2;
             const int serverRowCount = serverCount(entry);

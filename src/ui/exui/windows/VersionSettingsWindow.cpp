@@ -56,6 +56,8 @@ namespace ForgottenMelody {
             LOGS,
             PATCH_LABEL,
             PATCH,
+            OPTIONS_LABEL,
+            OPTIONS,
             // 内存
             MEMORY_GROUP,
             AUTO_MEMORY,
@@ -159,7 +161,7 @@ namespace ForgottenMelody {
         const SectionedForm::Frame FRAME = {
                 .width = 620, .height = 480, .top = 60, .bottom = 425, .listWidth = 0, .done = L"完成"};
         // The page's height, and the rows from the one after the server on, which move up a row while there is none.
-        constexpr int PAGE_HEIGHT = 1208, ROW = 33, BELOW_SERVER = 633;
+        constexpr int PAGE_HEIGHT = 1241, ROW = 33, BELOW_SERVER = 666;
 
         // The groups of the default interface down the page, the advanced ones after the others; the bounds count
         // from the top left of the scrolled page. The groups keep 12 pixels from both sides of the backing, the
@@ -172,7 +174,7 @@ namespace ForgottenMelody {
                 {EXPORT, ControlKind::Button, {248, 36, 100, 30}, L"导出整合包"},
                 {SHORTCUT, ControlKind::Button, {356, 36, 100, 30}, L"生成快捷方式"},
                 // 游戏
-                {GAME_GROUP, ControlKind::Group, {12, 92, 566, 228}, L"游戏"},
+                {GAME_GROUP, ControlKind::Group, {12, 92, 566, 261}, L"游戏"},
                 {DIR_LABEL, ControlKind::Label, {32, 117, 95, 26}, L"游戏目录"},
                 {DIR, ControlKind::Combo, {132, 117, 250, 26}},
                 {JAVA_LABEL, ControlKind::Label, {32, 150, 95, 26}, L"Java"},
@@ -185,55 +187,57 @@ namespace ForgottenMelody {
                 {LOGS, ControlKind::Combo, {132, 249, 250, 26}},
                 {PATCH_LABEL, ControlKind::Label, {32, 282, 95, 26}, L"启动器补丁"},
                 {PATCH, ControlKind::Combo, {132, 282, 250, 26}},
+                {OPTIONS_LABEL, ControlKind::Label, {32, 315, 95, 26}, L"游戏设置文件"},
+                {OPTIONS, ControlKind::Edit, {132, 315, 250, 26}},
                 // 内存
-                {MEMORY_GROUP, ControlKind::Group, {12, 330, 566, 96}, L"内存"},
-                {AUTO_MEMORY, ControlKind::Check, {32, 355, 200, 26}, L"自动分配"},
-                {MAX_LABEL, ControlKind::Label, {32, 388, 95, 26}, L"最大内存"},
-                {MAX, ControlKind::Edit, {132, 388, 80, 26}},
-                {MAX_UNIT, ControlKind::Label, {217, 388, 30, 26}, L"MB"},
-                {MAX_HINT, ControlKind::Label, {256, 388, 290, 26}},
+                {MEMORY_GROUP, ControlKind::Group, {12, 363, 566, 96}, L"内存"},
+                {AUTO_MEMORY, ControlKind::Check, {32, 388, 200, 26}, L"自动分配"},
+                {MAX_LABEL, ControlKind::Label, {32, 421, 95, 26}, L"最大内存"},
+                {MAX, ControlKind::Edit, {132, 421, 80, 26}},
+                {MAX_UNIT, ControlKind::Label, {217, 421, 30, 26}, L"MB"},
+                {MAX_HINT, ControlKind::Label, {256, 421, 290, 26}},
                 // 窗口
-                {WINDOW_GROUP, ControlKind::Group, {12, 436, 566, 96}, L"窗口"},
-                {SIZE_LABEL, ControlKind::Label, {32, 461, 95, 26}, L"窗口大小"},
-                {WIDTH, ControlKind::Edit, {132, 461, 70, 26}},
-                {TIMES, ControlKind::Label, {207, 461, 15, 26}, L"×"},
-                {HEIGHT, ControlKind::Edit, {227, 461, 70, 26}},
-                {SIZE_HINT, ControlKind::Label, {307, 461, 240, 26}, L"留空则使用游戏默认的大小"},
-                {FULLSCREEN, ControlKind::Check, {32, 494, 200, 26}, L"全屏启动"},
+                {WINDOW_GROUP, ControlKind::Group, {12, 469, 566, 96}, L"窗口"},
+                {SIZE_LABEL, ControlKind::Label, {32, 494, 95, 26}, L"窗口大小"},
+                {WIDTH, ControlKind::Edit, {132, 494, 70, 26}},
+                {TIMES, ControlKind::Label, {207, 494, 15, 26}, L"×"},
+                {HEIGHT, ControlKind::Edit, {227, 494, 70, 26}},
+                {SIZE_HINT, ControlKind::Label, {307, 494, 240, 26}, L"留空则使用游戏默认的大小"},
+                {FULLSCREEN, ControlKind::Check, {32, 527, 200, 26}, L"全屏启动"},
                 // 服务器
-                {SERVER_GROUP, ControlKind::Group, {12, 542, 566, 129}, L"服务器"},
-                {LOGIN_LABEL, ControlKind::Label, {32, 567, 95, 26}, L"登录方式"},
-                {LOGIN, ControlKind::Combo, {132, 567, 250, 26}},
-                {AUTH_LABEL, ControlKind::Label, {32, 600, 95, 26}},
-                {AUTH, ControlKind::Edit, {132, 600, 260, 26}},
-                {AUTH_PRESET, ControlKind::Button, {397, 598, 134, 30}},
-                {JOIN_LABEL, ControlKind::Label, {32, 633, 95, 26}, L"自动加入服务器"},
-                {JOIN, ControlKind::Edit, {132, 633, 300, 26}},
+                {SERVER_GROUP, ControlKind::Group, {12, 575, 566, 129}, L"服务器"},
+                {LOGIN_LABEL, ControlKind::Label, {32, 600, 95, 26}, L"登录方式"},
+                {LOGIN, ControlKind::Combo, {132, 600, 250, 26}},
+                {AUTH_LABEL, ControlKind::Label, {32, 633, 95, 26}},
+                {AUTH, ControlKind::Edit, {132, 633, 260, 26}},
+                {AUTH_PRESET, ControlKind::Button, {397, 631, 134, 30}},
+                {JOIN_LABEL, ControlKind::Label, {32, 666, 95, 26}, L"自动加入服务器"},
+                {JOIN, ControlKind::Edit, {132, 666, 300, 26}},
                 // 其他
-                {OTHER_GROUP, ControlKind::Group, {12, 681, 566, 105}, L"其他"},
-                {NOTES_LABEL, ControlKind::Label, {32, 706, 95, 26}, L"备注"},
-                {NOTES, ControlKind::Edit, {132, 706, 426, 70}},
+                {OTHER_GROUP, ControlKind::Group, {12, 714, 566, 105}, L"其他"},
+                {NOTES_LABEL, ControlKind::Label, {32, 739, 95, 26}, L"备注"},
+                {NOTES, ControlKind::Edit, {132, 739, 426, 70}},
                 // 高级设置
-                {COMMANDS_GROUP, ControlKind::Group, {12, 796, 566, 160}, L"自定义命令"},
-                {GAME_ARGS_LABEL, ControlKind::Label, {32, 821, 95, 26}, L"游戏参数"},
-                {GAME_ARGS, ControlKind::Edit, {132, 821, 426, 26}},
-                {PRE_LAUNCH_LABEL, ControlKind::Label, {32, 854, 95, 26}, L"启动前命令"},
-                {PRE_LAUNCH, ControlKind::Edit, {132, 854, 426, 26}},
-                {WRAPPER_LABEL, ControlKind::Label, {32, 887, 95, 26}, L"包装命令"},
-                {WRAPPER, ControlKind::Edit, {132, 887, 426, 26}},
-                {POST_EXIT_LABEL, ControlKind::Label, {32, 920, 95, 26}, L"退出后命令"},
-                {POST_EXIT, ControlKind::Edit, {132, 920, 426, 26}},
-                {JVM_GROUP, ControlKind::Group, {12, 966, 566, 127}, L"Java 虚拟机"},
-                {JVM_LABEL, ControlKind::Label, {32, 991, 95, 26}, L"JVM 参数"},
-                {JVM, ControlKind::Edit, {132, 991, 426, 26}},
-                {MIN_LABEL, ControlKind::Label, {32, 1024, 95, 26}, L"最小内存"},
-                {MIN, ControlKind::Edit, {132, 1024, 80, 26}},
-                {MIN_UNIT, ControlKind::Label, {217, 1024, 30, 26}, L"MB"},
-                {ENVIRONMENT_LABEL, ControlKind::Label, {32, 1057, 95, 26}, L"环境变量"},
-                {ENVIRONMENT, ControlKind::Edit, {132, 1057, 426, 26}},
-                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1103, 566, 95}, L"兼容性"},
-                {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {32, 1128, 250, 26}, L"不添加默认 JVM 参数"},
-                {NO_INTEGRITY_CHECK, ControlKind::Check, {32, 1161, 250, 26}, L"不检查游戏完整性"},
+                {COMMANDS_GROUP, ControlKind::Group, {12, 829, 566, 160}, L"自定义命令"},
+                {GAME_ARGS_LABEL, ControlKind::Label, {32, 854, 95, 26}, L"游戏参数"},
+                {GAME_ARGS, ControlKind::Edit, {132, 854, 426, 26}},
+                {PRE_LAUNCH_LABEL, ControlKind::Label, {32, 887, 95, 26}, L"启动前命令"},
+                {PRE_LAUNCH, ControlKind::Edit, {132, 887, 426, 26}},
+                {WRAPPER_LABEL, ControlKind::Label, {32, 920, 95, 26}, L"包装命令"},
+                {WRAPPER, ControlKind::Edit, {132, 920, 426, 26}},
+                {POST_EXIT_LABEL, ControlKind::Label, {32, 953, 95, 26}, L"退出后命令"},
+                {POST_EXIT, ControlKind::Edit, {132, 953, 426, 26}},
+                {JVM_GROUP, ControlKind::Group, {12, 999, 566, 127}, L"Java 虚拟机"},
+                {JVM_LABEL, ControlKind::Label, {32, 1024, 95, 26}, L"JVM 参数"},
+                {JVM, ControlKind::Edit, {132, 1024, 426, 26}},
+                {MIN_LABEL, ControlKind::Label, {32, 1057, 95, 26}, L"最小内存"},
+                {MIN, ControlKind::Edit, {132, 1057, 80, 26}},
+                {MIN_UNIT, ControlKind::Label, {217, 1057, 30, 26}, L"MB"},
+                {ENVIRONMENT_LABEL, ControlKind::Label, {32, 1090, 95, 26}, L"环境变量"},
+                {ENVIRONMENT, ControlKind::Edit, {132, 1090, 426, 26}},
+                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1136, 566, 95}, L"兼容性"},
+                {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {32, 1161, 250, 26}, L"不添加默认 JVM 参数"},
+                {NO_INTEGRITY_CHECK, ControlKind::Check, {32, 1194, 250, 26}, L"不检查游戏完整性"},
         };
 
         // The version settings of the default interface on one page that scrolls, in the frame of the settings.
@@ -274,6 +278,7 @@ namespace ForgottenMelody {
                 const Settings& settings = entry->info.settings;
                 bool automatic = settings.max_memory_mb == 0;
                 FindControl(MAX)->SetEnabled(!automatic);
+                FindControl(OPTIONS)->SetEnabled(Patches::enabled(settings.patch));
                 std::wstring hint = automatic ? L"自动分配时为 " + std::to_wstring(automaticMemory()) + L" MB" : L"";
                 if (Text(MAX_HINT) != hint) {
                     SetText(MAX_HINT, hint);
@@ -514,6 +519,12 @@ namespace ForgottenMelody {
                        {std::wstring(L"跟随全局（") + (Patches::all() ? L"启用" : L"不启用") + L"）", L"启用",
                         L"不启用"},
                        tristate(settings.patch));
+                text(
+                        OPTIONS_LABEL, OPTIONS, settings.options_file,
+                        [](Settings& s, const std::wstring& typed) {
+                            s.options_file = InstanceSettings::optionsFile(Platform::narrow(typed));
+                        },
+                        L"游戏的按键、视频、语言等设置改存到这个文件，留空则使用 options.txt；需要启用启动器补丁。");
 
                 SetChecked(AUTO_MEMORY, settings.max_memory_mb == 0);
                 text(MAX_LABEL, MAX, settings.max_memory_mb != 0 ? std::to_string(settings.max_memory_mb) : "",

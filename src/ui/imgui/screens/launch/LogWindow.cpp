@@ -3,6 +3,7 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
+#include "app/launch/LaunchDefaults.h"
 #include "app/system/About.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -36,10 +37,13 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -96,6 +100,25 @@ namespace LogWindow {
         bool following = true;
         int columnsAside = 0;
 
+        constexpr uint64_t NONE = ~0ull;
+        constexpr float GUTTER = 14.0f;
+        constexpr size_t REPEAT_KEYS = 200;
+        constexpr uint64_t REPEAT_TIMEOUT = 60000;
+
+        struct Repeat {
+            uint64_t row = 0;
+            uint64_t seen = 0;
+            int count = 1;
+        };
+
+        bool mergeRepeats = true;
+        bool rebuilding = false;
+        uint64_t head = NONE;
+        std::map<uint64_t, uint32_t> folds;
+        std::set<uint64_t> unfolded;
+        std::map<uint64_t, int> repeated;
+        std::unordered_map<std::string, Repeat> repeats;
+
         bool passes(GameLog::Level) {
             return true;
         }
@@ -117,13 +140,131 @@ namespace LogWindow {
             return found != text.end();
         }
 
+        std::string maskNumbers(std::string_view text) {
+            std::string out;
+            out.reserve(text.size());
+            bool inNumber = false;
+            for (char c : text) {
+                if ((c >= '0' && c <= '9') || (c == '.' && inNumber)) {
+                    if (!inNumber) {
+                        out += ' ';
+                        inNumber = true;
+                    }
+                    continue;
+                }
+                inNumber = false;
+                out += c;
+            }
+            return out;
+        }
+
+        bool divider(std::string_view text) {
+            size_t characters = 0;
+            for (size_t i = 0; i < text.size(); characters++) {
+                if (text[i] == '-' || text[i] == '=') {
+                    i++;
+                } else if (text.compare(i, 3, "\xE2\x96\xAC") == 0) {
+                    i += 3;
+                } else {
+                    return false;
+                }
+            }
+            return characters > 5;
+        }
+
+        bool blank(std::string_view text) {
+            return text.find_first_not_of(" \t\r") == std::string_view::npos;
+        }
+
+        size_t positionOf(uint64_t number) {
+            return (size_t) (std::lower_bound(rows.begin(), rows.end(), number) - rows.begin());
+        }
+
+        void dropRow(uint64_t number) {
+            auto at = std::lower_bound(rows.begin(), rows.end(), number);
+            if (at == rows.end() || *at != number) {
+                return;
+            }
+            float y = (float) (at - rows.begin()) * ROW_H;
+            rows.erase(at);
+            if (!rebuilding && !following && y < scroll) {
+                scroll = std::max(0.0f, scroll - ROW_H);
+            }
+            auto match = std::lower_bound(matches.begin(), matches.end(), number);
+            if (match != matches.end() && *match == number) {
+                int index = (int) (match - matches.begin());
+                matches.erase(match);
+                if (index < current) {
+                    current--;
+                }
+                current = std::min(current, (int) matches.size() - 1);
+            }
+            repeated.erase(number);
+        }
+
+        void merge(uint64_t number, const GameLog::Line& entry) {
+            if (blank(entry.text) || divider(entry.text)) {
+                return;
+            }
+            std::string key = maskNumbers(entry.text);
+            auto found = repeats.find(key);
+            if (found == repeats.end()) {
+                if (repeats.size() >= REPEAT_KEYS) {
+                    repeats.erase(std::min_element(repeats.begin(), repeats.end(), [](const auto& a, const auto& b) {
+                        return a.second.seen < b.second.seen;
+                    }));
+                }
+                repeats.emplace(std::move(key), Repeat{number, entry.at, 1});
+                return;
+            }
+            Repeat& last = found->second;
+            if (entry.at - last.seen >= REPEAT_TIMEOUT || unfolded.count(last.row) != 0) {
+                last = Repeat{number, entry.at, 1};
+                return;
+            }
+            dropRow(last.row);
+            last = Repeat{number, entry.at, last.count + 1};
+            repeated[number] = last.count;
+        }
+
+        void scan(uint64_t number) {
+            const GameLog::Line& entry = line(number);
+            if (!passes(entry.level)) {
+                return;
+            }
+            if (!entry.trace) {
+                head = number;
+                if (mergeRepeats) {
+                    merge(number, entry);
+                }
+            } else if (head != NONE) {
+                folds[head]++;
+                if (unfolded.count(head) == 0) {
+                    return;
+                }
+            }
+            rows.push_back(number);
+            if (containsQuery(entry.text)) {
+                matches.push_back(number);
+            }
+        }
+
+        void restart() {
+            rows.clear();
+            matches.clear();
+            current = -1;
+            head = NONE;
+            folds.clear();
+            repeated.clear();
+            repeats.clear();
+            scanned = GameLog::first();
+        }
+
         void update() {
             if (GameLog::generation() != seenGeneration) {
                 seenGeneration = GameLog::generation();
-                rows.clear();
-                matches.clear();
-                current = -1;
-                scanned = GameLog::first();
+                unfolded.clear();
+                restart();
                 selection = false;
                 scroll = 0.0f;
                 following = true;
@@ -141,29 +282,43 @@ namespace LogWindow {
             if (removed > 0 && !following) {
                 scroll = std::max(0.0f, scroll - removed * ROW_H);
             }
+            folds.erase(folds.begin(), folds.lower_bound(first));
+            unfolded.erase(unfolded.begin(), unfolded.lower_bound(first));
+            repeated.erase(repeated.begin(), repeated.lower_bound(first));
+            if (head != NONE && head < first) {
+                head = NONE;
+            }
             scanned = std::max(scanned, first);
             for (uint64_t n = scanned; n < GameLog::end(); n++) {
-                const GameLog::Line& entry = line(n);
-                if (passes(entry.level)) {
-                    rows.push_back(n);
-                    if (containsQuery(entry.text)) {
-                        matches.push_back(n);
-                    }
-                }
+                scan(n);
             }
             scanned = GameLog::end();
         }
 
-        void rebuild() {
-            rows.clear();
-            matches.clear();
-            current = -1;
-            scanned = GameLog::first();
+        void rebuildAround(uint64_t number) {
+            float offset = positionOf(number) * ROW_H - scroll;
+            rebuilding = true;
+            restart();
             update();
+            rebuilding = false;
+            if (!following) {
+                scroll = std::max(0.0f, positionOf(number) * ROW_H - offset);
+            }
         }
 
-        size_t positionOf(uint64_t number) {
-            return (size_t) (std::lower_bound(rows.begin(), rows.end(), number) - rows.begin());
+        void toggleFold(uint64_t number) {
+            UiSound::request(UiSound::TICK);
+            if (unfolded.erase(number) == 0) {
+                unfolded.insert(number);
+            }
+            rebuildAround(number);
+        }
+
+        void toggleRepeats() {
+            uint64_t top = rows.empty() ? 0 : rows[std::min(rows.size() - 1, (size_t) (scroll / ROW_H))];
+            mergeRepeats = !mergeRepeats;
+            LaunchDefaults::setMergeLogRepeats(mergeRepeats);
+            rebuildAround(top);
         }
 
         float viewHeight();
@@ -237,8 +392,17 @@ namespace LogWindow {
             uint64_t to = selection ? std::max(anchor, caret) : rows.back();
             std::string text;
             for (size_t i = positionOf(from); i < rows.size() && rows[i] <= to; i++) {
-                text += line(rows[i]).text;
+                uint64_t number = rows[i];
+                text += line(number).text;
                 text += '\n';
+                auto fold = folds.find(number);
+                if (fold == folds.end() || unfolded.count(number) != 0) {
+                    continue;
+                }
+                for (uint64_t hidden = number + 1; hidden <= number + fold->second; hidden++) {
+                    text += line(hidden).text;
+                    text += '\n';
+                }
             }
             ImGui::SetClipboardText(text.c_str());
             size_t count = (size_t) std::count(text.begin(), text.end(), '\n');
@@ -462,7 +626,7 @@ namespace LogWindow {
         }
 
         Rect barBounds() {
-            float actions = BAR_BUTTON * 5.0f + 2.0f * 4.0f;
+            float actions = BAR_BUTTON * 6.0f + 2.0f * 5.0f;
             Rect bar;
             bar.w = BAR_PAD * 2.0f + actions + (searchOpen ? searchPartWidth() : 0.0f);
             bar.h = BAR_H;
@@ -549,6 +713,11 @@ namespace LogWindow {
                 update();
             }
             x += BAR_BUTTON + 2.0f;
+            if (barButton("log#repeats", 0xf5fd, mergeRepeats ? "逐条显示重复的日志" : "合并重复的日志", x, y,
+                          mergeRepeats)) {
+                toggleRepeats();
+            }
+            x += BAR_BUTTON + 2.0f;
             if (barButton("log#copy", 0xf0c5, selection ? "复制选中的行（Ctrl+C）" : "复制全部", x, y, false)) {
                 copySelection();
             }
@@ -561,6 +730,22 @@ namespace LogWindow {
                 GameLog::clear();
                 update();
             }
+        }
+
+        std::vector<std::pair<Rect, uint64_t>> foldTargets;
+
+        float pillWidth(const std::string& text) {
+            return text.empty() ? 0.0f : UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+        }
+
+        Rect pill(const std::string& text, float x, float y, bool action, bool hot) {
+            Rect area{x, y + 2.0f, pillWidth(text), ROW_H - 4.0f};
+            UiRender::roundRect(area.x, area.y, area.w, area.h, 5.0f,
+                                action ? UiTheme::accentSoft(hot ? 90 : 50) : UiTheme::surfaceRaised());
+            UiRender::outline(area.x, area.y, area.w, area.h, 5.0f, UiTheme::outlineSoft());
+            UiRender::textY(text, x + 6.0f, y, ROW_H, action ? UiTheme::accentText() : UiTheme::textSecondary(),
+                            UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            return area;
         }
 
         std::string_view columnsOf(std::string_view text, int skip, int columns, int& skipped) {
@@ -614,8 +799,20 @@ namespace LogWindow {
             UiRender::outline(left, top, right - left, bottom - top, 10.0f, UiTheme::outlineSoft());
             float viewTop = top + 4.0f;
             float view = viewHeight();
-            float textX = left + 10.0f;
+            float textX = left + 10.0f + GUTTER;
             float textRight = right - 14.0f;
+            bool underBar = barBounds().contains();
+            bool overFold = false;
+            for (const auto& [area, number] : foldTargets) {
+                if (!underBar && !selecting && area.contains()) {
+                    overFold = true;
+                    if (NewUi::click(area.x, area.y, area.w, area.h)) {
+                        toggleFold(number);
+                    }
+                    break;
+                }
+            }
+            foldTargets.clear();
             float charW = std::max(1.0f, UiFont::width("0", UiFont::CODE, TEXT_SIZE));
             int columns = (int) ((textRight - textX) / charW) + 2;
             float contentH = rows.size() * ROW_H;
@@ -639,9 +836,10 @@ namespace LogWindow {
             }
             scroll = UiRender::clamp(scroll, 0.0f, maxScroll);
 
-            bool underBar = barBounds().contains();
             bool overLines = !underBar && NewUi::hit(left, viewTop, right - left - 14.0f, view);
-            if (overLines || selecting) {
+            if (overFold) {
+                UiCursor::hand();
+            } else if (overLines || selecting) {
                 UiCursor::text();
             }
             if (!rows.empty() && overLines && NewUi::click(left, viewTop, right - left - 14.0f, view)) {
@@ -683,8 +881,31 @@ namespace LogWindow {
                     UiRender::rect(left + 2.0f, y, right - left - 4.0f, ROW_H, UiTheme::accentSoft(90));
                     UiRender::rect(left + 2.0f, y, 3.0f, ROW_H, UiTheme::accent());
                 }
+                auto fold = folds.find(number);
+                bool foldable = fold != folds.end();
+                bool open = foldable && unfolded.count(number) != 0;
+                if (foldable) {
+                    Rect area{left + 2.0f, y, textX - left - 4.0f, ROW_H};
+                    bool hot = !underBar && area.contains();
+                    UiWidgets::icon(Ui::glyph(open ? 0xf078 : 0xf054), left + 13.0f, y + ROW_H * 0.5f,
+                                    hot ? UiTheme::textPrimary() : UiTheme::textMuted(), 8.0f);
+                    foldTargets.emplace_back(area, number);
+                } else if (entry.trace) {
+                    UiRender::rect(left + 12.5f, y, 1.0f, ROW_H, UiTheme::outlineSoft());
+                }
+                auto repeat = repeated.find(number);
+                std::string repeatText = repeat != repeated.end() ? std::to_string(repeat->second) + " 次" : "";
+                std::string foldText = foldable && !open ? "+" + std::to_string(fold->second) + " 行" : "";
+                float pillsW = pillWidth(repeatText) + pillWidth(foldText) +
+                        (!repeatText.empty() && !foldText.empty() ? 4.0f : 0.0f);
                 int skipped = 0;
                 std::string_view shownText = columnsOf(entry.text, columnsAside, columns, skipped);
+                if (pillsW > 0.0f) {
+                    int room = std::max(0, (int) ((textRight - textX - pillsW - 8.0f) / charW));
+                    if (columnsBefore(shownText, shownText.size()) > room) {
+                        shownText = columnsOf(entry.text, columnsAside, room, skipped);
+                    }
+                }
                 if (!query.empty() && containsQuery(entry.text)) {
                     uint32_t tint = (amber() & 0x00FFFFFFu) | (number == currentLine ? 0x90000000u : 0x40000000u);
                     std::string lower;
@@ -707,6 +928,15 @@ namespace LogWindow {
                 if (!shownText.empty()) {
                     UiRender::textY(std::string(shownText), textX, y, ROW_H, levelColor(entry.level), UiFont::CODE,
                                     TEXT_SIZE);
+                }
+                float pillX = textX + columnsBefore(shownText, shownText.size()) * charW + 8.0f;
+                if (!repeatText.empty()) {
+                    pillX += pill(repeatText, pillX, y, false, false).w + 4.0f;
+                }
+                if (!foldText.empty()) {
+                    Rect area{pillX, y, pillWidth(foldText), ROW_H};
+                    pill(foldText, pillX, y, true, !underBar && area.contains());
+                    foldTargets.emplace_back(area, number);
                 }
             }
             if (rows.empty()) {
@@ -837,6 +1067,7 @@ namespace LogWindow {
                 wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
                 return;
             }
+            mergeRepeats = LaunchDefaults::mergeLogRepeats();
             context = ImGui::CreateContext(ImGui::GetIO().Fonts);
             ImFont* font = ImGui::GetIO().FontDefault;
             ImGui::SetCurrentContext(context);

@@ -103,4 +103,22 @@ namespace InstanceSettings {
         return samePath(chosen, java.executable) || samePath(chosen, java.gui_executable) ||
                 samePath(chosen, java.home);
     }
+
+    std::string optionsFile(const std::string& text) {
+        std::string out;
+        for (char c : blb::trim(text)) {
+            if ((unsigned char) c >= 0x20 && std::string_view("\\/:*?\"<>|").find(c) == std::string_view::npos) {
+                out += c;
+            }
+        }
+        while (!out.empty() && (out.back() == '.' || out.back() == ' ')) {
+            out.pop_back();
+        }
+        out = std::string(blb::trim(out));
+        return blb::iequals(out, "options.txt") ? std::string() : out;
+    }
+
+    std::string versionOptionsFile(const std::string& minecraft) {
+        return minecraft.empty() ? std::string() : optionsFile("options-" + minecraft + ".txt");
+    }
 }

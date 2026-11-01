@@ -27,5 +27,9 @@ namespace LaunchDefaults {
     void setShowLogs(bool on);
 
     std::vector<std::string> split(const std::string& text);
-    void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft);
+    bool mergeLogRepeats();
+    void setMergeLogRepeats(bool on);
+
+    void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft,
+                       const std::string& optionsFile);
 }

@@ -17,6 +17,8 @@ namespace GameLog {
     struct Line {
         std::string text;
         Level level = Level::Info;
+        bool trace = false;
+        uint64_t at = 0;
     };
 
     struct Tab {

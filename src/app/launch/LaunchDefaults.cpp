@@ -117,13 +117,26 @@ namespace LaunchDefaults {
         return blb::split_arguments(input);
     }
 
-    void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft) {
+    bool mergeLogRepeats() {
+        const nlohmann::json& doc = Config::data();
+        auto value = doc.find("logMergeRepeats");
+        return value == doc.end() || !value->is_boolean() || value->get<bool>();
+    }
+
+    void setMergeLogRepeats(bool on) {
+        Config::data()["logMergeRepeats"] = on;
+        Config::save();
+    }
+
+    void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft,
+                       const std::string& optionsFile) {
         if (language == Language::None || gameDirectory.empty()) {
             return;
         }
         bool legacy = legacyCodes(minecraft);
         std::string code = language == Language::Chinese ? (legacy ? "zh_CN" : "zh_cn") : (legacy ? "en_US" : "en_us");
-        std::filesystem::path file = gameDirectory / "options.txt";
+        std::filesystem::path file = gameDirectory /
+                (optionsFile.empty() ? std::filesystem::path("options.txt") : blb::path_from_utf8(optionsFile));
         auto existing = blb::fs::read_file(file);
         if (!existing && existing.err().code != blb::errc::not_found) {
             return;
