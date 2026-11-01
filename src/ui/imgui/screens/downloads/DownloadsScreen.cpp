@@ -915,6 +915,7 @@ namespace DownloadsScreen {
         void switchKind(Kind kind) {
             if (query.kind != kind) {
                 query.kind = kind;
+                query.page = 0;
                 query.categories.clear();
                 query.loaders.clear();
                 query.gameVersion.clear();
