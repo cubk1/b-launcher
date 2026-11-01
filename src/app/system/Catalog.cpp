@@ -229,8 +229,8 @@ namespace Catalog {
 
     void addJava(const std::filesystem::path& path) {
         run(
-                [path](blb::cancellation_token) -> Continuation {
-                    auto probed = blb::java::probe_java(path);
+                [path](blb::cancellation_token token) -> Continuation {
+                    auto probed = blb::java::probe_java(path, true, token);
                     if (!probed) {
                         return nullptr;
                     }
