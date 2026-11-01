@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 namespace b_launcher_base
 {
@@ -39,28 +40,30 @@ fill_blocks (const void *data, std::size_t size,
 constexpr std::size_t file_buffer_size = 1 << 20;
 
 // Keep this outside the template so all digest combinations share the buffer.
-std::uint8_t *
+std::span<std::uint8_t>
 file_buffer ()
 {
   thread_local std::unique_ptr<std::uint8_t[]> buffer (
       new std::uint8_t[file_buffer_size]);
-  return buffer.get ();
+  return { buffer.get (), file_buffer_size };
 }
 
 template <typename... Hashes>
 result<std::uint64_t>
-read_for_hashes (const std::filesystem::path &path, Hashes &...hashes)
+read_for_hashes (const std::filesystem::path &path,
+                 std::span<std::uint8_t> buffer,
+                 const cancellation_token &token, Hashes &...hashes)
 {
-  auto *buffer = file_buffer ();
   BLB_TRY_ASSIGN (auto file,
                   fs::native_file::open (path, fs::native_file::mode::read));
   std::uint64_t size = 0;
   for (;;)
     {
-      BLB_TRY_ASSIGN (auto n, file.read (buffer, file_buffer_size));
+      BLB_TRY (token.check ());
+      BLB_TRY_ASSIGN (auto n, file.read (buffer.data (), buffer.size ()));
       if (n == 0)
         break;
-      (hashes.update (buffer, n), ...);
+      (hashes.update (buffer.data (), n), ...);
       size += n;
     }
   return size;
@@ -582,7 +585,7 @@ digest_file (const std::filesystem::path &path)
   sha1 h1;
   sha512 h512;
   file_digests out;
-  BLB_TRY_ASSIGN (out.size, read_for_hashes (path, h1, h512));
+  BLB_TRY_ASSIGN (out.size, read_for_hashes (path, file_buffer (), {}, h1, h512));
   out.sha1 = h1.finish ();
   out.sha512 = h512.finish ();
   return out;
@@ -592,7 +595,17 @@ result<sha1_digest>
 sha1_file (const std::filesystem::path &path)
 {
   sha1 h;
-  BLB_TRY (read_for_hashes (path, h));
+  BLB_TRY (read_for_hashes (path, file_buffer (), {}, h));
+  return h.finish ();
+}
+
+result<sha1_digest>
+sha1_file (const std::filesystem::path &path, cancellation_token token)
+{
+  // Short-lived checks use smaller chunks for cancellation and bounded memory.
+  std::vector<std::uint8_t> buffer (64 * 1024);
+  sha1 h;
+  BLB_TRY (read_for_hashes (path, buffer, token, h));
   return h.finish ();
 }
 
@@ -600,7 +613,7 @@ result<sha256_digest>
 sha256_file (const std::filesystem::path &path)
 {
   sha256 h;
-  BLB_TRY (read_for_hashes (path, h));
+  BLB_TRY (read_for_hashes (path, file_buffer (), {}, h));
   return h.finish ();
 }
 

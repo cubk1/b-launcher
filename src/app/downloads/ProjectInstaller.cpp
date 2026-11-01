@@ -59,21 +59,6 @@ namespace ProjectInstaller {
         std::map<std::string, std::shared_ptr<CheckedFile>> checkedFiles;
         Recent checkedUse;
 
-        std::optional<blb::sha1_digest> fileHash(const std::filesystem::path& path,
-                                                blb::cancellation_token token) {
-            auto file = blb::fs::native_file::open(path, blb::fs::native_file::mode::read);
-            if (!file) return std::nullopt;
-            blb::sha1 hash;
-            std::vector<char> buffer(64 * 1024);
-            while (!token.is_cancelled()) {
-                auto got = file->read(buffer.data(), buffer.size());
-                if (!got) return std::nullopt;
-                if (*got == 0) return hash.finish();
-                hash.update(buffer.data(), *got);
-            }
-            return std::nullopt;
-        }
-
         bool matches(const Addons::File& file, const std::filesystem::path& path) {
             auto stat = blb::fs::stat(path);
             if (!stat.exists || stat.is_directory ||
@@ -91,7 +76,9 @@ namespace ProjectInstaller {
                 background.run([path, checked](blb::cancellation_token token) -> Continuation {
                     std::optional<blb::sha1_digest> digest;
                     try {
-                        digest = fileHash(path, token);
+                        if (auto read = blb::sha1_file(path, token)) {
+                            digest = *read;
+                        }
                         auto now = blb::fs::stat(path);
                         if (!now.exists || now.size != checked->size || now.mtime != checked->modified) {
                             digest.reset();
