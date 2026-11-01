@@ -90,7 +90,7 @@ namespace Platform {
         }
 
         HANDLE spawn(const std::string& command, const Environment& environment, const std::filesystem::path& directory,
-                     std::string& error) {
+                     std::string& error, HANDLE job = nullptr) {
             const wchar_t* comspec = _wgetenv(L"ComSpec");
             std::wstring shell = comspec != nullptr && *comspec != 0 ? comspec : L"cmd.exe";
             std::wstring line = L"\"" + shell + L"\" /d /s /c \"" + wide(command) + L"\"";
@@ -105,9 +105,17 @@ namespace Platform {
             startup.cb = sizeof(startup);
             PROCESS_INFORMATION info = {};
             if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
-                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT, block.data(),
+                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | (job ? CREATE_SUSPENDED : 0), block.data(),
                                 folder.empty() ? nullptr : folder.c_str(), &startup, &info)) {
                 error = "无法运行命令（错误 " + std::to_string(GetLastError()) + "）";
+                return nullptr;
+            }
+            if (job != nullptr &&
+                (!AssignProcessToJobObject(job, info.hProcess) || ResumeThread(info.hThread) == (DWORD) -1)) {
+                error = "无法准备命令进程（错误 " + std::to_string(GetLastError()) + "）";
+                TerminateProcess(info.hProcess, 1);
+                CloseHandle(info.hThread);
+                CloseHandle(info.hProcess);
                 return nullptr;
             }
             CloseHandle(info.hThread);
@@ -750,24 +758,43 @@ namespace Platform {
 
     std::string runCommand(const std::string& command, const Environment& environment,
                            const std::filesystem::path& directory, const std::function<bool()>& cancelled) {
+        if (cancelled && cancelled()) return "已取消";
+        HANDLE job = CreateJobObjectW(nullptr, nullptr);
+        if (job == nullptr) {
+            return "无法创建命令任务（错误 " + std::to_string(GetLastError()) + "）";
+        }
         std::string error;
-        HANDLE process = spawn(command, environment, directory, error);
+        HANDLE process = spawn(command, environment, directory, error, job);
         if (process == nullptr) {
+            CloseHandle(job);
             return error;
         }
-        while (WaitForSingleObject(process, 100) == WAIT_TIMEOUT) {
+        for (;;) {
+            DWORD waited = WaitForSingleObject(process, 100);
+            if (waited == WAIT_OBJECT_0) break;
+            if (waited == WAIT_FAILED) {
+                error = "无法等待命令退出（错误 " + std::to_string(GetLastError()) + "）";
+                TerminateJobObject(job, 1);
+                break;
+            }
             if (cancelled && cancelled()) {
-                TerminateProcess(process, 1);
+                if (TerminateJobObject(job, 1)) {
+                    WaitForSingleObject(process, 5000);
+                    error = "已取消";
+                } else {
+                    error = "无法取消命令（错误 " + std::to_string(GetLastError()) + "）";
+                }
                 break;
             }
         }
         DWORD code = 0;
-        if (!GetExitCodeProcess(process, &code)) {
+        if (error.empty() && !GetExitCodeProcess(process, &code)) {
             error = "无法读取命令退出代码（错误 " + std::to_string(GetLastError()) + "）";
-        } else if (code != 0) {
+        } else if (error.empty() && code != 0) {
             error = "命令执行失败（退出代码 " + std::to_string(code) + "）";
         }
         CloseHandle(process);
+        CloseHandle(job);
         return error;
     }
 
