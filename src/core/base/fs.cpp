@@ -872,49 +872,40 @@ native_file::read (void *buffer, std::size_t size)
 result<void>
 native_file::write_all (const void *buffer, std::size_t size)
 {
-  auto *bytes = static_cast<const char *> (buffer);
-  while (size > 0)
-    {
-#if defined(_WIN32)
-      DWORD wrote = 0;
-      DWORD want = size > 0x40000000 ? 0x40000000 : static_cast<DWORD> (size);
-      if (!WriteFile (as_handle (m_handle), bytes, want, &wrote, nullptr))
-        return make_error (errc::io,
-                           detail::last_error_message (GetLastError ()));
-#else
-      auto wrote = ::write (static_cast<int> (m_handle), bytes, size);
-      if (wrote < 0)
-        {
-          if (errno == EINTR)
-            continue;
-          return make_error (errc::io, std::strerror (errno));
-        }
-#endif
-      bytes += wrote;
-      size -= static_cast<std::size_t> (wrote);
-    }
-  return ok ();
+  return write_impl (buffer, size, std::nullopt);
 }
 
 result<void>
 native_file::write_at (std::uint64_t offset, const void *buffer,
                        std::size_t size)
 {
+  return write_impl (buffer, size, offset);
+}
+
+result<void>
+native_file::write_impl (const void *buffer, std::size_t size,
+                         std::optional<std::uint64_t> offset)
+{
   auto *bytes = static_cast<const char *> (buffer);
   while (size > 0)
     {
 #if defined(_WIN32)
       OVERLAPPED at {};
-      at.Offset = static_cast<DWORD> (offset & 0xFFFFFFFFu);
-      at.OffsetHigh = static_cast<DWORD> (offset >> 32);
+      if (offset)
+        {
+          at.Offset = static_cast<DWORD> (*offset & 0xFFFFFFFFu);
+          at.OffsetHigh = static_cast<DWORD> (*offset >> 32);
+        }
       DWORD wrote = 0;
       DWORD want = size > 0x40000000 ? 0x40000000 : static_cast<DWORD> (size);
-      if (!WriteFile (as_handle (m_handle), bytes, want, &wrote, &at))
+      if (!WriteFile (as_handle (m_handle), bytes, want, &wrote,
+                      offset ? &at : nullptr))
         return make_error (errc::io,
                            detail::last_error_message (GetLastError ()));
 #else
-      auto wrote = ::pwrite (static_cast<int> (m_handle), bytes, size,
-                             static_cast<off_t> (offset));
+      auto wrote = offset ? ::pwrite (static_cast<int> (m_handle), bytes, size,
+                                       static_cast<off_t> (*offset))
+                           : ::write (static_cast<int> (m_handle), bytes, size);
       if (wrote < 0)
         {
           if (errno == EINTR)
@@ -924,7 +915,8 @@ native_file::write_at (std::uint64_t offset, const void *buffer,
 #endif
       bytes += wrote;
       size -= static_cast<std::size_t> (wrote);
-      offset += static_cast<std::uint64_t> (wrote);
+      if (offset)
+        *offset += static_cast<std::uint64_t> (wrote);
     }
   return ok ();
 }

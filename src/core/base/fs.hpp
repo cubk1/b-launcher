@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -105,6 +106,8 @@ public:
   bool is_open () const noexcept;
 
 private:
+  result<void> write_impl (const void *buffer, std::size_t size,
+                           std::optional<std::uint64_t> offset);
   std::intptr_t m_handle = -1;
 };
 
