@@ -9,6 +9,7 @@
 #include "core/base/win_util.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <map>
 #include <mutex>
 
@@ -289,14 +290,12 @@ parse_java_major (std::string_view version) noexcept
   version = trim (version);
   if (version.starts_with ("1."))
     version.remove_prefix (2);
+  if (version.empty () || version.front () < '0' || version.front () > '9')
+    return 0;
   int major = 0;
-  for (char c : version)
-    {
-      if (c < '0' || c > '9')
-        break;
-      major = major * 10 + (c - '0');
-    }
-  return major;
+  auto parsed = std::from_chars (version.data (),
+                                 version.data () + version.size (), major);
+  return parsed.ec == std::errc () ? major : 0;
 }
 
 std::string_view
