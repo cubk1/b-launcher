@@ -201,6 +201,7 @@ loader_installer::install (const install_request &request, progress_sink *sink,
 
   std::string id;
   meta::version vanilla;
+  ctx.vanilla = &vanilla;
   task_graph graph;
   auto vanilla_json
       = graph.add ("vanilla:json", [&] (cancellation_token t) -> result<void> {
@@ -224,15 +225,16 @@ loader_installer::install (const install_request &request, progress_sink *sink,
             }
           BLB_TRY_ASSIGN (vanilla,
                           meta::resolve_version (base_layout, request.minecraft));
-          ctx.vanilla = &vanilla;
           return {};
         });
   std::vector<std::size_t> resolves;
   for (auto &job : jobs)
     resolves.push_back (
         graph.add (sformat ("resolve:{}", loader_name (job->request ().type)),
-                   [&ctx, j = job.get ()] (cancellation_token) {
-                     return j->resolve_version (ctx);
+                   [&ctx, j = job.get ()] (cancellation_token t) {
+                     auto task = ctx;
+                     task.token = t;
+                     return j->resolve_version (task);
                    }));
   auto naming = graph.add (
       "naming",
@@ -261,8 +263,10 @@ loader_installer::install (const install_request &request, progress_sink *sink,
     {
       auto name = std::string (loader_name (job->request ().type));
       auto prepare = graph.add ("prepare:" + name,
-                                [&ctx, j = job.get ()] (cancellation_token) {
-                                  return j->prepare (ctx);
+                                [&ctx, j = job.get ()] (cancellation_token t) {
+                                  auto task = ctx;
+                                  task.token = t;
+                                  return j->prepare (task);
                                 },
                                 { naming });
       graph.add ("finalize:" + name,

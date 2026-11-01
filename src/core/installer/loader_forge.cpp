@@ -506,8 +506,10 @@ private:
                              m_processors[prepared[i].index].jar);
         ids.push_back (graph.add (
             name,
-            [this, &ctx, &prepared, i, &java] (cancellation_token) {
-              return run_one (ctx, prepared[i], java);
+            [this, &ctx, &prepared, i, &java] (cancellation_token t) {
+              auto task = ctx;
+              task.token = t;
+              return run_one (task, prepared[i], java);
             },
             std::move (deps)));
       }
