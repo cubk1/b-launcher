@@ -418,6 +418,8 @@ read_mod (const std::filesystem::path &file)
         [&] (const std::string &t) {
           if (auto doc = detail::parse_toml (t))
             read_forge_toml (mod, *doc, zip);
+          else
+            mod.problem = doc.err ().message;
         });
   load ("META-INF/mods.toml", mod_platform::forge, [&] (const std::string &t) {
     if (auto doc = detail::parse_toml (t))

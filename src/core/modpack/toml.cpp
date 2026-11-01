@@ -60,19 +60,28 @@ public:
                 bool last = i + 1 == keys->size ();
                 if (last && array)
                   {
-                    if (!next.is_array ())
+                    if (next.is_null ())
                       next = json::array ();
+                    else if (!next.is_array () || next.empty ()
+                             || !next.back ().is_object ())
+                      return fail ("conflicting array of tables");
                     next.push_back (json::object ());
                     table = &next.back ();
                   }
                 else
                   {
-                    if (next.is_array () && !next.empty ())
-                      table = &next.back ();
+                    if (next.is_array ())
+                      {
+                        if (last || next.empty () || !next.back ().is_object ())
+                          return fail ("conflicting table path");
+                        table = &next.back ();
+                      }
                     else
                       {
-                        if (!next.is_object ())
+                        if (next.is_null ())
                           next = json::object ();
+                        else if (!next.is_object ())
+                          return fail ("conflicting table path");
                         table = &next;
                       }
                   }
@@ -97,10 +106,14 @@ public:
         for (std::size_t i = 0; i + 1 < keys->size (); ++i)
           {
             auto &next = (*target)[(*keys)[i]];
-            if (!next.is_object ())
+            if (next.is_null ())
               next = json::object ();
+            else if (!next.is_object ())
+              return fail ("conflicting key path");
             target = &next;
           }
+        if (target->contains (keys->back ()))
+          return fail ("duplicate key");
         (*target)[keys->back ()] = std::move (*value);
         if (!finish_line ())
           return fail ("unexpected content after value");
@@ -407,7 +420,16 @@ private:
           return std::move (value).err ();
         auto *target = &out;
         for (std::size_t i = 0; i + 1 < keys->size (); ++i)
-          target = &(*target)[(*keys)[i]];
+          {
+            auto &next = (*target)[(*keys)[i]];
+            if (next.is_null ())
+              next = json::object ();
+            else if (!next.is_object ())
+              return fail ("conflicting key path");
+            target = &next;
+          }
+        if (target->contains (keys->back ()))
+          return fail ("duplicate key");
         (*target)[keys->back ()] = std::move (*value);
         skip_spaces ();
         if (peek () == ',')
