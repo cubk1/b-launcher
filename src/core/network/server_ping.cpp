@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -644,7 +645,11 @@ int_field (const nlohmann::json &node, const char *key)
   auto it = node.find (key);
   if (it == node.end () || !it->is_number ())
     return -1;
-  return static_cast<std::int32_t> (it->get<double> ());
+  double value = it->get<double> ();
+  if (!(value >= std::numeric_limits<std::int32_t>::min ()
+        && value <= std::numeric_limits<std::int32_t>::max ()))
+    return -1;
+  return static_cast<std::int32_t> (value);
 }
 
 server_status
