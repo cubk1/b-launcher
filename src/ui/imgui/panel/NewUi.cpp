@@ -1543,7 +1543,7 @@ namespace NewUi {
         std::string value = UiInput::get(INPUT_TEXT);
         cancelTextEdit();
         if (target != nullptr) {
-            target->set(Ui::trim(value));
+            target->set(target->secret() ? value : Ui::trim(value));
         }
     }
 
