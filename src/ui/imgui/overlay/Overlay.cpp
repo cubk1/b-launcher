@@ -1,4 +1,5 @@
 #include "Overlay.h"
+#include "../menu/MenuItems.h"
 #include "../panel/NewUi.h"
 #include "../value/Values.h"
 
@@ -112,6 +113,7 @@ bool MenuOverlay::isOpen() {
 }
 
 void MenuOverlay::release() {
+    ActionMenuItem::resetConfirmation();
     NewUi::menuOwner.clear();
 }
 

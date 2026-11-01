@@ -91,6 +91,7 @@ public:
     ActionMenuItem(const std::string& text, int glyph, std::function<void()> action);
     static std::shared_ptr<ActionMenuItem> make(const std::string& text, int glyph,
                                                 std::function<void()> action = nullptr);
+    static void resetConfirmation();
 
     std::shared_ptr<ActionMenuItem> keys(const std::string& text);
     std::shared_ptr<ActionMenuItem> enabled(bool value);
