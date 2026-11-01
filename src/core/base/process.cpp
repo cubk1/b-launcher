@@ -324,6 +324,9 @@ process::start (const process_options &options, output_callback on_output)
   opts.stop.third = { REPROC_STOP_NOOP, 0 };
 
   auto state = std::make_shared<impl> ();
+  state->handle = reproc_new ();
+  if (!state->handle)
+    return make_error (errc::process, "cannot allocate process");
 #if defined(_WIN32)
   HANDLE out_write = nullptr;
   HANDLE err_write = nullptr;
@@ -345,9 +348,6 @@ process::start (const process_options &options, output_callback on_output)
       opts.redirect.err.handle = err_write;
     }
 #endif
-  state->handle = reproc_new ();
-  if (!state->handle)
-    return make_error (errc::process, "cannot allocate process");
   int rc = reproc_start (state->handle, argv.data (), opts);
 #if defined(_WIN32)
   if (out_write)
