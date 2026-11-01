@@ -5,6 +5,7 @@
 #include <core/base/zip.hpp>
 #include <core/modpack/mods.hpp>
 
+#include "core/modpack/json.hpp"
 #include "core/modpack/toml.hpp"
 
 #include <algorithm>
@@ -20,28 +21,7 @@ using json = nlohmann::json;
 
 constexpr log::logger s_log ("mods");
 
-std::string
-text_of (const json &node, const char *key)
-{
-  if (!node.is_object ())
-    return {};
-  auto it = node.find (key);
-  if (it == node.end ())
-    return {};
-  if (it->is_string ())
-    return it->get<std::string> ();
-  if (it->is_number ())
-    return it->dump ();
-  return {};
-}
-
-json
-parse_lenient (std::string_view text)
-{
-  if (text.starts_with ("\xEF\xBB\xBF"))
-    text.remove_prefix (3);
-  return json::parse (text, nullptr, false, true);
-}
+using detail::text_of;
 
 std::string
 manifest_value (zip_reader &zip, std::string_view key)
@@ -253,7 +233,7 @@ nested_ids (zip_reader &zip, std::vector<std::string> &out)
 {
   if (auto text = zip.read ("fabric.mod.json"))
     {
-      auto doc = parse_lenient (*text);
+      auto doc = detail::parse_json (*text);
       auto id = text_of (doc, "id");
       if (!id.empty ())
         out.push_back (id);
@@ -264,7 +244,7 @@ nested_ids (zip_reader &zip, std::vector<std::string> &out)
     }
   if (auto text = zip.read ("quilt.mod.json"))
     {
-      auto doc = parse_lenient (*text);
+      auto doc = detail::parse_json (*text);
       if (auto loader = doc.find ("quilt_loader"); loader != doc.end ())
         {
           auto id = text_of (*loader, "id");
@@ -294,7 +274,7 @@ collect_nested (zip_reader &zip, int depth, std::vector<std::string> &out)
   std::vector<std::string> paths;
   if (auto text = zip.read ("fabric.mod.json"))
     {
-      auto doc = parse_lenient (*text);
+      auto doc = detail::parse_json (*text);
       if (auto jars = doc.find ("jars");
           jars != doc.end () && jars->is_array ())
         for (const auto &j : *jars)
@@ -302,7 +282,7 @@ collect_nested (zip_reader &zip, int depth, std::vector<std::string> &out)
     }
   if (auto text = zip.read ("quilt.mod.json"))
     {
-      auto doc = parse_lenient (*text);
+      auto doc = detail::parse_json (*text);
       if (auto loader = doc.find ("quilt_loader"); loader != doc.end ())
         if (auto jars = loader->find ("jars");
             jars != loader->end () && jars->is_array ())
@@ -312,7 +292,7 @@ collect_nested (zip_reader &zip, int depth, std::vector<std::string> &out)
     }
   if (auto text = zip.read ("META-INF/jarjar/metadata.json"))
     {
-      auto doc = parse_lenient (*text);
+      auto doc = detail::parse_json (*text);
       if (auto jars = doc.find ("jars");
           jars != doc.end () && jars->is_array ())
         for (const auto &j : *jars)
@@ -415,12 +395,12 @@ read_mod (const std::filesystem::path &file)
     primary = !mod.id.empty () || !mod.name.empty ();
   };
   load ("fabric.mod.json", mod_platform::fabric, [&] (const std::string &t) {
-    auto doc = parse_lenient (t);
+    auto doc = detail::parse_json (t);
     if (doc.is_object ())
       read_fabric (mod, doc);
   });
   load ("quilt.mod.json", mod_platform::quilt, [&] (const std::string &t) {
-    auto doc = parse_lenient (t);
+    auto doc = detail::parse_json (t);
     if (doc.is_object ())
       read_quilt (mod, doc);
   });
@@ -446,12 +426,12 @@ read_mod (const std::filesystem::path &file)
       mod.problem = doc.err ().message;
   });
   load ("mcmod.info", mod_platform::legacy_forge, [&] (const std::string &t) {
-    auto doc = parse_lenient (t);
+    auto doc = detail::parse_json (t);
     if (!doc.is_discarded ())
       read_mcmod (mod, doc);
   });
   load ("litemod.json", mod_platform::liteloader, [&] (const std::string &t) {
-    auto doc = parse_lenient (t);
+    auto doc = detail::parse_json (t);
     if (doc.is_object ())
       read_litemod (mod, doc);
   });

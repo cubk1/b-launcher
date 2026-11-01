@@ -4,6 +4,7 @@
 #include <core/base/zip.hpp>
 #include <core/modpack/modpack.hpp>
 
+#include "core/modpack/json.hpp"
 #include "core/meta/json_util.hpp"
 #include "core/modpack/modpack_impl.hpp"
 
@@ -20,20 +21,7 @@ namespace
 
 using json = nlohmann::json;
 
-std::string
-text_of (const json &node, const char *key)
-{
-  if (!node.is_object ())
-    return {};
-  auto it = node.find (key);
-  if (it == node.end ())
-    return {};
-  if (it->is_string ())
-    return it->get<std::string> ();
-  if (it->is_number ())
-    return it->dump ();
-  return {};
-}
+using detail::text_of;
 
 using meta::detail::int_of;
 
@@ -101,10 +89,7 @@ load_json (zip_reader &zip, const std::string &name)
   auto text = zip.read (name);
   if (!text)
     return json ();
-  std::string_view view = *text;
-  if (view.starts_with ("\xEF\xBB\xBF"))
-    view.remove_prefix (3);
-  return json::parse (view, nullptr, false, true);
+  return detail::parse_json (*text);
 }
 
 result<pack_manifest>

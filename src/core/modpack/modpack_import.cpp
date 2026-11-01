@@ -22,16 +22,7 @@ constexpr log::logger s_log ("modpack");
 std::string
 sanitize_id (std::string_view name)
 {
-  std::string out;
-  for (char c : name)
-    {
-      if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"'
-          || c == '<' || c == '>' || c == '|'
-          || static_cast<unsigned char> (c) < 32)
-        out += '_';
-      else
-        out += c;
-    }
+  std::string out = fs::filter_filename (name, '_');
   auto view = trim (out);
   out = std::string (view);
   while (!out.empty () && (out.back () == '.' || out.back () == ' '))

@@ -102,19 +102,7 @@ public:
         auto value = parse_value ();
         if (!value)
           return std::move (value).err ();
-        auto *target = current;
-        for (std::size_t i = 0; i + 1 < keys->size (); ++i)
-          {
-            auto &next = (*target)[(*keys)[i]];
-            if (next.is_null ())
-              next = json::object ();
-            else if (!next.is_object ())
-              return fail ("conflicting key path");
-            target = &next;
-          }
-        if (target->contains (keys->back ()))
-          return fail ("duplicate key");
-        (*target)[keys->back ()] = std::move (*value);
+        BLB_TRY (assign (*current, *keys, std::move (*value)));
         if (!finish_line ())
           return fail ("unexpected content after value");
       }
@@ -418,19 +406,7 @@ private:
         auto value = parse_value ();
         if (!value)
           return std::move (value).err ();
-        auto *target = &out;
-        for (std::size_t i = 0; i + 1 < keys->size (); ++i)
-          {
-            auto &next = (*target)[(*keys)[i]];
-            if (next.is_null ())
-              next = json::object ();
-            else if (!next.is_object ())
-              return fail ("conflicting key path");
-            target = &next;
-          }
-        if (target->contains (keys->back ()))
-          return fail ("duplicate key");
-        (*target)[keys->back ()] = std::move (*value);
+        BLB_TRY (assign (out, *keys, std::move (*value)));
         skip_spaces ();
         if (peek () == ',')
           {
@@ -444,6 +420,25 @@ private:
           }
         return fail ("expected , or } in inline table");
       }
+  }
+
+  result<void>
+  assign (json &table, const std::vector<std::string> &keys, json value)
+  {
+    auto *target = &table;
+    for (std::size_t i = 0; i + 1 < keys.size (); ++i)
+      {
+        auto &next = (*target)[keys[i]];
+        if (next.is_null ())
+          next = json::object ();
+        else if (!next.is_object ())
+          return fail ("conflicting key path");
+        target = &next;
+      }
+    if (target->contains (keys.back ()))
+      return fail ("duplicate key");
+    (*target)[keys.back ()] = std::move (value);
+    return ok ();
   }
 
   result<json>
