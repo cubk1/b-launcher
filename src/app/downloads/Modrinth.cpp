@@ -206,7 +206,9 @@ namespace Modrinth {
                             }
                         };
                     },
-                    nullptr);
+                    [](const std::string&) -> Continuation {
+                        return [] { categoriesStarted = false; };
+                    });
         }
 
         Version parseVersion(const json& item) {

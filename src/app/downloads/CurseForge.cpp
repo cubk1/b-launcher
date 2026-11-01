@@ -310,7 +310,9 @@ namespace CurseForge {
                             }
                         };
                     },
-                    nullptr);
+                    [](const std::string&) -> Continuation {
+                        return [] { categoriesStarted = false; };
+                    });
         }
 
         Version parseFile(const json& item) {
