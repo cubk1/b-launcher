@@ -4,6 +4,7 @@
 #include <core/network/http_client.hpp>
 
 #include <core/base/json.hpp>
+#include <core/base/strings.hpp>
 
 #include <cstdio>
 #include <utility>
@@ -98,15 +99,6 @@ namespace RoomApi {
             }
             reply.ok = true;
             return reply;
-        }
-
-        std::string lower(std::string value) {
-            for (char& c : value) {
-                if (c >= 'A' && c <= 'Z') {
-                    c = (char) (c - 'A' + 'a');
-                }
-            }
-            return value;
         }
 
         std::string roomPath(const std::string& code, const char* tail) {
@@ -286,12 +278,12 @@ namespace RoomApi {
         out = Room();
         long long port = number(doc, "port");
         out.port = port > 0 && port <= 65535 ? (int) port : 0;
-        std::string hostDevice = lower(blb::json_text(doc, "hostDeviceId"));
+        std::string hostDevice = blb::to_lower(blb::json_text(doc, "hostDeviceId"));
         auto banned = doc.find("bannedDeviceIds");
         if (banned != doc.end() && banned->is_array()) {
             for (const nlohmann::json& device : *banned) {
                 if (device.is_string()) {
-                    out.banned.push_back(lower(device.get<std::string>()));
+                    out.banned.push_back(blb::to_lower(device.get<std::string>()));
                 }
             }
         }
@@ -304,19 +296,12 @@ namespace RoomApi {
                 continue;
             }
             Member member;
-            member.device = lower(blb::json_text(item, "deviceId"));
+            member.device = blb::to_lower(blb::json_text(item, "deviceId"));
             member.name = blb::json_text(item, "username");
             member.authorized = blb::json_text(item, "status") == "authorized";
             member.host = flag(item, "host") || (!hostDevice.empty() && member.device == hostDevice);
             member.seen = parseTime(blb::json_text(item, "lastSeen"));
-            auto addresses = item.find("ipAssignments");
-            if (addresses != item.end() && addresses->is_array()) {
-                for (const nlohmann::json& address : *addresses) {
-                    if (address.is_string()) {
-                        member.addresses.push_back(address.get<std::string>());
-                    }
-                }
-            }
+            member.addresses = blb::json_strings(item, "ipAssignments");
             if (!member.device.empty()) {
                 out.members.push_back(std::move(member));
             }

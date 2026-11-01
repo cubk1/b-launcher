@@ -5,6 +5,7 @@
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
+#include <core/base/strings.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -145,15 +146,6 @@ namespace Multiplayer {
 
         void setStage(Stage stage) {
             update([stage](Shared& s) { s.stage = stage; });
-        }
-
-        std::string lower(std::string text) {
-            for (char& c : text) {
-                if (c >= 'A' && c <= 'Z') {
-                    c = (char) (c - 'A' + 'a');
-                }
-            }
-            return text;
         }
 
         std::string cleanName(const std::string& name) {
@@ -411,7 +403,7 @@ namespace Multiplayer {
             setStage(Stage::Starting);
             ZeroTier::Start started = ZeroTier::start(token);
             if (started == ZeroTier::Start::Online) {
-                session.device = lower(ZeroTier::device());
+                session.device = blb::to_lower(ZeroTier::device());
                 return Failure();
             }
             if (started == ZeroTier::Start::Cancelled) {
