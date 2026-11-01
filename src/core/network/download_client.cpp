@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <deque>
 #include <mutex>
@@ -29,6 +30,46 @@ constexpr std::uint64_t io_backlog_limit = 32u << 20;
 constexpr std::int64_t split_threshold = 5 << 20;
 constexpr unsigned split_connections = 8;
 constexpr std::uint64_t split_piece = 1u << 20;
+
+struct byte_range
+{
+  std::uint64_t begin = 0;
+  std::uint64_t end = 0;
+  std::optional<std::uint64_t> total;
+};
+
+std::optional<byte_range>
+parse_content_range (std::string_view value)
+{
+  value = trim (value);
+  if (value.size () < 6 || !iequals (value.substr (0, 6), "bytes "))
+    return std::nullopt;
+  value = trim (value.substr (6));
+  auto dash = value.find ('-');
+  auto slash = value.find ('/');
+  if (dash == std::string_view::npos || slash == std::string_view::npos
+      || slash <= dash)
+    return std::nullopt;
+  auto number = [] (std::string_view text, std::uint64_t &out) {
+    auto [end, error]
+        = std::from_chars (text.data (), text.data () + text.size (), out);
+    return error == std::errc () && end == text.data () + text.size ();
+  };
+  byte_range range;
+  if (!number (value.substr (0, dash), range.begin)
+      || !number (value.substr (dash + 1, slash - dash - 1), range.end)
+      || range.end < range.begin)
+    return std::nullopt;
+  auto total = value.substr (slash + 1);
+  if (total != "*")
+    {
+      std::uint64_t size = 0;
+      if (!number (total, size) || size <= range.end)
+        return std::nullopt;
+      range.total = size;
+    }
+  return range;
+}
 
 struct completion
 {
@@ -110,6 +151,10 @@ struct download_client::impl
     split_job *job = nullptr;
     std::size_t segment_index = 0;
     std::uint64_t staged_at = 0;
+    std::uint64_t requested_begin = 0;
+    std::uint64_t requested_end = 0;
+    std::uint64_t response_size = 0;
+    std::string content_range;
     bool range_checked = false;
     bool range_ignored = false;
     bool reached_end = false;
@@ -335,6 +380,20 @@ struct download_client::impl
     return curl_easy_init ();
   }
 
+  static std::size_t
+  on_header (char *data, std::size_t size, std::size_t count, void *user)
+  {
+    auto &t = *static_cast<transfer *> (user);
+    std::string_view line (data, size * count);
+    if (line.starts_with ("HTTP/"))
+      t.content_range.clear ();
+    auto colon = line.find (':');
+    if (colon != std::string_view::npos
+        && iequals (line.substr (0, colon), "Content-Range"))
+      t.content_range = trim (line.substr (colon + 1));
+    return size * count;
+  }
+
   void
   release_easy (CURL *easy)
   {
@@ -398,6 +457,11 @@ struct download_client::impl
     curl_easy_setopt (easy, CURLOPT_PRIVATE, &t);
     curl_easy_setopt (easy, CURLOPT_WRITEFUNCTION, &impl::on_write);
     curl_easy_setopt (easy, CURLOPT_WRITEDATA, &t);
+    if (t.job)
+      {
+        curl_easy_setopt (easy, CURLOPT_HEADERFUNCTION, &impl::on_header);
+        curl_easy_setopt (easy, CURLOPT_HEADERDATA, &t);
+      }
     curl_easy_setopt (easy, CURLOPT_ERRORBUFFER, t.error_buffer);
     curl_easy_setopt (easy, CURLOPT_FAILONERROR, 1L);
     curl_easy_setopt (easy, CURLOPT_BUFFERSIZE,
@@ -630,13 +694,42 @@ struct download_client::impl
         t.range_checked = true;
         long status = 0;
         curl_easy_getinfo (t.easy, CURLINFO_RESPONSE_CODE, &status);
+        t.response_size = static_cast<std::uint64_t> (job.task->size);
         if (status == 206)
-          job.ranges = true;
+          {
+            auto range = parse_content_range (t.content_range);
+            if (!range || range->begin != t.requested_begin
+                || range->end > t.requested_end
+                || (range->total && *range->total != t.response_size))
+              {
+                t.write_error = make_error (errc::size_mismatch,
+                                           "invalid content range");
+                return 0;
+              }
+            t.response_size = range->end - range->begin + 1;
+            job.ranges = true;
+          }
         else if (seg.pos != 0)
           {
             t.range_ignored = true;
             return 0;
           }
+        curl_off_t length = -1;
+        curl_easy_getinfo (t.easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,
+                          &length);
+        if (length >= 0
+            && static_cast<std::uint64_t> (length) != t.response_size)
+          {
+            t.write_error = make_error (errc::size_mismatch,
+                                       "unexpected response size");
+            return 0;
+          }
+      }
+    if (n > t.response_size - t.received)
+      {
+        t.write_error = make_error (errc::size_mismatch,
+                                   "response larger than expected");
+        return 0;
       }
     auto room = seg.end - seg.pos;
     auto take = static_cast<std::size_t> (std::min<std::uint64_t> (room, n));
@@ -679,6 +772,8 @@ struct download_client::impl
     t->started = std::chrono::steady_clock::now ();
     t->job = &job;
     t->segment_index = which;
+    t->requested_begin = seg.pos;
+    t->requested_end = seg.end - 1;
     t->staging.reserve (staging_limit + options.receive_buffer);
     configure (*t, settings, proxy, false);
     if (!t->easy)
@@ -800,7 +895,8 @@ struct download_client::impl
     if (auto r = flush (*t); !r)
       return fail_job (job, std::move (r).err (), false);
     if (t->write_error)
-      return fail_job (job, *t->write_error, false);
+      return fail_job (job, *t->write_error,
+                       t->write_error->code == errc::size_mismatch);
     bool fine
         = code == CURLE_OK || (code == CURLE_WRITE_ERROR && t->reached_end);
     if (task_has_alternatives (*t))
