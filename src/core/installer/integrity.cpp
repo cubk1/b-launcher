@@ -2,8 +2,10 @@
 #include <core/base/strings.hpp>
 #include <core/installer/integrity.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <unordered_set>
 
 namespace b_launcher_base::install
 {
@@ -167,12 +169,29 @@ verify_files (std::span<const planned_file> files,
       {
         auto listing
             = fs::list_directory (files[indices[0]].target.parent_path ());
+#if defined(_WIN32)
+        std::unordered_set<std::string> folded_names;
+        folded_names.reserve (listing.size ());
+        for (const auto &[name, st] : listing)
+          folded_names.insert (to_lower (name));
+#endif
         for (auto i : indices)
           {
-            auto it
-                = listing.find (path_to_utf8 (files[i].target.filename ()));
+            auto name = path_to_utf8 (files[i].target.filename ());
+            auto it = listing.find (name);
             if (it != listing.end () && !it->second.is_directory)
               stats[i] = it->second;
+#if defined(_WIN32)
+            else if (it == listing.end ()
+                     && (folded_names.contains (to_lower (name))
+                         || std::any_of (name.begin (), name.end (),
+                                         [] (unsigned char c) {
+                                           return c >= 0x80;
+                                         })))
+              // Let the filesystem resolve case, including directories that
+              // explicitly enable case-sensitive names.
+              stats[i] = fs::stat (files[i].target);
+#endif
           }
       }
     else
