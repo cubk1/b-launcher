@@ -7,7 +7,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
+#include <limits>
 #include <thread>
 
 namespace b_launcher_base::auth
@@ -58,9 +60,34 @@ std::int64_t
 int_of (const json &doc, const char *key, std::int64_t fallback)
 {
   auto it = doc.find (key);
-  if (it == doc.end () || !it->is_number ())
+  if (it == doc.end () || !it->is_number_integer ()
+      || (it->is_number_unsigned ()
+          && it->get<std::uint64_t> ()
+                 > static_cast<std::uint64_t> (
+                       std::numeric_limits<std::int64_t>::max ())))
     return fallback;
   return it->get<std::int64_t> ();
+}
+
+result<std::int64_t>
+positive_seconds (const json &doc, const char *key, std::int64_t fallback,
+                  std::int64_t maximum
+                  = std::numeric_limits<std::int64_t>::max ())
+{
+  auto it = doc.find (key);
+  auto value = it == doc.end () ? fallback : int_of (doc, key, 0);
+  if (value <= 0 || value > maximum)
+    return make_error (errc::auth, sformat ("invalid {} in response", key));
+  return value;
+}
+
+std::int64_t
+remaining_clock_seconds ()
+{
+  using clock = std::chrono::steady_clock;
+  return std::chrono::duration_cast<std::chrono::seconds> (
+             clock::time_point::max () - clock::now ())
+      .count ();
 }
 
 result<microsoft_token>
@@ -87,7 +114,8 @@ token_from (const net::http_response &response)
   microsoft_token token;
   token.access_token = text_of (doc, "access_token");
   token.refresh_token = text_of (doc, "refresh_token");
-  token.expires_in = int_of (doc, "expires_in", 3600);
+  BLB_TRY_ASSIGN (token.expires_in,
+                  positive_seconds (doc, "expires_in", 3600));
   if (token.access_token.empty ())
     return make_error (errc::auth, "no access token in response");
   return token;
@@ -113,6 +141,8 @@ jwt_claim (std::string_view token, const char *claim)
     return {};
   if (it->is_string ())
     return it->get<std::string> ();
+  if (it->is_number_unsigned ())
+    return std::to_string (it->get<std::uint64_t> ());
   if (it->is_number_integer ())
     return std::to_string (it->get<std::int64_t> ());
   return {};
@@ -210,8 +240,16 @@ microsoft_authenticator::request_device_code (cancellation_token token) const
   code.device_code = text_of (doc, "device_code");
   code.verification_uri = text_of (doc, "verification_uri");
   code.message = text_of (doc, "message");
-  code.interval = std::chrono::seconds (int_of (doc, "interval", 5));
-  code.expires_in = std::chrono::seconds (int_of (doc, "expires_in", 900));
+  auto maximum = remaining_clock_seconds ();
+  BLB_TRY_ASSIGN (auto interval,
+                  positive_seconds (doc, "interval", 5, maximum));
+  BLB_TRY_ASSIGN (auto expires,
+                  positive_seconds (doc, "expires_in", 900, maximum));
+  code.interval = std::chrono::seconds (interval);
+  code.expires_in = std::chrono::seconds (expires);
+  if (code.user_code.empty () || code.device_code.empty ()
+      || code.verification_uri.empty ())
+    return make_error (errc::auth, "invalid device code response");
   return code;
 }
 
@@ -219,13 +257,25 @@ result<microsoft_token>
 microsoft_authenticator::poll_device_code (const device_code &code,
                                            cancellation_token token) const
 {
-  auto deadline = std::chrono::steady_clock::now () + code.expires_in;
-  auto interval = code.interval;
+  using clock = std::chrono::steady_clock;
+  auto now = clock::now ();
+  auto maximum = std::chrono::duration_cast<std::chrono::seconds> (
+      clock::time_point::max () - now);
+  if (code.device_code.empty () || code.interval.count () <= 0
+      || code.expires_in.count () <= 0 || code.expires_in > maximum)
+    return make_error (errc::auth, "invalid device code lifetime");
+  auto deadline = now + code.expires_in;
+  auto interval = std::min (code.interval, code.expires_in);
   auto url = token_url ();
-  while (std::chrono::steady_clock::now () < deadline)
+  while ((now = clock::now ()) < deadline)
     {
-      if (token.wait_for (interval))
+      auto wait = std::min (
+          std::chrono::duration_cast<clock::duration> (interval),
+          deadline - now);
+      if (token.wait_for (std::chrono::ceil<std::chrono::milliseconds> (wait)))
         return make_error (errc::cancelled, "login cancelled");
+      if (clock::now () >= deadline)
+        break;
       form fields {
         { "grant_type", "urn:ietf:params:oauth:grant-type:device_code" },
         { "client_id", m_client_id },
@@ -238,7 +288,8 @@ microsoft_authenticator::poll_device_code (const device_code &code,
       if (result.err ().code != errc::auth_pending)
         return result;
       if (result.err ().message == "slow_down")
-        interval += std::chrono::seconds (5);
+        interval += std::min (std::chrono::seconds (5),
+                              code.expires_in - interval);
     }
   return make_error (errc::auth_expired, "device code expired");
 }
@@ -354,7 +405,12 @@ microsoft_authenticator::login (const microsoft_token &ms,
   account out;
   out.type = account_type::microsoft;
   out.access_token = text_of (mc, "access_token");
-  out.expires_at = unix_now () + int_of (mc, "expires_in", 86400);
+  auto now = unix_now ();
+  auto maximum = std::numeric_limits<std::int64_t>::max ()
+                 - std::max<std::int64_t> (now, 0);
+  BLB_TRY_ASSIGN (auto expires,
+                  positive_seconds (mc, "expires_in", 86400, maximum));
+  out.expires_at = now + expires;
   out.refresh_token = ms.refresh_token;
   out.client_id = m_client_id;
   out.xuid = jwt_claim (out.access_token, "xuid");
