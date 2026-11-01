@@ -49,7 +49,7 @@ path temp_sibling (const path &target);
 bool same_volume (const path &a, const path &b) noexcept;
 bool same_file (const path &a, const path &b) noexcept;
 path absolute (const path &target);
-// Lexical traversal check only; allows '.' and empty path components.
+// Reject traversal and null bytes; allows '.' and empty path components.
 bool safe_relative (std::string_view relative) noexcept;
 
 enum class component_error : std::uint8_t

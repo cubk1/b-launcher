@@ -63,8 +63,7 @@ entry_target (const native_archive &archive, const zip_entry &entry,
 {
   if (entry.directory || entry.name == stamp_name
       || entry.name.starts_with ("META-INF/")
-      || !fs::safe_relative (entry.name)
-      || entry.name.find ('\0') != std::string::npos)
+      || !fs::safe_relative (entry.name))
     return std::nullopt;
   for (const auto &prefix : archive.exclude)
     if (entry.name.starts_with (prefix))

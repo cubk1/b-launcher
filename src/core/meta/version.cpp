@@ -629,21 +629,18 @@ parse_library (std::string_view json_text)
 result<void>
 validate_paths (const library &value)
 {
-  auto safe = [] (std::string_view path) {
-    return fs::safe_relative (path)
-           && path.find ('\0') == std::string_view::npos;
-  };
-  if (!value.artifact.name.empty () && !safe (value.artifact.path ()))
+  if (!value.artifact.name.empty ()
+      && !fs::safe_relative (value.artifact.path ()))
     return make_error (errc::parse, "invalid library artifact path");
   if (value.download && !value.download->path.empty ()
-      && !safe (value.download->path))
+      && !fs::safe_relative (value.download->path))
     return make_error (errc::parse, "invalid library download path");
   for (const auto &[name, file] : value.classifiers)
-    if (!file.path.empty () && !safe (file.path))
+    if (!file.path.empty () && !fs::safe_relative (file.path))
       return make_error (errc::parse, "invalid native library path");
   for (const auto &[os, classifier] : value.natives)
     if (!value.artifact.name.empty ()
-        && !safe (value.artifact.with_classifier (classifier).path ()))
+        && !fs::safe_relative (value.artifact.with_classifier (classifier).path ()))
       return make_error (errc::parse, "invalid native classifier path");
   return ok ();
 }

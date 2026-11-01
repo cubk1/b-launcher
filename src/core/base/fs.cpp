@@ -574,7 +574,8 @@ safe_relative (std::string_view relative) noexcept
 {
   if (relative.empty () || relative.front () == '/'
       || relative.front () == '\\'
-      || relative.find (':') != std::string_view::npos)
+      || relative.find (':') != std::string_view::npos
+      || relative.find ('\0') != std::string_view::npos)
     return false;
   std::size_t start = 0;
   while (start <= relative.size ())

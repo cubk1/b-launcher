@@ -57,8 +57,7 @@ parse_asset_index (std::string_view json)
         }
       if (index.is_virtual || index.map_to_resources)
         for (const auto &object : index.objects)
-          if (!fs::safe_relative (object.name)
-              || object.name.find ('\0') != std::string::npos)
+          if (!fs::safe_relative (object.name))
             return make_error (
                 errc::parse,
                 sformat ("invalid asset path '{}'", object.name));

@@ -118,8 +118,7 @@ parse_runtime_manifest (std::string_view json)
         {
           runtime_file file;
           file.path = std::string (std::string_view (entry.unescaped_key ()));
-          if (!fs::safe_relative (file.path)
-              || file.path.find ('\0') != std::string::npos)
+          if (!fs::safe_relative (file.path))
             return make_error (errc::parse, "invalid runtime file path");
           for (auto field : entry.value ().get_object ())
             {
