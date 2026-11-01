@@ -202,7 +202,7 @@ void main() {
 )GLSL";
 
     static bool ensureDualKawase() {
-        if (dualDownShader.program != 0) {
+        if (dualDownShader.program != 0 && dualUpShader.program != 0) {
             return true;
         }
         if (dualFailed) {

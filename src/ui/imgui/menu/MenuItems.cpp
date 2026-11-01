@@ -110,6 +110,10 @@ void PickerModeItem::itemRun() {
 
 static std::string armedAction;
 
+void ActionMenuItem::resetConfirmation() {
+    armedAction.clear();
+}
+
 ActionMenuItem::ActionMenuItem(const std::string& text, int glyph, std::function<void()> action)
     : MenuItem(text, glyph),
       action(std::move(action)),

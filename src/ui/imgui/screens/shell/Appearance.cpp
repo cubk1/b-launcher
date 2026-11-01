@@ -175,7 +175,7 @@ namespace Appearance {
     }
 
     std::string customWindowTitle() {
-        return Config::data().value("windowTitle", std::string());
+        return text("windowTitle", "");
     }
 
     std::string windowTitle() {
@@ -193,7 +193,7 @@ namespace Appearance {
     }
 
     std::string customBrandTitle() {
-        return Config::data().value("brandTitle", std::string());
+        return text("brandTitle", "");
     }
 
     std::string brandTitle() {

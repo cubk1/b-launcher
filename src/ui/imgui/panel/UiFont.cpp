@@ -593,13 +593,14 @@ namespace UiFont {
         std::string result = text;
         if (width(text, family, size) > available) {
             const std::string ellipsis = "\xE2\x80\xA6";
+            if (width(ellipsis, family, size) > available) return {};
             int length = (int) Ui::length(text);
             auto piece = [&](int count) {
-                return keepEnd ? ellipsis + Ui::substring(text, length - count, count)
+                return keepEnd ? ellipsis + Ui::substring(text, length - count)
                                : Ui::substring(text, 0, count) + ellipsis;
             };
-            int low = 1;
-            int high = std::max(1, length - 1);
+            int low = 0;
+            int high = std::max(0, length - 1);
             while (low < high) {
                 int middle = (low + high + 1) / 2;
                 if (width(piece(middle), family, size) <= available) {

@@ -210,9 +210,16 @@ namespace {
     float storedSize(const char* key, float fallback) {
         const nlohmann::json& doc = Config::data();
         if (auto it = doc.find(key); it != doc.end() && it->is_number()) {
-            return std::max(fallback, it->get<float>());
+            float size = it->get<float>();
+            if (std::isfinite(size)) return std::max(fallback, size);
         }
         return fallback;
+    }
+
+    bool storedMaximized() {
+        const auto& doc = Config::data();
+        auto value = doc.find("windowMaximized");
+        return value != doc.end() && value->is_boolean() && value->get<bool>();
     }
 
     bool storeWindow(const BorderlessWindow& window, float scale) {
@@ -226,8 +233,11 @@ namespace {
         bool maximized =
                 IsZoomed(window.hwnd) || (IsIconic(window.hwnd) && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
         nlohmann::json& doc = Config::data();
-        if (doc.value("windowWidth", 0.0f) == w && doc.value("windowHeight", 0.0f) == h &&
-            doc.value("windowMaximized", false) == maximized) {
+        auto matches = [&](const char* key, const auto& value) {
+            auto found = doc.find(key);
+            return found != doc.end() && *found == value;
+        };
+        if (matches("windowWidth", w) && matches("windowHeight", h) && matches("windowMaximized", maximized)) {
             return false;
         }
         doc["windowWidth"] = w;
@@ -252,9 +262,11 @@ namespace ImGuiApp {
         window.resizable = true;
         window.isDragArea = [&scale](int x, int y) { return MainWindow::isDragArea(x / scale, y / scale); };
         bool remember = Appearance::rememberWindow();
-        float startW = remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH;
-        float startH = remember ? storedSize("windowHeight", MainWindow::MIN_HEIGHT) : MainWindow::MIN_HEIGHT;
-        bool startMaximized = remember && Config::data().value("windowMaximized", false);
+        float startW = std::min(remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH,
+                                std::max(MainWindow::MIN_WIDTH, GetSystemMetrics(SM_CXVIRTUALSCREEN) / scale));
+        float startH = std::min(remember ? storedSize("windowHeight", MainWindow::MIN_HEIGHT) : MainWindow::MIN_HEIGHT,
+                                std::max(MainWindow::MIN_HEIGHT, GetSystemMetrics(SM_CYVIRTUALSCREEN) / scale));
+        bool startMaximized = remember && storedMaximized();
         std::string shownTitle = Appearance::windowTitle();
         LogWindow::setTitle(Platform::widen(shownTitle));
         if (!window.create(Platform::widen(shownTitle), pixels(startW, scale), pixels(startH, scale))) {

@@ -1717,6 +1717,7 @@ namespace NewUi {
     }
 
     void openMenu(const std::string& owner, std::function<MenuItems()> items, float x, float y, float minWidth) {
+        ActionMenuItem::resetConfirmation();
         if (owner == menuOwner) {
             UiOverlays::close(UiOverlays::menu);
             return;

@@ -182,6 +182,8 @@ namespace exui {
     }
 
     void ComboBox::ClearItems() {
+        m_pendingSelection = -1;
+        CloseDropdown();
         m_items.clear();
         m_selectedIndex = -1;
         SetCaption(L"");

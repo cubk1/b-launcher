@@ -56,6 +56,7 @@ namespace WebImages {
         using Clock = std::chrono::steady_clock;
         struct CachedImage {
             Image image;
+            std::string fallback;
             Clock::time_point retryAt;
             std::chrono::seconds retryDelay{1};
         };
@@ -273,6 +274,7 @@ namespace WebImages {
         std::string key = source + '\x1f' + fallback;
         auto [found, inserted] = images.try_emplace(key);
         CachedImage& cached = found->second;
+        cached.fallback = fallback;
         Image& image = cached.image;
         if (!inserted) {
             if (!image.done || !image.failed || Clock::now() < cached.retryAt) {
@@ -330,7 +332,13 @@ namespace WebImages {
             Image& image = cached.image;
             image.done = true;
             if (result.rgba.empty()) {
-                failed(cached);
+                // Built-in icons need the UI's graphics context, so resolve them here.
+                auto replacement = builtin(cached.fallback);
+                if (replacement && !replacement->failed) {
+                    image = *replacement;
+                } else {
+                    failed(cached);
+                }
             } else {
                 image.texture = UiImages::upload(result.rgba.data(), result.width, result.height);
                 image.width = result.width;
