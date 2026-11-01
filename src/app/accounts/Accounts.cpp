@@ -9,6 +9,7 @@
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/hash.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
@@ -52,6 +53,7 @@ namespace Accounts {
 
         std::vector<blb::auth::account> accounts;
         std::string currentKey;
+        std::map<std::string, std::string> legacyKeys;
         std::set<std::string> busyKeys;
         std::set<std::string> expiredKeys;
 
@@ -309,9 +311,31 @@ namespace Accounts {
 
     void init() {
         load();
-        const nlohmann::json& doc = Config::data();
+        nlohmann::json& doc = Config::data();
+        legacyKeys.clear();
+        auto aliases = doc.find("accountKeyAliases");
+        if (aliases != doc.end() && aliases->is_object()) {
+            for (const auto& [oldKey, newKey] : aliases->items()) {
+                if (newKey.is_string()) legacyKeys[oldKey] = newKey.get<std::string>();
+            }
+        } else {
+            // Bind old instance references to the account that existed before
+            // server-scoped keys, not to a later login with the same UUID.
+            for (const auto& account : accounts) {
+                if (blb::auth::is_yggdrasil(account.type)) {
+                    std::string old = std::string(blb::auth::account_type_name(account.type)) + ":" + account.uuid;
+                    legacyKeys.emplace(old, keyOf(account));
+                }
+            }
+            doc["accountKeyAliases"] = legacyKeys;
+            Config::save();
+        }
         auto saved = doc.find("account");
         currentKey = saved != doc.end() && saved->is_string() ? saved->get<std::string>() : std::string();
+        if (auto migrated = legacyKeys.find(currentKey); migrated != legacyKeys.end()) {
+            currentKey = migrated->second;
+            saveCurrent();
+        }
     }
 
     void poll() {
@@ -340,7 +364,20 @@ namespace Accounts {
     }
 
     std::string keyOf(const blb::auth::account& account) {
-        return std::string(blb::auth::account_type_name(account.type)) + ":" + account.uuid;
+        std::string key = std::string(blb::auth::account_type_name(account.type)) + ":" + account.uuid;
+        if (!blb::auth::is_yggdrasil(account.type)) return key;
+        std::string server(blb::trim(account.server));
+        while (!server.empty() && server.back() == '/') server.pop_back();
+        if (account.type == blb::auth::account_type::nide8) {
+            server = blb::to_lower(server);
+        } else {
+            if (server.find("://") == std::string::npos) server = "https://" + server;
+            auto path = server.find('/', server.find("://") + 3);
+            // URI schemes and hosts are case-insensitive; API paths are not.
+            server = blb::to_lower(server.substr(0, path)) +
+                    (path == std::string::npos ? std::string() : server.substr(path));
+        }
+        return key + ":" + blb::to_hex(blb::sha1::digest(server));
     }
 
     const std::vector<blb::auth::account>& list() {
@@ -348,8 +385,10 @@ namespace Accounts {
     }
 
     const blb::auth::account* find(const std::string& key) {
+        auto alias = legacyKeys.find(key);
+        const std::string& wanted = alias == legacyKeys.end() ? key : alias->second;
         for (const blb::auth::account& account : accounts) {
-            if (keyOf(account) == key) {
+            if (keyOf(account) == wanted) {
                 return &account;
             }
         }
@@ -364,10 +403,11 @@ namespace Accounts {
     }
 
     void select(const std::string& key) {
-        if (find(key) == nullptr || key == currentKey) {
+        const auto* account = find(key);
+        if (account == nullptr || keyOf(*account) == currentKey) {
             return;
         }
-        currentKey = key;
+        currentKey = keyOf(*account);
         saveCurrent();
     }
 
