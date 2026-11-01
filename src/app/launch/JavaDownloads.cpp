@@ -6,6 +6,7 @@
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
@@ -52,15 +53,19 @@ namespace JavaDownloads {
         bool started = false;
         std::map<std::string, std::shared_ptr<Job>> jobs;
 
-        void run(std::function<Continuation(blb::cancellation_token)> work) {
+        void run(std::function<Continuation(blb::cancellation_token)> work,
+                 std::function<void()> fail) {
             blb::cancellation_token token = stopping.token();
-            workers.start([work, token] {
+            workers.start([work, fail, token] {
                 Continuation next;
                 try {
                     next = work(token);
                 } catch (const std::exception& error) {
                     std::string text = error.what();
-                    next = [text] { Notices::add(Notices::Kind::Failed, "Java 下载出错：" + text, 5000); };
+                    next = [text, fail] {
+                        fail();
+                        Notices::add(Notices::Kind::Failed, "Java 下载出错：" + text, 5000);
+                    };
                 }
                 if (next) {
                     std::lock_guard<std::mutex> guard(lock);
@@ -80,8 +85,8 @@ namespace JavaDownloads {
         }
 
         bool safeFolder(const std::string& folder) {
-            return !folder.empty() && folder.find_first_of("/\\:") == std::string::npos && folder != "." &&
-                    folder != "..";
+            return blb::fs::safe_relative(folder) && folder.find_first_of("/\\") == std::string::npos &&
+                    folder != "." && folder.back() != '.' && folder.back() != ' ';
         }
 
         std::vector<Package> parse(const std::string& body, std::string& error) {
@@ -177,6 +182,17 @@ namespace JavaDownloads {
             return path;
         }
 
+        bool safePath(const std::string& path) {
+            if (!blb::fs::safe_relative(path)) return false;
+            for (unsigned char c : path) {
+                if (c < 32 || std::string_view("*?\"<>|").find(c) != std::string_view::npos) return false;
+            }
+            for (auto part : blb::split(path, '/')) {
+                if (!part.empty() && part != "." && (part.back() == '.' || part.back() == ' ')) return false;
+            }
+            return true;
+        }
+
         std::string extract(const std::filesystem::path& archive, const Package& package,
                             const std::filesystem::path& target, Job& job, blb::cancellation_token token) {
             auto zip = blb::zip_reader::open(archive);
@@ -189,6 +205,7 @@ namespace JavaDownloads {
             }
             uint64_t done = 0;
             std::string failure;
+            auto destinationRoot = blb::fs::absolute(target);
             auto visited = zip->for_each([&](const blb::zip_entry& entry, blb::zip_reader& reader) -> bool {
                 if (token.is_cancelled()) {
                     failure = "已取消";
@@ -201,11 +218,27 @@ namespace JavaDownloads {
                     }
                     name.erase(0, root.size());
                 }
-                if (name.empty() || name == ".." || name.rfind("../", 0) == 0 ||
-                    name.find("/../") != std::string::npos) {
+                name = normalize(std::move(name));
+                if (name.empty() || (entry.directory && name == ".")) {
                     return true;
                 }
+                if (!safePath(name)) {
+                    failure = "Java 压缩包包含不安全的路径";
+                    return false;
+                }
                 std::filesystem::path out = target / blb::path_from_utf8(name);
+                if (!blb::fs::is_inside(target, out)) {
+                    failure = "Java 压缩包中的路径超出安装目录";
+                    return false;
+                }
+                // Refuse existing reparse points, including a linked staging root.
+                for (auto part = blb::fs::absolute(out); !part.empty(); part = part.parent_path()) {
+                    if (blb::fs::stat(part).is_link) {
+                        failure = "Java 解压路径包含链接";
+                        return false;
+                    }
+                    if (part == destinationRoot || part == part.root_path()) break;
+                }
                 std::error_code error;
                 if (entry.directory || name.back() == '/') {
                     std::filesystem::create_directories(out, error);
@@ -274,7 +307,7 @@ namespace JavaDownloads {
                 current.error = error;
                 current.status = error.empty() ? Status::Ready : Status::Failed;
             };
-        });
+        }, [] { current.status = Status::Failed; current.error = "Java 列表读取失败，请重试"; });
     }
 
     std::string name(const Package& package) {
@@ -320,6 +353,11 @@ namespace JavaDownloads {
     }
 
     void install(const Package& package) {
+        if (!safeFolder(package.folder) ||
+            (!package.homePrefix.empty() && !safePath(normalize(package.homePrefix)))) {
+            Notices::add(Notices::Kind::Failed, "Java 安装路径无效", 5000);
+            return;
+        }
         if (state(package.folder) == State::Running) {
             return;
         }
@@ -394,7 +432,7 @@ namespace JavaDownloads {
                     Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);
                 }
             };
-        });
+        }, [job] { job->state = State::Failed; });
     }
 
     void poll() {
