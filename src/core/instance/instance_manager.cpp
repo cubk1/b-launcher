@@ -100,6 +100,22 @@ memory_from_json (const json &doc, const char *key)
   return it->get<std::uint32_t> ();
 }
 
+result<std::optional<int>>
+dimension_from_json (const json &doc, const char *key)
+{
+  auto value = doc.find (key);
+  if (value == doc.end () || value->is_null ())
+    return std::optional<int> ();
+  if (!value->is_number_integer ()
+      || (!value->is_number_unsigned () && value->get<std::int64_t> () <= 0)
+      || value->get<std::uint64_t> () == 0
+      || value->get<std::uint64_t> ()
+             > static_cast<std::uint64_t> (std::numeric_limits<int>::max ()))
+    return make_error (errc::parse,
+                       sformat ("{} must be a positive integer", key));
+  return std::optional<int> (value->get<int> ());
+}
+
 result<instance_settings>
 settings_from_json (const json &doc)
 {
@@ -120,10 +136,8 @@ settings_from_json (const json &doc)
     for (const auto &v : *it)
       if (v.is_string ())
         s.game_args.push_back (v.get<std::string> ());
-  if (auto it = doc.find ("width"); it != doc.end () && it->is_number ())
-    s.width = it->get<int> ();
-  if (auto it = doc.find ("height"); it != doc.end () && it->is_number ())
-    s.height = it->get<int> ();
+  BLB_TRY_ASSIGN (s.width, dimension_from_json (doc, "width"));
+  BLB_TRY_ASSIGN (s.height, dimension_from_json (doc, "height"));
   s.fullscreen = doc.value ("fullscreen", false);
   s.server = doc.value ("server", std::string ());
   s.login = doc.value ("login", std::string ());
