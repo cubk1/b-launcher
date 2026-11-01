@@ -68,7 +68,7 @@ namespace NewInstanceScreen {
         loader_type picking = loader_type::forge;
         std::string typedName;
         std::string target;
-        std::optional<Modpack> modpack;
+        std::optional<ModpackSetup> modpack;
         std::string editing;
         std::map<loader_type, std::string> original;
         bool readingLoaders = false;
@@ -873,7 +873,7 @@ namespace NewInstanceScreen {
         }
     }
 
-    void openModpack(const Modpack& value) {
+    void openModpack(const ModpackSetup& value) {
         reset();
         modpack = value;
         loaderSelection.reset(value.minecraft.empty() ? std::string("modpack") : value.minecraft);

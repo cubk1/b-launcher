@@ -1225,32 +1225,11 @@ namespace DownloadsScreen {
         }
 
         void openModpackInstall(const Addons::Version& version) {
-            const Addons::File* file = version.file();
-            if (file == nullptr) {
+            auto setup = ModpackSetup::fromProject(version, project.title);
+            if (!setup) {
                 return;
             }
-            NewInstanceScreen::Modpack setup;
-            setup.title = project.title;
-            setup.version = version.name.empty() ? version.number : version.name;
-            setup.minecraft = version.gameVersions.empty() ? std::string() : version.gameVersions.front();
-            setup.pack.minecraft = setup.minecraft;
-            setup.pack.urls = Addons::fileUrls(file->url);
-            setup.pack.sha1 = file->sha1;
-            setup.pack.size = file->size;
-            for (const std::string& tag : version.loaders) {
-                setup.loaders.push_back(Modrinth::label(tag));
-                using b_launcher_base::install::loader_type;
-                if (tag == "fabric") {
-                    setup.pack.loaders.push_back(loader_type::fabric);
-                } else if (tag == "forge") {
-                    setup.pack.loaders.push_back(loader_type::forge);
-                } else if (tag == "neoforge") {
-                    setup.pack.loaders.push_back(loader_type::neoforge);
-                } else if (tag == "quilt") {
-                    setup.pack.loaders.push_back(loader_type::quilt);
-                }
-            }
-            NewInstanceScreen::openModpack(setup);
+            NewInstanceScreen::openModpack(*setup);
             MainWindow::showNewInstance();
         }
 

@@ -1,6 +1,5 @@
 #include "ui/imgui/screens/shell/Drop.h"
 #include "app/instances/Drops.h"
-#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
@@ -11,8 +10,6 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
-
-#include <core/base/strings.hpp>
 
 #include <filesystem>
 #include <string>
@@ -28,18 +25,7 @@ namespace Drop {
         }
 
         void openModpack(const std::filesystem::path& file, const blb::modpack::pack_manifest& manifest) {
-            NewInstanceScreen::Modpack setup;
-            setup.title = manifest.name.empty() ? blb::path_to_utf8(file.stem()) : manifest.name;
-            setup.version = manifest.version.empty() ? std::string("未知") : manifest.version;
-            setup.minecraft = manifest.minecraft;
-            for (const blb::install::loader_request& loader : manifest.loaders) {
-                setup.loaders.push_back(Installer::loaderName(loader.type) +
-                                        (loader.version.empty() ? std::string() : " " + loader.version));
-                setup.pack.loaders.push_back(loader.type);
-            }
-            setup.pack.minecraft = manifest.minecraft;
-            setup.pack.file = file;
-            NewInstanceScreen::openModpack(setup);
+            NewInstanceScreen::openModpack(ModpackSetup::fromFile(file, manifest));
             MainWindow::showNewInstance();
         }
     }

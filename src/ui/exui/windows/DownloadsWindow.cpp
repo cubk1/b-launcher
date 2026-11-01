@@ -10,6 +10,7 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/downloads/ProjectBrowser.h"
 #include "app/instances/Installer.h"
+#include "app/instances/ModpackSetup.h"
 #include "app/instances/Instances.h"
 #include "app/instances/InstanceSettings.h"
 #include "app/system/Catalog.h"
@@ -482,29 +483,6 @@ namespace ForgottenMelody {
                                [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
         }
 
-        // A modpack to install, from a file or from a project, with what is shown of it.
-        struct PackSetup {
-            std::string title, version, minecraft;
-            std::vector<std::string> loaders;
-            Installer::Modpack pack;
-        };
-
-        // A modpack in a file, as the default interface takes one dropped on it.
-        PackSetup packOf(const std::filesystem::path& file, const blb::modpack::pack_manifest& read) {
-            PackSetup setup;
-            setup.title = read.name.empty() ? blb::path_to_utf8(file.stem()) : read.name;
-            setup.version = read.version.empty() ? std::string("未知") : read.version;
-            setup.minecraft = read.minecraft;
-            for (const blb::install::loader_request& loader : read.loaders) {
-                setup.loaders.push_back(Installer::loaderName(loader.type) +
-                                        (loader.version.empty() ? std::string() : " " + loader.version));
-                setup.pack.loaders.push_back(loader.type);
-            }
-            setup.pack.minecraft = read.minecraft;
-            setup.pack.file = file;
-            return setup;
-        }
-
         // 下载中心 in the frame of the 2014 window, its sections those of the default interface: 新建实例, then a
         // search of Modrinth or CurseForge for each kind of thing, which can follow the instance it is for, and the
         // page of a project with its versions.
@@ -671,7 +649,7 @@ namespace ForgottenMelody {
 
             // 新建实例 set up for a modpack in a file.
             void showPack(const std::filesystem::path& file, const blb::modpack::pack_manifest& manifest) {
-                openPack(packOf(file, manifest), -1);
+                openPack(ModpackSetup::fromFile(file, manifest), -1);
                 showSection(0);
             }
 
@@ -822,7 +800,7 @@ namespace ForgottenMelody {
             // 新建实例: the game version chosen or the modpack to install, and the section a modpack came from.
             bool settingUp = false;
             std::string minecraft;
-            std::optional<PackSetup> modpack;
+            std::optional<ModpackSetup> modpack;
             int packSection = -1;
             LoaderRows loaders{*this, LOADER_ROWS};
             InstallProgress progress{*this, PROGRESS};
@@ -1280,10 +1258,10 @@ namespace ForgottenMelody {
                     message(GetHwnd(), L"这个文件不是支持的整合包", L"导入整合包");
                     return;
                 }
-                openPack(packOf(picked.front(), *manifest), -1);
+                openPack(ModpackSetup::fromFile(picked.front(), *manifest), -1);
             }
 
-            void openPack(const PackSetup& setup, int from) {
+            void openPack(const ModpackSetup& setup, int from) {
                 modpack = setup;
                 packSection = from;
                 minecraft = setup.minecraft;
@@ -1427,36 +1405,15 @@ namespace ForgottenMelody {
                 const Addons::Version version = *chosen;
                 switch (query.kind) {
                     case Kind::Modpack: {
-                        const Addons::File* file = version.file();
-                        if (file == nullptr) {
+                        auto setup = ModpackSetup::fromProject(version, project.title);
+                        if (!setup) {
                             break;
                         }
                         if (Installer::running()) {
                             message(GetHwnd(), L"正在安装，等它完成后再安装整合包", L"下载中心");
                             break;
                         }
-                        PackSetup setup;
-                        setup.title = project.title;
-                        setup.version = version.name.empty() ? version.number : version.name;
-                        setup.minecraft = version.gameVersions.empty() ? std::string() : version.gameVersions.front();
-                        setup.pack.minecraft = setup.minecraft;
-                        setup.pack.urls = Addons::fileUrls(file->url);
-                        setup.pack.sha1 = file->sha1;
-                        setup.pack.size = file->size;
-                        using blb::install::loader_type;
-                        const std::pair<const char*, loader_type> TYPES[] = {{"fabric", loader_type::fabric},
-                                                                             {"forge", loader_type::forge},
-                                                                             {"neoforge", loader_type::neoforge},
-                                                                             {"quilt", loader_type::quilt}};
-                        for (const std::string& tag : version.loaders) {
-                            setup.loaders.push_back(Modrinth::label(tag));
-                            for (const auto& [name, type] : TYPES) {
-                                if (tag == name) {
-                                    setup.pack.loaders.push_back(type);
-                                }
-                            }
-                        }
-                        openPack(setup, lastSection);
+                        openPack(*setup, lastSection);
                         showSection(0);
                         break;
                     }
