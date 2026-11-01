@@ -1,4 +1,5 @@
 #include "app/system/Updates.h"
+#include "app/system/AsyncTasks.h"
 #include "app/system/About.h"
 #include "app/system/Platform.h"
 #include "app/system/Server.h"
@@ -11,8 +12,7 @@
 
 #include <algorithm>
 #include <chrono>
-#include <mutex>
-#include <thread>
+#include <utility>
 #include <vector>
 
 namespace Updates {
@@ -29,14 +29,10 @@ namespace Updates {
             std::string error;
         };
 
-        std::mutex lock;
-        std::thread worker;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
         State current = State::Idle;
         bool notifyFound = false;
         bool notifyFailure = false;
-        bool finished = false;
-        Result result;
         std::string latestVersion;
         std::string downloadUrl = About::RELEASES_URL;
 
@@ -83,20 +79,31 @@ namespace Updates {
             return false;
         }
 
-   }
+        void complete(const Result& done) {
+            if (!done.ok) {
+                current = State::Failed;
+                if (notifyFailure) {
+                    Notices::add(Notices::Kind::Failed, "检查更新失败：" + done.error, 5000);
+                }
+                return;
+            }
+            latestVersion = done.version;
+            downloadUrl = done.url.empty() ? std::string(About::RELEASES_URL) : done.url;
+            current = newer(done.version, About::VERSION) ? State::Available : State::Latest;
+            if (current == State::Available && notifyFound) {
+                Notices::add(Notices::Kind::Info, "发现新版本 v" + latestVersion + "，可在 设置 → 关于 中下载", 6000);
+            }
+        }
+    }
 
     void check(bool found, bool failure) {
         if (current == State::Checking) {
             return;
         }
-        if (worker.joinable()) {
-            worker.join();
-        }
         current = State::Checking;
         notifyFound = found;
         notifyFailure = failure;
-        blb::cancellation_token token = stopping.token();
-        worker = std::thread([token] {
+        tasks.run([](blb::cancellation_token token) -> AsyncTasks::Continuation {
             Result fetched;
             blb::net::http_request request;
             request.url = CONFIG_URL;
@@ -120,9 +127,13 @@ namespace Updates {
                     }
                 }
             }
-            std::lock_guard<std::mutex> guard(lock);
-            result = std::move(fetched);
-            finished = true;
+            return [fetched = std::move(fetched)] { complete(fetched); };
+        }, [](const std::string& error) -> AsyncTasks::Continuation {
+            return [error] {
+                Result failed;
+                failed.error = error;
+                complete(failed);
+            };
         });
     }
 
@@ -139,37 +150,10 @@ namespace Updates {
     }
 
     void poll() {
-        Result done;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            if (!finished) {
-                return;
-            }
-            finished = false;
-            done = result;
-        }
-        if (worker.joinable()) {
-            worker.join();
-        }
-        if (!done.ok) {
-            current = State::Failed;
-            if (notifyFailure) {
-                Notices::add(Notices::Kind::Failed, "检查更新失败：" + done.error, 5000);
-            }
-            return;
-        }
-        latestVersion = done.version;
-        downloadUrl = done.url.empty() ? std::string(About::RELEASES_URL) : done.url;
-        current = newer(done.version, About::VERSION) ? State::Available : State::Latest;
-        if (current == State::Available && notifyFound) {
-            Notices::add(Notices::Kind::Info, "发现新版本 v" + latestVersion + "，可在 设置 → 关于 中下载", 6000);
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        stopping.cancel();
-        if (worker.joinable()) {
-            worker.join();
-        }
+        tasks.stop();
     }
 }
