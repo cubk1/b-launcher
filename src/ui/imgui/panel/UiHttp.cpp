@@ -2,6 +2,9 @@
 
 #include <core/network/http_client.hpp>
 #include <core/base/win_util.hpp>
+#include <core/base/strings.hpp>
+
+#include <optional>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -18,6 +21,26 @@ namespace UiHttp {
 
 #if defined(_WIN32)
     using b_launcher_base::detail::utf8_to_wide;
+
+    static bool responseLength(HINTERNET request, int status, std::optional<uint64_t>& length) {
+        // These responses have no body, and transfer coding overrides Content-Length.
+        if (status < 200 || status == 204 || status == 304) return true;
+        DWORD size = 0;
+        if (WinHttpQueryHeaders(request, WINHTTP_QUERY_TRANSFER_ENCODING, WINHTTP_HEADER_NAME_BY_INDEX,
+                                nullptr, &size, WINHTTP_NO_HEADER_INDEX) || GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+            return true;
+        }
+        wchar_t text[32]{};
+        size = sizeof(text);
+        if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_HEADER_NAME_BY_INDEX,
+                                 text, &size, WINHTTP_NO_HEADER_INDEX)) {
+            return GetLastError() == ERROR_WINHTTP_HEADER_NOT_FOUND;
+        }
+        auto parsed = b_launcher_base::parse_int(b_launcher_base::detail::wide_to_utf8(text));
+        if (!parsed || *parsed < 0) return false;
+        length = (uint64_t) *parsed;
+        return true;
+    }
 #endif
 
     bool get(const std::string& url, const std::vector<std::pair<std::string, std::string>>& headers, int timeoutMs,
@@ -75,27 +98,27 @@ namespace UiHttp {
                     WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                                         WINHTTP_HEADER_NAME_BY_INDEX, &code, &codeSize, WINHTTP_NO_HEADER_INDEX);
                     status = (int) code;
-                    ok = true;
-                    while (true) {
-                        DWORD available = 0;
-                        if (!WinHttpQueryDataAvailable(request, &available) || available == 0) {
-                            break;
-                        }
-                        size_t at = out.size();
-                        out.resize(at + available);
+                    std::optional<uint64_t> expected;
+                    ok = responseLength(request, status, expected) &&
+                            (maxBytes == 0 || !expected || *expected <= maxBytes);
+                    unsigned char buffer[8192];
+                    while (ok) {
                         DWORD read = 0;
-                        if (!WinHttpReadData(request, out.data() + at, available, &read)) {
-                            ok = false;
-                            break;
-                        }
-                        out.resize(at + read);
-                        if (maxBytes > 0 && out.size() > maxBytes) {
+                        if (!WinHttpReadData(request, buffer, sizeof(buffer), &read)) {
                             ok = false;
                             break;
                         }
                         if (read == 0) {
                             break;
                         }
+                        if (maxBytes > 0 && read > maxBytes - out.size()) {
+                            ok = false;
+                            break;
+                        }
+                        out.insert(out.end(), buffer, buffer + read);
+                    }
+                    if (ok && expected && out.size() != *expected) {
+                        ok = false;
                     }
                 }
                 WinHttpCloseHandle(request);
