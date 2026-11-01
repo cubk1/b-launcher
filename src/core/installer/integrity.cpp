@@ -95,7 +95,13 @@ integrity_cache::save ()
       }
     m_dirty = false;
   }
-  return fs::write_file_atomic (m_file, out);
+  auto written = fs::write_file_atomic (m_file, out);
+  if (!written)
+    {
+      std::lock_guard lock (m_mutex);
+      m_dirty = true;
+    }
+  return written;
 }
 
 bool
