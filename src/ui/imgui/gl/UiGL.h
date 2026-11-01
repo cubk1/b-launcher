@@ -90,6 +90,8 @@ namespace UiGL {
 
     using LoaderFn = void* (*) (const char* name);
 
+    // Looks up an extension in the current context, rejecting WGL sentinel values.
+    void* extensionProc(const char* name);
     bool load(LoaderFn loader = nullptr);
     bool loaded();
 

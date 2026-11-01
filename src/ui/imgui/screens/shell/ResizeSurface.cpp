@@ -7,14 +7,6 @@
 #include <algorithm>
 
 namespace {
-    template<typename T>
-    T glProc(const char* name) {
-        PROC proc = wglGetProcAddress(name);
-        auto value = reinterpret_cast<INT_PTR>(proc);
-        return value == 0 || value == 1 || value == 2 || value == 3 || value == -1
-                ? nullptr : reinterpret_cast<T>(proc);
-    }
-
     struct CurrentGl {
         HDC previousDc = wglGetCurrentDC();
         HGLRC previous = wglGetCurrentContext();
@@ -281,8 +273,8 @@ bool ResizeSurface::present(int clientWidth, int clientHeight, bool keepLayer) {
     // surface. Only this handoff needs a compositor wait, not every resize step.
     using SwapInterval = BOOL(WINAPI*)(int);
     using GetSwapInterval = int(WINAPI*)();
-    auto setInterval = glProc<SwapInterval>("wglSwapIntervalEXT");
-    auto getInterval = glProc<GetSwapInterval>("wglGetSwapIntervalEXT");
+    auto setInterval = reinterpret_cast<SwapInterval>(UiGL::extensionProc("wglSwapIntervalEXT"));
+    auto getInterval = reinterpret_cast<GetSwapInterval>(UiGL::extensionProc("wglGetSwapIntervalEXT"));
     int interval = hadLayer && getInterval ? getInterval() : 0;
     if (setInterval && interval != 0) {
         setInterval(0);

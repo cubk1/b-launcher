@@ -62,11 +62,22 @@ namespace UiGL {
 
     static bool loadedFlag = false;
 
+    void* extensionProc(const char* name) {
+#if defined(_WIN32)
+        PROC proc = wglGetProcAddress(name);
+        auto value = reinterpret_cast<INT_PTR>(proc);
+        return value == 0 || value == 1 || value == 2 || value == 3 || value == -1
+                ? nullptr : reinterpret_cast<void*>(proc);
+#else
+        (void) name;
+        return nullptr;
+#endif
+    }
+
 #if defined(_WIN32)
     static void* defaultLoader(const char* name) {
-        void* proc = (void*) wglGetProcAddress(name);
-        if (proc == nullptr || proc == (void*) 0x1 || proc == (void*) 0x2 || proc == (void*) 0x3 ||
-            proc == (void*) -1) {
+        void* proc = extensionProc(name);
+        if (proc == nullptr) {
             static HMODULE module = LoadLibraryA("opengl32.dll");
             proc = module ? (void*) GetProcAddress(module, name) : nullptr;
         }

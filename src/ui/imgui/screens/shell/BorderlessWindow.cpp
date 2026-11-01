@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "ui/imgui/screens/shell/ResizeSurface.h"
+#include "ui/imgui/gl/UiGL.h"
 
 #include "imgui.h"
 
@@ -62,14 +63,6 @@ namespace {
             }
         }
     };
-
-    template<typename T>
-    T glProc(const char* name) {
-        PROC proc = wglGetProcAddress(name);
-        auto value = reinterpret_cast<INT_PTR>(proc);
-        return value == 0 || value == 1 || value == 2 || value == 3 || value == -1
-                ? nullptr : reinterpret_cast<T>(proc);
-    }
 
     // Surface operations can dispatch window messages too. Keep nested sizing
     // notifications from drawing again or deleting a surface still in use.
@@ -408,7 +401,7 @@ void BorderlessWindow::swap() {
 
 void BorderlessWindow::setVsync(bool on) {
     using SwapInterval = BOOL(WINAPI*)(int);
-    if (auto swapInterval = glProc<SwapInterval>("wglSwapIntervalEXT")) {
+    if (auto swapInterval = reinterpret_cast<SwapInterval>(UiGL::extensionProc("wglSwapIntervalEXT"))) {
         swapInterval(on ? 1 : 0);
     }
 }
