@@ -4,9 +4,11 @@
 #include <core/base/zip.hpp>
 #include <core/modpack/modpack.hpp>
 
+#include "core/meta/json_util.hpp"
 #include "core/modpack/modpack_impl.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <unordered_set>
 
 namespace b_launcher_base::modpack
@@ -32,19 +34,27 @@ text_of (const json &node, const char *key)
   return {};
 }
 
-std::int64_t
-int_of (const json &node, const char *key)
+using meta::detail::int_of;
+
+result<std::uint32_t>
+memory_value (const json &value)
 {
-  if (!node.is_object ())
-    return 0;
-  auto it = node.find (key);
-  if (it == node.end ())
-    return 0;
-  if (it->is_number ())
-    return it->get<std::int64_t> ();
-  if (it->is_string ())
-    return parse_int (it->get<std::string> ()).value_or (0);
-  return 0;
+  if (value.is_string ())
+    {
+      auto number = parse_int (value.get<std::string> ());
+      if (number && *number >= 0
+          && *number <= std::numeric_limits<std::uint32_t>::max ())
+        return static_cast<std::uint32_t> (*number);
+    }
+  else if (value.is_number_integer ()
+           && (value.is_number_unsigned ()
+               || value.get<std::int64_t> () >= 0))
+    {
+      auto number = value.get<std::uint64_t> ();
+      if (number <= std::numeric_limits<std::uint32_t>::max ())
+        return static_cast<std::uint32_t> (number);
+    }
+  return make_error (errc::parse, "invalid modpack memory size");
 }
 
 std::string
@@ -228,8 +238,10 @@ read_mcbbs (zip_reader &zip)
     read_curse_files (load_json (zip, "manifest.json"), m);
   if (auto info = doc.find ("launchInfo"); info != doc.end ())
     {
-      m.min_memory_mb
-          = static_cast<std::uint32_t> (int_of (*info, "minMemory"));
+      if (auto memory = info->find ("minMemory"); memory != info->end ())
+        {
+          BLB_TRY_ASSIGN (m.min_memory_mb, memory_value (*memory));
+        }
       for (const char *key : { "javaArgument", "launchArgument" })
         if (auto args = info->find (key);
             args != info->end () && args->is_array ())
@@ -280,11 +292,13 @@ read_multimc (zip_reader &zip, const std::string &prefix,
                 m.jvm_args.emplace_back (trim (arg));
           }
         else if (key == "MaxMemAlloc")
-          m.max_memory_mb
-              = static_cast<std::uint32_t> (parse_int (value).value_or (0));
+          {
+            BLB_TRY_ASSIGN (m.max_memory_mb, memory_value (json (value)));
+          }
         else if (key == "MinMemAlloc")
-          m.min_memory_mb
-              = static_cast<std::uint32_t> (parse_int (value).value_or (0));
+          {
+            BLB_TRY_ASSIGN (m.min_memory_mb, memory_value (json (value)));
+          }
       }
   for (const char *dir : { ".minecraft/", "minecraft/" })
     {
