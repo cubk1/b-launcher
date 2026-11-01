@@ -50,6 +50,10 @@ namespace exui {
     // ---------------------------------------------------------------------------
     // Focus, hover and capture
 
+    bool Window::CanReceiveInput(const Widget* widget) const {
+        return m_hwnd && IsWindowEnabled(m_hwnd) && Available(widget) && widget->GetWindow() == this;
+    }
+
     void Window::SetFocusedWidget(Widget* widget, bool fromTab) {
         const auto keep = Hold(widget);
         if (widget && (!keep || widget->GetWindow() != this || !CanFocus(widget))) return;
@@ -153,7 +157,7 @@ namespace exui {
     // Reports a completed activation of a button or link to the window's callbacks.
     void Window::ActivateWidget(Widget* widget) {
         const auto keep = Hold(widget);
-        if (!keep || !Available(widget)) return;
+        if (!keep || !CanReceiveInput(widget)) return;
         if (widget->GetActivationKind() == ActivationKind::Hyperlink) {
             if (OnHyperlinkClicked) OnHyperlinkClicked(widget);
         } else if (widget->GetActivationKind() == ActivationKind::Button) {
@@ -175,12 +179,12 @@ namespace exui {
             pressed->OnMouseMove(local.x, local.y, UINT(wp));
             return 0;
         }
-        auto* target = HitTestWidget(x, y);
-        if (!Available(target)) target = nullptr;
-        UpdateHover(target);
-        if (const auto receiver = Hold(target)) {
-            const auto local = Local(*receiver, x, y);
-            receiver->OnMouseMove(local.x, local.y, UINT(wp));
+        auto target = Hold(HitTestWidget(x, y));
+        if (!CanReceiveInput(target.get())) target.reset();
+        UpdateHover(target.get());
+        if (CanReceiveInput(target.get()) && m_hovered == target.get()) {
+            const auto local = Local(*target, x, y);
+            target->OnMouseMove(local.x, local.y, UINT(wp));
         }
         RefreshTooltip(m_hovered);
         return 0;
@@ -209,14 +213,18 @@ namespace exui {
             SendMessageW(m_hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
             return 0;
         }
-        if (!Available(target.get())) return 0;
+        if (!CanReceiveInput(target.get())) return 0;
         if (button != VK_LBUTTON && Clickable(target.get())) return 0; // buttons only take the left button
         SetFocus(m_hwnd);
+        if (!CanReceiveInput(target.get())) return 0;
         if (button == VK_LBUTTON) {
             UpdateHover(target.get());
+            if (!CanReceiveInput(target.get())) return 0;
             if (CanFocus(target.get())) SetFocusedWidget(target.get());
+            if (!CanReceiveInput(target.get())) return 0;
             m_pressed = target.get();
             SetCapture(m_hwnd);
+            if (m_pressed != target.get() || !CanReceiveInput(target.get())) return 0;
         }
         deliver(*target);
         return 0;

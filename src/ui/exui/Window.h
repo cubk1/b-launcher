@@ -238,6 +238,7 @@ namespace exui {
         void PresentSurface(const Surface& surface);
 
         // WindowInput.cpp
+        bool CanReceiveInput(const Widget* widget) const;
         LRESULT HandleMouseMove(WPARAM wp, LPARAM lp);
         LRESULT HandleButtonDown(UINT msg, LPARAM lp);
         LRESULT HandleButtonUp(UINT msg, LPARAM lp);
