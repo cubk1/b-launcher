@@ -450,7 +450,7 @@ namespace Installer {
         std::filesystem::path root = target->root;
         std::filesystem::path archive = local
                 ? pack.file
-                : std::filesystem::temp_directory_path() / blb::path_from_utf8("b-launcher-" + id + ".mrpack");
+                : blb::fs::temp_sibling(std::filesystem::temp_directory_path() / "b-launcher-pack.mrpack");
         std::vector<std::filesystem::path> made = newFolders(root, {id});
         blb::net::download_task download;
         download.urls = pack.urls;
