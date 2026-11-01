@@ -20,7 +20,8 @@
 #include <shellapi.h>
 
 #include <algorithm>
-#include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -49,9 +50,20 @@ namespace Drops {
 
         std::thread worker;
         std::mutex lock;
-        bool classified = false;
-        std::vector<Item> items;
-        std::string dropTarget;
+        std::condition_variable wake;
+        bool stopping = false;
+        struct Request {
+            std::vector<std::filesystem::path> files;
+            std::string target;
+            bool importing = false;
+        };
+        struct Batch {
+            std::vector<Item> items;
+            std::string target;
+            bool importing = false;
+        };
+        std::deque<Request> requests;
+        std::deque<Batch> completed;
 
         std::string lower(std::string text) {
             for (char& c : text) {
@@ -181,31 +193,39 @@ namespace Drops {
             return item;
         }
 
-        bool importing = false;
-
-        void classifyLater(std::vector<std::filesystem::path> files) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-            {
-                std::lock_guard<std::mutex> guard(lock);
-                classified = false;
-                items.clear();
-                dropTarget = targetInstance();
-            }
-            worker = std::thread([files] {
-                std::vector<Item> found;
-                for (const std::filesystem::path& file : files) {
+        void classifyRequests() {
+            for (;;) {
+                Request request;
+                {
+                    std::unique_lock<std::mutex> guard(lock);
+                    wake.wait(guard, [] { return stopping || !requests.empty(); });
+                    if (stopping) return;
+                    request = std::move(requests.front());
+                    requests.pop_front();
+                }
+                Batch result{{}, std::move(request.target), request.importing};
+                for (const std::filesystem::path& file : request.files) {
                     try {
-                        found.push_back(classify(file));
+                        result.items.push_back(classify(file));
                     } catch (const std::exception&) {
-                        found.push_back(Item{file});
+                        result.items.push_back(Item{file});
                     }
                 }
                 std::lock_guard<std::mutex> guard(lock);
-                items = std::move(found);
-                classified = true;
-            });
+                completed.push_back(std::move(result));
+            }
+        }
+
+        void classifyLater(std::vector<std::filesystem::path> files, bool importing = false) {
+            Request request{std::move(files), targetInstance(), importing};
+            {
+                std::lock_guard<std::mutex> guard(lock);
+                requests.push_back(std::move(request));
+            }
+            if (!worker.joinable()) {
+                worker = std::thread(classifyRequests);
+            }
+            wake.notify_one();
         }
 
         class Target final : public IDropTarget {
@@ -393,43 +413,44 @@ namespace Drops {
     }
 
     void poll() {
-        std::vector<Item> found;
-        std::string key;
+        std::deque<Batch> ready;
         {
             std::lock_guard<std::mutex> guard(lock);
-            if (!classified) {
-                return;
-            }
-            classified = false;
-            found = std::move(items);
-            items.clear();
-            key = dropTarget;
+            ready.swap(completed);
         }
-        if (worker.joinable()) {
-            worker.join();
-        }
-        if (importing) {
-            importing = false;
-            for (const Item& item : found) {
-                if (item.kind == Kind::Modpack) {
-                    openModpack(item);
-                    return;
+        for (const Batch& batch : ready) {
+            if (batch.importing) {
+                auto pack = std::find_if(batch.items.begin(), batch.items.end(),
+                                         [](const Item& item) { return item.kind == Kind::Modpack; });
+                if (pack != batch.items.end()) {
+                    openModpack(*pack);
+                } else {
+                    Notices::add(Notices::Kind::Failed, "这个文件不是支持的整合包", 4000);
                 }
+            } else {
+                act(batch.items, batch.target);
             }
-            Notices::add(Notices::Kind::Failed, "这个文件不是支持的整合包", 4000);
-            return;
         }
-        act(found, key);
     }
 
     void importPack(const std::filesystem::path& file) {
-        importing = true;
-        classifyLater({file});
+        classifyLater({file}, true);
     }
 
     void shutdown() {
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            stopping = true;
+            requests.clear();
+        }
+        wake.notify_one();
         if (worker.joinable()) {
             worker.join();
+        }
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            completed.clear();
+            stopping = false;
         }
         detach();
     }
