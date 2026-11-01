@@ -52,7 +52,7 @@ normalize_url (std::string_view input)
     return url;
   if (url.find ("://") == std::string::npos)
     url = "https://" + url;
-  return trim_slash (url);
+  return url;
 }
 
 std::string
@@ -325,7 +325,7 @@ bool
 same_yggdrasil_server (std::string_view a, std::string_view b)
 {
   auto canonical = [] (std::string_view input) {
-    auto url = normalize_url (input);
+    auto url = trim_slash (normalize_url (input));
     if (url.empty ())
       return url;
     auto separator = url.find ("://");
@@ -362,17 +362,18 @@ resolve_yggdrasil (std::string_view input, cancellation_token token)
   net::http_request request;
   request.url = url;
   BLB_TRY_ASSIGN (auto response, net::http_send (request, token));
-  std::string base = trim_slash (
-      response.effective_url.empty () ? url : response.effective_url);
+  std::string base
+      = response.effective_url.empty () ? url : response.effective_url;
   auto location = response.header ("X-Authlib-Injector-API-Location");
   if (!location.empty ())
     {
-      auto api = trim_slash (resolve_location (base, location));
+      auto api = resolve_location (base, location);
       if (api != base)
         {
           request.url = api;
           BLB_TRY_ASSIGN (response, net::http_send (request, token));
-          base = api;
+          base = response.effective_url.empty () ? api
+                                                 : response.effective_url;
         }
     }
   if (!response.ok ())
@@ -384,7 +385,7 @@ resolve_yggdrasil (std::string_view input, cancellation_token token)
           && !doc.contains ("skinDomains")))
     return make_error (errc::auth, "这个地址不是 Yggdrasil 认证服务器");
   yggdrasil_server out;
-  out.api = base;
+  out.api = trim_slash (base);
   out.metadata = response.body;
   if (auto meta = doc.find ("meta"); meta != doc.end () && meta->is_object ())
     {
