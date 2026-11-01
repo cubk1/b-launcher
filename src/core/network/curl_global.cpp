@@ -207,6 +207,8 @@ apply_common_options (CURL *easy, const network_settings &settings,
     }
   if (!proxy.empty ())
     curl_easy_setopt (easy, CURLOPT_PROXY, proxy.c_str ());
+  else if (!settings.use_system_proxy)
+    curl_easy_setopt (easy, CURLOPT_PROXY, "");
   if (settings.verbose)
     curl_easy_setopt (easy, CURLOPT_VERBOSE, 1L);
 }

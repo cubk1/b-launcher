@@ -26,11 +26,11 @@ namespace Patches {
         };
 
         const Default DEFAULTS[] = {
-                {"skin.authlib", "true", true},    {"skin.legacy", "true", true},     {"skin.mode", "fallback", true},
-                {"skin.trusted", "true", true},    {"log4j.enabled", "true", true},   {"input.enabled", "true", true},
-                {"lwjgl.unsafe", "true", true},    {"window.title", "", true},        {"window.icon", "", true},
-                {"debug", "false", true},          {"skin.source", "mojang", false},  {"skin.player", "", false},
-                {"skin.template.skin", "", false}, {"skin.template.cape", "", false},
+                {"skin.authlib", "true", true}, {"skin.legacy", "true", true},     {"skin.mode", "fallback", true},
+                {"skin.trusted", "true", true}, {"log4j.enabled", "true", true},   {"input.enabled", "true", true},
+                {"lwjgl.unsafe", "true", true}, {"window.title", "", true},        {"window.icon", "", true},
+                {"debug", "false", true},       {"lan.offlineJoin", "true", true}, {"skin.source", "mojang", false},
+                {"skin.player", "", false},     {"skin.template.skin", "", false}, {"skin.template.cape", "", false},
         };
 
         struct Textures {

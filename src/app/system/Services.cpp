@@ -10,13 +10,16 @@
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/ShortcutLaunch.h"
+#include "app/multiplayer/Multiplayer.h"
 #include "app/system/Catalog.h"
+#include "app/system/Network.h"
 #include "app/system/ServerStatus.h"
 #include "app/system/Updates.h"
 
 namespace Services {
 
     void start() {
+        Network::apply();
         Instances::init();
         Accounts::init();
         Catalog::preload();
@@ -39,9 +42,11 @@ namespace Services {
         JavaDownloads::poll();
         ShortcutLaunch::poll();
         ServerStatus::poll();
+        Multiplayer::poll();
     }
 
     void stop() {
+        Multiplayer::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
         Drops::shutdown();
@@ -58,7 +63,7 @@ namespace Services {
     }
 
     bool busy() {
-        return Game::active() || Installer::running() || JavaDownloads::busy() || ProjectInstaller::busy() ||
-                Exports::running() || !Instances::activity().empty();
+        return Game::active() || Multiplayer::active() || Installer::running() || JavaDownloads::busy() ||
+                ProjectInstaller::busy() || Exports::running() || !Instances::activity().empty();
     }
 }

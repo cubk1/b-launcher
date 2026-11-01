@@ -4,6 +4,7 @@
 #include "app/instances/Instances.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
+#include "app/multiplayer/Multiplayer.h"
 #include "app/system/Platform.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -276,6 +277,9 @@ namespace Game {
                 } else if (live.visibility == "hide") {
                     Platform::hideWindow();
                     hidden = true;
+                } else if (live.visibility == "close" && Multiplayer::active()) {
+                    Platform::hideWindow();
+                    hidden = true;
                 } else if (live.visibility == "close") {
                     Platform::closeWindow();
                 }
@@ -464,7 +468,7 @@ namespace Game {
                 key, [accountKey](blb::instance::instance_settings& settings) { settings.account = accountKey; });
     }
 
-    int launch(const std::string& target, bool test, const std::string& who) {
+    int launch(const std::string& target, bool test, const std::string& who, const std::string& server) {
         const Instances::Entry* entry = Instances::find(target);
         const Instances::Source* source = entry != nullptr ? Instances::source(entry->source) : nullptr;
         if (source == nullptr || preparingOf(target) != nullptr) {
@@ -491,6 +495,9 @@ namespace Game {
         bool shared = inUse(Accounts::keyOf(*account));
         blb::instance::instance_manager manager(blb::meta::game_layout(source->root), Instances::isolation());
         blb::launch::launch_settings settings = manager.launch_settings_for(entry->info);
+        if (!server.empty()) {
+            settings.server = server;
+        }
         std::filesystem::path root = source->root;
         const blb::instance::instance_settings& options = entry->info.settings;
         std::vector<std::string> preLaunch;
@@ -559,7 +566,8 @@ namespace Game {
         auto javaOptions = Catalog::javaScanOptions();
         lives.push_back(std::move(made));
         self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
-                                      commandVariables, directory, language, minecraft, patchJar, patchPlan, javaOptions]() mutable {
+                                      commandVariables, directory, language, minecraft, patchJar, patchPlan,
+                                      javaOptions]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;

@@ -184,15 +184,29 @@ namespace NewInstanceScreen {
             }
         }
 
-        void message(const std::string& text, uint32_t color, bool loading = false) {
-            float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        float message(const std::string& text, uint32_t color, bool loading = false) {
             float lead = loading ? 24.0f : 0.0f;
-            float x = Page::left() + (Page::width() - w - lead) * 0.5f;
+            float room = std::max(120.0f, Page::width() - 80.0f) - lead;
+            std::vector<std::string> lines = UiFont::wrap(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, room);
             float y = Page::TOP + 110.0f;
-            if (loading) {
-                Page::spinner(x + 8.0f, y + 12.0f, 8.0f, UiTheme::accent());
+            for (size_t i = 0; i < lines.size(); i++) {
+                float w = UiFont::width(lines[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float shift = i == 0 ? lead : 0.0f;
+                float x = Page::left() + (Page::width() - w - shift) * 0.5f;
+                if (loading && i == 0) {
+                    Page::spinner(x + 8.0f, y + 12.0f, 8.0f, UiTheme::accent());
+                }
+                UiRender::textY(lines[i], x + shift, y, 24.0f, color, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                y += 22.0f;
             }
-            UiRender::textY(text, x + lead, y, 24.0f, color, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            return y;
+        }
+
+        bool retryButton(const std::string& id, float y, bool blocked) {
+            const std::string text = "重试";
+            float w = std::max(88.0f, Page::buttonWidth(text, 0xf2f1));
+            return Page::button(id, text, Page::left() + (Page::width() - w) * 0.5f, y + 14.0f, w, false, blocked,
+                                0xf2f1);
         }
 
         std::string loaderLabelOf(const std::string& coreName) {
@@ -356,7 +370,10 @@ namespace NewInstanceScreen {
             const Catalog::Versions& all = Catalog::minecraft();
             if (all.list.empty()) {
                 if (all.status == Catalog::Status::Failed) {
-                    message("获取版本列表失败：" + all.error, UiTheme::danger());
+                    float bottom = message("获取版本列表失败：" + all.error, UiTheme::danger());
+                    if (retryButton("new#retry", bottom, blocked)) {
+                        Catalog::refreshMinecraft();
+                    }
                 } else {
                     message("正在获取版本列表…", UiTheme::textMuted(), true);
                 }
@@ -672,7 +689,8 @@ namespace NewInstanceScreen {
             float bodyTop = Page::TOP + 54.0f;
             float bodyBottom = buttonBottom - BUTTON_H - 12.0f;
             if (phase < 0.99f) {
-                settings(bodyTop, bodyBottom, phase, blocked || installing || readingLoaders || !loaderReadError.empty());
+                settings(bodyTop, bodyBottom, phase,
+                         blocked || installing || readingLoaders || !loaderReadError.empty());
             }
             if (phase > 0.01f) {
                 progressBars(bodyTop, phase);
@@ -866,7 +884,10 @@ namespace NewInstanceScreen {
             const Catalog::LoaderVersions& versions = Catalog::loader(picking, minecraft);
             if (versions.list.empty()) {
                 if (versions.status == Catalog::Status::Failed) {
-                    message("获取 " + label + " 版本失败：" + versions.error, UiTheme::danger());
+                    float bottom = message("获取 " + label + " 版本失败：" + versions.error, UiTheme::danger());
+                    if (retryButton("new#retryLoader", bottom, blocked)) {
+                        Catalog::refreshLoader(picking, minecraft);
+                    }
                 } else if (versions.status == Catalog::Status::Loading) {
                     message("正在获取 " + label + " 版本…", UiTheme::textMuted(), true);
                 } else {
@@ -952,7 +973,8 @@ namespace NewInstanceScreen {
                 return;
             }
             chosen.clear();
-            for (const auto& loader : *result) chosen[loader.type] = loader.version;
+            for (const auto& loader : *result)
+                chosen[loader.type] = loader.version;
             original = chosen;
         });
         steps.page = STEP_SETUP;

@@ -15,6 +15,7 @@
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/launch/Patches.h"
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
@@ -613,11 +614,22 @@ namespace SettingsScreen {
             }
         }
 
+        void networkRows(float y, bool blocked) {
+            Page::label("使用系统代理", y);
+            toggle(
+                    "settings#systemProxy", [] { return Network::systemProxy(); },
+                    [](bool on) { Network::setSystemProxy(on); }, y, blocked);
+            explain("settings#systemProxy",
+                    "开启后，下载和其他网络请求会走 Windows 系统代理，例如 Clash、v2rayN 设置的代理。"
+                    "代理软件没有运行时请关闭，否则会连不上。",
+                    y, Page::controlRight() - 40.0f, blocked);
+        }
+
         void launcherTab(bool covered) {
             int lookCount = appearanceCount();
             int homeCount = homepageCount();
-            float contentH =
-                    Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + homeCount * Page::ROW_H;
+            float contentH = Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H +
+                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + Page::ROW_H;
             Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -629,6 +641,10 @@ namespace SettingsScreen {
             Page::caption("主页", y);
             Page::card(y + Page::CAPTION_H, homeCount);
             homepageRows(y + Page::CAPTION_H, blocked);
+            y += Page::CAPTION_H + homeCount * Page::ROW_H + Page::GAP;
+            Page::caption("网络", y);
+            Page::card(y + Page::CAPTION_H, 1);
+            networkRows(y + Page::CAPTION_H, blocked);
             body.end();
         }
 
@@ -1228,6 +1244,13 @@ namespace SettingsScreen {
                     "图片路径，多个不同尺寸的图片用英文逗号分隔；支持 PNG、ICO、BMP、GIF 等格式。", false, y, blocked);
         }
 
+        void lanRows(float y, bool blocked) {
+            patchToggle(
+                    "允许离线玩家加入", "lan.offlineJoin",
+                    "对局域网开放的世界不再验证正版账号，用离线账号登录的好友也能加入联机房间。只在房主的游戏里生效。",
+                    y, blocked);
+        }
+
         void debugRows(float y, bool blocked) {
             patchToggle("输出调试日志", "debug", "在游戏日志里输出每个被修改的类和每次皮肤查询。", y, blocked);
         }
@@ -1243,7 +1266,7 @@ namespace SettingsScreen {
 
         void patchTab(bool covered) {
             int skins = skinCount();
-            float contentH = 5 * Page::CAPTION_H + (1 + skins + 3 + 2 + 1) * Page::ROW_H + 4 * Page::GAP;
+            float contentH = 6 * Page::CAPTION_H + (1 + skins + 3 + 2 + 1 + 1) * Page::ROW_H + 5 * Page::GAP;
             Page::Scroll body("settings#patch", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -1252,6 +1275,7 @@ namespace SettingsScreen {
             y = patchCard("皮肤", skins, y, [blocked](float top) { skinRows(top, blocked); });
             y = patchCard("修复", 3, y, [blocked](float top) { fixRows(top, blocked); });
             y = patchCard("窗口", 2, y, [blocked](float top) { windowRows(top, blocked); });
+            y = patchCard("联机", 1, y, [blocked](float top) { lanRows(top, blocked); });
             patchCard("调试", 1, y, [blocked](float top) { debugRows(top, blocked); });
             body.end();
         }

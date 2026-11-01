@@ -9,6 +9,8 @@
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "app/launch/Game.h"
 #include "app/launch/ShortcutLaunch.h"
+#include "app/multiplayer/Multiplayer.h"
+#include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "app/system/Platform.h"
@@ -117,6 +119,7 @@ namespace {
 
     constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
     constexpr double IDLE_FRAME_MS = 100.0;
+    constexpr double ROOM_CLOSE_MS = 10000.0;
     constexpr double INPUT_GRACE_MS = 600.0;
     constexpr double MODAL_FRAME_MS = 1000.0 / 60.0;
     constexpr double MODAL_IDLE_MS = 100.0;
@@ -377,8 +380,8 @@ namespace ImGuiApp {
         int modalHeight = 0;
         window.onModalFrame = [&]() {
             bool resized = window.width != modalWidth || window.height != modalHeight;
-            double gap = UiState::animating() || Notifications::active() ? std::max(frameMs, MODAL_FRAME_MS)
-                                                                         : MODAL_IDLE_MS;
+            double gap =
+                    UiState::animating() || Notifications::active() ? std::max(frameMs, MODAL_FRAME_MS) : MODAL_IDLE_MS;
             // A proposed size needs a complete frame before the native sizing
             // loop moves the window. Only throttle frames with no resize.
             if (!window.preparingResize() && !resized && sinceMs(lastModal) < gap) {
@@ -389,14 +392,32 @@ namespace ImGuiApp {
             frame();
             lastModal = std::chrono::steady_clock::now();
         };
-        window.onClose = [&]() {
+        bool closingRoom = false;
+        auto closingSince = std::chrono::steady_clock::now();
+        auto finishClose = [&]() {
+            closingRoom = false;
             if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd)) {
                 storeWindow(window, scale);
             }
             DestroyWindow(window.hwnd);
         };
+        window.onClose = [&]() {
+            if (!closingRoom && Multiplayer::active()) {
+                closingRoom = true;
+                closingSince = std::chrono::steady_clock::now();
+                Multiplayer::leave();
+                Notices::add(Notices::Kind::Info, "正在关闭房间，关闭后启动器会退出", 4000);
+                return;
+            }
+            finishClose();
+        };
 
         while (window.pumpMessages()) {
+            if (closingRoom &&
+                (Multiplayer::state().role == Multiplayer::Role::None || sinceMs(closingSince) > ROOM_CLOSE_MS)) {
+                finishClose();
+                continue;
+            }
             GameLog::poll();
             if (window.minimized() || (shown && !headless && !IsWindowVisible(window.hwnd))) {
                 if (!released) {

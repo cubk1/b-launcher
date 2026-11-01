@@ -1,5 +1,7 @@
 #include "UiHttp.h"
 
+#include <core/network/http_client.hpp>
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -47,9 +49,11 @@ namespace UiHttp {
             return false;
         }
         std::wstring target = std::wstring(path, parts.dwUrlPathLength) + std::wstring(extra, parts.dwExtraInfoLength);
-        HINTERNET session = WinHttpOpen(L"Java/17", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
-                                        WINHTTP_NO_PROXY_BYPASS, 0);
-        if (!session) {
+        bool system = b_launcher_base::net::get_network_settings().use_system_proxy;
+        HINTERNET session =
+                WinHttpOpen(L"Java/17", system ? WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY : WINHTTP_ACCESS_TYPE_NO_PROXY,
+                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        if (!session && system) {
             session = WinHttpOpen(L"Java/17", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
                                   WINHTTP_NO_PROXY_BYPASS, 0);
         }

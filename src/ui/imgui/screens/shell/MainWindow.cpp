@@ -10,6 +10,8 @@
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
+#include "ui/imgui/screens/multiplayer/MultiplayerScreen.h"
+#include "app/multiplayer/Multiplayer.h"
 #include "app/system/Config.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -74,7 +76,7 @@ namespace MainWindow {
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
-    static const float FOOTER_H = 10.0f + 4 * ITEM_STEP + 10.0f;
+    static const float FOOTER_H = 10.0f + 5 * ITEM_STEP + 10.0f;
     static const float GROUP_H = 26.0f;
     static const float GROUP_GAP = 6.0f;
 
@@ -84,6 +86,7 @@ namespace MainWindow {
     static const int PAGE_ACCOUNTS = 1002;
     static const int PAGE_DOWNLOADS = 1003;
     static const int PAGE_EDIT_LOADERS = 1004;
+    static const int PAGE_MULTIPLAYER = 1005;
     static const int INSTANCE_PAGES = 10000;
 
     static const float SHELL_RADIUS = 14.0f;
@@ -959,7 +962,9 @@ namespace MainWindow {
         if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
             DownloadsScreen::openFor(Instances::selected());
         }
-        navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_SETTINGS);
+        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
+                Multiplayer::active() ? Multiplayer::state().code : std::string());
+        navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
         UiRender::unscissor();
     }
 
@@ -999,6 +1004,8 @@ namespace MainWindow {
             AccountsScreen::draw();
         } else if (pages.page == PAGE_DOWNLOADS) {
             DownloadsScreen::draw();
+        } else if (pages.page == PAGE_MULTIPLAYER) {
+            MultiplayerScreen::draw();
         }
         pages.end();
     }
