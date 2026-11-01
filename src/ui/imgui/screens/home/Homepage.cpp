@@ -406,10 +406,16 @@ namespace Homepage {
                     if (std::optional<std::string> meta = fetch(address, token, error)) {
                         nlohmann::json doc = nlohmann::json::parse(*meta, nullptr, false);
                         if (doc.is_object()) {
-                            title = doc.value("Title", std::string());
-                            if (doc.value("IsEvent", false)) {
-                                redirect.push_back(XamlView::Action{doc.value("EventType", std::string()),
-                                                                    doc.value("EventData", std::string())});
+                            auto text = [&](const char* key) {
+                                auto field = doc.find(key);
+                                return field != doc.end() && field->is_string() ? field->get<std::string>()
+                                                                               : std::string();
+                            };
+                            title = text("Title");
+                            auto event = doc.find("IsEvent");
+                            if (event != doc.end() && event->is_boolean() && event->get<bool>() &&
+                                !text("EventType").empty()) {
+                                redirect.push_back(XamlView::Action{text("EventType"), text("EventData")});
                             }
                         }
                     }
