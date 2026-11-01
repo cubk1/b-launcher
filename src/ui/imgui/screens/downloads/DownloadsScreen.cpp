@@ -1195,7 +1195,7 @@ namespace DownloadsScreen {
             float pagesY = MainWindow::height() - 12.0f - pagesH;
             float listBottom = pagesY - 8.0f;
 
-            if (results.status == Addons::Status::Failed && shown.hits.empty()) {
+            if (results.status == Addons::Status::Failed) {
                 message("搜索失败：" + results.error, UiTheme::danger(), listTop, listBottom, false);
                 std::string retry = "重试";
                 float w = Page::buttonWidth(retry);
