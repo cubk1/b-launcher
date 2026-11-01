@@ -38,6 +38,7 @@ namespace GameLog {
     void close(int log);
 
     const std::deque<Line>& lines();
+    const Line& line(uint64_t number);
     uint64_t first();
     uint64_t end();
     uint64_t generation();

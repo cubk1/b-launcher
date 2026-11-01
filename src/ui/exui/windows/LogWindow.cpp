@@ -6,6 +6,7 @@
 #endif
 #include "ui/exui/windows/LogWindow.h"
 #include "app/launch/GameLog.h"
+#include "app/launch/LogViewModel.h"
 #include "app/system/Platform.h"
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/Label.h"
@@ -13,8 +14,6 @@
 #include "ui/exui/windows/Dialogs.h"
 
 #include <algorithm>
-#include <cctype>
-#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -47,58 +46,6 @@ namespace ForgottenMelody {
                 case GameLog::Level::Launcher: return 0xD20060C0;
                 default: return 0xD2000000;
             }
-        }
-
-        const GameLog::Line& lineAt(uint64_t number) {
-            static const GameLog::Line gone;
-            if (number < GameLog::first() || number >= GameLog::end()) {
-                return gone;
-            }
-            return GameLog::lines()[(size_t) (number - GameLog::first())];
-        }
-
-        std::string lowered(std::string_view text) {
-            std::string out(text);
-            for (char& c : out) {
-                c = (char) std::tolower((unsigned char) c);
-            }
-            return out;
-        }
-
-        // UTF-8 text in columns, as 宋体 draws it: CJK characters take two, the others one.
-        size_t lengthOf(unsigned char lead) {
-            return lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : 4;
-        }
-
-        int columnsBefore(std::string_view text, size_t bytes) {
-            int column = 0;
-            for (size_t i = 0; i < bytes && i < text.size();) {
-                size_t length = lengthOf((unsigned char) text[i]);
-                column += length >= 3 ? 2 : 1;
-                i += length;
-            }
-            return column;
-        }
-
-        // The part of text from column skip on that fills columns; skipped is the column it starts at.
-        std::string_view columnsOf(std::string_view text, int skip, int columns, int& skipped) {
-            size_t i = 0;
-            int column = 0;
-            size_t start = std::string_view::npos;
-            skipped = 0;
-            while (i < text.size()) {
-                size_t length = lengthOf((unsigned char) text[i]);
-                if (start == std::string_view::npos && column >= skip) {
-                    start = i;
-                    skipped = column;
-                }
-                if (start != std::string_view::npos && column - skipped >= columns) {
-                    return text.substr(start, i - start);
-                }
-                column += length >= 3 ? 2 : 1;
-                i += length;
-            }
-            return start == std::string_view::npos ? std::string_view() : text.substr(start);
         }
 
         std::wstring withCommas(uint64_t value) {
@@ -162,8 +109,7 @@ namespace ForgottenMelody {
                 bool changed = false;
                 if (GameLog::generation() != seenGeneration) {
                     seenGeneration = GameLog::generation();
-                    matches.clear();
-                    current = -1;
+                    search.resetMatches();
                     selection = false;
                     scroll = 0;
                     aside = 0;
@@ -177,18 +123,13 @@ namespace ForgottenMelody {
                         scroll = (int) std::max<long long>(0, scroll - (long long) (first - shownFirst) * ROW_H);
                     }
                     shownFirst = first;
-                    while (!matches.empty() && matches.front() < first) {
-                        matches.pop_front();
-                        current = std::max(-1, current - 1);
-                    }
+                    search.discardBefore(first);
                     changed = true;
                 }
                 scanned = std::max(scanned, first);
                 if (scanned < GameLog::end()) {
                     for (uint64_t number = scanned; number < GameLog::end(); number++) {
-                        if (contains(lineAt(number).text)) {
-                            matches.push_back(number);
-                        }
+                        search.scan(number, GameLog::line(number).text);
                     }
                     scanned = GameLog::end();
                     changed = true;
@@ -220,31 +161,25 @@ namespace ForgottenMelody {
             }
 
             bool searching() const {
-                return !query.empty();
+                return !search.query().empty();
             }
 
             size_t matchCount() const {
-                return matches.size();
+                return search.count();
             }
 
             int currentMatch() const {
-                return current;
+                return search.index();
             }
 
             void setQuery(const std::string& text) {
-                std::string lower = lowered(text);
-                if (lower == query) {
+                if (!search.setQuery(text)) {
                     return;
                 }
-                query = lower;
-                matches.clear();
-                current = -1;
                 scanned = GameLog::end();
-                if (!query.empty()) {
+                if (!search.query().empty()) {
                     for (uint64_t number = GameLog::first(); number < scanned; number++) {
-                        if (contains(lineAt(number).text)) {
-                            matches.push_back(number);
-                        }
+                        search.scan(number, GameLog::line(number).text);
                     }
                     step(1);
                 }
@@ -253,21 +188,10 @@ namespace ForgottenMelody {
 
             // To the next or the previous match; the first step goes from the top of the view.
             void step(int direction) {
-                if (matches.empty()) {
-                    return;
+                uint64_t top = GameLog::first() + (uint64_t) (scroll / ROW_H);
+                if (auto number = search.step(direction, top)) {
+                    reveal(*number);
                 }
-                if (current < 0) {
-                    uint64_t top = GameLog::first() + (uint64_t) (scroll / ROW_H);
-                    current = (int) (std::lower_bound(matches.begin(), matches.end(), top) - matches.begin());
-                    if (direction < 0) {
-                        current--;
-                    }
-                } else {
-                    current += direction;
-                }
-                int total = (int) matches.size();
-                current = ((current % total) + total) % total;
-                reveal(matches[(size_t) current]);
             }
 
             // The selected lines, or all of them, one per line of text.
@@ -283,7 +207,7 @@ namespace ForgottenMelody {
                 }
                 std::string text;
                 for (uint64_t number = from; number <= to; number++) {
-                    text += lineAt(number).text;
+                    text += GameLog::line(number).text;
                     text += "\r\n";
                 }
                 lines = to - from + 1;
@@ -326,11 +250,11 @@ namespace ForgottenMelody {
                 const float textX = (float) (view.X + INDENT);
                 uint64_t low = 0, high = 0;
                 bool selecting = selection && range(low, high);
-                uint64_t matched = current >= 0 && current < (int) matches.size() ? matches[(size_t) current] : ~0ull;
+                uint64_t matched = search.current().value_or(~0ull);
                 uint64_t row = (uint64_t) (scroll / ROW_H);
                 for (int y = view.Y - scroll % ROW_H; row < count() && y < view.GetBottom(); row++, y += ROW_H) {
                     uint64_t number = GameLog::first() + row;
-                    const GameLog::Line& entry = lineAt(number);
+                    const GameLog::Line& entry = GameLog::line(number);
                     if (selecting && number >= low && number <= high) {
                         SolidBrush fill(Color(0x300060C0));
                         g.FillRectangle(&fill, view.X, y, view.Width, ROW_H);
@@ -338,14 +262,14 @@ namespace ForgottenMelody {
                         g.FillRectangle(&edge, view.X, y, 3, ROW_H);
                     }
                     int skipped = 0;
-                    std::string_view shown = columnsOf(entry.text, aside, columns, skipped);
-                    if (!query.empty() && contains(entry.text)) {
+                    std::string_view shown = LogViewModel::columnsOf(entry.text, aside, columns, skipped);
+                    if (!search.query().empty() && search.contains(entry.text)) {
                         SolidBrush tint(Color(number == matched ? 0xA0FFB400 : 0x50FFB400));
-                        std::string lower = lowered(entry.text);
-                        for (size_t at = lower.find(query); at != std::string::npos;
-                             at = lower.find(query, at + query.size())) {
-                            int from = columnsBefore(entry.text, at) - skipped;
-                            int to = columnsBefore(entry.text, at + query.size()) - skipped;
+                        std::string lower = LogViewModel::Search::lowered(entry.text);
+                        for (size_t at = lower.find(search.query()); at != std::string::npos;
+                             at = lower.find(search.query(), at + search.query().size())) {
+                            int from = LogViewModel::columnsBefore(entry.text, at) - skipped;
+                            int to = LogViewModel::columnsBefore(entry.text, at + search.query().size()) - skipped;
                             if (to <= 0 || from >= columns) {
                                 continue;
                             }
@@ -490,9 +414,7 @@ namespace ForgottenMelody {
             uint64_t seenGeneration = ~0ull;
             // The first line still in the log, and the end of the lines searched.
             uint64_t shownFirst = 0, scanned = 0;
-            std::string query;
-            std::deque<uint64_t> matches;
-            int current = -1;
+            LogViewModel::Search search;
             bool selection = false, dragging = false;
             uint64_t anchor = 0, caret = 0;
             int dragY = 0;
@@ -540,15 +462,6 @@ namespace ForgottenMelody {
             uint64_t numberAt(int y) const {
                 long long row = ((long long) y - INSET + scroll) / ROW_H;
                 return GameLog::first() + (uint64_t) std::clamp<long long>(row, 0, (long long) count() - 1);
-            }
-
-            bool contains(const std::string& text) const {
-                if (query.empty()) {
-                    return false;
-                }
-                auto found = std::search(text.begin(), text.end(), query.begin(), query.end(),
-                                         [](char a, char b) { return (char) std::tolower((unsigned char) a) == b; });
-                return found != text.end();
             }
 
             void reveal(uint64_t number) {

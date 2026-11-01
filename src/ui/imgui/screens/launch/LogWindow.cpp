@@ -3,6 +3,7 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
+#include "app/launch/LogViewModel.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/system/About.h"
 #include "ui/imgui/screens/shell/Icons.h"
@@ -84,12 +85,10 @@ namespace LogWindow {
 
         bool searchOpen = false;
         std::string searchText;
-        std::string query;
+        LogViewModel::Search search;
         std::string typed;
         double typedAt = 0.0;
         bool refocus = false;
-        std::deque<uint64_t> matches;
-        int current = -1;
 
         bool selection = false;
         uint64_t anchor = 0;
@@ -121,23 +120,6 @@ namespace LogWindow {
 
         bool passes(GameLog::Level) {
             return true;
-        }
-
-        const GameLog::Line& line(uint64_t number) {
-            static const GameLog::Line gone;
-            if (number < GameLog::first() || number >= GameLog::end()) {
-                return gone;
-            }
-            return GameLog::lines()[(size_t) (number - GameLog::first())];
-        }
-
-        bool containsQuery(const std::string& text) {
-            if (query.empty()) {
-                return false;
-            }
-            auto found = std::search(text.begin(), text.end(), query.begin(), query.end(),
-                                     [](char a, char b) { return (char) std::tolower((unsigned char) a) == b; });
-            return found != text.end();
         }
 
         std::string maskNumbers(std::string_view text) {
@@ -190,15 +172,7 @@ namespace LogWindow {
             if (!rebuilding && !following && y < scroll) {
                 scroll = std::max(0.0f, scroll - ROW_H);
             }
-            auto match = std::lower_bound(matches.begin(), matches.end(), number);
-            if (match != matches.end() && *match == number) {
-                int index = (int) (match - matches.begin());
-                matches.erase(match);
-                if (index < current) {
-                    current--;
-                }
-                current = std::min(current, (int) matches.size() - 1);
-            }
+            search.erase(number);
             repeated.erase(number);
         }
 
@@ -228,7 +202,7 @@ namespace LogWindow {
         }
 
         void scan(uint64_t number) {
-            const GameLog::Line& entry = line(number);
+            const GameLog::Line& entry = GameLog::line(number);
             if (!passes(entry.level)) {
                 return;
             }
@@ -244,15 +218,12 @@ namespace LogWindow {
                 }
             }
             rows.push_back(number);
-            if (containsQuery(entry.text)) {
-                matches.push_back(number);
-            }
+            search.scan(number, entry.text);
         }
 
         void restart() {
             rows.clear();
-            matches.clear();
-            current = -1;
+            search.resetMatches();
             head = NONE;
             folds.clear();
             repeated.clear();
@@ -279,10 +250,7 @@ namespace LogWindow {
                 rows.pop_front();
                 removed++;
             }
-            while (!matches.empty() && matches.front() < first) {
-                matches.pop_front();
-                current = std::max(-1, current - 1);
-            }
+            search.discardBefore(first);
             if (removed > 0 && !following) {
                 scroll = std::max(0.0f, scroll - removed * ROW_H);
             }
@@ -337,40 +305,19 @@ namespace LogWindow {
         }
 
         void step(int direction) {
-            if (matches.empty()) {
-                return;
+            uint64_t top = rows.empty() ? 0 : rows[std::min(rows.size() - 1, (size_t) (scroll / ROW_H))];
+            if (auto number = search.step(direction, top)) {
+                reveal(*number);
             }
-            if (current < 0) {
-                uint64_t top = rows.empty() ? 0 : rows[std::min(rows.size() - 1, (size_t) (scroll / ROW_H))];
-                auto at = std::lower_bound(matches.begin(), matches.end(), top);
-                current = (int) (at - matches.begin());
-                if (direction < 0) {
-                    current--;
-                }
-            } else {
-                current += direction;
-            }
-            int count = (int) matches.size();
-            current = ((current % count) + count) % count;
-            reveal(matches[(size_t) current]);
         }
 
         void setQuery(const std::string& text) {
-            std::string lower;
-            for (char c : text) {
-                lower += (char) std::tolower((unsigned char) c);
-            }
-            if (lower == query) {
+            if (!search.setQuery(text)) {
                 return;
             }
-            query = lower;
-            matches.clear();
-            current = -1;
-            if (!query.empty()) {
+            if (!search.query().empty()) {
                 for (uint64_t n : rows) {
-                    if (containsQuery(line(n).text)) {
-                        matches.push_back(n);
-                    }
+                    search.scan(n, GameLog::line(n).text);
                 }
                 step(1);
             }
@@ -397,14 +344,14 @@ namespace LogWindow {
             std::string text;
             for (size_t i = positionOf(from); i < rows.size() && rows[i] <= to; i++) {
                 uint64_t number = rows[i];
-                text += line(number).text;
+                text += GameLog::line(number).text;
                 text += '\n';
                 auto fold = folds.find(number);
                 if (fold == folds.end() || unfolded.count(number) != 0) {
                     continue;
                 }
                 for (uint64_t hidden = number + 1; hidden <= number + fold->second; hidden++) {
-                    text += line(hidden).text;
+                    text += GameLog::line(hidden).text;
                     text += '\n';
                 }
             }
@@ -661,9 +608,9 @@ namespace LogWindow {
                 NewUi::beginTextEdit(searchValue());
                 UiInput::moveCaret(NewUi::INPUT_TEXT, (int) Ui::length(searchText), false);
             }
-            std::string found = query.empty() ? std::string()
-                    : matches.empty()         ? std::string("无匹配")
-                                              : std::to_string(current + 1) + "/" + withCommas(matches.size());
+            std::string found = search.query().empty() ? std::string()
+                    : search.count() == 0 ? std::string("无匹配")
+                                         : std::to_string(search.index() + 1) + "/" + withCommas(search.count());
             float foundW = found.empty() ? 0.0f : UiFont::width(found, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             TextFieldWidget field(searchValue());
             field.box(x, fieldY, SEARCH_FIELD_W, Page::FIELD_H).bounds(x, fieldY, SEARCH_FIELD_W, Page::FIELD_H);
@@ -671,7 +618,7 @@ namespace LogWindow {
             field.paint();
             if (!found.empty()) {
                 UiRender::textY(found, x + SEARCH_FIELD_W - 9.0f - foundW, fieldY, Page::FIELD_H,
-                                matches.empty() ? UiTheme::danger() : UiTheme::textMuted(), UiFont::MEDIUM,
+                                search.count() == 0 ? UiTheme::danger() : UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_SMALL);
             }
             bool editing = NewUi::textEditing == SEARCH_OWNER;
@@ -751,40 +698,6 @@ namespace LogWindow {
             UiRender::textY(text, x + 6.0f, y, ROW_H, action ? UiTheme::accentText() : UiTheme::textSecondary(),
                             UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             return area;
-        }
-
-        std::string_view columnsOf(std::string_view text, int skip, int columns, int& skipped) {
-            size_t i = 0;
-            int column = 0;
-            size_t start = std::string_view::npos;
-            skipped = 0;
-            while (i < text.size()) {
-                unsigned char c = (unsigned char) text[i];
-                size_t length = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : 4;
-                int wide = length >= 3 ? 2 : 1;
-                if (start == std::string_view::npos && column >= skip) {
-                    start = i;
-                    skipped = column;
-                }
-                if (start != std::string_view::npos && column - skipped >= columns) {
-                    return text.substr(start, i - start);
-                }
-                column += wide;
-                i += length;
-            }
-            return start == std::string_view::npos ? std::string_view() : text.substr(start);
-        }
-
-        int columnsBefore(std::string_view text, size_t bytes) {
-            int column = 0;
-            size_t i = 0;
-            while (i < bytes && i < text.size()) {
-                unsigned char c = (unsigned char) text[i];
-                size_t length = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : 4;
-                column += length >= 3 ? 2 : 1;
-                i += length;
-            }
-            return column;
         }
 
         size_t rowAt(float y, float top) {
@@ -874,14 +787,14 @@ namespace LogWindow {
 
             uint64_t low = std::min(anchor, caret);
             uint64_t high = std::max(anchor, caret);
-            uint64_t currentLine = current >= 0 && current < (int) matches.size() ? matches[(size_t) current] : ~0ull;
+            uint64_t currentLine = search.current().value_or(~0ull);
             UiRender::scissor(left + 1.0f, viewTop, right - left - 2.0f, view);
             float shownScroll = UiRender::snapLayout(scroll);
             size_t firstRow = (size_t) (shownScroll / ROW_H);
             float y = viewTop - std::fmod(shownScroll, ROW_H);
             for (size_t i = firstRow; i < rows.size() && y < viewTop + view; i++, y += ROW_H) {
                 uint64_t number = rows[i];
-                const GameLog::Line& entry = line(number);
+                const GameLog::Line& entry = GameLog::line(number);
                 if (selection && number >= low && number <= high) {
                     UiRender::rect(left + 2.0f, y, right - left - 4.0f, ROW_H, UiTheme::accentSoft(90));
                     UiRender::rect(left + 2.0f, y, 3.0f, ROW_H, UiTheme::accent());
@@ -904,24 +817,20 @@ namespace LogWindow {
                 float pillsW = pillWidth(repeatText) + pillWidth(foldText) +
                         (!repeatText.empty() && !foldText.empty() ? 4.0f : 0.0f);
                 int skipped = 0;
-                std::string_view shownText = columnsOf(entry.text, columnsAside, columns, skipped);
+                std::string_view shownText = LogViewModel::columnsOf(entry.text, columnsAside, columns, skipped);
                 if (pillsW > 0.0f) {
                     int room = std::max(0, (int) ((textRight - textX - pillsW - 8.0f) / charW));
-                    if (columnsBefore(shownText, shownText.size()) > room) {
-                        shownText = columnsOf(entry.text, columnsAside, room, skipped);
+                    if (LogViewModel::columnsBefore(shownText, shownText.size()) > room) {
+                        shownText = LogViewModel::columnsOf(entry.text, columnsAside, room, skipped);
                     }
                 }
-                if (!query.empty() && containsQuery(entry.text)) {
+                if (!search.query().empty() && search.contains(entry.text)) {
                     uint32_t tint = (amber() & 0x00FFFFFFu) | (number == currentLine ? 0x90000000u : 0x40000000u);
-                    std::string lower;
-                    lower.reserve(entry.text.size());
-                    for (char c : entry.text) {
-                        lower += (char) std::tolower((unsigned char) c);
-                    }
-                    for (size_t at = lower.find(query); at != std::string::npos;
-                         at = lower.find(query, at + query.size())) {
-                        int from = columnsBefore(entry.text, at) - skipped;
-                        int to = columnsBefore(entry.text, at + query.size()) - skipped;
+                    std::string lower = LogViewModel::Search::lowered(entry.text);
+                    for (size_t at = lower.find(search.query()); at != std::string::npos;
+                         at = lower.find(search.query(), at + search.query().size())) {
+                        int from = LogViewModel::columnsBefore(entry.text, at) - skipped;
+                        int to = LogViewModel::columnsBefore(entry.text, at + search.query().size()) - skipped;
                         if (to <= 0 || from >= columns) {
                             continue;
                         }
@@ -934,7 +843,7 @@ namespace LogWindow {
                     UiRender::textY(std::string(shownText), textX, y, ROW_H, levelColor(entry.level), UiFont::CODE,
                                     TEXT_SIZE);
                 }
-                float pillX = textX + columnsBefore(shownText, shownText.size()) * charW + 8.0f;
+                float pillX = textX + LogViewModel::columnsBefore(shownText, shownText.size()) * charW + 8.0f;
                 if (!repeatText.empty()) {
                     pillX += pill(repeatText, pillX, y, false, false).w + 4.0f;
                 }

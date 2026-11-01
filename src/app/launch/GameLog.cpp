@@ -458,6 +458,14 @@ namespace GameLog {
         return current != nullptr ? current->kept : nothing;
     }
 
+    const Line& line(uint64_t number) {
+        static const Line gone;
+        if (number < first() || number >= end()) {
+            return gone;
+        }
+        return lines()[(size_t) (number - first())];
+    }
+
     uint64_t first() {
         return current != nullptr ? current->firstNumber : 0;
     }
