@@ -198,9 +198,15 @@ collect_candidates (const scan_options &options)
         auto dir = trim (entry);
         if (dir.empty ())
           continue;
-        auto bin = path_from_utf8 (dir);
-        if (bin.filename () == "bin")
-          add_home (out, bin.parent_path (), java_source::path);
+        auto executable = path_from_utf8 (dir)
+#if defined(_WIN32)
+                          / "java.exe";
+#else
+                          / "java";
+#endif
+        if (fs::exists (executable))
+          add_home (out, java_home_from_executable (executable),
+                    java_source::path);
       }
 
   auto home = home_directory ();
@@ -324,8 +330,14 @@ java_source_name (java_source source) noexcept
 std::filesystem::path
 java_home_from_executable (const std::filesystem::path &executable)
 {
-  auto bin = executable.parent_path ();
+  if (executable.empty ())
+    return {};
+  auto bin = fs::real_path (executable).parent_path ();
+#if defined(_WIN32)
+  if (iequals (path_to_utf8 (bin.filename ()), "bin"))
+#else
   if (bin.filename () == "bin")
+#endif
     return bin.parent_path ();
   return bin;
 }
