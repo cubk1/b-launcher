@@ -273,7 +273,7 @@ namespace XamlView {
             }
             char* end = nullptr;
             float parsed = std::strtof(text.c_str(), &end);
-            return end == text.c_str() ? fallback : parsed;
+            return end == text.c_str() || !std::isfinite(parsed) ? fallback : parsed;
         }
 
         float length(const std::string& value) {
@@ -299,6 +299,9 @@ namespace XamlView {
                 if (end == cursor) {
                     cursor++;
                     continue;
+                }
+                if (!std::isfinite(parsed)) {
+                    return {};
                 }
                 out.push_back(parsed);
                 cursor = end;
