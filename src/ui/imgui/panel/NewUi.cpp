@@ -807,22 +807,21 @@ namespace NewUi {
         static std::vector<std::string> measuredOptions;
         static float measuredScale = 0.0f;
         static float measuredWidest = 0.0f;
-        static bool measuredIcons = false;
         float scaleNow = UiRender::stableScale();
         if (options != measuredOptions || scaleNow != measuredScale) {
             measuredOptions = options;
             measuredScale = scaleNow;
             measuredWidest = 0.0f;
-            measuredIcons = false;
             for (int i = 0; i < count; i++) {
                 measuredWidest =
                         std::max(measuredWidest, UiFont::width(options[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL));
-                measuredIcons = measuredIcons || choice->anchorGlyphs() || !choice->optionIcon(options[i]).empty() ||
-                        choice->optionImage(options[i]) != 0;
             }
         }
         float widest = measuredWidest;
-        bool anyOptionIcon = measuredIcons;
+        bool anyOptionIcon = choice->anchorGlyphs() ||
+                std::any_of(options.begin(), options.end(), [&](const std::string& option) {
+                    return !choice->optionIcon(option).empty() || choice->optionImage(option) != 0;
+                });
         if (anyOptionIcon) {
             widest += 18;
         }
