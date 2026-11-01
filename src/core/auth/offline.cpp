@@ -3,6 +3,8 @@
 #include <core/base/hash.hpp>
 #include <core/base/strings.hpp>
 
+#include <array>
+
 namespace b_launcher_base::auth
 {
 
@@ -39,7 +41,8 @@ offline_account (std::string_view name, std::optional<std::string> uuid)
   a.type = account_type::offline;
   a.name = std::string (name);
   a.uuid = uuid ? strip_uuid (*uuid) : offline_uuid (name);
-  if (a.uuid.size () != 32)
+  std::array<std::uint8_t, 16> bytes;
+  if (!from_hex (a.uuid, bytes))
     return make_error (errc::invalid_argument, "invalid uuid");
   a.access_token = random_bytes_hex (16);
   return a;
