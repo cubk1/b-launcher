@@ -152,6 +152,54 @@ namespace ShaderUtil {
         return compileShader(out, &vert, 1, &frag, 1, uniforms);
     }
 
+    template <size_t N>
+    static bool compileShader(Shader& out, const char* vert, const char* const (&frag)[N],
+                              std::initializer_list<const char*> uniforms) {
+        return compileShader(out, &vert, 1, frag, (int) N, uniforms);
+    }
+
+    static const char* ROUND_BOX_CORNERS = R"GLSL(float sdRoundBox(vec2 p, vec2 b, vec4 r) {
+    r.xy = (p.x > 0.0) ? r.xy : r.zw;
+    r.x  = (p.y > 0.0) ? r.x  : r.y;
+    float side = min(b.x, b.y);
+    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
+    float rr = mix(min(r.x * 1.5, side), r.x, pill);
+    float n = mix(4.0, 2.0, pill);
+    vec2 q = abs(p) - b + rr;
+    vec2 m = max(q, 0.0);
+    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
+}
+)GLSL";
+
+    static const char* ROUND_BOX_RADIUS = R"GLSL(float sdRoundBox(vec2 p, vec2 b, float r) {
+    float side = min(b.x, b.y);
+    float pill = clamp((r / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
+    float rr = mix(min(r * 1.5, side), r, pill);
+    float n = mix(4.0, 2.0, pill);
+    vec2 q = abs(p) - b + rr;
+    vec2 m = max(q, 0.0);
+    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
+}
+)GLSL";
+
+    static const char* QUAD_VERT = R"GLSL(#version 150 core
+
+uniform mat4 u_proj;
+uniform vec4 u_rect;
+
+out vec2 v_uv;
+
+void main() {
+    vec2 corners[6] = vec2[6](
+        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
+    );
+    vec2 corner = corners[gl_VertexID];
+    gl_Position = u_proj * vec4(u_rect.xy + corner * u_rect.zw, 0.0, 1.0);
+    v_uv = corner;
+}
+)GLSL";
+
     static const char* RECT_VERT = R"GLSL(#version 150 core
 
 uniform mat4 u_proj;
@@ -265,7 +313,7 @@ void main() {
         if (blurFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform sampler2D u_screen;
 uniform vec2  u_screenSize;
@@ -305,18 +353,7 @@ vec4 sampleBlurred(vec2 uv, float radius, float gamma) {
     return sum / max(norm, 1e-5);
 }
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -332,7 +369,7 @@ void main() {
 
     fragColor = vec4(blurred.rgb * u_tint.rgb, maskAlpha * u_tint.a);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(blurShader, RECT_VERT, frag,
                            {"u_proj", "u_rect", "u_screenSize", "u_rectSize", "u_radius", "u_corner", "u_blurRadius",
                             "u_gamma", "u_tint", "u_direct"})) {
@@ -355,7 +392,7 @@ void main() {
         if (roundRectFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec2  u_rectSize;
 uniform vec4  u_color;
@@ -367,18 +404,7 @@ uniform vec4  u_corner;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -391,7 +417,7 @@ void main() {
 
     fragColor = vec4(tint.rgb, alpha);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(
                     roundRectShader, RECT_VERT, frag,
                     {"u_proj", "u_rect", "u_rectSize", "u_color", "u_colorB", "u_gradient", "u_radius", "u_corner"})) {
@@ -408,7 +434,7 @@ void main() {
         if (roundTextureFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform sampler2D u_texture;
 uniform vec2  u_rectSize;
@@ -422,18 +448,7 @@ uniform vec2  u_uvScale;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -453,7 +468,7 @@ void main() {
 
     fragColor = vec4(tex.rgb, tex.a * mask * u_alpha);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(roundTextureShader, RECT_VERT, frag,
                            {"u_proj", "u_rect", "u_rectSize", "u_radius", "u_alpha", "u_fade", "u_fadeColor",
                             "u_corner", "u_uvScale", "u_texture"})) {
@@ -470,7 +485,7 @@ void main() {
         if (roundRingFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec2  u_rectSize;
 uniform vec4  u_color;
@@ -519,18 +534,7 @@ float perimeter(vec2 p, vec2 size, float r) {
     return 2.0 * w + h + 3.0 * a + size.y - r - p.y;
 }
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -556,7 +560,7 @@ void main() {
 
     fragColor = vec4(tint.rgb, alpha);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(roundRingShader, ID_VERT, frag,
                            {"u_proj", "u_rect", "u_rectSize", "u_color", "u_color2", "u_radius", "u_thickness",
                             "u_corner", "u_fadeEnd", "u_fadeAxis", "u_dash"})) {
@@ -573,7 +577,7 @@ void main() {
         if (pickerFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec2  u_rectSize;
 uniform float u_radius;
@@ -586,16 +590,7 @@ uniform float u_alpha;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, float r) {
-    float side = min(b.x, b.y);
-    float pill = clamp((r / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r * 1.5, side), r, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_RADIUS, R"GLSL(
 vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
     vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
@@ -622,7 +617,7 @@ void main() {
     }
     fragColor = vec4(rgb, mask * u_alpha);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(
                     pickerShader, ID_VERT, frag,
                     {"u_proj", "u_rect", "u_rectSize", "u_radius", "u_hue", "u_sat", "u_val", "u_mode", "u_alpha"})) {
@@ -639,7 +634,7 @@ void main() {
         if (shadowFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec2  u_rectSize;
 uniform vec2  u_shapeSize;
@@ -650,16 +645,7 @@ uniform float u_spread;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, float r) {
-    float side = min(b.x, b.y);
-    float pill = clamp((r / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r * 1.5, side), r, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_RADIUS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -668,7 +654,7 @@ void main() {
     falloff = falloff * falloff;
     fragColor = vec4(u_color.rgb, u_color.a * falloff);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(shadowShader, ID_VERT, frag,
                            {"u_proj", "u_rect", "u_rectSize", "u_shapeSize", "u_color", "u_radius", "u_spread"})) {
             shadowFailed = true;
@@ -684,7 +670,7 @@ void main() {
         if (bloomFailed) {
             return false;
         }
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec4  u_rect;
 uniform sampler2D u_data;
@@ -699,16 +685,7 @@ uniform float u_intensity;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, float r) {
-    float side = min(b.x, b.y);
-    float pill = clamp((r / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r * 1.5, side), r, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_RADIUS, R"GLSL(
 float sdCorners(vec2 p, vec2 b, vec4 r) {
     r.xy = (p.x > 0.0) ? r.xy : r.zw;
     r.x = (p.y > 0.0) ? r.x : r.y;
@@ -795,7 +772,7 @@ void main() {
     bloom *= clamp(0.5 + inside / aa, 0.0, 1.0);
     fragColor = vec4(base.rgb, u_color.a * base.a * bloom);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(bloomShader, ID_VERT, frag,
                            {"u_proj", "u_rect", "u_data", "u_count", "u_fill", "u_colored", "u_color", "u_radius",
                             "u_spread", "u_intensity"})) {
@@ -833,7 +810,7 @@ void main() {
     v_uv = mix(u_uv.xy, u_uv.zw, corner);
 }
 )GLSL";
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform sampler2D u_tex;
 uniform vec2  u_rectSize;
@@ -845,18 +822,7 @@ in vec2 v_local;
 in vec2 v_uv;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_local * u_rectSize - halfSize;
@@ -870,7 +836,7 @@ void main() {
     vec4 texel = texture(u_tex, v_uv);
     fragColor = vec4(texel.rgb * u_tint.rgb, texel.a * mask * u_tint.a);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(roundTexShader, vert, frag,
                            {"u_proj", "u_rect", "u_uv", "u_rectSize", "u_radius", "u_corner", "u_tint"})) {
             roundTexFailed = true;
@@ -892,23 +858,7 @@ void main() {
         if (checkFailed) {
             return false;
         }
-        const char* vert = R"GLSL(#version 150 core
-
-uniform mat4 u_proj;
-uniform vec4 u_rect;
-
-out vec2 v_uv;
-
-void main() {
-    vec2 corners[6] = vec2[6](
-        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
-    );
-    vec2 corner = corners[gl_VertexID];
-    gl_Position = u_proj * vec4(u_rect.xy + corner * u_rect.zw, 0.0, 1.0);
-    v_uv = corner;
-}
-)GLSL";
+        const char* vert = QUAD_VERT;
         const char* frag = R"GLSL(#version 150 core
 
 uniform vec4  u_rect;
@@ -952,23 +902,7 @@ void main() {
         if (arcFailed) {
             return false;
         }
-        const char* vert = R"GLSL(#version 150 core
-
-uniform mat4 u_proj;
-uniform vec4 u_rect;
-
-out vec2 v_uv;
-
-void main() {
-    vec2 corners[6] = vec2[6](
-        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
-    );
-    vec2 corner = corners[gl_VertexID];
-    gl_Position = u_proj * vec4(u_rect.xy + corner * u_rect.zw, 0.0, 1.0);
-    v_uv = corner;
-}
-)GLSL";
+        const char* vert = QUAD_VERT;
         const char* frag = R"GLSL(#version 150 core
 
 uniform vec4  u_rect;
@@ -1007,23 +941,7 @@ void main() {
         if (iconFailed) {
             return false;
         }
-        const char* vert = R"GLSL(#version 150 core
-
-uniform mat4 u_proj;
-uniform vec4 u_rect;
-
-out vec2 v_uv;
-
-void main() {
-    vec2 corners[6] = vec2[6](
-        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
-    );
-    vec2 corner = corners[gl_VertexID];
-    gl_Position = u_proj * vec4(u_rect.xy + corner * u_rect.zw, 0.0, 1.0);
-    v_uv = corner;
-}
-)GLSL";
+        const char* vert = QUAD_VERT;
         int parts = (int) (sizeof(ICON_FRAG_PARTS) / sizeof(ICON_FRAG_PARTS[0]));
         if (!compileShader(iconShader, &vert, 1, ICON_FRAG_PARTS, parts, {"u_proj", "u_rect", "u_tint", "u_icon"})) {
             iconFailed = true;
@@ -1056,7 +974,7 @@ void main() {
     v_pos = pos;
 }
 )GLSL";
-        const char* frag = R"GLSL(#version 150 core
+        const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec4 u_plate;
 uniform vec4 u_plateRadii;
@@ -1068,18 +986,7 @@ uniform vec4 u_mainColor;
 in vec2 v_pos;
 out vec4 fragColor;
 
-float sdRoundBox(vec2 p, vec2 b, vec4 r) {
-    r.xy = (p.x > 0.0) ? r.xy : r.zw;
-    r.x  = (p.y > 0.0) ? r.x  : r.y;
-    float side = min(b.x, b.y);
-    float pill = clamp((r.x / max(side, 1e-4) - 0.7) / 0.3, 0.0, 1.0);
-    float rr = mix(min(r.x * 1.5, side), r.x, pill);
-    float n = mix(4.0, 2.0, pill);
-    vec2 q = abs(p) - b + rr;
-    vec2 m = max(q, 0.0);
-    return min(max(q.x, q.y), 0.0) + pow(pow(m.x, n) + pow(m.y, n), 1.0 / n) - rr;
-}
-
+)GLSL", ROUND_BOX_CORNERS, R"GLSL(
 float coverage(vec4 rect, vec4 radii) {
     vec2 extent = rect.zw * 0.5;
     float dist = sdRoundBox(v_pos - rect.xy - extent, extent, radii);
@@ -1095,7 +1002,7 @@ void main() {
     if (alpha < 0.001) discard;
     fragColor = vec4((u_mainColor.rgb * mainAlpha + u_plateColor.rgb * plateAlpha) / alpha, alpha);
 }
-)GLSL";
+)GLSL"};
         if (!compileShader(shellShader, vert, frag,
                            {"u_proj", "u_rect", "u_plate", "u_plateRadii", "u_plateColor", "u_main", "u_mainRadii",
                             "u_mainColor"})) {
