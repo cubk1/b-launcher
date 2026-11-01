@@ -24,9 +24,11 @@ namespace {
         return started;
     }
 
-    SOCKET listenOn(int family, int port) {
+    SOCKET listenOn(int family, int port, int* failure = nullptr) {
+        if (failure) *failure = 0;
         SOCKET s = socket(family, SOCK_STREAM, IPPROTO_TCP);
         if (s == INVALID_SOCKET) {
+            if (failure) *failure = WSAGetLastError();
             return INVALID_SOCKET;
         }
         BOOL exclusive = TRUE;
@@ -48,6 +50,7 @@ namespace {
             bound = bind(s, (const sockaddr*) &address, sizeof(address));
         }
         if (bound != 0 || listen(s, 8) != 0) {
+            if (failure) *failure = WSAGetLastError();
             closesocket(s);
             return INVALID_SOCKET;
         }
@@ -154,8 +157,13 @@ blb::result<void> Redirect::open(int port) {
         return blb::make_error(blb::errc::network, "无法初始化网络");
     }
     SOCKET v4 = listenOn(AF_INET, port);
-    SOCKET v6 = listenOn(AF_INET6, port);
-    if (v4 == INVALID_SOCKET) {
+    int v6Failure = 0;
+    SOCKET v6 = listenOn(AF_INET6, port, &v6Failure);
+    bool v6Unavailable = v6Failure == WSAEAFNOSUPPORT || v6Failure == WSAEADDRNOTAVAIL;
+    if (v4 == INVALID_SOCKET || (v6 == INVALID_SOCKET && !v6Unavailable)) {
+        if (v4 != INVALID_SOCKET) {
+            closesocket(v4);
+        }
         if (v6 != INVALID_SOCKET) {
             closesocket(v6);
         }
