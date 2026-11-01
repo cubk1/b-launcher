@@ -358,10 +358,12 @@ compare_versions (std::string_view a, std::string_view b)
         }
       if (a[i] != b[j])
         {
-          if (a[i] == '.' || a[i] == '-')
-            return 1;
-          if (b[j] == '.' || b[j] == '-')
+          // A prerelease suffix sorts below the release and its extensions.
+          // Give separators a consistent order in both comparison directions.
+          if (a[i] == '-' || b[j] == '.')
             return -1;
+          if (b[j] == '-' || a[i] == '.')
+            return 1;
           return a[i] < b[j] ? -1 : 1;
         }
       ++i;
