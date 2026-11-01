@@ -360,6 +360,9 @@ instance_manager::rename (std::string_view from, std::string_view to) const
     return make_error (errc::already_exists,
                        sformat ("instance '{}' already exists", to));
   BLB_TRY_ASSIGN (auto version, meta::load_version (m_layout, from));
+  if (version.client_version.empty ())
+    if (auto resolved = meta::resolve_version (m_layout, from))
+      version.client_version = resolved->minecraft ();
   BLB_TRY (fs::rename_file (m_layout.version_dir (from),
                             m_layout.version_dir (to)));
   auto dir = m_layout.version_dir (to);
@@ -418,6 +421,8 @@ instance_manager::duplicate (std::string_view from, std::string_view to,
                        sformat ("instance '{}' already exists", to));
   BLB_TRY_ASSIGN (auto source, get (from));
   BLB_TRY_ASSIGN (auto version, meta::load_version (m_layout, from));
+  if (version.client_version.empty ())
+    version.client_version = source.minecraft_version;
   auto target_dir = m_layout.version_dir (to);
   BLB_TRY (fs::create_directories (target_dir));
   if (copy_game_files && is_isolated (source))
