@@ -1920,6 +1920,8 @@ namespace XamlView {
             int counter = 0;
             std::vector<Scope> scopes;
             std::string content;
+            std::vector<const Xaml::Node*> templates;
+            std::string error;
 
             const Xaml::Node* keyed(const std::string& key) const {
                 for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
@@ -2626,10 +2628,18 @@ namespace XamlView {
                     templ = b.resource(*raw);
                 }
                 if (templ != nullptr && typeOf(templ->name) == "ControlTemplate") {
-                    std::string saved = b.content;
-                    b.content = content;
-                    addChildren(b, *templ, *e);
-                    b.content = saved;
+                    if (std::find(b.templates.begin(), b.templates.end(), templ) != b.templates.end()) {
+                        b.error = "控件模板存在循环引用";
+                    } else if (b.templates.size() >= 128) {
+                        b.error = "控件模板嵌套过深";
+                    } else {
+                        std::string saved = b.content;
+                        b.content = content;
+                        b.templates.push_back(templ);
+                        addChildren(b, *templ, *e);
+                        b.templates.pop_back();
+                        b.content = saved;
+                    }
                 } else if (!content.empty()) {
                     auto text = std::make_unique<Element>();
                     text->kind = Kind::Text;
@@ -2802,6 +2812,10 @@ namespace XamlView {
         for (const Xaml::Node& node : parsed.roots) {
             if (auto built = build(b, node)) {
                 root->children.push_back(std::move(built));
+            }
+            if (!b.error.empty()) {
+                state->error = std::move(b.error);
+                return false;
             }
         }
         state->root = std::move(root);
