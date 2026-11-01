@@ -514,8 +514,11 @@ namespace Accounts {
                         return loginFailed(account.err());
                     }
                     blb::auth::account signedIn = *account;
-                    return [signedIn] {
+                    return [signedIn, token] {
                         loginState = (int) Login::Idle;
+                        if (token.is_cancelled()) {
+                            return;
+                        }
                         put(signedIn, true);
                         notify("已登录 " + signedIn.name, false);
                     };
