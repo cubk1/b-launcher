@@ -38,11 +38,6 @@ namespace RoomApi {
             return value;
         }
 
-        bool flag(const nlohmann::json& doc, const char* key) {
-            auto it = doc.find(key);
-            return it != doc.end() && it->is_boolean() && it->get<bool>();
-        }
-
         long long parseTime(const std::string& value) {
             int year = 0;
             int month = 0;
@@ -171,7 +166,7 @@ namespace RoomApi {
         if (!reply.ok) {
             return reply;
         }
-        out.maintenance = flag(doc, "maintenance");
+        out.maintenance = blb::json_bool(doc, "maintenance");
         out.message = out.maintenance ? blb::json_text(doc, "message") : std::string();
         out.available = (int) number(doc, "available");
         out.total = (int) number(doc, "total");
@@ -205,7 +200,7 @@ namespace RoomApi {
     Reply exists(const std::string& code, bool& out, const blb::cancellation_token& token) {
         nlohmann::json doc;
         Reply reply = send("GET", roomPath(code, "/exists"), std::string(), std::string(), doc, token);
-        out = reply.ok && flag(doc, "exists");
+        out = reply.ok && blb::json_bool(doc, "exists");
         return reply;
     }
 
@@ -299,7 +294,7 @@ namespace RoomApi {
             member.device = blb::to_lower(blb::json_text(item, "deviceId"));
             member.name = blb::json_text(item, "username");
             member.authorized = blb::json_text(item, "status") == "authorized";
-            member.host = flag(item, "host") || (!hostDevice.empty() && member.device == hostDevice);
+            member.host = blb::json_bool(item, "host") || (!hostDevice.empty() && member.device == hostDevice);
             member.seen = parseTime(blb::json_text(item, "lastSeen"));
             member.addresses = blb::json_strings(item, "ipAssignments");
             if (!member.device.empty()) {

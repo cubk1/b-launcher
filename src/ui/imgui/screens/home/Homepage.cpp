@@ -397,8 +397,7 @@ namespace Homepage {
                         nlohmann::json doc = nlohmann::json::parse(*meta, nullptr, false);
                         if (doc.is_object()) {
                             title = blb::json_text(doc, "Title");
-                            auto event = doc.find("IsEvent");
-                            if (event != doc.end() && event->is_boolean() && event->get<bool>() &&
+                            if (blb::json_bool(doc, "IsEvent") &&
                                 !blb::json_text(doc, "EventType").empty()) {
                                 redirect.push_back(XamlView::Action{blb::json_text(doc, "EventType"), blb::json_text(doc, "EventData")});
                             }

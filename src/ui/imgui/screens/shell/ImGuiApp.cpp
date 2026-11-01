@@ -29,6 +29,7 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_win32.h"
 
+#include <core/base/json.hpp>
 #include <GL/gl.h>
 
 #include <algorithm>
@@ -218,9 +219,7 @@ namespace {
     }
 
     bool storedMaximized() {
-        const auto& doc = Config::data();
-        auto value = doc.find("windowMaximized");
-        return value != doc.end() && value->is_boolean() && value->get<bool>();
+        return b_launcher_base::json_bool(Config::data(), "windowMaximized");
     }
 
     bool storeWindow(const BorderlessWindow& window, float scale) {

@@ -1,6 +1,7 @@
 #include "app/system/Network.h"
 #include "app/system/Config.h"
 
+#include <core/base/json.hpp>
 #include <core/network/http_client.hpp>
 
 namespace Network {
@@ -10,9 +11,7 @@ namespace Network {
     }
 
     bool systemProxy() {
-        const nlohmann::json& doc = Config::data();
-        auto found = doc.find(KEY);
-        return found != doc.end() && found->is_boolean() && found->get<bool>();
+        return b_launcher_base::json_bool(Config::data(), KEY);
     }
 
     void setSystemProxy(bool on) {

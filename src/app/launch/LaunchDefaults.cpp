@@ -102,9 +102,7 @@ namespace LaunchDefaults {
     }
 
     bool showLogs() {
-        const nlohmann::json& doc = Config::data();
-        auto value = doc.find("showLogs");
-        return value != doc.end() && value->is_boolean() && value->get<bool>();
+        return blb::json_bool(Config::data(), "showLogs");
     }
 
     void setShowLogs(bool on) {
@@ -117,9 +115,7 @@ namespace LaunchDefaults {
     }
 
     bool mergeLogRepeats() {
-        const nlohmann::json& doc = Config::data();
-        auto value = doc.find("logMergeRepeats");
-        return value == doc.end() || !value->is_boolean() || value->get<bool>();
+        return blb::json_bool(Config::data(), "logMergeRepeats", true);
     }
 
     void setMergeLogRepeats(bool on) {

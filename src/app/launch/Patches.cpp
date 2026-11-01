@@ -144,8 +144,7 @@ namespace Patches {
         if (found == doc.end() || !found->is_object()) {
             return false;
         }
-        auto on = found->find("all");
-        return on != found->end() && on->is_boolean() && on->get<bool>();
+        return blb::json_bool(*found, "all");
     }
 
     void setAll(bool on) {

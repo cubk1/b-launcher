@@ -6,6 +6,7 @@
 #include "ui/imgui/panel/UiImages.h"
 #include "ui/imgui/gl/UiGL.h"
 
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -228,9 +229,7 @@ namespace Background {
                 return;
             }
             loaded = true;
-            const nlohmann::json& doc = Config::data();
-            auto saved = doc.find("backgroundPath");
-            chosen = saved != doc.end() && saved->is_string() ? saved->get<std::string>() : std::string();
+            chosen = b_launcher_base::json_text(Config::data(), "backgroundPath");
             start();
         }
     }

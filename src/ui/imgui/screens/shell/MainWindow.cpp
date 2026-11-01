@@ -44,6 +44,7 @@
 
 #include "imgui.h"
 
+#include <core/base/json.hpp>
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -454,13 +455,8 @@ namespace MainWindow {
     static bool isCollapsed(const std::string& source) {
         if (!collapsedLoaded) {
             collapsedLoaded = true;
-            const nlohmann::json& doc = Config::data();
-            if (auto it = doc.find("collapsedGroups"); it != doc.end() && it->is_array()) {
-                for (const nlohmann::json& value : *it) {
-                    if (value.is_string()) {
-                        collapsed.insert(value.get<std::string>());
-                    }
-                }
+            for (const std::string& group : b_launcher_base::json_strings(Config::data(), "collapsedGroups")) {
+                collapsed.insert(group);
             }
         }
         return collapsed.count(source) != 0;

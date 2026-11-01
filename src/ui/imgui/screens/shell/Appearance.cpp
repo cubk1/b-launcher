@@ -6,6 +6,7 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiSound.h"
 
+#include <core/base/json.hpp>
 #include <cstdio>
 #include <charconv>
 
@@ -34,9 +35,7 @@ namespace Appearance {
         }
 
         std::string text(const char* key, const std::string& fallback) {
-            const nlohmann::json& doc = Config::data();
-            auto value = doc.find(key);
-            return value != doc.end() && value->is_string() ? value->get<std::string>() : fallback;
+            return b_launcher_base::json_text(Config::data(), key, fallback);
         }
 
         std::string hex(uint32_t argb) {
@@ -143,9 +142,7 @@ namespace Appearance {
     }
 
     bool backgroundImage() {
-        const nlohmann::json& doc = Config::data();
-        auto value = doc.find("backgroundImage");
-        return value != doc.end() && value->is_boolean() && value->get<bool>();
+        return b_launcher_base::json_bool(Config::data(), "backgroundImage");
     }
 
     void setBackgroundImage(bool on) {
@@ -154,9 +151,7 @@ namespace Appearance {
     }
 
     bool uiSounds() {
-        const nlohmann::json& doc = Config::data();
-        auto value = doc.find("uiSounds");
-        return value == doc.end() || !value->is_boolean() || value->get<bool>();
+        return b_launcher_base::json_bool(Config::data(), "uiSounds", true);
     }
 
     void setUiSounds(bool on) {
@@ -166,9 +161,7 @@ namespace Appearance {
     }
 
     bool rememberWindow() {
-        const nlohmann::json& doc = Config::data();
-        auto value = doc.find("rememberWindow");
-        return value == doc.end() || !value->is_boolean() || value->get<bool>();
+        return b_launcher_base::json_bool(Config::data(), "rememberWindow", true);
     }
 
     void setRememberWindow(bool on) {

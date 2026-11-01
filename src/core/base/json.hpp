@@ -9,6 +9,15 @@
 namespace b_launcher_base
 {
 
+// Read a boolean member without coercing strings or numbers.
+inline bool
+json_bool (const nlohmann::json &node, std::string_view key,
+           bool fallback = false)
+{
+  auto it = node.find (key);
+  return it != node.end () && it->is_boolean () ? it->get<bool> () : fallback;
+}
+
 // Read a string member, using the fallback for missing members or other types.
 inline std::string
 json_text (const nlohmann::json &node, std::string_view key,

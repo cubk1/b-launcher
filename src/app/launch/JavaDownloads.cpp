@@ -102,8 +102,7 @@ namespace JavaDownloads {
                     package.flavour = blb::json_text(jdk, "flavour");
                     package.version = blb::json_text(jdk, "jdk_version");
                     package.major = (int) *major;
-                    auto preview = jdk.find("preview");
-                    package.preview = preview != jdk.end() && preview->is_boolean() && preview->get<bool>();
+                    package.preview = blb::json_bool(jdk, "preview");
                     package.sha256 = blb::json_text(item, "sha256");
                     package.prefix = blb::json_text(item, "unpack_prefix_filter");
                     package.homePrefix = blb::json_text(item, "package_to_java_home_prefix");
