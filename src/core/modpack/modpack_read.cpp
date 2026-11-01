@@ -330,6 +330,7 @@ safe_relative (std::string_view path)
 
 result<pack_manifest>
 read_modpack (const std::filesystem::path &archive)
+try
 {
   BLB_TRY_ASSIGN (auto zip, zip_reader::open (archive));
   std::unordered_set<std::string> names;
@@ -366,6 +367,10 @@ read_modpack (const std::filesystem::path &archive)
   if (parsed->name.empty ())
     parsed->name = path_to_utf8 (archive.stem ());
   return parsed;
+}
+catch (const json::exception &)
+{
+  return make_error (errc::parse, "invalid modpack field type");
 }
 
 }
