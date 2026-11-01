@@ -743,7 +743,11 @@ namespace AccountsScreen {
         }
 
         std::string live(const char* owner, const std::string& stored) {
-            return NewUi::textEditing == owner ? Ui::trim(UiInput::get(NewUi::INPUT_TEXT)) : stored;
+            if (NewUi::textEditing != owner) {
+                return stored;
+            }
+            std::string text = UiInput::get(NewUi::INPUT_TEXT);
+            return owner == PASSWORD_OWNER ? text : Ui::trim(text);
         }
 
         bool nide8() {
