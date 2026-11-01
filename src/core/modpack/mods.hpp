@@ -29,6 +29,7 @@ struct mod_dependency
   std::string id;
   std::string version;
   bool required = true;
+  bool client = true;
 };
 
 struct mod_info

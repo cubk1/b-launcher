@@ -190,7 +190,8 @@ read_forge_toml (mod_info &mod, const json &doc, zip_reader &zip)
           if (auto t = d.find ("type"); t != d.end () && t->is_string ())
             required = to_lower (t->get<std::string> ()) == "required";
           mod.dependencies.push_back (
-              { text_of (d, "modId"), text_of (d, "versionRange"), required });
+              { text_of (d, "modId"), text_of (d, "versionRange"),
+                required, to_lower (text_of (d, "side")) != "server" });
         }
 }
 
@@ -548,7 +549,8 @@ check_dependencies (std::span<const mod_info> mods,
       if (!mod.enabled)
         continue;
       for (const auto &d : mod.dependencies)
-        if (d.required && !d.id.empty () && !available.contains (d.id))
+        if (d.required && d.client && !d.id.empty ()
+            && !available.contains (d.id))
           issues.push_back (
               { mod.id, d.id,
                 sformat ("{} requires {} {}", mod.name, d.id, d.version) });
