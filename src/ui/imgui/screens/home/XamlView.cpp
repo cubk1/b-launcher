@@ -842,6 +842,60 @@ namespace XamlView {
 
         float measureBlocks(std::vector<Block>& blocks, float width);
 
+        void fitStars(const std::vector<Def>& definitions, std::vector<float>& sizes, float available) {
+            if (!std::isfinite(available)) {
+                return;
+            }
+            std::vector<Def> defs = definitions.empty() ? std::vector<Def>{Def{}} : definitions;
+            std::vector<bool> settled(defs.size(), false);
+            double remaining = available;
+            for (size_t i = 0; i < defs.size(); i++) {
+                if (defs[i].type != 2 || defs[i].value <= 0.0f) {
+                    if (defs[i].type == 2) {
+                        sizes[i] = defs[i].min;
+                    }
+                    remaining -= sizes[i];
+                    settled[i] = true;
+                }
+            }
+            for (size_t pass = 0; pass < defs.size(); pass++) {
+                double weight = 0.0;
+                for (size_t i = 0; i < defs.size(); i++) {
+                    if (!settled[i]) {
+                        weight += defs[i].value;
+                    }
+                }
+                if (weight <= 0.0) {
+                    break;
+                }
+                double total = 0.0;
+                for (size_t i = 0; i < defs.size(); i++) {
+                    if (!settled[i]) {
+                        sizes[i] = (float) std::clamp(remaining / weight * defs[i].value,
+                                (double) defs[i].min, (double) std::max(defs[i].min, defs[i].max));
+                        total += sizes[i];
+                    }
+                }
+                bool changed = false;
+                double space = remaining;
+                for (size_t i = 0; i < defs.size(); i++) {
+                    if (settled[i]) {
+                        continue;
+                    }
+                    double share = space / weight * defs[i].value;
+                    // Only fix the bounds that remain binding after redistribution.
+                    if ((total > space && share < sizes[i]) || (total < space && share > sizes[i])) {
+                        settled[i] = true;
+                        remaining -= sizes[i];
+                        changed = true;
+                    }
+                }
+                if (!changed) {
+                    break;
+                }
+            }
+        }
+
         void measureCore(Element& e, float iw, float ih, float& cw, float& ch) {
             cw = 0.0f;
             ch = 0.0f;
@@ -900,62 +954,45 @@ namespace XamlView {
                             colW[col] = std::max(colW[col], std::max(cols[col].min, child->desiredW));
                         }
                     }
-                    if (stars) {
-                        float fixed = 0.0f;
-                        for (size_t j = 0; j < n; j++) {
-                            if (cols[j].type != 2) {
-                                fixed += colW[j];
-                            }
-                        }
-                        float remaining = std::max(0.0f, iw - fixed);
-                        std::vector<bool> settled(n, false);
-                        for (size_t pass = 0; pass <= n; pass++) {
-                            float weight = 0.0f;
-                            for (size_t j = 0; j < n; j++) {
-                                if (cols[j].type == 2 && !settled[j]) {
-                                    weight += cols[j].value;
-                                }
-                            }
-                            if (weight <= 0.0f) {
-                                break;
-                            }
-                            bool changed = false;
-                            for (size_t j = 0; j < n; j++) {
-                                if (cols[j].type == 2 && !settled[j] &&
-                                    remaining / weight * cols[j].value < cols[j].min) {
-                                    colW[j] = cols[j].min;
-                                    settled[j] = true;
-                                    remaining = std::max(0.0f, remaining - cols[j].min);
-                                    changed = true;
-                                }
-                            }
-                            if (!changed) {
-                                for (size_t j = 0; j < n; j++) {
-                                    if (cols[j].type == 2 && !settled[j]) {
-                                        colW[j] = std::min(remaining / weight * cols[j].value, cols[j].max);
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
+                    fitStars(cols, colW, iw);
                     for (size_t k = 0; k < m; k++) {
                         if (rows[k].type == 0) {
-                            rowH[k] = rows[k].value;
+                            rowH[k] = std::clamp(rows[k].value, rows[k].min, std::max(rows[k].min, rows[k].max));
+                        } else {
+                            rowH[k] = rows[k].min;
                         }
                     }
                     for (auto& child : e.children) {
                         size_t col = (size_t) std::clamp(child->column, 0, (int) n - 1);
                         size_t row = (size_t) std::clamp(child->row, 0, (int) m - 1);
+                        if (child->rowSpan != 1 ||
+                            (rows[row].type != 1 && (rows[row].type != 2 || std::isfinite(ih)))) {
+                            continue;
+                        }
                         float cellW = 0.0f;
                         for (size_t j = col; j < std::min(n, col + (size_t) std::max(1, child->columnSpan)); j++) {
                             cellW += colW[j];
                         }
-                        float cellH = rows[row].type == 0 ? rowH[row] : INF;
-                        measure(*child, cellW, cellH);
-                        if (rows[row].type != 0 && child->rowSpan <= 1) {
-                            rowH[row] = std::max(rowH[row], child->desiredH);
+                        measure(*child, cellW, INF);
+                        rowH[row] = std::clamp(child->desiredH, rowH[row], std::max(rowH[row], rows[row].max));
+                    }
+                    fitStars(rows, rowH, ih);
+                    for (auto& child : e.children) {
+                        size_t col = (size_t) std::clamp(child->column, 0, (int) n - 1);
+                        size_t row = (size_t) std::clamp(child->row, 0, (int) m - 1);
+                        if (child->rowSpan == 1 &&
+                            (rows[row].type == 1 || (rows[row].type == 2 && !std::isfinite(ih)))) {
+                            continue;
                         }
+                        float cellW = 0.0f;
+                        float cellH = 0.0f;
+                        for (size_t j = col; j < std::min(n, col + (size_t) std::max(1, child->columnSpan)); j++) {
+                            cellW += colW[j];
+                        }
+                        for (size_t k = row; k < std::min(m, row + (size_t) std::max(1, child->rowSpan)); k++) {
+                            cellH += rowH[k];
+                        }
+                        measure(*child, cellW, cellH);
                     }
                     e.colSizes = colW;
                     e.rowSizes = rowH;
@@ -1223,29 +1260,8 @@ namespace XamlView {
                     if (rowH.empty()) {
                         rowH.push_back(e.h);
                     }
-                    float sum = 0.0f;
-                    float starTotal = 0.0f;
-                    for (size_t j = 0; j < colW.size(); j++) {
-                        sum += colW[j];
-                        if (j < e.columns.size() ? e.columns[j].type == 2 : true) {
-                            starTotal += j < e.columns.size() ? e.columns[j].value : 1.0f;
-                        }
-                    }
-                    if (e.w - sum > 0.5f && starTotal > 0.0f) {
-                        float extra = e.w - sum;
-                        for (size_t j = 0; j < colW.size(); j++) {
-                            if (j < e.columns.size() ? e.columns[j].type == 2 : true) {
-                                colW[j] += extra * (j < e.columns.size() ? e.columns[j].value : 1.0f) / starTotal;
-                            }
-                        }
-                    }
-                    float rowSum = 0.0f;
-                    for (float h : rowH) {
-                        rowSum += h;
-                    }
-                    if (rowH.size() == 1 && e.h > rowSum) {
-                        rowH[0] = e.h;
-                    }
+                    fitStars(e.columns, colW, e.w);
+                    fitStars(e.rows, rowH, e.h);
                     std::vector<float> colX(colW.size() + 1, e.x);
                     for (size_t j = 0; j < colW.size(); j++) {
                         colX[j + 1] = colX[j] + colW[j];
