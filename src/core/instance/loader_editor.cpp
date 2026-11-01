@@ -100,6 +100,25 @@ optifine_version_from_file (std::string_view file_name)
   return pos == std::string::npos ? name : name.substr (pos);
 }
 
+std::vector<install::loader_info>
+loaders_with_mods (std::vector<install::loader_info> loaders,
+                   std::span<const modpack::mod_info> enabled)
+{
+  for (auto type : { loader_type::fabric_api, loader_type::legacy_fabric_api,
+                     loader_type::quilt_api })
+    if (auto *mod = find_addon (enabled, type))
+      loaders.push_back ({ type, mod->version });
+  bool optifine
+      = std::any_of (loaders.begin (), loaders.end (), [] (const auto &l) {
+          return l.type == loader_type::optifine;
+        });
+  if (!optifine)
+    if (auto *mod = find_optifine_mod (enabled))
+      loaders.push_back ({ loader_type::optifine,
+                           optifine_version_from_file (mod->file_name) });
+  return loaders;
+}
+
 // Version metadata may be replaced by the installer before its final check.
 // Keep copies until the new mods and settings have also been committed.
 class file_changes
@@ -302,25 +321,9 @@ result<std::vector<install::loader_info>>
 installed_loaders (const instance_manager &manager, std::string_view id)
 {
   BLB_TRY_ASSIGN (auto inst, manager.get (id));
-  auto loaders = inst.loaders;
   auto mods = modpack::scan_mods (manager.game_directory (inst) / "mods");
-  std::vector<modpack::mod_info> enabled;
-  for (auto &mod : mods)
-    if (mod.enabled)
-      enabled.push_back (std::move (mod));
-  for (auto type : { loader_type::fabric_api, loader_type::legacy_fabric_api,
-                     loader_type::quilt_api })
-    if (auto *mod = find_addon (enabled, type))
-      loaders.push_back ({ type, mod->version });
-  bool optifine
-      = std::any_of (loaders.begin (), loaders.end (), [] (const auto &l) {
-          return l.type == loader_type::optifine;
-        });
-  if (!optifine)
-    if (auto *mod = find_optifine_mod (enabled))
-      loaders.push_back ({ loader_type::optifine,
-                           optifine_version_from_file (mod->file_name) });
-  return loaders;
+  std::erase_if (mods, [] (const auto &mod) { return !mod.enabled; });
+  return loaders_with_mods (std::move (inst.loaders), mods);
 }
 
 result<std::string>
@@ -340,7 +343,8 @@ modify_loaders (install::game_installer &installer,
   auto game_dir = manager.game_directory (inst);
   auto mods_dir = game_dir / "mods";
   auto mods = modpack::scan_mods (mods_dir);
-  BLB_TRY_ASSIGN (auto current, installed_loaders (manager, id));
+  std::erase_if (mods, [] (const auto &mod) { return !mod.enabled; });
+  auto current = loaders_with_mods (inst.loaders, mods);
 
   auto wanted = [&] (loader_type type) -> const install::loader_request * {
     for (const auto &d : desired)
@@ -362,7 +366,6 @@ modify_loaders (install::game_installer &installer,
       request.push_back (d);
     }
   std::vector<std::filesystem::path> removed;
-  std::erase_if (mods, [] (const auto &mod) { return !mod.enabled; });
   for (const auto &l : current)
     {
       auto *target = wanted (l.type);
