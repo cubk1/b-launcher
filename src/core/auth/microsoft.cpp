@@ -1,5 +1,6 @@
 #include <core/auth/microsoft.hpp>
 #include <core/base/format.hpp>
+#include <core/base/json.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
@@ -47,15 +48,6 @@ parse_body (const net::http_response &response)
   return doc;
 }
 
-std::string
-text_of (const json &doc, const char *key)
-{
-  auto it = doc.find (key);
-  if (it == doc.end () || !it->is_string ())
-    return {};
-  return it->get<std::string> ();
-}
-
 std::int64_t
 int_of (const json &doc, const char *key, std::int64_t fallback)
 {
@@ -96,8 +88,8 @@ token_from (const net::http_response &response)
   BLB_TRY_ASSIGN (auto doc, parse_body (response));
   if (!response.ok ())
     {
-      auto code = text_of (doc, "error");
-      auto detail = text_of (doc, "error_description");
+      auto code = json_text (doc, "error");
+      auto detail = json_text (doc, "error_description");
       errc kind = errc::auth;
       if (code == "authorization_pending" || code == "slow_down")
         kind = errc::auth_pending;
@@ -112,8 +104,8 @@ token_from (const net::http_response &response)
       return e;
     }
   microsoft_token token;
-  token.access_token = text_of (doc, "access_token");
-  token.refresh_token = text_of (doc, "refresh_token");
+  token.access_token = json_text (doc, "access_token");
+  token.refresh_token = json_text (doc, "refresh_token");
   BLB_TRY_ASSIGN (token.expires_in,
                   positive_seconds (doc, "expires_in", 3600));
   if (token.access_token.empty ())
@@ -234,12 +226,12 @@ microsoft_authenticator::request_device_code (cancellation_token token) const
   if (!response.ok ())
     return make_error (errc::auth,
                        sformat ("device code request failed: {}",
-                                text_of (doc, "error_description")));
+                                json_text (doc, "error_description")));
   device_code code;
-  code.user_code = text_of (doc, "user_code");
-  code.device_code = text_of (doc, "device_code");
-  code.verification_uri = text_of (doc, "verification_uri");
-  code.message = text_of (doc, "message");
+  code.user_code = json_text (doc, "user_code");
+  code.device_code = json_text (doc, "device_code");
+  code.verification_uri = json_text (doc, "verification_uri");
+  code.message = json_text (doc, "message");
   auto maximum = remaining_clock_seconds ();
   BLB_TRY_ASSIGN (auto interval,
                   positive_seconds (doc, "interval", 5, maximum));
@@ -368,12 +360,12 @@ microsoft_authenticator::login (const microsoft_token &ms,
   if (!xbl_response.ok ())
     return make_error (errc::auth, sformat ("xbox live login failed (HTTP {})",
                                             xbl_response.status));
-  auto xbl_token = text_of (xbl, "Token");
+  auto xbl_token = json_text (xbl, "Token");
   std::string uhs;
   if (auto claims = xbl.find ("DisplayClaims"); claims != xbl.end ())
     if (auto xui = claims->find ("xui");
         xui != claims->end () && xui->is_array () && !xui->empty ())
-      uhs = text_of ((*xui)[0], "uhs");
+      uhs = json_text ((*xui)[0], "uhs");
   if (xbl_token.empty () || uhs.empty ())
     return make_error (errc::auth, "invalid xbox live response");
 
@@ -391,7 +383,7 @@ microsoft_authenticator::login (const microsoft_token &ms,
   if (!xsts_response.ok ())
     return make_error (
         errc::auth, sformat ("xsts failed (HTTP {})", xsts_response.status));
-  auto xsts_token = text_of (xsts, "Token");
+  auto xsts_token = json_text (xsts, "Token");
 
   json mc_request
       = { { "identityToken", sformat ("XBL3.0 x={};{}", uhs, xsts_token) } };
@@ -404,7 +396,7 @@ microsoft_authenticator::login (const microsoft_token &ms,
                                             mc_response.status));
   account out;
   out.type = account_type::microsoft;
-  out.access_token = text_of (mc, "access_token");
+  out.access_token = json_text (mc, "access_token");
   auto now = unix_now ();
   auto maximum = std::numeric_limits<std::int64_t>::max ()
                  - std::max<std::int64_t> (now, 0);
@@ -462,8 +454,8 @@ microsoft_authenticator::fetch_profile (account current,
   if (!response.ok ())
     return make_error (errc::auth, sformat ("profile request failed (HTTP {})",
                                             response.status));
-  current.uuid = strip_uuid (text_of (doc, "id"));
-  current.name = text_of (doc, "name");
+  current.uuid = strip_uuid (json_text (doc, "id"));
+  current.name = json_text (doc, "name");
   if (current.name.empty () || current.uuid.size () != 32
       || current.uuid.find_first_not_of ("0123456789abcdef")
              != std::string::npos)
@@ -471,8 +463,8 @@ microsoft_authenticator::fetch_profile (account current,
   if (auto skins = doc.find ("skins");
       skins != doc.end () && skins->is_array ())
     for (const auto &skin : *skins)
-      if (text_of (skin, "state") == "ACTIVE")
-        current.skin_url = text_of (skin, "url");
+      if (json_text (skin, "state") == "ACTIVE")
+        current.skin_url = json_text (skin, "url");
   return current;
 }
 

@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/json.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
@@ -18,17 +19,6 @@ using json = nlohmann::json;
 
 constexpr log::logger s_log ("modpack");
 constexpr std::string_view modrinth_api = "https://api.modrinth.com/v2";
-
-std::string
-text_of (const json &node, const char *key)
-{
-  if (!node.is_object ())
-    return {};
-  auto it = node.find (key);
-  if (it == node.end () || !it->is_string ())
-    return {};
-  return it->get<std::string> ();
-}
 
 std::int64_t
 int_of (const json &node, const char *key, std::int64_t fallback = 0)
@@ -87,14 +77,14 @@ remote_file
 curseforge_file (const json &f)
 {
   remote_file out;
-  out.file_name = text_of (f, "fileName");
-  out.url = text_of (f, "downloadUrl");
+  out.file_name = json_text (f, "fileName");
+  out.url = json_text (f, "downloadUrl");
   out.size = int_of (f, "fileLength", -1);
   if (auto hashes = f.find ("hashes");
       hashes != f.end () && hashes->is_array ())
     for (const auto &h : *hashes)
       if (int_of (h, "algo") == 1)
-        out.sha1 = to_lower (text_of (h, "value"));
+        out.sha1 = to_lower (json_text (h, "value"));
   if (out.url.empty ())
     {
       auto id = int_of (f, "id");
@@ -303,16 +293,16 @@ lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
             {
               auto hashes_node = f.find ("hashes");
               if (hashes_node == f.end ()
-                  || to_lower (text_of (*hashes_node, "sha1")) != it.key ())
+                  || to_lower (json_text (*hashes_node, "sha1")) != it.key ())
                 continue;
               remote_file file;
-              file.url = text_of (f, "url");
-              file.file_name = text_of (f, "filename");
+              file.url = json_text (f, "url");
+              file.file_name = json_text (f, "filename");
               file.sha1 = it.key ();
-              file.sha512 = to_lower (text_of (*hashes_node, "sha512"));
+              file.sha512 = to_lower (json_text (*hashes_node, "sha512"));
               file.size = int_of (f, "size", -1);
               out[it.key ()] = file;
-              by_project[text_of (*it, "project_id")].push_back (it.key ());
+              by_project[json_text (*it, "project_id")].push_back (it.key ());
             }
         }
     }
@@ -334,10 +324,10 @@ lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
       if (!doc.is_array ())
         continue;
       for (const auto &p : doc)
-        for (const auto &hash : by_project[text_of (p, "id")])
+        for (const auto &hash : by_project[json_text (p, "id")])
           {
-            out[hash].client_side = text_of (p, "client_side");
-            out[hash].server_side = text_of (p, "server_side");
+            out[hash].client_side = json_text (p, "client_side");
+            out[hash].server_side = json_text (p, "server_side");
           }
     }
   return out;

@@ -3,7 +3,7 @@
 
 #include <core/network/http_client.hpp>
 
-#include <nlohmann/json.hpp>
+#include <core/base/json.hpp>
 
 #include <cstdio>
 #include <utility>
@@ -15,11 +15,6 @@ namespace RoomApi {
     namespace {
         const char* const BASE = "https://b-api.cubk.cn/api/v1";
         constexpr std::chrono::seconds TIMEOUT(15);
-
-        std::string text(const nlohmann::json& doc, const char* key) {
-            auto it = doc.find(key);
-            return it != doc.end() && it->is_string() ? it->get<std::string>() : std::string();
-        }
 
         long long number(const nlohmann::json& doc, const char* key) {
             auto it = doc.find(key);
@@ -92,8 +87,8 @@ namespace RoomApi {
             doc = nlohmann::json::parse(response->body, nullptr, false);
             if (!response->ok()) {
                 if (doc.is_object()) {
-                    reply.error = text(doc, "error");
-                    reply.message = text(doc, "message");
+                    reply.error = blb::json_text(doc, "error");
+                    reply.message = blb::json_text(doc, "message");
                 }
                 return reply;
             }
@@ -185,14 +180,14 @@ namespace RoomApi {
             return reply;
         }
         out.maintenance = flag(doc, "maintenance");
-        out.message = out.maintenance ? text(doc, "message") : std::string();
+        out.message = out.maintenance ? blb::json_text(doc, "message") : std::string();
         out.available = (int) number(doc, "available");
         out.total = (int) number(doc, "total");
         auto moons = doc.find("moons");
         if (moons != doc.end() && moons->is_array()) {
             for (const nlohmann::json& moon : *moons) {
                 if (moon.is_object()) {
-                    out.moons.push_back({text(moon, "id"), text(moon, "seed")});
+                    out.moons.push_back({blb::json_text(moon, "id"), blb::json_text(moon, "seed")});
                 }
             }
         }
@@ -205,9 +200,9 @@ namespace RoomApi {
         if (!reply.ok) {
             return reply;
         }
-        out.code = text(doc, "code");
-        out.network = text(doc, "networkId");
-        out.token = text(doc, "roomToken");
+        out.code = blb::json_text(doc, "code");
+        out.network = blb::json_text(doc, "networkId");
+        out.token = blb::json_text(doc, "roomToken");
         if (!validCode(out.code) || out.network.size() != 16 || out.token.empty()) {
             reply.ok = false;
             reply.error = "invalid_response";
@@ -228,7 +223,7 @@ namespace RoomApi {
         if (!reply.ok) {
             return reply;
         }
-        network = text(doc, "networkId");
+        network = blb::json_text(doc, "networkId");
         if (network.size() != 16) {
             reply.ok = false;
             reply.error = "invalid_response";
@@ -291,7 +286,7 @@ namespace RoomApi {
         out = Room();
         long long port = number(doc, "port");
         out.port = port > 0 && port <= 65535 ? (int) port : 0;
-        std::string hostDevice = lower(text(doc, "hostDeviceId"));
+        std::string hostDevice = lower(blb::json_text(doc, "hostDeviceId"));
         auto banned = doc.find("bannedDeviceIds");
         if (banned != doc.end() && banned->is_array()) {
             for (const nlohmann::json& device : *banned) {
@@ -309,11 +304,11 @@ namespace RoomApi {
                 continue;
             }
             Member member;
-            member.device = lower(text(item, "deviceId"));
-            member.name = text(item, "username");
-            member.authorized = text(item, "status") == "authorized";
+            member.device = lower(blb::json_text(item, "deviceId"));
+            member.name = blb::json_text(item, "username");
+            member.authorized = blb::json_text(item, "status") == "authorized";
             member.host = flag(item, "host") || (!hostDevice.empty() && member.device == hostDevice);
-            member.seen = parseTime(text(item, "lastSeen"));
+            member.seen = parseTime(blb::json_text(item, "lastSeen"));
             auto addresses = item.find("ipAssignments");
             if (addresses != item.end() && addresses->is_array()) {
                 for (const nlohmann::json& address : *addresses) {

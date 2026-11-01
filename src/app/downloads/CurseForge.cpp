@@ -7,7 +7,7 @@
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
-#include <nlohmann/json.hpp>
+#include <core/base/json.hpp>
 
 #include <algorithm>
 #include <map>
@@ -47,11 +47,6 @@ namespace CurseForge {
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
         Recent searchUse, versionUse;
-
-        std::string text(const json& node, const char* key) {
-            auto it = node.find(key);
-            return it != node.end() && it->is_string() ? it->get<std::string>() : std::string();
-        }
 
         long long number(const json& node, const char* key) {
             auto it = node.find(key);
@@ -179,29 +174,29 @@ namespace CurseForge {
         Hit parseHit(const json& item) {
             Hit hit;
             hit.id = id(item, "id");
-            hit.slug = text(item, "slug");
-            hit.title = text(item, "name");
-            hit.description = text(item, "summary");
+            hit.slug = blb::json_text(item, "slug");
+            hit.title = blb::json_text(item, "name");
+            hit.description = blb::json_text(item, "summary");
             hit.downloads = number(item, "downloadCount");
             hit.follows = number(item, "thumbsUpCount");
             if (auto authors = item.find("authors");
                 authors != item.end() && authors->is_array() && !authors->empty()) {
-                hit.author = text(authors->front(), "name");
+                hit.author = blb::json_text(authors->front(), "name");
             }
             if (auto logo = item.find("logo"); logo != item.end() && logo->is_object()) {
-                hit.iconUrl = text(*logo, "thumbnailUrl");
+                hit.iconUrl = blb::json_text(*logo, "thumbnailUrl");
                 if (hit.iconUrl.empty()) {
-                    hit.iconUrl = text(*logo, "url");
+                    hit.iconUrl = blb::json_text(*logo, "url");
                 }
             }
             if (auto links = item.find("links"); links != item.end() && links->is_object()) {
-                hit.pageUrl = text(*links, "websiteUrl");
+                hit.pageUrl = blb::json_text(*links, "websiteUrl");
             }
             int primary = (int) number(item, "classId");
             if (auto categories = item.find("categories"); categories != item.end() && categories->is_array()) {
                 for (const json& category : *categories) {
                     if (category.is_object() && number(category, "id") != primary) {
-                        hit.categories.push_back(text(category, "name"));
+                        hit.categories.push_back(blb::json_text(category, "name"));
                     }
                 }
             }
@@ -299,7 +294,7 @@ namespace CurseForge {
                                 continue;
                             }
                             byClass[owner].push_back(
-                                    Category{id(item, "id"), text(item, "name"), std::string(), text(item, "iconUrl")});
+                                    Category{id(item, "id"), blb::json_text(item, "name"), std::string(), blb::json_text(item, "iconUrl")});
                         }
                         for (auto& [owner, list] : byClass) {
                             std::sort(list.begin(), list.end(),
@@ -323,14 +318,14 @@ namespace CurseForge {
             version.source = Addons::Source::CurseForge;
             version.id = id(item, "id");
             version.projectId = id(item, "modId");
-            version.name = text(item, "displayName");
-            version.number = text(item, "fileName");
+            version.name = blb::json_text(item, "displayName");
+            version.number = blb::json_text(item, "fileName");
             switch (number(item, "releaseType")) {
                 case 2: version.type = "beta"; break;
                 case 3: version.type = "alpha"; break;
                 default: version.type = "release"; break;
             }
-            version.published = text(item, "fileDate");
+            version.published = blb::json_text(item, "fileDate");
             version.downloads = number(item, "downloadCount");
             if (auto games = item.find("gameVersions"); games != item.end() && games->is_array()) {
                 for (const json& value : *games) {
@@ -346,8 +341,8 @@ namespace CurseForge {
                 }
             }
             File file;
-            file.url = text(item, "downloadUrl");
-            file.filename = text(item, "fileName");
+            file.url = blb::json_text(item, "downloadUrl");
+            file.filename = blb::json_text(item, "fileName");
             file.size = number(item, "fileLength");
             file.primary = true;
             if (file.url.empty() && numeric(version.id) && !file.filename.empty()) {
@@ -358,7 +353,7 @@ namespace CurseForge {
             if (auto hashes = item.find("hashes"); hashes != item.end() && hashes->is_array()) {
                 for (const json& hash : *hashes) {
                     if (hash.is_object() && number(hash, "algo") == 1) {
-                        file.sha1 = text(hash, "value");
+                        file.sha1 = blb::json_text(hash, "value");
                     }
                 }
             }

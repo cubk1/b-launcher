@@ -7,7 +7,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/network/http_client.hpp>
 
-#include <nlohmann/json.hpp>
+#include <core/base/json.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -83,11 +83,7 @@ namespace Updates {
             return false;
         }
 
-        std::string text(const nlohmann::json& doc, const char* key) {
-            auto it = doc.find(key);
-            return it != doc.end() && it->is_string() ? it->get<std::string>() : std::string();
-        }
-    }
+   }
 
     void check(bool found, bool failure) {
         if (current == State::Checking) {
@@ -113,14 +109,14 @@ namespace Updates {
                 fetched.error = "HTTP " + std::to_string(response->status);
             } else {
                 nlohmann::json doc = nlohmann::json::parse(response->body, nullptr, false);
-                fetched.version = doc.is_object() ? text(doc, "latest_version") : std::string();
+                fetched.version = doc.is_object() ? blb::json_text(doc, "latest_version") : std::string();
                 if (fetched.version.empty()) {
                     fetched.error = "更新信息无法识别";
                 } else {
                     fetched.ok = true;
-                    fetched.url = text(doc, "download_url");
+                    fetched.url = blb::json_text(doc, "download_url");
                     if (fetched.url.empty()) {
-                        fetched.url = text(doc, "url");
+                        fetched.url = blb::json_text(doc, "url");
                     }
                 }
             }

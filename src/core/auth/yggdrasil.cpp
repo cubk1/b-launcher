@@ -1,5 +1,6 @@
 #include <core/auth/yggdrasil.hpp>
 #include <core/base/format.hpp>
+#include <core/base/json.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/log.hpp>
@@ -26,15 +27,6 @@ constexpr std::string_view authlib_sources[] = {
   "latest.json",
   "https://authlib-injector.yushi.moe/artifact/latest.json",
 };
-
-std::string
-text_of (const json &doc, const char *key)
-{
-  auto it = doc.find (key);
-  if (it == doc.end () || !it->is_string ())
-    return {};
-  return it->get<std::string> ();
-}
 
 std::string
 trim_slash (std::string url)
@@ -97,7 +89,7 @@ server_error (const net::http_response &response, std::string_view fallback)
   auto doc = json::parse (response.body, nullptr, false);
   std::string message;
   if (!doc.is_discarded () && doc.is_object ())
-    message = text_of (doc, "errorMessage");
+    message = json_text (doc, "errorMessage");
   if (message.empty ())
     message = sformat ("{}（HTTP {}）", fallback, response.status);
   return make_error (errc::auth, message);
@@ -117,7 +109,7 @@ object_of (const net::http_response &response)
 yggdrasil_profile
 profile_of (const json &doc)
 {
-  return { strip_uuid (text_of (doc, "id")), text_of (doc, "name") };
+  return { strip_uuid (json_text (doc, "id")), json_text (doc, "name") };
 }
 
 std::string
@@ -136,9 +128,9 @@ fetch_skin (const std::string &api, const std::string &uuid,
     return {};
   for (const auto &property : *properties)
     {
-      if (!property.is_object () || text_of (property, "name") != "textures")
+      if (!property.is_object () || json_text (property, "name") != "textures")
         continue;
-      auto decoded = base64_decode (text_of (property, "value"));
+      auto decoded = base64_decode (json_text (property, "value"));
       if (!decoded)
         return {};
       auto textures = json::parse (*decoded, nullptr, false);
@@ -150,7 +142,7 @@ fetch_skin (const std::string &api, const std::string &uuid,
       auto skin = all->find ("SKIN");
       if (skin == all->end () || !skin->is_object ())
         return {};
-      return text_of (*skin, "url");
+      return json_text (*skin, "url");
     }
   return {};
 }
@@ -192,15 +184,15 @@ refresh_with (const account &current, const yggdrasil_profile *profile,
     }
   BLB_TRY_ASSIGN (auto doc, object_of (response));
   account out = current;
-  out.access_token = text_of (doc, "accessToken");
-  auto client = text_of (doc, "clientToken");
+  out.access_token = json_text (doc, "accessToken");
+  auto client = json_text (doc, "clientToken");
   if (!client.empty ())
     out.client_token = client;
   if (out.access_token.empty ())
     return make_error (errc::auth, "认证服务器没有返回登录令牌");
   auto selected = doc.find ("selectedProfile");
   if (selected != doc.end () && selected->is_object ()
-      && !text_of (*selected, "id").empty ())
+      && !json_text (*selected, "id").empty ())
     return with_profile (std::move (out), profile_of (*selected), token);
   yggdrasil_profile kept
       = profile ? *profile : yggdrasil_profile { out.uuid, out.name };
@@ -226,11 +218,11 @@ authlib_jar (const std::filesystem::path &directory, cancellation_token token)
       auto doc = json::parse (*text, nullptr, false);
       if (doc.is_discarded () || !doc.is_object ())
         continue;
-      auto url = text_of (doc, "download_url");
+      auto url = json_text (doc, "download_url");
       std::string expected;
       if (auto sums = doc.find ("checksums");
           sums != doc.end () && sums->is_object ())
-        expected = text_of (*sums, "sha256");
+        expected = json_text (*sums, "sha256");
       if (url.empty ())
         continue;
       auto data = net::http_get (url, token);
@@ -250,7 +242,7 @@ authlib_jar (const std::filesystem::path &directory, cancellation_token token)
         }
       BLB_TRY (fs::create_directories (directory));
       BLB_TRY (fs::write_file_atomic (jar, *data));
-      s_log.info ("downloaded authlib-injector {}", text_of (doc, "version"));
+      s_log.info ("downloaded authlib-injector {}", json_text (doc, "version"));
       return jar;
     }
   return last;
@@ -264,7 +256,7 @@ nide8_jar (const std::filesystem::path &directory, const std::string &metadata,
   std::string expected;
   auto doc = json::parse (metadata, nullptr, false);
   if (!doc.is_discarded () && doc.is_object ())
-    expected = text_of (doc, "jarHash");
+    expected = json_text (doc, "jarHash");
   if (fs::exists (jar))
     {
       if (expected.empty ())
@@ -389,12 +381,12 @@ resolve_yggdrasil (std::string_view input, cancellation_token token)
   out.metadata = response.body;
   if (auto meta = doc.find ("meta"); meta != doc.end () && meta->is_object ())
     {
-      out.name = text_of (*meta, "serverName");
+      out.name = json_text (*meta, "serverName");
       if (auto links = meta->find ("links");
           links != meta->end () && links->is_object ())
         {
-          out.homepage = text_of (*links, "homepage");
-          out.register_url = text_of (*links, "register");
+          out.homepage = json_text (*links, "homepage");
+          out.register_url = json_text (*links, "register");
         }
     }
   return out;
@@ -420,7 +412,7 @@ yggdrasil_login (account_type type, std::string_view server,
           if (!doc.is_discarded () && doc.is_object ())
             if (auto meta = doc.find ("meta");
                 meta != doc.end () && meta->is_object ())
-              base.server_name = text_of (*meta, "serverName");
+              base.server_name = json_text (*meta, "serverName");
         }
     }
   else
@@ -444,8 +436,8 @@ yggdrasil_login (account_type type, std::string_view server,
                                        ? "账号或密码错误，或者登录太频繁"
                                        : "登录失败");
   BLB_TRY_ASSIGN (auto doc, object_of (response));
-  base.access_token = text_of (doc, "accessToken");
-  auto client = text_of (doc, "clientToken");
+  base.access_token = json_text (doc, "accessToken");
+  auto client = json_text (doc, "clientToken");
   if (!client.empty ())
     base.client_token = client;
   if (base.access_token.empty ())
@@ -462,7 +454,7 @@ yggdrasil_login (account_type type, std::string_view server,
         }
   auto selected = doc.find ("selectedProfile");
   if (selected != doc.end () && selected->is_object ()
-      && !text_of (*selected, "id").empty ())
+      && !json_text (*selected, "id").empty ())
     {
       session.base
           = with_profile (std::move (base), profile_of (*selected), token);

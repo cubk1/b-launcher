@@ -14,7 +14,7 @@
 #include <core/network/download_client.hpp>
 #include <core/network/http_client.hpp>
 
-#include <nlohmann/json.hpp>
+#include <core/base/json.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -57,11 +57,6 @@ namespace JavaDownloads {
             });
         }
 
-        std::string text(const nlohmann::json& doc, const char* key) {
-            auto it = doc.find(key);
-            return it != doc.end() && it->is_string() ? it->get<std::string>() : std::string();
-        }
-
         std::optional<uint64_t> count(const nlohmann::json& doc, const char* key,
                                       uint64_t maximum = std::numeric_limits<uint64_t>::max()) {
             auto it = doc.find(key);
@@ -93,26 +88,26 @@ namespace JavaDownloads {
                     continue;
                 }
                 for (const nlohmann::json& item : *packages) {
-                    if (!item.is_object() || text(item, "os") != "windows" || text(item, "arch") != "x86_64" ||
-                        text(item, "package_type") != "zip") {
+                    if (!item.is_object() || blb::json_text(item, "os") != "windows" || blb::json_text(item, "arch") != "x86_64" ||
+                        blb::json_text(item, "package_type") != "zip") {
                         continue;
                     }
                     Package package;
-                    package.folder = text(item, "install_folder_name");
-                    package.url = text(item, "url");
+                    package.folder = blb::json_text(item, "install_folder_name");
+                    package.url = blb::json_text(item, "url");
                     if (!blb::fs::safe_filename(package.folder) || package.url.empty()) {
                         continue;
                     }
-                    package.vendor = text(jdk, "vendor");
-                    package.product = text(jdk, "product");
-                    package.flavour = text(jdk, "flavour");
-                    package.version = text(jdk, "jdk_version");
+                    package.vendor = blb::json_text(jdk, "vendor");
+                    package.product = blb::json_text(jdk, "product");
+                    package.flavour = blb::json_text(jdk, "flavour");
+                    package.version = blb::json_text(jdk, "jdk_version");
                     package.major = (int) *major;
                     auto preview = jdk.find("preview");
                     package.preview = preview != jdk.end() && preview->is_boolean() && preview->get<bool>();
-                    package.sha256 = text(item, "sha256");
-                    package.prefix = text(item, "unpack_prefix_filter");
-                    package.homePrefix = text(item, "package_to_java_home_prefix");
+                    package.sha256 = blb::json_text(item, "sha256");
+                    package.prefix = blb::json_text(item, "unpack_prefix_filter");
+                    package.homePrefix = blb::json_text(item, "package_to_java_home_prefix");
                     auto archiveSize = count(item, "archive_size", std::numeric_limits<int64_t>::max());
                     auto unpackedSize = count(item, "unpacked_size");
                     if (!archiveSize || !unpackedSize) {

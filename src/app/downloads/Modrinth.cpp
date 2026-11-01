@@ -6,7 +6,7 @@
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
-#include <nlohmann/json.hpp>
+#include <core/base/json.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -47,11 +47,6 @@ namespace Modrinth {
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
         Recent searchUse, versionUse;
-
-        std::string text(const json& node, const char* key) {
-            auto it = node.find(key);
-            return it != node.end() && it->is_string() ? it->get<std::string>() : std::string();
-        }
 
         long long number(const json& node, const char* key) {
             auto it = node.find(key);
@@ -170,12 +165,12 @@ namespace Modrinth {
                         if (hits != doc->end() && hits->is_array()) {
                             for (const json& item : *hits) {
                                 Hit hit;
-                                hit.id = text(item, "project_id");
-                                hit.slug = text(item, "slug");
-                                hit.title = text(item, "title");
-                                hit.description = text(item, "description");
-                                hit.author = text(item, "author");
-                                hit.iconUrl = text(item, "icon_url");
+                                hit.id = blb::json_text(item, "project_id");
+                                hit.slug = blb::json_text(item, "slug");
+                                hit.title = blb::json_text(item, "title");
+                                hit.description = blb::json_text(item, "description");
+                                hit.author = blb::json_text(item, "author");
+                                hit.iconUrl = blb::json_text(item, "icon_url");
                                 hit.pageUrl =
                                         "https://modrinth.com/" + kind + "/" + (hit.slug.empty() ? hit.id : hit.slug);
                                 hit.downloads = number(item, "downloads");
@@ -210,9 +205,9 @@ namespace Modrinth {
                         }
                         std::map<std::string, std::vector<Category>> byType;
                         for (const json& item : *doc) {
-                            std::string name = text(item, "name");
-                            byType[text(item, "project_type")].push_back(
-                                    Category{name, name, text(item, "header"), std::string()});
+                            std::string name = blb::json_text(item, "name");
+                            byType[blb::json_text(item, "project_type")].push_back(
+                                    Category{name, name, blb::json_text(item, "header"), std::string()});
                         }
                         return [byType] {
                             for (Kind kind :
@@ -230,26 +225,26 @@ namespace Modrinth {
         Version parseVersion(const json& item) {
             Version version;
             version.source = Addons::Source::Modrinth;
-            version.id = text(item, "id");
-            version.projectId = text(item, "project_id");
-            version.name = text(item, "name");
-            version.number = text(item, "version_number");
-            version.type = text(item, "version_type");
+            version.id = blb::json_text(item, "id");
+            version.projectId = blb::json_text(item, "project_id");
+            version.name = blb::json_text(item, "name");
+            version.number = blb::json_text(item, "version_number");
+            version.type = blb::json_text(item, "version_type");
             version.gameVersions = strings(item, "game_versions");
             version.loaders = strings(item, "loaders");
-            version.published = text(item, "date_published");
+            version.published = blb::json_text(item, "date_published");
             version.downloads = number(item, "downloads");
             auto files = item.find("files");
             if (files != item.end() && files->is_array()) {
                 for (const json& file : *files) {
                     File f;
-                    f.url = text(file, "url");
-                    f.filename = text(file, "filename");
+                    f.url = blb::json_text(file, "url");
+                    f.filename = blb::json_text(file, "filename");
                     f.size = number(file, "size");
                     f.primary = file.value("primary", false);
                     auto hashes = file.find("hashes");
                     if (hashes != file.end() && hashes->is_object()) {
-                        f.sha1 = text(*hashes, "sha1");
+                        f.sha1 = blb::json_text(*hashes, "sha1");
                     }
                     version.files.push_back(std::move(f));
                 }
@@ -257,12 +252,12 @@ namespace Modrinth {
             auto dependencies = item.find("dependencies");
             if (dependencies != item.end() && dependencies->is_array()) {
                 for (const json& dependency : *dependencies) {
-                    std::string type = text(dependency, "dependency_type");
+                    std::string type = blb::json_text(dependency, "dependency_type");
                     if (type != "required" && type != "optional") {
                         continue;
                     }
-                    version.dependencies.push_back(Dependency{text(dependency, "project_id"),
-                                                              text(dependency, "version_id"), type == "required"});
+                    version.dependencies.push_back(Dependency{blb::json_text(dependency, "project_id"),
+                                                              blb::json_text(dependency, "version_id"), type == "required"});
                 }
             }
             return version;

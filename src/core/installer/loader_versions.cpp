@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/json.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
@@ -16,17 +17,6 @@ namespace
 {
 
 constexpr log::logger s_log ("loader");
-
-std::string
-json_text (const detail::json &node, const char *key)
-{
-  if (!node.is_object ())
-    return {};
-  auto it = node.find (key);
-  if (it == node.end () || !it->is_string ())
-    return {};
-  return it->get<std::string> ();
-}
 
 bool
 unstable_name (std::string_view version)
