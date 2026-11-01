@@ -36,7 +36,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/NavItemWidget.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/SwatchWidget.h"
@@ -105,23 +104,6 @@ namespace SettingsScreen {
                 {blb::launch::gc_mode::tuned_g1, "调优 G1GC"},
                 {blb::launch::gc_mode::none, "不指定（可自定义）"},
         };
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
-        }
 
         void explain(const std::string& id, const std::string& text, float rowY, float labelRight, bool blocked) {
             if (!blocked && NewUi::hit(mainX(), rowY, labelRight - mainX(), Page::ROW_H)) {
@@ -201,7 +183,7 @@ namespace SettingsScreen {
             float refreshX = Page::controlRight() - 27.0f;
             UiRender::textY(count, refreshX - 8.0f - countW, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
-            if (iconButton("settings#refresh", 0xf2f1, "重新读取", refreshX, y + 6.0f, blocked)) {
+            if (Page::iconButton("settings#refresh", 0xf2f1, "重新读取", refreshX, y + 6.0f, blocked)) {
                 Instances::refresh();
             }
         }
@@ -315,12 +297,12 @@ namespace SettingsScreen {
             float right = pickX - 8.0f;
             if (!path.empty()) {
                 float resetX = pickX - 30.0f;
-                if (iconButton("settings#backgroundReset", 0xf2ea, "恢复默认图片", resetX, y + 6.0f, blocked)) {
+                if (Page::iconButton("settings#backgroundReset", 0xf2ea, "恢复默认图片", resetX, y + 6.0f, blocked)) {
                     Background::setPath(std::string());
                 }
                 right = resetX - 8.0f;
             }
-            if (iconButton("settings#backgroundPick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
+            if (Page::iconButton("settings#backgroundPick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start = path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path);
                 if (std::optional<std::filesystem::path> picked = Platform::pickImage(start)) {
                     Background::setPath(blb::path_to_utf8(*picked));
@@ -547,7 +529,7 @@ namespace SettingsScreen {
             Page::label(label, y);
             std::string path = Homepage::file();
             float pickX = Page::controlRight() - 27.0f;
-            if (iconButton("settings#homepagePick", 0xf07c, "选择 XAML 文件", pickX, y + 6.0f, blocked)) {
+            if (Page::iconButton("settings#homepagePick", 0xf07c, "选择 XAML 文件", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start =
                         path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path).parent_path();
                 std::vector<std::filesystem::path> picked =
@@ -695,7 +677,7 @@ namespace SettingsScreen {
             UiRender::textY(count, mainX() + 2.0f, Page::TOP, NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             float refreshX = Page::right() - 28.0f;
-            if (iconButton("settings#java#refresh", 0xf2f1, "重新查找", refreshX, Page::TOP + 1.0f,
+            if (Page::iconButton("settings#java#refresh", 0xf2f1, "重新查找", refreshX, Page::TOP + 1.0f,
                            covered || loading)) {
                 Catalog::refreshJava();
             }
@@ -769,9 +751,9 @@ namespace SettingsScreen {
                 UiRender::textY(shown, whereX, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_SMALL);
                 if (shown != where && !blocked && NewUi::hit(whereX, rowY + 8.0f, shownW, Page::ROW_H - 16.0f)) {
-                    tip(where, whereX, rowY + 8.0f, shownW, Page::ROW_H - 16.0f);
+                    Page::tooltip(where, whereX, rowY + 8.0f, shownW, Page::ROW_H - 16.0f);
                 }
-                if (iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
+                if (Page::iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
                     javaMenu(java, menuX - 142.0f, rowY + Page::ROW_H - 4.0f);
                 }
             }
@@ -812,13 +794,13 @@ namespace SettingsScreen {
         void javaDownloads(bool covered) {
             const JavaDownloads::List& list = JavaDownloads::list();
             bool loading = list.status == JavaDownloads::Status::Loading;
-            if (iconButton("settings#java#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 1.0f, covered)) {
+            if (Page::iconButton("settings#java#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 1.0f, covered)) {
                 javaViews.go(0);
             }
             UiRender::textY("下载 Java", mainX() + 30.0f, Page::TOP, NAV_ITEM_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_BODY);
             float refreshX = Page::right() - 28.0f;
-            if (iconButton("settings#java#reload", 0xf2f1, "刷新列表", refreshX, Page::TOP + 1.0f,
+            if (Page::iconButton("settings#java#reload", 0xf2f1, "刷新列表", refreshX, Page::TOP + 1.0f,
                            covered || loading)) {
                 JavaDownloads::refresh();
             }
@@ -1143,7 +1125,7 @@ namespace SettingsScreen {
         void pathRow(const char* label, const char* key, const char* hint, const char* doc, bool png, float y,
                      bool blocked) {
             float x = patchText(label, key, hint, doc, y, blocked, 36.0f, 1024);
-            if (!iconButton(patchId(key) + "#pick", 0xf07c, "选择图片", x - 36.0f, y + 6.0f, blocked)) {
+            if (!Page::iconButton(patchId(key) + "#pick", 0xf07c, "选择图片", x - 36.0f, y + 6.0f, blocked)) {
                 return;
             }
             std::string current = Patches::value(key);

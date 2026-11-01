@@ -22,7 +22,6 @@
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
 #include "ui/imgui/value/Values.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 
@@ -148,19 +147,6 @@ namespace NewInstanceScreen {
 
         std::string day(const std::string& time) {
             return time.size() >= 10 ? time.substr(0, 10) : time;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                float tipW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-                NewUi::tooltipText = hint;
-                NewUi::tooltipX = UiRender::clamp(x + (28 - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-                NewUi::tooltipY = y + 34.0f;
-            }
-            return button.pressed;
         }
 
         float tag(const std::string& text, float x, float rowY, float rowH, uint32_t fill, uint32_t ink) {
@@ -337,11 +323,11 @@ namespace NewInstanceScreen {
             bool blocked = NewUi::overlayCoversMouse();
             Page::title("新建实例", Page::left(), Page::TOP);
             float refreshX = Page::right() - 28.0f;
-            if (iconButton("new#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
                 Catalog::refreshMinecraft();
             }
             float importX = refreshX - 32.0f;
-            if (iconButton("new#import", 0xf56f, "导入整合包", importX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#import", 0xf56f, "导入整合包", importX, Page::TOP - 2.0f, blocked)) {
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
@@ -648,7 +634,7 @@ namespace NewInstanceScreen {
                     : modpack                       ? "返回下载附加件"
                                                     : "重新选择版本";
             if (phase < 0.99f &&
-                iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::TOP - 2.0f,
+                Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::TOP - 2.0f,
                            blocked || installing)) {
                 if (!editing.empty()) {
                     std::string key = editing;
@@ -867,13 +853,13 @@ namespace NewInstanceScreen {
 
         void loaderStep() {
             bool blocked = NewUi::overlayCoversMouse();
-            if (iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
                 steps.go(STEP_SETUP);
             }
             std::string label = Installer::loaderName(picking);
             Page::title(label + " 版本", Page::left() + 30.0f, Page::TOP);
             float refreshX = Page::right() - 28.0f;
-            if (iconButton("new#refresh2", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#refresh2", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
                 Catalog::refreshLoader(picking, minecraft);
             }
 

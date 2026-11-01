@@ -25,7 +25,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/NavItemWidget.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
@@ -145,23 +144,6 @@ namespace DownloadsScreen {
                 "F1 M18.326 9.2145S23.2261 8.4418 24 6.1882h-7.5066V4.4H0l2.0318 2.3576V9.173s5.1267-.2665 7.1098 1.2"
                 "372c2.7146 2.516-3.053 5.917-3.053 5.917L5.0995 19.6c1.5465-1.4726 4.494-3.3775 9.8983-3.2857-2.0565"
                 ".65-4.1245 1.6651-5.7344 3.2857h10.9248l-1.0288-3.2726s-7.918-4.6688-.8336-7.1127z";
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
-        }
 
         std::string fitEnd(const std::string& text, float available, float size) {
             return UiFont::fitEnd(text, UiFont::MEDIUM, size, available);
@@ -1316,7 +1298,7 @@ namespace DownloadsScreen {
                                         blocked || !usable, 0xf019);
             UiRender::alphaMul = saved;
             if (!usable && !blocked && NewUi::hit(x, rowY + Page::FIELD_Y, w, Page::FIELD_H)) {
-                tip("先在上方选择要安装到的实例", x, rowY + Page::FIELD_Y, w, Page::FIELD_H);
+                Page::tooltip("先在上方选择要安装到的实例", x, rowY + Page::FIELD_Y, w, Page::FIELD_H);
             }
             if (!pressed || !usable) {
                 return;
@@ -1448,7 +1430,7 @@ namespace DownloadsScreen {
                         for (const auto& icon : icons) {
                             names += (names.empty() ? "" : "、") + Modrinth::label(icon.second);
                         }
-                        tip(names, x, iconY, LOADER_ICON, LOADER_ICON);
+                        Page::tooltip(names, x, iconY, LOADER_ICON, LOADER_ICON);
                     }
                 }
                 x += LOADER_ICON + 8.0f;
@@ -1469,7 +1451,7 @@ namespace DownloadsScreen {
             UiRender::textY(shownName, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             if (shownName != name && hovered && !overIcon) {
-                tip(name, x, rowY + 8.0f, UiFont::width(shownName, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL),
+                Page::tooltip(name, x, rowY + 8.0f, UiFont::width(shownName, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL),
                     Page::ROW_H - 16.0f);
             }
             UiRender::textY(detail, detailX, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -1488,7 +1470,7 @@ namespace DownloadsScreen {
         }
 
         void projectView(bool covered) {
-            if (iconButton("downloads#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 2.0f, covered)) {
+            if (Page::iconButton("downloads#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 2.0f, covered)) {
                 views.go(VIEW_RESULTS);
             }
             float iconX = mainX() + 30.0f;
@@ -1502,7 +1484,7 @@ namespace DownloadsScreen {
             UiRender::textY(fitEnd(byline, linkX - 8.0f - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f,
                             16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             std::string site = std::string("在 ") + Addons::sourceName(source) + " 上查看";
-            if (iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP + 2.0f, covered) &&
+            if (Page::iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP + 2.0f, covered) &&
                 !project.pageUrl.empty()) {
                 Platform::openUrl(project.pageUrl);
             }

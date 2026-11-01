@@ -10,6 +10,7 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/widget/IconButtonWidget.h"
 
 #include "imgui.h"
 
@@ -93,6 +94,23 @@ namespace Page {
     void label(const std::string& text, float y) {
         UiRender::textY(text, columnLeft() + 16.0f, y, ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                         UiWidgets::TEXT_CONTROL);
+    }
+
+    void tooltip(const std::string& text, float x, float y, float w, float h) {
+        float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
+        NewUi::tooltipText = text;
+        NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
+        NewUi::tooltipY = y + h + 6.0f;
+    }
+
+    bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
+        IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
+        button.bounds(x, y, 28, 28).block(blocked);
+        button.paint();
+        if (!blocked && button.hovered()) {
+            tooltip(hint, x, y, 28, 28);
+        }
+        return button.pressed;
     }
 
     void spinnerArc(float& from, float& to) {

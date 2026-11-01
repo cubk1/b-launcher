@@ -14,7 +14,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 #include "ui/imgui/widget/ToggleWidget.h"
 
@@ -56,23 +55,6 @@ namespace InstanceMods {
                     contains(mod.info.file_name, query);
         }
 
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
-        }
-
         uint32_t warningInk() {
             return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
         }
@@ -92,7 +74,7 @@ namespace InstanceMods {
             UiRender::roundRect(x, y, w, 18.0f, 6.0f, fill);
             UiRender::textY(text, x + 6.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             if (!hint.empty() && !blocked && NewUi::hit(x, y, w, 18.0f)) {
-                tip(hint, x, y, w, 18.0f);
+                Page::tooltip(hint, x, y, w, 18.0f);
             }
             return w;
         }
@@ -173,7 +155,7 @@ namespace InstanceMods {
             UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             if (!blocked && NewUi::hit(x, rowY + 8.0f, nameW, Page::ROW_H - 16.0f)) {
-                tip(mod.info.file_name, x, rowY + 8.0f, nameW, Page::ROW_H - 16.0f);
+                Page::tooltip(mod.info.file_name, x, rowY + 8.0f, nameW, Page::ROW_H - 16.0f);
             }
             x += nameW + 8.0f;
             if (!version.empty()) {
@@ -204,7 +186,7 @@ namespace InstanceMods {
                     .hitArea(toggleX - 4.0f, rowY + 6.0f, 38.0f, Page::ROW_H - 12.0f)
                     .block(blocked);
             toggle.paint();
-            if (iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
+            if (Page::iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
                 rowMenu(key, mod, menuX - 132.0f, rowY + Page::ROW_H - 4.0f);
             }
         }
@@ -224,18 +206,18 @@ namespace InstanceMods {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
-        bool back = iconButton("mods#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
+        bool back = Page::iconButton("mods#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
         const char* title = "模组";
         Page::title(title, Page::left() + 30.0f, Page::TOP);
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
 
         float refreshX = Page::right() - 28.0f;
-        if (iconButton("mods#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, covered)) {
+        if (Page::iconButton("mods#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, covered)) {
             Mods::rescan(key);
         }
         float folderX = refreshX - 32.0f;
         std::filesystem::path folder = entry.gameDirectory / "mods";
-        if (iconButton("mods#folder", 0xf07c, "打开模组文件夹", folderX, Page::TOP - 2.0f, covered)) {
+        if (Page::iconButton("mods#folder", 0xf07c, "打开模组文件夹", folderX, Page::TOP - 2.0f, covered)) {
             std::error_code error;
             std::filesystem::create_directories(folder, error);
             Platform::open(folder);

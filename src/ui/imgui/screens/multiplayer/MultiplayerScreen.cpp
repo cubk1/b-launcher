@@ -19,7 +19,6 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 
 #include "imgui.h"
 
@@ -76,23 +75,6 @@ namespace MultiplayerScreen {
 
         uint32_t onlineColor() {
             return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
-        }
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
         }
 
         int corners(int index, int count) {
@@ -245,7 +227,7 @@ namespace MultiplayerScreen {
             }
             UiRender::textY(shown, x + lead, y, LINE_H, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             if (!blocked && shown != text && NewUi::hit(x + lead, y, shownW, LINE_H)) {
-                tip(text, x + lead, y, shownW, LINE_H);
+                Page::tooltip(text, x + lead, y, shownW, LINE_H);
             }
         }
 
@@ -580,7 +562,7 @@ namespace MultiplayerScreen {
                 return;
             }
             float copyX = Page::controlRight() - ICON_INSET;
-            if (iconButton("multiplayer#copyCode", 0xf0c5, "复制房间号", copyX, rowY + 6.0f, blocked)) {
+            if (Page::iconButton("multiplayer#copyCode", 0xf0c5, "复制房间号", copyX, rowY + 6.0f, blocked)) {
                 UiInput::setClipboard(state.code);
                 Notifications::add(Notifications::INFO, "已复制房间号", 2500);
             }
@@ -617,7 +599,7 @@ namespace MultiplayerScreen {
                 valueText("连上房主后显示", Page::controlRight(), left, rowY, UiTheme::textMuted());
             } else {
                 float copyX = Page::controlRight() - ICON_INSET;
-                if (iconButton("multiplayer#copyAddress", 0xf0c5, "复制地址", copyX, rowY + 6.0f, blocked)) {
+                if (Page::iconButton("multiplayer#copyAddress", 0xf0c5, "复制地址", copyX, rowY + 6.0f, blocked)) {
                     UiInput::setClipboard(state.address);
                     Notifications::add(Notifications::INFO, "已复制服务器地址", 2500);
                 }
@@ -698,7 +680,7 @@ namespace MultiplayerScreen {
             float right = Page::controlRight();
             if (manage && !member.self) {
                 float menuX = right - ICON_INSET;
-                if (iconButton("multiplayer#member#" + member.device, 0xf142, "管理成员", menuX, rowY + 6.0f,
+                if (Page::iconButton("multiplayer#member#" + member.device, 0xf142, "管理成员", menuX, rowY + 6.0f,
                                blocked)) {
                     memberMenu(member, menuX - 122.0f, rowY + 34.0f);
                 }
@@ -772,7 +754,7 @@ namespace MultiplayerScreen {
                                    technical ? UiTheme::textMuted() : UiTheme::textSecondary(), false) +
                         6.0f;
             }
-            if (iconButton("multiplayer#copyError", 0xf0c5, "复制错误信息", Page::controlRight() - ICON_INSET,
+            if (Page::iconButton("multiplayer#copyError", 0xf0c5, "复制错误信息", Page::controlRight() - ICON_INSET,
                            top + 6.0f, blocked)) {
                 UiInput::setClipboard(state.error + "\n" + state.detail);
                 Notifications::add(Notifications::INFO, "已复制错误信息", 2500);

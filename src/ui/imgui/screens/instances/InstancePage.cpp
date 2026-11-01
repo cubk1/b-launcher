@@ -29,7 +29,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 #include "ui/imgui/widget/ToggleWidget.h"
@@ -141,24 +140,6 @@ namespace InstancePage {
 
         std::string followLabel(const Instances::Entry& entry) {
             return std::string("跟随默认（") + (isolatedByDefault(entry) ? ISOLATED : SHARED) + "）";
-        }
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y,
-                        bool blocked = false) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
         }
 
         void commitRename(const std::string& text) {
@@ -430,7 +411,7 @@ namespace InstancePage {
                 Page::spinner(selectX - 16.0f, rowY + Page::ROW_H * 0.5f, 7.0f, UiTheme::accent());
             }
             if (!blocked && !widget.showing() && NewUi::hit(selectX, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H)) {
-                tip(settings.java ? Platform::display(*settings.java)
+                Page::tooltip(settings.java ? Platform::display(*settings.java)
                                   : std::string("按游戏版本选择合适的 Java，没有时自动下载"),
                     selectX, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H);
             }
@@ -542,7 +523,7 @@ namespace InstancePage {
                 UiRender::alphaMul = savedAlpha;
             }
             if (hovered && !dragging) {
-                tip("其他程序已用 " + gigabytes(used) + "，现在可用 " + gigabytes(memory.availableMb), x, rowY + 6.0f,
+                Page::tooltip("其他程序已用 " + gigabytes(used) + "，现在可用 " + gigabytes(memory.availableMb), x, rowY + 6.0f,
                     w, Page::ROW_H - 12.0f);
             }
         }
@@ -634,10 +615,10 @@ namespace InstancePage {
             }
 
             float buttonY = y + 6.0f;
-            if (iconButton("instance#folder", 0xf07c, "打开游戏目录", Page::right() - 62.0f, buttonY)) {
+            if (Page::iconButton("instance#folder", 0xf07c, "打开游戏目录", Page::right() - 62.0f, buttonY)) {
                 Platform::open(entry.gameDirectory);
             }
-            if (iconButton("instance#menu", 0xf141, "更多操作", Page::right() - 28.0f, buttonY)) {
+            if (Page::iconButton("instance#menu", 0xf141, "更多操作", Page::right() - 28.0f, buttonY)) {
                 openMenu(id, Page::right() - 170.0f, buttonY + 34.0f);
             }
         }
@@ -1194,7 +1175,7 @@ namespace InstancePage {
 
         void advancedSection(const Instances::Entry& entry) {
             bool covered = NewUi::overlayCoversMouse();
-            if (iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered)) {
+            if (Page::iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered)) {
                 sections.go(SECTION_MAIN);
             }
             const char* title = "高级设置";

@@ -20,7 +20,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 
 #include "imgui.h"
@@ -64,23 +63,6 @@ namespace AccountsScreen {
         std::string serverPassword;
         std::string focusNext;
         size_t chosenProfile = 0;
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
-        }
 
         int corners(int index, int count) {
             return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
@@ -192,7 +174,7 @@ namespace AccountsScreen {
             } else if (current) {
                 UiWidgets::check(markX, rowY + Page::ROW_H * 0.5f, UiTheme::accent(), 10.0f);
             }
-            if (iconButton("accounts#more#" + key, 0xf141, "更多操作", menuX, rowY + 6.0f, blocked)) {
+            if (Page::iconButton("accounts#more#" + key, 0xf141, "更多操作", menuX, rowY + 6.0f, blocked)) {
                 openAccountMenu(key, menuX - 132.0f, rowY + 36.0f);
             }
             if (hovered && NewUi::rightClick) {
@@ -965,7 +947,7 @@ namespace AccountsScreen {
         void serverView(bool covered) {
             bool choosing = Accounts::serverLogin() == Accounts::ServerLogin::Choosing ||
                     (Accounts::serverLogin() == Accounts::ServerLogin::Working && !Accounts::serverProfiles().empty());
-            if (iconButton("accounts#server#back", 0xf053, "返回", Page::left() - 6.0f, Page::TOP - 2.0f, covered)) {
+            if (Page::iconButton("accounts#server#back", 0xf053, "返回", Page::left() - 6.0f, Page::TOP - 2.0f, covered)) {
                 closeServer(true);
                 return;
             }

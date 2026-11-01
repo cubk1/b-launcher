@@ -10,7 +10,6 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
-#include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 #include "ui/imgui/widget/ToggleWidget.h"
 
@@ -24,23 +23,6 @@ namespace InstanceExport {
 
     namespace {
         constexpr float WIDE_FIELD = 300.0f;
-
-        void tip(const std::string& text, float x, float y, float w, float h) {
-            float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
-            NewUi::tooltipText = text;
-            NewUi::tooltipX = UiRender::clamp(x + (w - tipW) * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
-            NewUi::tooltipY = y + h + 6.0f;
-        }
-
-        bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y, bool blocked) {
-            IconButtonWidget button(id, Ui::glyph(glyph), UiTheme::textSecondary(), UiTheme::textPrimary());
-            button.bounds(x, y, 28, 28).block(blocked);
-            button.paint();
-            if (!blocked && button.hovered()) {
-                tip(hint, x, y, 28, 28);
-            }
-            return button.pressed;
-        }
 
         void textRow(const std::string& key, const char* field, const char* label, const char* placeholder, float w,
                      std::string Options::* member, float rowY, bool blocked) {
@@ -113,7 +95,7 @@ namespace InstanceExport {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
-        bool back = iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
+        bool back = Page::iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
         const char* title = "导出整合包";
         Page::title(title, Page::left() + 30.0f, Page::TOP);
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
