@@ -48,19 +48,19 @@ extract_overrides (const std::filesystem::path &archive,
   BLB_TRY_ASSIGN (auto zip, zip_reader::open (archive));
   std::optional<error> failure;
   std::size_t count = 0;
-  BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &reader) {
-    if (token.is_cancelled ())
-      {
-        failure = make_error (errc::cancelled, "cancelled");
-        return false;
-      }
-    auto name = replace_all (entry.name, "\\", "/");
-    if (entry.directory || name.ends_with ('/'))
-      return true;
-    for (const auto &prefix : manifest.overrides)
-      {
-        if (!name.starts_with (prefix))
-          continue;
+  // Apply each layer completely before the next, regardless of ZIP order.
+  for (const auto &prefix : manifest.overrides)
+    {
+      BLB_TRY (token.check ());
+      BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &reader) {
+        if (token.is_cancelled ())
+          {
+            failure = make_error (errc::cancelled, "cancelled");
+            return false;
+          }
+        auto name = replace_all (entry.name, "\\", "/");
+        if (entry.directory || name.ends_with ('/') || !name.starts_with (prefix))
+          return true;
         auto relative = name.substr (prefix.size ());
         if (relative.empty () || !detail::safe_relative (relative))
           return true;
@@ -72,11 +72,10 @@ extract_overrides (const std::filesystem::path &archive,
           }
         ++count;
         return true;
-      }
-    return true;
-  }));
-  if (failure)
-    return *failure;
+      }));
+      if (failure)
+        return *failure;
+    }
   s_log.info ("extracted {} override files", count);
   return ok ();
 }
