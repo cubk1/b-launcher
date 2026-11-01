@@ -1,5 +1,5 @@
 #include "app/launch/JavaDownloads.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
 #include "app/system/Server.h"
@@ -20,23 +20,20 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <deque>
 #include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <span>
-#include <thread>
 
 namespace JavaDownloads {
 
     namespace blb = b_launcher_base;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         const std::string LIST_URL = Server::file("jdks.json");
         constexpr float DOWNLOAD_SHARE = 0.85f;
@@ -46,32 +43,17 @@ namespace JavaDownloads {
             State state = State::Running;
         };
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
         List current;
         bool started = false;
         std::map<std::string, std::shared_ptr<Job>> jobs;
 
-        void run(std::function<Continuation(blb::cancellation_token)> work,
-                 std::function<void()> fail) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, fail, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    std::string text = error.what();
-                    next = [text, fail] {
-                        fail();
-                        Notices::add(Notices::Kind::Failed, "Java 下载出错：" + text, 5000);
-                    };
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
+        void run(AsyncTasks::Work work, std::function<void()> fail) {
+            tasks.run(std::move(work), [fail = std::move(fail)](const std::string& text) -> Continuation {
+                return [text, fail] {
+                    fail();
+                    Notices::add(Notices::Kind::Failed, "Java 下载出错：" + text, 5000);
+                };
             });
         }
 
@@ -455,19 +437,10 @@ namespace JavaDownloads {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            next();
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        tasks.stop();
     }
 }

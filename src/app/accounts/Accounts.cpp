@@ -1,5 +1,5 @@
 #include "app/accounts/Accounts.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
@@ -26,30 +26,23 @@
 
 #include <algorithm>
 #include <atomic>
-#include <deque>
 #include <filesystem>
-#include <functional>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <set>
-#include <thread>
 
 namespace Accounts {
 
     using MicrosoftClients::App;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         constexpr std::chrono::minutes LOGIN_TIMEOUT{10};
         constexpr int FACE_SCALE = 8;
         constexpr int FACE_SIZE = 8 * FACE_SCALE;
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
 
         std::vector<blb::auth::account> accounts;
         std::string currentKey;
@@ -77,23 +70,6 @@ namespace Accounts {
         std::map<std::string, Face> faces;
 
         const char* const STORE_VALUE = "Accounts";
-
-        void run(std::function<Continuation(blb::cancellation_token)> work,
-                 std::function<Continuation(const std::string&)> fail) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, fail, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    next = fail ? fail(error.what()) : nullptr;
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
-            });
-        }
 
         void notify(const std::string& text, bool error) {
             Notices::add(error ? Notices::Kind::Failed : Notices::Kind::Done, text, error ? 5000 : 2500);
@@ -281,7 +257,7 @@ namespace Accounts {
         }
 
         void fetchFace(const std::string& url) {
-            run(
+            tasks.run(
                     [url](blb::cancellation_token token) -> Continuation {
                         std::filesystem::path file = skinFile(url);
                         std::shared_ptr<std::vector<unsigned char>> rgba;
@@ -341,28 +317,18 @@ namespace Accounts {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        stopping.cancel();
+        tasks.cancel();
         if (loginCancel) {
             loginCancel->cancel();
         }
         if (serverCancel) {
             serverCancel->cancel();
         }
-        workers.joinAll();
+        tasks.stop();
     }
 
     std::string keyOf(const blb::auth::account& account) {
@@ -477,7 +443,7 @@ namespace Accounts {
         loginState = (int) Login::Browser;
         loginCancel = std::make_shared<blb::cancellation_source>();
         blb::cancellation_token token = loginCancel->token();
-        run(
+        tasks.run(
                 [redirect, client, state, token](blb::cancellation_token) -> Continuation {
                     auto query = redirect->wait(
                             MicrosoftClients::REDIRECT_PATH, token, LOGIN_TIMEOUT, resultPage,
@@ -544,7 +510,7 @@ namespace Accounts {
         pendingBase = blb::auth::account();
         blb::cancellation_token token = beginServerRun();
         int current = serverRun;
-        run(
+        tasks.run(
                 [type, server, username, password, token, current](blb::cancellation_token) -> Continuation {
                     auto session = blb::auth::yggdrasil_login(type, server, username, password, token);
                     if (!session) {
@@ -580,7 +546,7 @@ namespace Accounts {
         blb::auth::yggdrasil_profile profile = profiles[index];
         blb::cancellation_token token = beginServerRun();
         int current = serverRun;
-        run(
+        tasks.run(
                 [base, profile, token, current](blb::cancellation_token) -> Continuation {
                     auto chosen = blb::auth::yggdrasil_select(base, profile, token);
                     if (!chosen) {
@@ -674,7 +640,7 @@ namespace Accounts {
         busyKeys.insert(key);
         blb::auth::account saved = *account;
         blb::auth::microsoft_client client = MicrosoftClients::client(MicrosoftClients::of(saved.client_id));
-        run(
+        tasks.run(
                 [key, saved, client, yggdrasil](blb::cancellation_token token) -> Continuation {
                     blb::auth::microsoft_authenticator authenticator(client);
                     auto result = yggdrasil ? blb::auth::yggdrasil_refresh(saved, token)
@@ -734,7 +700,7 @@ namespace Accounts {
         }
         scanStarted = true;
         scanRunning = true;
-        run(
+        tasks.run(
                 [](blb::cancellation_token) -> Continuation {
                     std::vector<Migrators::Found> sources = Migrators::scan();
                     return [sources] {
@@ -765,7 +731,7 @@ namespace Accounts {
         std::string refreshToken = entry.source.refreshToken;
         std::string launcher = entry.source.launcher;
         blb::auth::microsoft_client client = MicrosoftClients::client(entry.source.app);
-        run(
+        tasks.run(
                 [refreshToken, launcher, client](blb::cancellation_token token) -> Continuation {
                     blb::auth::account seed;
                     seed.type = blb::auth::account_type::microsoft;

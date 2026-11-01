@@ -34,7 +34,11 @@ void AsyncTasks::poll() {
     }
 }
 
-void AsyncTasks::stop() {
+void AsyncTasks::cancel() {
     stopping.cancel();
+}
+
+void AsyncTasks::stop() {
+    cancel();
     workers.joinAll();
 }

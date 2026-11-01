@@ -1,5 +1,5 @@
 #include "app/system/Catalog.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/system/Config.h"
 #include "app/instances/Instances.h"
 #include "app/launch/JavaDownloads.h"
@@ -11,23 +11,16 @@
 #include <core/network/mirror_provider.hpp>
 
 #include <algorithm>
-#include <deque>
-#include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
-#include <thread>
 #include <utility>
 
 namespace Catalog {
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
 
         Versions versions;
         bool versionsStarted = false;
@@ -40,27 +33,12 @@ namespace Catalog {
             return provider;
         }
 
-        void run(std::function<Continuation(blb::cancellation_token)> work,
-                 std::function<Continuation(const std::string&)> fail) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, fail, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    next = fail(error.what());
-                }
-                std::lock_guard<std::mutex> guard(lock);
-                finished.push_back(std::move(next));
-            });
-        }
-
         void fetchMinecraft() {
             versionsStarted = true;
             versions.status = Status::Loading;
             versions.error.clear();
             std::shared_ptr<blb::net::mirror_provider> source = mirror();
-            run(
+            tasks.run(
                     [source](blb::cancellation_token token) -> Continuation {
                         auto result = blb::meta::fetch_version_manifest(*source, token);
                         if (!result) {
@@ -90,7 +68,7 @@ namespace Catalog {
             entry.status = Status::Loading;
             entry.error.clear();
             std::shared_ptr<blb::net::mirror_provider> source = mirror();
-            run(
+            tasks.run(
                     [source, type, minecraft, key](blb::cancellation_token token) -> Continuation {
                         auto result = blb::install::list_loader_versions(type, minecraft, *source, token);
                         if (!result) {
@@ -176,7 +154,7 @@ namespace Catalog {
             javaStarted = true;
             javaList.status = Status::Loading;
             auto options = javaScanOptions();
-            run(
+            tasks.run(
                     [options](blb::cancellation_token token) -> Continuation {
                         std::vector<blb::java::java_installation> found = blb::java::scan_java(options, token);
                         return [found]() mutable {
@@ -228,7 +206,7 @@ namespace Catalog {
     }
 
     void addJava(const std::filesystem::path& path) {
-        run(
+        tasks.run(
                 [path](blb::cancellation_token token) -> Continuation {
                     auto probed = blb::java::probe_java(path, true, token);
                     if (!probed) {
@@ -316,21 +294,10 @@ namespace Catalog {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        tasks.stop();
     }
 }

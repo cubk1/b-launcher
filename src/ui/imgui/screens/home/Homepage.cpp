@@ -1,5 +1,5 @@
 #include "ui/imgui/screens/home/Homepage.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/accounts/Accounts.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
@@ -46,13 +46,10 @@
 #include <algorithm>
 #include <chrono>
 #include <ctime>
-#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <thread>
 #include <vector>
 
 namespace Homepage {
@@ -60,7 +57,7 @@ namespace Homepage {
     namespace blb = b_launcher_base;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         struct Preset {
             const char* name;
@@ -115,10 +112,7 @@ namespace Homepage {
             std::function<void()> action;
         };
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
 
         std::vector<std::unique_ptr<View>> views;
         bool started = false;
@@ -135,20 +129,9 @@ namespace Homepage {
             Notifications::add(error ? Notifications::FAILED : Notifications::INFO, text, error ? 5000 : 2500);
         }
 
-        void run(std::function<Continuation(blb::cancellation_token)> work) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    std::string text = error.what();
-                    next = [text] { notify("主页出错：" + text, true); };
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
+        void run(AsyncTasks::Work work) {
+            tasks.run(std::move(work), [](const std::string& text) -> Continuation {
+                return [text] { notify("主页出错：" + text, true); };
             });
         }
 
@@ -872,21 +855,12 @@ namespace Homepage {
     }
 
     void poll() {
-        workers.reap();
         WebImages::poll();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            next();
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        tasks.stop();
         WebImages::shutdown();
     }
 }

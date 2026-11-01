@@ -25,6 +25,8 @@ public:
     void run(Work work, Failure fail);
     // Drain one batch, outside the queue lock. New completions wait for a later poll.
     void poll();
+    // Signal cancellation before cancelling other owned operations, without joining yet.
+    void cancel();
     // Cancel and join work. Queued continuations are only executed by poll.
     void stop();
 
