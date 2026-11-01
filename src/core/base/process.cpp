@@ -158,11 +158,11 @@ struct process::impl
 
   void
   read_pipe (HANDLE pipe, output_stream stream,
-             const output_callback &callback)
+             const output_callback &callback, const std::atomic<bool> &stopping)
   {
     line_splitter splitter;
     char buffer[16384];
-    for (;;)
+    while (!stopping.load (std::memory_order_acquire))
       {
         DWORD got = 0;
         if (!ReadFile (pipe, buffer, sizeof (buffer), &got, nullptr)
@@ -177,13 +177,14 @@ struct process::impl
   run (output_callback callback, bool capture)
   {
     std::atomic<int> active { 0 };
+    std::atomic<bool> stopping { false };
     std::mutex done_mutex;
     std::condition_variable done_cv;
     std::vector<std::thread> readers;
     auto spawn = [&] (HANDLE pipe, output_stream stream) {
       ++active;
       readers.emplace_back ([&, pipe, stream] {
-        read_pipe (pipe, stream, callback);
+        read_pipe (pipe, stream, callback, stopping);
         std::lock_guard lock (done_mutex);
         --active;
         done_cv.notify_all ();
@@ -200,8 +201,17 @@ struct process::impl
       if (!done_cv.wait_for (lock, std::chrono::seconds (2),
                              [&] { return active.load () == 0; }))
         {
-          CancelIoEx (out_read, nullptr);
-          CancelIoEx (err_read, nullptr);
+          stopping.store (true, std::memory_order_release);
+          // A reader can be in a callback, or between checking stopping and
+          // entering ReadFile. Repeat cancellation until both have left;
+          // a one-shot cancellation misses I/O issued just afterwards.
+          do
+            {
+              CancelIoEx (out_read, nullptr);
+              CancelIoEx (err_read, nullptr);
+            }
+          while (!done_cv.wait_for (lock, std::chrono::milliseconds (20),
+                                    [&] { return active.load () == 0; }));
         }
     }
     for (auto &t : readers)
