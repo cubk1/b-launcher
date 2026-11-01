@@ -186,7 +186,7 @@ verify_files (std::span<const planned_file> files,
     {
       const auto &file = files[i];
       const auto &st = stats[i];
-      if (!st.exists)
+      if (!st.exists || st.is_directory)
         {
           bad[i] = 1;
           continue;
