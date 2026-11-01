@@ -10,7 +10,7 @@
 
 namespace RenderUtil {
 
-    static ImU32 toIm(uint32_t argb) {
+    uint32_t imColor(uint32_t argb) {
         return ((argb >> 24) & 0xFF) << IM_COL32_A_SHIFT | ((argb >> 16) & 0xFF) << IM_COL32_R_SHIFT |
                 ((argb >> 8) & 0xFF) << IM_COL32_G_SHIFT | (argb & 0xFF) << IM_COL32_B_SHIFT;
     }
@@ -34,10 +34,10 @@ namespace RenderUtil {
         ImVec2 uv = whiteUv();
         dl->PrimReserve(6, 4);
         unsigned int base = dl->_VtxCurrentIdx;
-        dl->PrimWriteVtx(screen(x, y + h), uv, toIm(bottomLeft));
-        dl->PrimWriteVtx(screen(x + w, y + h), uv, toIm(bottomRight));
-        dl->PrimWriteVtx(screen(x + w, y), uv, toIm(topRight));
-        dl->PrimWriteVtx(screen(x, y), uv, toIm(topLeft));
+        dl->PrimWriteVtx(screen(x, y + h), uv, imColor(bottomLeft));
+        dl->PrimWriteVtx(screen(x + w, y + h), uv, imColor(bottomRight));
+        dl->PrimWriteVtx(screen(x + w, y), uv, imColor(topRight));
+        dl->PrimWriteVtx(screen(x, y), uv, imColor(topLeft));
         dl->PrimWriteIdx((ImDrawIdx) base);
         dl->PrimWriteIdx((ImDrawIdx) (base + 1));
         dl->PrimWriteIdx((ImDrawIdx) (base + 2));
@@ -61,7 +61,7 @@ namespace RenderUtil {
             return;
         }
         ImVec2 uv = whiteUv();
-        ImU32 col = toIm(color);
+        ImU32 col = imColor(color);
         dl->PrimReserve(3, 3);
         unsigned int base = dl->_VtxCurrentIdx;
         dl->PrimWriteVtx(screen(x1, y1), uv, col);
@@ -96,8 +96,8 @@ namespace RenderUtil {
             return;
         }
         ImVec2 uv = whiteUv();
-        ImU32 col = toIm(color);
-        ImU32 transparent = toIm(clear);
+        ImU32 col = imColor(color);
+        ImU32 transparent = imColor(clear);
         dl->PrimReserve(3 + 18, 3 + 18);
         unsigned int base = dl->_VtxCurrentIdx;
         for (int i = 0; i < 3; i++) {

@@ -1,6 +1,7 @@
 #include "UiHttp.h"
 
 #include <core/network/http_client.hpp>
+#include <core/base/win_util.hpp>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -16,15 +17,7 @@
 namespace UiHttp {
 
 #if defined(_WIN32)
-    static std::wstring widen(const std::string& text) {
-        if (text.empty()) {
-            return std::wstring();
-        }
-        int length = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int) text.size(), nullptr, 0);
-        std::wstring out((size_t) length, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int) text.size(), &out[0], length);
-        return out;
-    }
+    using b_launcher_base::detail::utf8_to_wide;
 #endif
 
     bool get(const std::string& url, const std::vector<std::pair<std::string, std::string>>& headers, int timeoutMs,
@@ -32,7 +25,7 @@ namespace UiHttp {
         out.clear();
         status = 0;
 #if defined(_WIN32)
-        std::wstring wide = widen(url);
+        std::wstring wide = utf8_to_wide(url);
         URL_COMPONENTS parts;
         ZeroMemory(&parts, sizeof(parts));
         parts.dwStructSize = sizeof(parts);
@@ -71,7 +64,7 @@ namespace UiHttp {
             if (request) {
                 std::wstring headerBlock;
                 for (const auto& header : headers) {
-                    headerBlock += widen(header.first) + L": " + widen(header.second) + L"\r\n";
+                    headerBlock += utf8_to_wide(header.first) + L": " + utf8_to_wide(header.second) + L"\r\n";
                 }
                 BOOL sent = WinHttpSendRequest(
                         request, headerBlock.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headerBlock.c_str(),

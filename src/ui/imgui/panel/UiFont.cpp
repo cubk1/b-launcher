@@ -3,6 +3,7 @@
 #include "UiCommon.h"
 #include "../fonts/EmbeddedFonts.h"
 #include "../gl/UiGL.h"
+#include "../gl/RenderUtil.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -471,11 +472,6 @@ namespace UiFont {
         return sum * factor / (float) pixelScale();
     }
 
-    static ImU32 toIm(uint32_t argb) {
-        return ((argb >> 24) & 0xFF) << IM_COL32_A_SHIFT | ((argb >> 16) & 0xFF) << IM_COL32_R_SHIFT |
-                ((argb >> 8) & 0xFF) << IM_COL32_G_SHIFT | (argb & 0xFF) << IM_COL32_B_SHIFT;
-    }
-
     static float snapPixel(float value) {
         return std::ceil(value - 0.5f - 0.001f);
     }
@@ -522,7 +518,7 @@ namespace UiFont {
         if (visible > 0) {
             dl->PrimReserve(visible * 6, visible * 4);
             unsigned int alpha = (color >> 24) & 0xFF;
-            ImU32 col = lcd ? IM_COL32(alpha, alpha, alpha, alpha) : toIm(color);
+            ImU32 col = lcd ? IM_COL32(alpha, alpha, alpha, alpha) : RenderUtil::imColor(color);
             bool snapped = std::fabs(extraScale - 1.0f) < 0.001f;
             float pen = x;
             float top = snapped ? snapPixel(y * scale) / scale : y;

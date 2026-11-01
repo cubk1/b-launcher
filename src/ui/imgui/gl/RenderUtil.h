@@ -5,6 +5,8 @@
 
 namespace RenderUtil {
 
+    uint32_t imColor(uint32_t argb);
+
     void gradientH(float x, float y, float w, float h, uint32_t left, uint32_t right);
     void gradientV(float x, float y, float w, float h, uint32_t top, uint32_t bottom);
     void triangle(float x1, float y1, float x2, float y2, float x3, float y3, uint32_t color);

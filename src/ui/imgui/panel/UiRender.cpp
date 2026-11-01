@@ -25,11 +25,6 @@ namespace UiRender {
 
     static ImDrawList* target = nullptr;
 
-    static ImU32 toIm(uint32_t argb) {
-        return ((argb >> 24) & 0xFF) << IM_COL32_A_SHIFT | ((argb >> 16) & 0xFF) << IM_COL32_R_SHIFT |
-                ((argb >> 8) & 0xFF) << IM_COL32_G_SHIFT | (argb & 0xFF) << IM_COL32_B_SHIFT;
-    }
-
     void begin(ImDrawList* drawList) {
         flush();
         target = drawList;
