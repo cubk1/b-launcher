@@ -12,11 +12,6 @@ namespace UiInput {
     extern std::unordered_map<std::string, int> anchors;
     extern std::unordered_map<std::string, int> limits;
     extern std::unordered_map<std::string, int> byteLimits;
-    extern std::unordered_map<std::string, std::vector<std::string>> undoText;
-    extern std::unordered_map<std::string, std::vector<int>> undoCaret;
-    extern std::unordered_map<std::string, std::vector<std::string>> redoText;
-    extern std::unordered_map<std::string, std::vector<int>> redoCaret;
-    extern std::unordered_map<std::string, long long> typedAt;
     extern std::string focused;
     extern std::unordered_set<std::string> secrets;
 

@@ -4,6 +4,8 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <optional>
+#include <utility>
 
 namespace UiInput {
 
@@ -12,13 +14,33 @@ namespace UiInput {
     std::unordered_map<std::string, int> anchors;
     std::unordered_map<std::string, int> limits;
     std::unordered_map<std::string, int> byteLimits;
-    std::unordered_map<std::string, std::vector<std::string>> undoText;
-    std::unordered_map<std::string, std::vector<int>> undoCaret;
-    std::unordered_map<std::string, std::vector<std::string>> redoText;
-    std::unordered_map<std::string, std::vector<int>> redoCaret;
-    std::unordered_map<std::string, long long> typedAt;
     std::string focused;
     std::unordered_set<std::string> secrets;
+
+    namespace {
+        struct Edit {
+            std::string text;
+            int caret;
+        };
+        struct History {
+            std::vector<Edit> undo;
+            std::vector<Edit> redo;
+            std::optional<long long> typedAt;
+        };
+        std::unordered_map<std::string, History> histories;
+
+        void restore(const std::string& id, History& history, bool redo) {
+            auto& from = redo ? history.redo : history.undo;
+            auto& to = redo ? history.undo : history.redo;
+            if (from.empty()) return;
+            to.push_back(Edit{get(id), caret(id)});
+            Edit edit = std::move(from.back());
+            from.pop_back();
+            texts[id] = std::move(edit.text);
+            moveCaret(id, edit.caret, false);
+            history.typedAt.reset();
+        }
+    }
 
     std::string get(const std::string& id) {
         auto it = texts.find(id);
@@ -38,11 +60,7 @@ namespace UiInput {
     }
 
     void set(const std::string& id, const std::string& value) {
-        undoText.erase(id);
-        undoCaret.erase(id);
-        redoText.erase(id);
-        redoCaret.erase(id);
-        typedAt.erase(id);
+        histories.erase(id);
         texts[id] = value;
         int length = Ui::length(value);
         carets[id] = length;
@@ -173,69 +191,42 @@ namespace UiInput {
     }
 
     void snapshot(const std::string& id, bool coalesce) {
-        std::vector<std::string>& history = undoText[id];
-        std::vector<int>& places = undoCaret[id];
+        History& history = histories[id];
         std::string current = get(id);
-        if (!history.empty() && history.back() == current) {
+        if (!history.undo.empty() && history.undo.back().text == current) {
             return;
         }
-        auto last = typedAt.find(id);
         long long now = Ui::millis();
-        if (coalesce && last != typedAt.end() && now - last->second < 600 && !history.empty()) {
-            typedAt[id] = now;
+        if (coalesce && history.typedAt && now - *history.typedAt < 600 && !history.undo.empty()) {
+            history.typedAt = now;
             return;
         }
-        typedAt[id] = now;
-        history.push_back(current);
-        places.push_back(caret(id));
-        while (history.size() > 64) {
-            history.erase(history.begin());
-            places.erase(places.begin());
+        history.typedAt = now;
+        history.undo.push_back(Edit{std::move(current), caret(id)});
+        while (history.undo.size() > 64) {
+            history.undo.erase(history.undo.begin());
         }
-        redoText[id].clear();
-        redoCaret[id].clear();
+        history.redo.clear();
     }
 
     void undo(const std::string& id) {
-        std::vector<std::string>& history = undoText[id];
-        std::vector<int>& places = undoCaret[id];
-        if (history.empty()) {
-            return;
-        }
-        redoText[id].push_back(get(id));
-        redoCaret[id].push_back(caret(id));
-        std::string value = history.back();
-        history.pop_back();
-        int place = places.back();
-        places.pop_back();
-        texts[id] = value;
-        moveCaret(id, place, false);
-        typedAt.erase(id);
+        auto found = histories.find(id);
+        if (found != histories.end()) restore(id, found->second, false);
     }
 
     void redo(const std::string& id) {
-        std::vector<std::string>& history = redoText[id];
-        std::vector<int>& places = redoCaret[id];
-        if (history.empty()) {
-            return;
-        }
-        undoText[id].push_back(get(id));
-        undoCaret[id].push_back(caret(id));
-        std::string value = history.back();
-        history.pop_back();
-        int place = places.back();
-        places.pop_back();
-        texts[id] = value;
-        moveCaret(id, place, false);
-        typedAt.erase(id);
+        auto found = histories.find(id);
+        if (found != histories.end()) restore(id, found->second, true);
     }
 
     bool canUndo(const std::string& id) {
-        return !undoText[id].empty();
+        auto found = histories.find(id);
+        return found != histories.end() && !found->second.undo.empty();
     }
 
     bool canRedo(const std::string& id) {
-        return !redoText[id].empty();
+        auto found = histories.find(id);
+        return found != histories.end() && !found->second.redo.empty();
     }
 
     void replaceSelection(const std::string& id, const std::string& insert) {
