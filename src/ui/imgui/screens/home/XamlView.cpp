@@ -488,6 +488,17 @@ namespace XamlView {
             return fallback;
         }
 
+        char32_t nextCode(const std::string& text, size_t& i) {
+            unsigned char c = (unsigned char) text[i];
+            int extra = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : 0;
+            char32_t code = extra == 0 ? c : extra == 1 ? (c & 0x1F) : extra == 2 ? (c & 0x0F) : (c & 0x07);
+            i++;
+            for (int k = 0; k < extra && i < text.size(); k++, i++) {
+                code = (code << 6) | ((unsigned char) text[i] & 0x3F);
+            }
+            return code;
+        }
+
         std::string clean(const std::string& text) {
             std::string out;
             out.reserve(text.size());
@@ -495,13 +506,7 @@ namespace XamlView {
             bool dropped = false;
             while (i < text.size()) {
                 size_t from = i;
-                unsigned char c = (unsigned char) text[i];
-                int extra = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : 0;
-                char32_t code = extra == 0 ? c : extra == 1 ? (c & 0x1F) : extra == 2 ? (c & 0x0F) : (c & 0x07);
-                i++;
-                for (int k = 0; k < extra && i < text.size(); k++, i++) {
-                    code = (code << 6) | ((unsigned char) text[i] & 0x3F);
-                }
+                char32_t code = nextCode(text, i);
                 if (code > 0xFFFF || code == 0xFE0F || code == 0x200D || code == 0x20E3) {
                     dropped = true;
                     continue;
@@ -514,17 +519,6 @@ namespace XamlView {
                 out.append(text, from, i - from);
             }
             return out;
-        }
-
-        char32_t nextCode(const std::string& text, size_t& i) {
-            unsigned char c = (unsigned char) text[i];
-            int extra = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : 0;
-            char32_t code = extra == 0 ? c : extra == 1 ? (c & 0x1F) : extra == 2 ? (c & 0x0F) : (c & 0x07);
-            i++;
-            for (int k = 0; k < extra && i < text.size(); k++, i++) {
-                code = (code << 6) | ((unsigned char) text[i] & 0x3F);
-            }
-            return code;
         }
 
         bool space(char32_t c) {

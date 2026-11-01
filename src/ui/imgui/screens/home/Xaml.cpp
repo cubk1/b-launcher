@@ -105,12 +105,15 @@ namespace Xaml {
             return end - at + 1;
         }
 
-        void decode(std::string& out, std::string_view raw, bool attribute) {
+        enum class TextMode { Content, Attribute, CData };
+
+        void decode(std::string& out, std::string_view raw, TextMode mode) {
+            bool attribute = mode == TextMode::Attribute;
             size_t run = 0;
             size_t i = 0;
             while (i < raw.size()) {
                 char c = raw[i];
-                if (c == '&') {
+                if (c == '&' && mode != TextMode::CData) {
                     out.append(raw.data() + run, i - run);
                     size_t used = decodeEntity(out, raw, i);
                     if (used == 0) {
@@ -128,22 +131,6 @@ namespace Xaml {
                     out.append(raw.data() + run, i - run);
                     out.push_back(' ');
                     ++i;
-                    run = i;
-                } else {
-                    ++i;
-                }
-            }
-            out.append(raw.data() + run, raw.size() - run);
-        }
-
-        void appendLines(std::string& out, std::string_view raw) {
-            size_t run = 0;
-            size_t i = 0;
-            while (i < raw.size()) {
-                if (raw[i] == '\r') {
-                    out.append(raw.data() + run, i - run);
-                    out.push_back('\n');
-                    i += i + 1 < raw.size() && raw[i + 1] == '\n' ? 2 : 1;
                     run = i;
                 } else {
                     ++i;
@@ -205,7 +192,7 @@ namespace Xaml {
                 if (pending.empty()) {
                     pendingLine = lineAt(begin);
                 }
-                decode(pending, source.substr(begin, end - begin), false);
+                decode(pending, source.substr(begin, end - begin), TextMode::Content);
             }
 
             void flush() {
@@ -239,7 +226,7 @@ namespace Xaml {
                         pendingLine = lineAt(position);
                     }
                     size_t begin = position + OPEN.size();
-                    appendLines(pending, source.substr(begin, end - begin));
+                    decode(pending, source.substr(begin, end - begin), TextMode::CData);
                 }
                 position = end + 3;
             }
@@ -360,7 +347,7 @@ namespace Xaml {
                     }
                     auto& attribute = node.attributes.emplace_back();
                     attribute.first = std::move(key);
-                    decode(attribute.second, source.substr(at + 1, close - at - 1), true);
+                    decode(attribute.second, source.substr(at + 1, close - at - 1), TextMode::Attribute);
                     at = close + 1;
                 }
             }
