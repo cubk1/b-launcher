@@ -660,7 +660,7 @@ namespace Multiplayer {
             {
                 std::lock_guard<std::mutex> guard(lookupLock);
                 if (lookupLanded && lookupLandedSerial == lookupSerial) {
-                    lookupShown = *lookupLanded;
+                    lookupShown = std::move(*lookupLanded);
                 }
                 lookupLanded.reset();
             }
@@ -673,7 +673,7 @@ namespace Multiplayer {
         void landService() {
             std::lock_guard<std::mutex> guard(serviceLock);
             if (serviceFresh) {
-                serviceShown = serviceFetched;
+                serviceShown = std::move(serviceFetched);
                 serviceFresh = false;
                 serviceAt = Clock::now();
             }
@@ -941,7 +941,7 @@ namespace Multiplayer {
         {
             std::lock_guard<std::mutex> guard(scanLock);
             if (scannedFresh) {
-                shownWorlds = scanned;
+                shownWorlds = std::move(scanned);
                 scannedFresh = false;
                 shownSerial++;
             }

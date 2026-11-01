@@ -12,6 +12,7 @@
 #include <core/instance/loader_editor.hpp>
 
 #include <algorithm>
+#include <utility>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -634,7 +635,7 @@ namespace Instances {
                 blb::result<void> outcome = operation(with, id);
                 std::string error = outcome ? std::string() : outcome.err().message;
                 Scan fresh = scan(all, isolation, revision);
-                return [key, success, failure, notice, done, error, fresh]() mutable {
+                return [key, success, failure, notice, done, error, fresh = std::move(fresh)]() mutable {
                     if (--running == 0) {
                         activityText.clear();
                     }
@@ -770,7 +771,7 @@ namespace Instances {
                 scansInFlight++;
                 submit([all, isolation, revision]() -> Continuation {
                     Scan fresh = scan(all, isolation, revision);
-                    return [fresh]() mutable {
+                    return [fresh = std::move(fresh)]() mutable {
                         scansInFlight--;
                         if (running == 0 && !Installer::running()) {
                             announce(fresh.entries);
@@ -784,7 +785,7 @@ namespace Instances {
                 scansInFlight++;
                 submit([all, isolation, revision, ids]() -> Continuation {
                     Update update = reread(all, ids, isolation, revision);
-                    return [update]() mutable {
+                    return [update = std::move(update)]() mutable {
                         scansInFlight--;
                         if (running == 0 && !Installer::running()) {
                             announce(update.read);
@@ -912,7 +913,7 @@ namespace Instances {
         scansInFlight++;
         submit([all, isolation, revision, done]() -> Continuation {
             Scan fresh = scan(all, isolation, revision);
-            return [fresh, done]() mutable {
+            return [fresh = std::move(fresh), done]() mutable {
                 scansInFlight--;
                 apply(fresh);
                 if (done) {

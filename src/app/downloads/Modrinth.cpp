@@ -9,6 +9,7 @@
 #include <core/base/json.hpp>
 
 #include <algorithm>
+#include <utility>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -172,7 +173,7 @@ namespace Modrinth {
                                 results.hits.push_back(std::move(hit));
                             }
                         }
-                        return [key, results]() mutable { searches[key] = std::move(results); };
+                        return [key, results = std::move(results)]() mutable { searches[key] = std::move(results); };
                     },
                     [key](const std::string& error) -> Continuation {
                         return [key, error] {
@@ -196,7 +197,7 @@ namespace Modrinth {
                             byType[blb::json_text(item, "project_type")].push_back(
                                     Category{name, name, blb::json_text(item, "header"), std::string()});
                         }
-                        return [byType] {
+                        return [byType = std::move(byType)] {
                             for (Kind kind :
                                  {Kind::Mod, Kind::Modpack, Kind::ResourcePack, Kind::Shader, Kind::Datapack}) {
                                 auto found = byType.find(kind == Kind::Datapack ? "mod" : projectType(kind));
@@ -279,7 +280,7 @@ namespace Modrinth {
                             };
                         }
                         std::vector<Version> list = parseVersions(*doc);
-                        return [projectId, list]() mutable {
+                        return [projectId, list = std::move(list)]() mutable {
                             versionLists[projectId].status = Status::Ready;
                             versionLists[projectId].list = std::move(list);
                         };

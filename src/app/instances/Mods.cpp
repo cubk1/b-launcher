@@ -8,6 +8,7 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
+#include <utility>
 #include <memory>
 #include <functional>
 #include <map>
@@ -72,7 +73,7 @@ namespace Mods {
             for (const auto& icon : icons) {
                 known.insert(icon.first);
             }
-            run([key, directory, known]() -> Continuation {
+            run([key, directory, known = std::move(known)]() -> Continuation {
                 std::vector<blb::modpack::mod_info> found;
                 std::error_code error;
                 if (std::filesystem::is_directory(directory, error)) {
@@ -88,7 +89,7 @@ namespace Mods {
                         }
                     }
                 }
-                return [key, found, pictures]() {
+                return [key, found = std::move(found), pictures = std::move(pictures)]() {
                     scanning.erase(key);
                     for (const auto& picture : pictures) {
                         if (icons.count(picture.first) == 0) {

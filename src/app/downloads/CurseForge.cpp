@@ -10,6 +10,7 @@
 #include <core/base/json.hpp>
 
 #include <algorithm>
+#include <utility>
 #include <map>
 #include <set>
 
@@ -265,7 +266,7 @@ namespace CurseForge {
                                 }
                             }
                         }
-                        return [key, results]() mutable { searches[key] = std::move(results); };
+                        return [key, results = std::move(results)]() mutable { searches[key] = std::move(results); };
                     },
                     [key](const std::string& error) -> Continuation {
                         return [key, error] {
@@ -300,7 +301,7 @@ namespace CurseForge {
                             std::sort(list.begin(), list.end(),
                                       [](const Category& a, const Category& b) { return a.name < b.name; });
                         }
-                        return [byClass] {
+                        return [byClass = std::move(byClass)] {
                             for (Kind kind :
                                  {Kind::Mod, Kind::Modpack, Kind::ResourcePack, Kind::Shader, Kind::Datapack}) {
                                 auto found = byClass.find(classOf(kind));
@@ -432,7 +433,7 @@ namespace CurseForge {
                             };
                         }
                         std::vector<Version> files = std::move(*list);
-                        return [projectId, files]() mutable {
+                        return [projectId, files = std::move(files)]() mutable {
                             versionLists[projectId].status = Status::Ready;
                             versionLists[projectId].list = std::move(files);
                         };
