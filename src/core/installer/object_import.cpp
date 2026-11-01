@@ -69,12 +69,11 @@ import_local_objects (std::span<const planned_file> files,
   auto &workers = pool ? *pool : thread_pool::shared ();
   std::vector<std::filesystem::path> roots;
   const auto &probe = files[missing.front ()];
+  auto target_root = probe.target;
+  for (auto parts = split (probe.relative, '/').size (); parts > 0; --parts)
+    target_root = target_root.parent_path ();
   for (const auto &source : sources)
     {
-      auto target_root = probe.target;
-      for (auto parts = split (probe.relative, '/').size (); parts > 0;
-           --parts)
-        target_root = target_root.parent_path ();
       if (!same_path (source, target_root))
         roots.push_back (source);
     }

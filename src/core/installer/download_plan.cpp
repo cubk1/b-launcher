@@ -9,14 +9,6 @@ namespace b_launcher_base::install
 namespace
 {
 
-std::optional<sha1_digest>
-digest_of (std::string_view hex)
-{
-  if (hex.empty ())
-    return std::nullopt;
-  return parse_sha1 (hex);
-}
-
 void
 add_file (std::vector<planned_file> &out, file_kind kind,
           const std::filesystem::path &target, std::string relative,
@@ -29,7 +21,7 @@ add_file (std::vector<planned_file> &out, file_kind kind,
   file.relative = std::move (relative);
   if (!url.empty ())
     file.urls = mirror.resolve (url);
-  file.sha1 = digest_of (sha1);
+  file.sha1 = parse_sha1 (sha1);
   file.size = size;
   out.push_back (std::move (file));
 }
@@ -42,6 +34,16 @@ library_url (const meta::library &lib, const meta::maven_artifact &artifact)
   if (!base.ends_with ('/'))
     base += '/';
   return base + artifact.path ();
+}
+
+bool
+usable_library (const meta::library &lib, const meta::rule_context &context)
+{
+  return !lib.name.empty () && !lib.artifact.name.empty ()
+         && meta::rules_allow (lib.rules, context)
+         && (!lib.client_required || *lib.client_required)
+         && native_matches_arch (lib, context)
+         && (!lib.is_legacy_native () || lib.native_classifier (context));
 }
 
 }
@@ -72,20 +74,9 @@ applicable_libraries (const meta::version &resolved,
   std::unordered_set<std::string> seen;
   for (const auto &lib : resolved.libraries)
     {
-      if (lib.name.empty () || lib.artifact.name.empty ())
+      if (!usable_library (lib, context))
         continue;
-      if (!meta::rules_allow (lib.rules, context))
-        continue;
-      if (lib.client_required && !*lib.client_required)
-        continue;
-      if (!native_matches_arch (lib, context))
-        continue;
-      if (lib.is_legacy_native () && !lib.native_classifier (context))
-        continue;
-      auto key = lib.artifact.key ();
-      if (lib.is_legacy_native ())
-        key += ":natives";
-      if (!seen.insert (key).second)
+      if (!seen.insert (lib.merge_key ()).second)
         continue;
       out.push_back (&lib);
     }
@@ -112,11 +103,7 @@ plan_version_files (const meta::version &resolved,
   for (const auto &entry : resolved.libraries)
     {
       const auto *lib = &entry;
-      if (lib->name.empty () || lib->artifact.name.empty ()
-          || !meta::rules_allow (lib->rules, context)
-          || (lib->client_required && !*lib->client_required)
-          || !native_matches_arch (*lib, context)
-          || (lib->is_legacy_native () && !lib->native_classifier (context)))
+      if (!usable_library (*lib, context))
         continue;
       if (!planned_paths
                .insert (lib->relative_path ()
