@@ -261,6 +261,7 @@ namespace LogWindow {
             for (const GameLog::Line& entry : GameLog::lines()) {
                 out << entry.text << '\n';
             }
+            out.close();
             if (out) {
                 Notifications::add(Notifications::DONE, "已导出日志到 " + Platform::display(*target), 3000);
             } else {

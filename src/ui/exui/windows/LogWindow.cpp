@@ -747,6 +747,7 @@ namespace ForgottenMelody {
                 for (const GameLog::Line& entry : GameLog::lines()) {
                     out << entry.text << '\n';
                 }
+                out.close();
                 std::wstring where = Platform::widen(Platform::display(*target));
                 if (out) {
                     say(L"已导出日志到 " + where);
