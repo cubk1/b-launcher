@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <limits>
 
 namespace b_launcher_base::auth
 {
@@ -120,27 +121,43 @@ parse_accounts (std::string_view text)
     return make_error (errc::parse, "invalid accounts json");
   std::vector<account> out;
   auto it = doc.find ("accounts");
-  if (it == doc.end () || !it->is_array ())
+  if (it == doc.end ())
     return out;
-  for (const auto &entry : *it)
+  if (!it->is_array ())
+    return make_error (errc::parse, "accounts must be an array");
+  try
     {
-      if (!entry.is_object ())
-        continue;
-      account a;
-      a.type = parse_account_type (entry.value ("type", std::string ()));
-      a.name = entry.value ("name", std::string ());
-      a.uuid = entry.value ("uuid", std::string ());
-      a.access_token = entry.value ("accessToken", std::string ());
-      a.refresh_token = entry.value ("refreshToken", std::string ());
-      a.xuid = entry.value ("xuid", std::string ());
-      a.client_id = entry.value ("clientId", std::string ());
-      a.expires_at = entry.value ("expiresAt", std::int64_t (0));
-      a.skin_url = entry.value ("skin", std::string ());
-      a.server = entry.value ("server", std::string ());
-      a.server_name = entry.value ("serverName", std::string ());
-      a.username = entry.value ("username", std::string ());
-      a.client_token = entry.value ("clientToken", std::string ());
-      out.push_back (std::move (a));
+      for (const auto &entry : *it)
+        {
+          if (!entry.is_object ())
+            continue;
+          if (auto expiry = entry.find ("expiresAt"); expiry != entry.end ())
+            if (!expiry->is_number_integer ()
+                || (expiry->is_number_unsigned ()
+                    && expiry->get<std::uint64_t> ()
+                           > static_cast<std::uint64_t> (
+                               std::numeric_limits<std::int64_t>::max ())))
+              return make_error (errc::parse, "invalid account expiry");
+          account a;
+          a.type = parse_account_type (entry.value ("type", std::string ()));
+          a.name = entry.value ("name", std::string ());
+          a.uuid = entry.value ("uuid", std::string ());
+          a.access_token = entry.value ("accessToken", std::string ());
+          a.refresh_token = entry.value ("refreshToken", std::string ());
+          a.xuid = entry.value ("xuid", std::string ());
+          a.client_id = entry.value ("clientId", std::string ());
+          a.expires_at = entry.value ("expiresAt", std::int64_t (0));
+          a.skin_url = entry.value ("skin", std::string ());
+          a.server = entry.value ("server", std::string ());
+          a.server_name = entry.value ("serverName", std::string ());
+          a.username = entry.value ("username", std::string ());
+          a.client_token = entry.value ("clientToken", std::string ());
+          out.push_back (std::move (a));
+        }
+    }
+  catch (const json::exception &)
+    {
+      return make_error (errc::parse, "invalid account field type");
     }
   return out;
 }

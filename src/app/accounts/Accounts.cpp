@@ -127,6 +127,8 @@ namespace Accounts {
             auto parsed = blb::auth::parse_accounts(*plain);
             if (parsed) {
                 accounts = std::move(*parsed);
+            } else {
+                Notices::add(Notices::Kind::Failed, "保存的账户数据无效，请重新添加", 5000);
             }
         }
 
