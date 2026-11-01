@@ -9,13 +9,14 @@
 namespace b_launcher_base
 {
 
-// Read a string member. Missing members and other JSON types yield empty text.
+// Read a string member, using the fallback for missing members or other types.
 inline std::string
-json_text (const nlohmann::json &node, std::string_view key)
+json_text (const nlohmann::json &node, std::string_view key,
+           std::string_view fallback = {})
 {
   auto it = node.find (key);
   if (it == node.end () || !it->is_string ())
-    return {};
+    return std::string (fallback);
   return it->get<std::string> ();
 }
 

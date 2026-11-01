@@ -3,6 +3,7 @@
 #include "app/launch/EmbeddedAgent.h"
 
 #include <core/base/fs.hpp>
+#include <core/base/json.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
@@ -82,11 +83,6 @@ namespace Patches {
             plan.values.emplace_back(key, text);
         }
 
-        std::string textOf(const nlohmann::json& doc, const char* key) {
-            auto found = doc.find(key);
-            return found != doc.end() && found->is_string() ? found->get<std::string>() : std::string();
-        }
-
         std::optional<Textures> lookup(const std::string& name, blb::cancellation_token token, std::string& problem) {
             auto profile = blb::net::http_get(
                     "https://api.mojang.com/users/profiles/minecraft/" + blb::url_encode(name), token);
@@ -95,7 +91,7 @@ namespace Patches {
                 return std::nullopt;
             }
             nlohmann::json who = nlohmann::json::parse(*profile, nullptr, false);
-            std::string id = who.is_object() ? textOf(who, "id") : std::string();
+            std::string id = who.is_object() ? blb::json_text(who, "id") : std::string();
             if (id.empty()) {
                 problem = "找不到这个正版玩家";
                 return std::nullopt;
@@ -113,10 +109,10 @@ namespace Patches {
                 return std::nullopt;
             }
             for (const nlohmann::json& property : *properties) {
-                if (!property.is_object() || textOf(property, "name") != "textures") {
+                if (!property.is_object() || blb::json_text(property, "name") != "textures") {
                     continue;
                 }
-                std::optional<std::string> decoded = blb::base64_decode(textOf(property, "value"));
+                std::optional<std::string> decoded = blb::base64_decode(blb::json_text(property, "value"));
                 nlohmann::json textures = decoded ? nlohmann::json::parse(*decoded, nullptr, false) : nlohmann::json();
                 auto all = textures.is_object() ? textures.find("textures") : textures.end();
                 if (!textures.is_object() || all == textures.end() || !all->is_object()) {
@@ -124,12 +120,12 @@ namespace Patches {
                 }
                 Textures out;
                 if (auto skin = all->find("SKIN"); skin != all->end() && skin->is_object()) {
-                    out.skin = textOf(*skin, "url");
+                    out.skin = blb::json_text(*skin, "url");
                     auto metadata = skin->find("metadata");
-                    out.slim = metadata != skin->end() && metadata->is_object() && textOf(*metadata, "model") == "slim";
+                    out.slim = metadata != skin->end() && metadata->is_object() && blb::json_text(*metadata, "model") == "slim";
                 }
                 if (auto cape = all->find("CAPE"); cape != all->end() && cape->is_object()) {
-                    out.cape = textOf(*cape, "url");
+                    out.cape = blb::json_text(*cape, "url");
                 }
                 if (out.skin.empty() && out.cape.empty()) {
                     problem = "这个正版玩家没有设置皮肤";

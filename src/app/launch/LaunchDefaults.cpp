@@ -2,6 +2,7 @@
 #include "app/system/Config.h"
 
 #include <core/base/fs.hpp>
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
 #include <cstdlib>
@@ -26,9 +27,7 @@ namespace LaunchDefaults {
         };
 
         std::string text(const char* key, const std::string& fallback) {
-            const nlohmann::json& doc = Config::data();
-            auto value = doc.find(key);
-            return value != doc.end() && value->is_string() ? value->get<std::string>() : fallback;
+            return blb::json_text(Config::data(), key, fallback);
         }
 
         void put(const char* key, const std::string& value) {
