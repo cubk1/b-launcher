@@ -28,6 +28,9 @@ namespace UiGL {
     void(UGL_APIENTRY* BindFramebuffer)(GLenum, GLuint) = nullptr;
     void(UGL_APIENTRY* FramebufferTexture2D)(GLenum, GLenum, GLenum, GLuint, GLint) = nullptr;
     void(UGL_APIENTRY* DeleteFramebuffers)(GLsizei, const GLuint*) = nullptr;
+    GLenum(UGL_APIENTRY* CheckFramebufferStatus)(GLenum) = nullptr;
+    void(UGL_APIENTRY* BlitFramebuffer)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint,
+                                       GLbitfield, GLenum) = nullptr;
     void(UGL_APIENTRY* GenerateMipmap)(GLenum) = nullptr;
     void(UGL_APIENTRY* ActiveTexture)(GLenum) = nullptr;
     void(UGL_APIENTRY* BlendFuncSeparate)(GLenum, GLenum, GLenum, GLenum) = nullptr;
@@ -113,6 +116,9 @@ namespace UiGL {
         ok &= bind(BindFramebuffer, fn, "glBindFramebuffer");
         ok &= bind(FramebufferTexture2D, fn, "glFramebufferTexture2D");
         ok &= bind(DeleteFramebuffers, fn, "glDeleteFramebuffers");
+        // Optional: live resizing falls back to the normal rendering path.
+        bind(CheckFramebufferStatus, fn, "glCheckFramebufferStatus");
+        bind(BlitFramebuffer, fn, "glBlitFramebuffer");
         ok &= bind(GenerateMipmap, fn, "glGenerateMipmap");
         ok &= bind(ActiveTexture, fn, "glActiveTexture");
         ok &= bind(BlendFuncSeparate, fn, "glBlendFuncSeparate");

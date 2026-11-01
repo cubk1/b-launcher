@@ -290,7 +290,7 @@ namespace ImGuiApp {
 
         auto frame = [&]() {
             float next = dpiScale * Appearance::zoom() / 100.0f;
-            if (next != scale) {
+            if (!window.preparingResize() && next != scale) {
                 float layoutW = window.width / scale;
                 float layoutH = window.height / scale;
                 scale = next;
@@ -304,6 +304,9 @@ namespace ImGuiApp {
 
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplWin32_NewFrame();
+            if (window.preparingResize()) {
+                ImGui::GetIO().DisplaySize = ImVec2((float) window.width, (float) window.height);
+            }
             ImGui::NewFrame();
             UiState::beginFrame();
             if (interacted()) {
@@ -330,6 +333,9 @@ namespace ImGuiApp {
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             window.swap();
+            if (window.preparingResize()) {
+                return;
+            }
             if (!shown) {
                 shown = true;
                 if (!headless) {
@@ -371,15 +377,17 @@ namespace ImGuiApp {
         int modalHeight = 0;
         window.onModalFrame = [&]() {
             bool resized = window.width != modalWidth || window.height != modalHeight;
-            double gap = resized || UiState::animating() || Notifications::active() ? std::max(frameMs, MODAL_FRAME_MS)
-                                                                                    : MODAL_IDLE_MS;
-            if (sinceMs(lastModal) < gap) {
+            double gap = UiState::animating() || Notifications::active() ? std::max(frameMs, MODAL_FRAME_MS)
+                                                                         : MODAL_IDLE_MS;
+            // A proposed size needs a complete frame before the native sizing
+            // loop moves the window. Only throttle frames with no resize.
+            if (!window.preparingResize() && !resized && sinceMs(lastModal) < gap) {
                 return;
             }
-            lastModal = std::chrono::steady_clock::now();
             modalWidth = window.width;
             modalHeight = window.height;
             frame();
+            lastModal = std::chrono::steady_clock::now();
         };
         window.onClose = [&]() {
             if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd)) {

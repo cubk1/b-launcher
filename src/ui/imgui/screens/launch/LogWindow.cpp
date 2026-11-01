@@ -849,6 +849,7 @@ namespace LogWindow {
             ImGui::SetCurrentContext(main);
             wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
             created = true;
+            window.onModalFrame = [] { frame(layoutScale); };
         }
     }
 
@@ -930,6 +931,9 @@ namespace LogWindow {
         }
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
+        if (window.preparingResize()) {
+            ImGui::GetIO().DisplaySize = ImVec2((float) window.width, (float) window.height);
+        }
         ImGui::NewFrame();
         ImGuiIO& logIo = ImGui::GetIO();
         if (logIo.MouseDelta.x != 0.0f || logIo.MouseDelta.y != 0.0f || logIo.MouseWheel != 0.0f ||
@@ -947,7 +951,7 @@ namespace LogWindow {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         window.swap();
-        if (revealing) {
+        if (revealing && !window.preparingResize()) {
             revealing = false;
             ShowWindow(window.hwnd, SW_SHOW);
             SetForegroundWindow(window.hwnd);
@@ -965,6 +969,7 @@ namespace LogWindow {
         if (!created) {
             return;
         }
+        window.onModalFrame = nullptr;
         ImGuiContext* previous = ImGui::GetCurrentContext();
         HGLRC previousGl = wglGetCurrentContext();
         HDC previousDc = wglGetCurrentDC();

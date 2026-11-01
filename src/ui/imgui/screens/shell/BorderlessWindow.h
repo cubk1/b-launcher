@@ -9,10 +9,18 @@
 #include <windows.h>
 
 #include <functional>
+#include <memory>
 #include <string>
+
+class ResizeSurface;
 
 class BorderlessWindow {
 public:
+    BorderlessWindow();
+    ~BorderlessWindow();
+    BorderlessWindow(const BorderlessWindow&) = delete;
+    BorderlessWindow& operator=(const BorderlessWindow&) = delete;
+
     HWND hwnd = nullptr;
     HDC deviceContext = nullptr;
     HGLRC glContext = nullptr;
@@ -22,6 +30,8 @@ public:
     bool resizable = false;
     bool quitOnDestroy = true;
     std::function<void()> onClose;
+    // During preparingResize(), width/height are the proposed client size and
+    // swap() captures the frame without presenting or changing the native window.
     std::function<void()> onModalFrame;
     std::function<bool(unsigned long long kind, const std::wstring& text)> onCopyData;
     void* imguiContext = nullptr;
@@ -35,6 +45,7 @@ public:
     void toggleMaximize();
     bool maximized() const;
     bool sizing() const;
+    bool preparingResize() const;
     void close();
     void setDarkMode(bool dark);
     void setIcons(HICON large, HICON compact);
@@ -57,8 +68,15 @@ private:
     HICON smallIcon = nullptr;
     bool inSizeMove = false;
     bool inModalFrame = false;
+    ULONGLONG lastResizeFrame = 0;
 
     void modalFrame();
+    void prepareResize(int clientWidth, int clientHeight, bool refresh = false);
+    void showResizeLayer(const RECT& position);
+    void releaseResize();
+
+    std::unique_ptr<ResizeSurface> resizeSurface;
 
     bool regionCorners = false;
+    bool regionSuspended = false;
 };

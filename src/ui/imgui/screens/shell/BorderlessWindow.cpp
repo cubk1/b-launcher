@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
+#include "ui/imgui/screens/shell/ResizeSurface.h"
 
 #include "imgui.h"
 
@@ -17,7 +18,26 @@ namespace {
     constexpr COLORREF DWMWA_COLOR_NONE_ = 0xFFFFFFFE;
     constexpr int FALLBACK_RADIUS = 8;
     const wchar_t* const CLASS_NAME = L"b-launcher.window";
+
+    template<typename T>
+    T glProc(const char* name) {
+        PROC proc = wglGetProcAddress(name);
+        auto value = reinterpret_cast<INT_PTR>(proc);
+        return value == 0 || value == 1 || value == 2 || value == 3 || value == -1
+                ? nullptr : reinterpret_cast<T>(proc);
+    }
+
+    // Surface operations can dispatch window messages too. Keep nested sizing
+    // notifications from drawing again or deleting a surface still in use.
+    struct ModalFrameGuard {
+        bool& active;
+        explicit ModalFrameGuard(bool& active) : active(active) { active = true; }
+        ~ModalFrameGuard() { active = false; }
+    };
 }
+
+BorderlessWindow::BorderlessWindow() = default;
+BorderlessWindow::~BorderlessWindow() = default;
 
 bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int clientHeight, HGLRC share) {
     WNDCLASSEXW wc = {};
@@ -86,6 +106,23 @@ void BorderlessWindow::resize(int clientWidth, int clientHeight) {
 
 void BorderlessWindow::applyRegion() {
     if (!regionCorners) {
+        return;
+    }
+    if (inSizeMove) {
+        if (!regionSuspended) {
+            // Keep an explicit region: removing it re-enables DWM's native frame
+            // on Win10. Cover the tracking limits so this needs no per-size updates.
+            int regionW = std::max(width, GetSystemMetrics(SM_CXMAXTRACK));
+            int regionH = std::max(height, GetSystemMetrics(SM_CYMAXTRACK));
+            HRGN region = CreateRectRgn(0, 0, regionW + 1, regionH + 1);
+            if (region != nullptr) {
+                regionSuspended = true;
+                if (!SetWindowRgn(hwnd, region, FALSE)) {
+                    regionSuspended = false;
+                    DeleteObject(region);
+                }
+            }
+        }
         return;
     }
     // A maximized window is square to the screen; a region of another size would cut the window off.
@@ -172,6 +209,7 @@ bool BorderlessWindow::createGlContext(HGLRC share) {
 }
 
 void BorderlessWindow::destroy() {
+    releaseResize();
     if (wglGetCurrentContext() == glContext) {
         wglMakeCurrent(nullptr, nullptr);
     }
@@ -211,13 +249,80 @@ bool BorderlessWindow::sizing() const {
     return inSizeMove;
 }
 
+bool BorderlessWindow::preparingResize() const {
+    return resizeSurface && resizeSurface->preparing();
+}
+
+void BorderlessWindow::prepareResize(int clientWidth, int clientHeight, bool refresh) {
+    if (!onModalFrame || inModalFrame || clientWidth <= 0 || clientHeight <= 0 ||
+        (!refresh && clientWidth == width && clientHeight == height &&
+            (!resizeSurface || !resizeSurface->hasLayer()))) {
+        return;
+    }
+    if (!resizeSurface) {
+        resizeSurface = std::make_unique<ResizeSurface>(deviceContext, glContext);
+    }
+    int actualWidth = width, actualHeight = height;
+    auto restore = [&] {
+        width = actualWidth;
+        height = actualHeight;
+    };
+    {
+        ModalFrameGuard guard(inModalFrame);
+        try {
+            resizeSurface->prepare(clientWidth, clientHeight, [this, clientWidth, clientHeight] {
+                width = clientWidth;
+                height = clientHeight;
+                onModalFrame();
+            }, refresh);
+        } catch (...) {
+            restore();
+            throw;
+        }
+        restore();
+    }
+    if (!inSizeMove) {
+        releaseResize();
+    }
+}
+
+void BorderlessWindow::showResizeLayer(const RECT& position) {
+    if (!inSizeMove || inModalFrame || !resizeSurface) {
+        return;
+    }
+    {
+        ModalFrameGuard guard(inModalFrame);
+        if (resizeSurface->updateLayer(hwnd, position)) {
+            lastResizeFrame = GetTickCount64();
+        }
+    }
+    if (!inSizeMove) {
+        releaseResize();
+    }
+}
+
+void BorderlessWindow::releaseResize() {
+    // An exit message may arrive from inside the draw callback. Defer deletion
+    // until prepare() has restored the caller's GL bindings.
+    if (!inModalFrame) {
+        ModalFrameGuard guard(inModalFrame);
+        resizeSurface.reset();
+    }
+}
+
 void BorderlessWindow::modalFrame() {
     if (!onModalFrame || inModalFrame || IsIconic(hwnd)) {
         return;
     }
-    inModalFrame = true;
-    onModalFrame();
-    inModalFrame = false;
+    {
+        ModalFrameGuard guard(inModalFrame);
+        if (!resizeSurface || !resizeSurface->present(width, height, inSizeMove)) {
+            onModalFrame();
+        }
+    }
+    if (!inSizeMove) {
+        releaseResize();
+    }
 }
 
 void BorderlessWindow::close() {
@@ -242,12 +347,15 @@ bool BorderlessWindow::minimized() const {
 }
 
 void BorderlessWindow::swap() {
+    if (resizeSurface && resizeSurface->captureFrame()) {
+        return;
+    }
     SwapBuffers(deviceContext);
 }
 
 void BorderlessWindow::setVsync(bool on) {
     using SwapInterval = BOOL(WINAPI*)(int);
-    if (auto swapInterval = (SwapInterval) wglGetProcAddress("wglSwapIntervalEXT")) {
+    if (auto swapInterval = glProc<SwapInterval>("wglSwapIntervalEXT")) {
         swapInterval(on ? 1 : 0);
     }
 }
@@ -277,18 +385,66 @@ LRESULT WINAPI BorderlessWindow::windowProc(HWND hwnd, UINT msg, WPARAM wParam, 
 
 LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+        case WM_SIZING: {
+            const auto* proposed = reinterpret_cast<const RECT*>(lParam);
+            if (inSizeMove && resizable && !IsZoomed(hwnd)) {
+                // This precedes SetWindowPos, before the compositor sees the new
+                // position. WM_WINDOWPOSCHANGING is also kept for programmatic sizes.
+                prepareResize(proposed->right - proposed->left, proposed->bottom - proposed->top);
+                showResizeLayer(*proposed);
+            }
+            return TRUE;
+        }
+        case WM_WINDOWPOSCHANGING: {
+            LRESULT result = DefWindowProcW(hwnd, msg, wParam, lParam);
+            auto* position = reinterpret_cast<WINDOWPOS*>(lParam);
+            if (inSizeMove && resizable && !IsZoomed(hwnd) && (position->flags & SWP_NOSIZE) == 0) {
+                // Render the next size while the previous position is still on screen.
+                prepareResize(position->cx, position->cy);
+                RECT proposed;
+                GetWindowRect(hwnd, &proposed);
+                if ((position->flags & SWP_NOMOVE) == 0) {
+                    proposed.left = position->x;
+                    proposed.top = position->y;
+                }
+                proposed.right = proposed.left + position->cx;
+                proposed.bottom = proposed.top + position->cy;
+                showResizeLayer(proposed);
+            }
+            return result;
+        }
+        case WM_WINDOWPOSCHANGED: {
+            LRESULT result = DefWindowProcW(hwnd, msg, wParam, lParam);
+            const auto* position = reinterpret_cast<const WINDOWPOS*>(lParam);
+            if (inSizeMove && !inModalFrame && (position->flags & SWP_NOSIZE) == 0) {
+                // WM_SIZE invalidated the client. Present after both its size and
+                // position notifications have completed, before the next resize.
+                UpdateWindow(hwnd);
+            }
+            return result;
+        }
         case WM_NCCALCSIZE:
             if (wParam == TRUE) {
+                auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
                 if (IsZoomed(hwnd)) {
-                    auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
                     int frameX = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
                     int frameY = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
                     params->rgrc[0].left += frameX;
                     params->rgrc[0].right -= frameX;
                     params->rgrc[0].top += frameY;
                     params->rgrc[0].bottom -= frameY;
+                } else if (inSizeMove) {
+                    // Keep the last frame anchored to the edge that did not move
+                    // until OpenGL presents the resized frame. Left/top alignment
+                    // would briefly shift right/bottom-anchored controls instead.
+                    const RECT& next = params->rgrc[0];
+                    const RECT& previous = params->rgrc[2];
+                    bool fixedRight = next.left != previous.left && next.right == previous.right;
+                    bool fixedBottom = next.top != previous.top && next.bottom == previous.bottom;
+                    return (fixedRight ? WVR_ALIGNRIGHT : WVR_ALIGNLEFT) |
+                            (fixedBottom ? WVR_ALIGNBOTTOM : WVR_ALIGNTOP);
                 }
-                return 0;
+                return WVR_REDRAW;
             }
             break;
         case WM_NCHITTEST: {
@@ -319,8 +475,20 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
                 height = HIWORD(lParam);
                 applyRegion();
                 if (inSizeMove) {
-                    modalFrame();
+                    // Wait until the native position/size operation has returned
+                    // before submitting the prepared image to the window drawable.
+                    InvalidateRect(hwnd, nullptr, FALSE);
+                    lastResizeFrame = GetTickCount64();
                 }
+            }
+            break;
+        case WM_PAINT:
+            if (inSizeMove && onModalFrame) {
+                PAINTSTRUCT paint;
+                BeginPaint(hwnd, &paint);
+                modalFrame();
+                EndPaint(hwnd, &paint);
+                return 0;
             }
             break;
         case WM_ENTERSIZEMOVE:
@@ -330,10 +498,28 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_EXITSIZEMOVE:
             inSizeMove = false;
             KillTimer(hwnd, 1);
+            if (regionSuspended) {
+                regionSuspended = false;
+                applyRegion();
+            }
+            modalFrame();
+            releaseResize();
             break;
         case WM_TIMER:
             if (wParam == 1) {
-                modalFrame();
+                // Size events already supplied fresh frames. Render timer frames
+                // only when the drag pauses, rather than queueing the same size twice.
+                if (inSizeMove && GetTickCount64() - lastResizeFrame >= 50) {
+                    if (resizeSurface && resizeSurface->hasLayer() && !inModalFrame) {
+                        prepareResize(width, height, true);
+                        RECT position;
+                        if (GetWindowRect(hwnd, &position)) {
+                            showResizeLayer(position);
+                        }
+                    }
+                    modalFrame();
+                    lastResizeFrame = GetTickCount64();
+                }
                 return 0;
             }
             break;

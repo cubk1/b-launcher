@@ -68,6 +68,7 @@ typedef std::ptrdiff_t GLsizeiptr;
 #define UGL_DRAW_FRAMEBUFFER_BINDING 0x8CA6
 #define UGL_READ_FRAMEBUFFER_BINDING 0x8CAA
 #define UGL_COLOR_ATTACHMENT0 0x8CE0
+#define UGL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define UGL_VERTEX_SHADER 0x8B31
 #define UGL_FRAGMENT_SHADER 0x8B30
 #define UGL_COMPILE_STATUS 0x8B81
@@ -121,6 +122,10 @@ namespace UiGL {
     extern void(UGL_APIENTRY* FramebufferTexture2D)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture,
                                                     GLint level);
     extern void(UGL_APIENTRY* DeleteFramebuffers)(GLsizei n, const GLuint* framebuffers);
+    extern GLenum(UGL_APIENTRY* CheckFramebufferStatus)(GLenum target);
+    extern void(UGL_APIENTRY* BlitFramebuffer)(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
+                                              GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
+                                              GLbitfield mask, GLenum filter);
     extern void(UGL_APIENTRY* GenerateMipmap)(GLenum target);
     extern void(UGL_APIENTRY* ActiveTexture)(GLenum texture);
     extern void(UGL_APIENTRY* BlendFuncSeparate)(GLenum sfactorRGB, GLenum dfactorRGB, GLenum sfactorAlpha,
