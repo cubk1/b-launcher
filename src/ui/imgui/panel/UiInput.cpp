@@ -38,6 +38,11 @@ namespace UiInput {
     }
 
     void set(const std::string& id, const std::string& value) {
+        undoText.erase(id);
+        undoCaret.erase(id);
+        redoText.erase(id);
+        redoCaret.erase(id);
+        typedAt.erase(id);
         texts[id] = value;
         int length = Ui::length(value);
         carets[id] = length;

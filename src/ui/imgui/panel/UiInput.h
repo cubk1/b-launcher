@@ -23,6 +23,7 @@ namespace UiInput {
     std::string get(const std::string& id);
     std::string shown(const std::string& id);
     std::string masked(const std::string& value);
+    // Replaces a field's value and starts a new undo history.
     void set(const std::string& id, const std::string& value);
     int caret(const std::string& id);
     int anchor(const std::string& id);
