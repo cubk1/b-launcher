@@ -165,12 +165,16 @@ http_get (std::span<const std::string> urls, cancellation_token token)
   if (urls.empty ())
     return make_error (errc::invalid_argument, "no url");
   std::vector<std::string> ordered;
+  std::vector<std::string> penalized;
   for (const auto &url : urls)
-    if (!detail::host_penalized (url))
-      ordered.push_back (url);
-  for (const auto &url : urls)
-    if (detail::host_penalized (url))
-      ordered.push_back (url);
+    {
+      // Health can change concurrently; classify each source only once.
+      if (detail::host_penalized (url))
+        penalized.push_back (url);
+      else
+        ordered.push_back (url);
+    }
+  ordered.insert (ordered.end (), penalized.begin (), penalized.end ());
   error last;
   for (const auto &url : ordered)
     {
