@@ -259,12 +259,11 @@ namespace exui {
     }
 
     RectF EditBox::GetCaretRect(Graphics& g) const {
-        const auto lines = m_buffer.Lines();
         const auto text = GetDisplayText();
         const auto viewport = GetTextViewport(g);
         const size_t caret = m_buffer.Caret();
         const size_t row = m_buffer.LineIndexOf(caret);
-        const auto line = lines[row];
+        const auto line = m_buffer.LineOf(caret);
         const auto value = std::wstring_view(text).substr(line.start, line.end - line.start);
         const size_t pos = std::min(caret - line.start, value.size());
         const float advance = CaretStops(g, value)[pos];

@@ -144,11 +144,20 @@ namespace exui {
     }
 
     size_t TextBuffer::LineIndexOf(size_t position) const {
-        const auto lines = Lines();
-        size_t row = 0;
-        while (row + 1 < lines.size() && position >= lines[row + 1].start)
-            ++row;
-        return row;
+        position = std::min(position, m_text.size());
+        return size_t(std::count(m_text.begin(), m_text.begin() + position, L'\n'));
+    }
+
+    TextBuffer::Line TextBuffer::LineOf(size_t position) const {
+        position = std::min(position, m_text.size());
+        const size_t previous = position == 0 ? npos : m_text.rfind(L'\n', position - 1);
+        const size_t start = previous == npos ? 0 : previous + 1;
+        size_t end = m_text.find(L'\n', position);
+        if (end == npos)
+            end = m_text.size();
+        else if (end > start && m_text[end - 1] == L'\r')
+            --end;
+        return {start, end};
     }
 
     void TextBuffer::Remember() {

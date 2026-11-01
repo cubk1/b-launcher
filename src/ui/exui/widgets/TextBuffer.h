@@ -57,9 +57,7 @@ namespace exui {
 
         std::vector<Line> Lines() const;
         size_t LineIndexOf(size_t position) const;
-        Line LineOf(size_t position) const {
-            return Lines()[LineIndexOf(position)];
-        }
+        Line LineOf(size_t position) const;
 
         // Replaces the selection; the caret ends after the inserted text. Single-line
         // buffers keep only the first line of value. Returns whether the text changed.
