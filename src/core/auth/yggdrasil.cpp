@@ -64,17 +64,6 @@ origin_of (std::string_view url)
 }
 
 std::string
-host_of (std::string_view url)
-{
-  auto scheme = url.find ("://");
-  auto start = scheme == std::string_view::npos ? 0 : scheme + 3;
-  auto end = url.find ('/', start);
-  return to_lower (url.substr (start, end == std::string_view::npos
-                                          ? std::string_view::npos
-                                          : end - start));
-}
-
-std::string
 resolve_location (std::string_view base, std::string_view location)
 {
   if (location.find ("://") != std::string_view::npos)
@@ -335,11 +324,33 @@ yggdrasil_api (const account &a)
 bool
 same_yggdrasil_server (std::string_view a, std::string_view b)
 {
-  auto left = normalize_url (a);
-  auto right = normalize_url (b);
+  auto canonical = [] (std::string_view input) {
+    auto url = normalize_url (input);
+    if (url.empty ())
+      return url;
+    auto separator = url.find ("://");
+    auto scheme = to_lower (url.substr (0, separator));
+    if (scheme != "http" && scheme != "https")
+      return std::string ();
+    auto begin = separator + 3;
+    auto end = url.find_first_of ("/?#", begin);
+    auto authority = to_lower (url.substr (begin, end == std::string::npos
+                                                    ? end : end - begin));
+    auto port = scheme == "https" ? ":443" : ":80";
+    if (authority.ends_with (port))
+      authority.resize (authority.size () - std::char_traits<char>::length (port));
+    if (authority.empty ())
+      return std::string ();
+    // Only scheme/host are case-insensitive. Separate API paths on one host
+    // may belong to different authentication services.
+    return scheme + "://" + authority
+           + (end == std::string::npos ? std::string () : url.substr (end));
+  };
+  auto left = canonical (a);
+  auto right = canonical (b);
   if (left.empty () || right.empty ())
     return false;
-  return iequals (left, right) || host_of (left) == host_of (right);
+  return left == right;
 }
 
 result<yggdrasil_server>
