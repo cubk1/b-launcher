@@ -9,12 +9,35 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include <algorithm>
 #include <cstring>
+#include <memory>
+#include <optional>
+#include <vector>
 
 namespace blb = b_launcher_base;
 
 namespace {
     constexpr size_t REQUEST_LIMIT = 16 * 1024;
+    constexpr size_t CLIENT_LIMIT = 16;
+    using Clock = std::chrono::steady_clock;
+
+    struct Client {
+        explicit Client(SOCKET value) : socket(value), deadline(Clock::now() + std::chrono::seconds(5)) {}
+        ~Client() { closesocket(socket); }
+        SOCKET socket;
+        Clock::time_point deadline;
+        std::string request;
+        std::string reply;
+        size_t sent = 0;
+        std::optional<Redirect::Query> accepted;
+        bool done = false;
+    };
+
+    bool nonBlocking(SOCKET socket) {
+        u_long enabled = 1;
+        return ioctlsocket(socket, FIONBIO, &enabled) == 0;
+    }
 
     bool startWinsock() {
         static bool started = [] {
@@ -105,44 +128,27 @@ namespace {
         return out;
     }
 
-    void respond(SOCKET client, const char* status, const std::string& body) {
-        std::string reply = std::string("HTTP/1.1 ") + status +
+    std::string response(const char* status, const std::string& body) {
+        return std::string("HTTP/1.1 ") + status +
                 "\r\n"
                 "Content-Type: text/html; charset=utf-8\r\n"
                 "Cache-Control: no-store\r\n"
                 "Connection: close\r\n"
                 "Content-Length: " +
                 std::to_string(body.size()) + "\r\n\r\n" + body;
-        size_t sent = 0;
-        while (sent < reply.size()) {
-            int n = send(client, reply.data() + sent, (int) (reply.size() - sent), 0);
-            if (n <= 0) {
-                break;
-            }
-            sent += (size_t) n;
-        }
-        shutdown(client, SD_SEND);
     }
 
-    bool readRequest(SOCKET client, std::string& target) {
-        DWORD timeout = 5000;
-        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
-        std::string head;
-        char buffer[2048];
-        while (head.find("\r\n\r\n") == std::string::npos && head.size() < REQUEST_LIMIT) {
-            int n = recv(client, buffer, sizeof(buffer), 0);
-            if (n <= 0) {
-                break;
-            }
-            head.append(buffer, (size_t) n);
-        }
+    bool requestTarget(const std::string& head, std::string& target) {
         size_t lineEnd = head.find("\r\n");
         std::string line = head.substr(0, lineEnd);
         if (line.rfind("GET ", 0) != 0) {
             return false;
         }
         size_t targetEnd = line.find(' ', 4);
-        target = line.substr(4, targetEnd == std::string::npos ? std::string::npos : targetEnd - 4);
+        if (targetEnd == std::string::npos) {
+            return false;
+        }
+        target = line.substr(4, targetEnd - 4);
         return true;
     }
 }
@@ -186,52 +192,106 @@ void Redirect::close() {
 blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancellation_token token,
                                             std::chrono::seconds timeout,
                                             const std::function<std::string(const Query&)>& page) {
-    auto deadline = std::chrono::steady_clock::now() + timeout;
+    auto deadline = Clock::now() + timeout;
+    for (auto socket : sockets) {
+        if ((SOCKET) socket != INVALID_SOCKET && !nonBlocking((SOCKET) socket)) {
+            return blb::make_error(blb::errc::network, "无法配置登录端口");
+        }
+    }
+    std::vector<std::unique_ptr<Client>> clients;
     while (true) {
         if (token.is_cancelled()) {
             return blb::make_error(blb::errc::cancelled, "已取消");
         }
-        if (std::chrono::steady_clock::now() >= deadline) {
+        if (Clock::now() >= deadline) {
             return blb::make_error(blb::errc::auth_expired, "等待浏览器登录超时");
         }
         fd_set readable;
+        fd_set writable;
         FD_ZERO(&readable);
+        FD_ZERO(&writable);
         for (unsigned long long s : sockets) {
             if ((SOCKET) s != INVALID_SOCKET) {
                 FD_SET((SOCKET) s, &readable);
             }
         }
-        if (readable.fd_count == 0) {
+        if (readable.fd_count == 0 && clients.empty()) {
             return blb::make_error(blb::errc::network, "没有在等待登录");
         }
-        timeval step = {0, 200 * 1000};
-        if (select(0, &readable, nullptr, nullptr, &step) <= 0) {
+        for (const auto& client : clients) {
+            if (client->reply.empty()) FD_SET(client->socket, &readable);
+            else FD_SET(client->socket, &writable);
+        }
+        auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
+        timeval step = {0, (long) std::clamp<long long>(remaining, 0, 200000)};
+        int ready = select(0, &readable, &writable, nullptr, &step);
+        if (ready < 0 && WSAGetLastError() != WSAEINTR) {
+            return blb::make_error(blb::errc::network, "无法等待浏览器登录");
+        }
+        if (ready < 0) {
             continue;
+        }
+        if (token.is_cancelled()) {
+            return blb::make_error(blb::errc::cancelled, "已取消");
         }
         for (unsigned long long s : sockets) {
             if ((SOCKET) s == INVALID_SOCKET || !FD_ISSET((SOCKET) s, &readable)) {
                 continue;
             }
-            SOCKET client = accept((SOCKET) s, nullptr, nullptr);
-            if (client == INVALID_SOCKET) {
-                continue;
+            for (size_t accepted = 0; accepted < CLIENT_LIMIT; ++accepted) {
+                SOCKET socket = accept((SOCKET) s, nullptr, nullptr);
+                if (socket == INVALID_SOCKET) break;
+                if (clients.size() >= CLIENT_LIMIT || !nonBlocking(socket)) {
+                    closesocket(socket);
+                } else {
+                    clients.push_back(std::make_unique<Client>(socket));
+                }
             }
-            std::string target;
-            if (!readRequest(client, target)) {
-                closesocket(client);
-                continue;
-            }
-            size_t mark = target.find('?');
-            std::string requested = target.substr(0, mark);
-            if (requested != path) {
-                respond(client, "404 Not Found", "");
-                closesocket(client);
-                continue;
-            }
-            Query query = mark == std::string::npos ? Query() : parseQuery(target.substr(mark + 1));
-            respond(client, "200 OK", page ? page(query) : std::string());
-            closesocket(client);
-            return query;
         }
+        for (auto& client : clients) {
+            if (Clock::now() >= client->deadline) {
+                if (client->accepted) return std::move(*client->accepted);
+                client->done = true;
+                continue;
+            }
+            if (client->reply.empty() && FD_ISSET(client->socket, &readable)) {
+                char buffer[2048];
+                int n = recv(client->socket, buffer, sizeof(buffer), 0);
+                if (n <= 0) {
+                    client->done = n == 0 || WSAGetLastError() != WSAEWOULDBLOCK;
+                    continue;
+                }
+                client->request.append(buffer, (size_t) n);
+                auto end = client->request.find("\r\n\r\n");
+                if ((end == std::string::npos && client->request.size() >= REQUEST_LIMIT) ||
+                    (end != std::string::npos && end + 4 > REQUEST_LIMIT)) {
+                    client->reply = response("431 Request Header Fields Too Large", "");
+                } else if (end != std::string::npos) {
+                    std::string target;
+                    if (!requestTarget(client->request, target)) {
+                        client->reply = response("400 Bad Request", "");
+                    } else {
+                        size_t mark = target.find('?');
+                        if (target.substr(0, mark) != path) {
+                            client->reply = response("404 Not Found", "");
+                        } else {
+                            client->accepted = mark == std::string::npos ? Query() : parseQuery(target.substr(mark + 1));
+                            client->reply = response("200 OK", page ? page(*client->accepted) : std::string());
+                        }
+                    }
+                }
+            }
+            if (!client->reply.empty() && (client->sent == 0 || FD_ISSET(client->socket, &writable))) {
+                int amount = (int) std::min<size_t>(16384, client->reply.size() - client->sent);
+                int n = send(client->socket, client->reply.data() + client->sent, amount, 0);
+                if (n > 0) client->sent += (size_t) n;
+                bool failed = n <= 0 && (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK);
+                if (failed || client->sent == client->reply.size()) {
+                    if (client->accepted) return std::move(*client->accepted);
+                    client->done = true;
+                }
+            }
+        }
+        std::erase_if(clients, [](const auto& client) { return client->done; });
     }
 }
