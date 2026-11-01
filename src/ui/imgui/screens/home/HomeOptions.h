@@ -8,7 +8,8 @@
 #include <span>
 
 // An ordered, configurable group on the homepage. The item descriptors must
-// outlive this object; choice bindings share its state.
+// outlive this object. Choice bindings borrow its state, so the group must
+// outlive every binding.
 class HomeOptions {
 public:
     struct Item {

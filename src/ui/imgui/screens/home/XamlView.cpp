@@ -15,6 +15,8 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 
+#include <core/base/strings.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -248,12 +250,7 @@ namespace XamlView {
         };
 
         std::string trim(const std::string& text) {
-            size_t start = text.find_first_not_of(" \t\r\n");
-            if (start == std::string::npos) {
-                return std::string();
-            }
-            size_t end = text.find_last_not_of(" \t\r\n");
-            return text.substr(start, end - start + 1);
+            return std::string(b_launcher_base::trim(text));
         }
 
         std::string lower(std::string text) {

@@ -23,6 +23,8 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 
+#include <core/base/json.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -61,8 +63,7 @@ namespace HomeWidgets {
             if (section == doc.end() || !section->is_object()) {
                 return std::string();
             }
-            auto field = section->find(key);
-            return field != section->end() && field->is_string() ? field->get<std::string>() : std::string();
+            return blb::json_text(*section, key);
         }
 
         void setServerField(const char* key, const std::string& value) {

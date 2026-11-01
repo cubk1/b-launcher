@@ -7,6 +7,7 @@
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "app/system/Platform.h"
 
@@ -76,7 +77,7 @@ namespace QuickActions {
             bool hovered = !blocked && NewUi::hit(x, y, w, ROW_H);
             float hover = UiState::motion(id, hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
-                int corners = (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
+                int corners = Page::rowCorners(index, count);
                 UiRender::roundRect(x, y, w, ROW_H, 12.0f, UiTheme::overlay(Ui::round(14 * hover)), corners);
             }
             UiWidgets::icon(Ui::glyph(action.glyph), x + ICON_X, y + ROW_H * 0.5f, UiTheme::textPrimary(), 13.0f);

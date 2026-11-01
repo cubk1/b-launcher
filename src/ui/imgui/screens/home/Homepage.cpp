@@ -51,6 +51,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace Homepage {
@@ -336,7 +337,7 @@ namespace Homepage {
                 if (data && !cached.empty() && blb::fs::create_directories(cached.parent_path())) {
                     (void) blb::fs::write_file_atomic(cached, *data);
                 }
-                return [data, error, request] {
+                return [data = std::move(data), error = std::move(error), request]() mutable {
                     if (request != homeRequest || views.empty()) {
                         return;
                     }
@@ -349,18 +350,24 @@ namespace Homepage {
                         return;
                     }
                     if (*data != view.text || !view.doc) {
-                        view.text = *data;
+                        view.text = std::move(*data);
                         rebuild(view);
                     }
                 };
             });
         }
 
+        bool isJsonPage(const std::string& address) {
+            size_t end = address.find('?');
+            if (end == std::string::npos) end = address.size();
+            return end > 5 && lower(address.substr(end - 5, 5)) == ".json";
+        }
+
         std::string pageUrl(const std::string& json) {
             size_t query = json.find('?');
             std::string path = json.substr(0, query);
             std::string rest = query == std::string::npos ? std::string() : json.substr(query);
-            if (lower(path).size() > 5 && lower(path).compare(path.size() - 5, 5, ".json") == 0) {
+            if (isJsonPage(json)) {
                 path = path.substr(0, path.size() - 5) + ".xaml";
             }
             return path + rest;
@@ -379,8 +386,7 @@ namespace Homepage {
             view->loading = true;
             std::string id = view->id;
             views.push_back(std::move(view));
-            std::string path = lower(address.substr(0, address.find('?')));
-            bool json = path.size() > 5 && path.compare(path.size() - 5, 5, ".json") == 0;
+            bool json = isJsonPage(address);
             run([address, id, json](blb::cancellation_token token) -> Continuation {
                 std::string error;
                 std::string title;
@@ -390,16 +396,11 @@ namespace Homepage {
                     if (std::optional<std::string> meta = fetch(address, token, error)) {
                         nlohmann::json doc = nlohmann::json::parse(*meta, nullptr, false);
                         if (doc.is_object()) {
-                            auto text = [&](const char* key) {
-                                auto field = doc.find(key);
-                                return field != doc.end() && field->is_string() ? field->get<std::string>()
-                                                                               : std::string();
-                            };
-                            title = text("Title");
+                            title = blb::json_text(doc, "Title");
                             auto event = doc.find("IsEvent");
                             if (event != doc.end() && event->is_boolean() && event->get<bool>() &&
-                                !text("EventType").empty()) {
-                                redirect.push_back(XamlView::Action{text("EventType"), text("EventData")});
+                                !blb::json_text(doc, "EventType").empty()) {
+                                redirect.push_back(XamlView::Action{blb::json_text(doc, "EventType"), blb::json_text(doc, "EventData")});
                             }
                         }
                     }
@@ -409,7 +410,8 @@ namespace Homepage {
                 if (redirect.empty()) {
                     data = fetch(page, token, error);
                 }
-                return [id, title, data, error, redirect] {
+                return [id, title = std::move(title), data = std::move(data),
+                        error = std::move(error), redirect = std::move(redirect)]() mutable {
                     for (size_t i = 0; i < views.size(); i++) {
                         if (views[i]->id != id) {
                             continue;
@@ -421,12 +423,12 @@ namespace Homepage {
                         }
                         View& view = *views[i];
                         view.loading = false;
-                        view.title = title.empty() ? std::string("帮助") : title;
+                        view.title = title.empty() ? std::string("帮助") : std::move(title);
                         if (!data) {
                             view.error = "页面加载失败：" + error;
                             return;
                         }
-                        view.text = *data;
+                        view.text = std::move(*data);
                         rebuild(view);
                         return;
                     }
@@ -500,7 +502,7 @@ namespace Homepage {
                     error = "无法写入文件";
                 }
                 std::string shown = Platform::display(path);
-                return [ok, error, shown] { notify(ok ? "已保存到 " + shown : "下载失败：" + error, !ok); };
+                return [ok, error = std::move(error), shown = std::move(shown)] { notify(ok ? "已保存到 " + shown : "下载失败：" + error, !ok); };
             });
         }
 
