@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Mods {
@@ -25,6 +26,7 @@ namespace Mods {
     };
 
     const List& of(const std::string& instanceKey);
+    bool matches(const Mod& mod, std::string_view query);
     void rescan(const std::string& instanceKey);
     void setEnabled(const std::string& instanceKey, const std::filesystem::path& file, bool enabled);
     void remove(const std::string& instanceKey, const std::filesystem::path& file);

@@ -464,12 +464,6 @@ namespace ForgottenMelody {
             return type == "release" ? showReleases : type.rfind("old_", 0) == 0 ? showOld : showSnapshots;
         }
 
-        bool contains(const std::string& text, const std::string& part) {
-            auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c; };
-            return std::search(text.begin(), text.end(), part.begin(), part.end(),
-                               [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
-        }
-
         // 下载中心 in the frame of the 2014 window, its sections those of the default interface: 新建实例, then a
         // search of Modrinth or CurseForge for each kind of thing, which can follow the instance it is for, and the
         // page of a project with its versions.
@@ -1183,7 +1177,7 @@ namespace ForgottenMelody {
                 Rows rows;
                 std::vector<std::string> keys;
                 for (const auto& version : all.list) {
-                    if (listedType(version.type) && contains(version.id, text)) {
+                    if (listedType(version.type) && !version.id.empty() && blb::icontains(version.id, text)) {
                         rows.push_back({Platform::widen(version.id), gameTypeLabel(version.type),
                                         Platform::widen(version.release_time.substr(0, 10))});
                         keys.push_back(version.id);

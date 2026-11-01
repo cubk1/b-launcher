@@ -41,20 +41,6 @@ namespace InstanceMods {
             return value;
         }
 
-        char lower(char c) {
-            return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c;
-        }
-
-        bool contains(const std::string& text, const std::string& query) {
-            return std::search(text.begin(), text.end(), query.begin(), query.end(),
-                               [](char a, char b) { return lower(a) == lower(b); }) != text.end();
-        }
-
-        bool matches(const Mods::Mod& mod, const std::string& query) {
-            return query.empty() || contains(mod.info.name, query) || contains(mod.info.id, query) ||
-                    contains(mod.info.file_name, query);
-        }
-
         uint32_t warningInk() {
             return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
         }
@@ -276,7 +262,7 @@ namespace InstanceMods {
         }
         std::vector<const Mods::Mod*> shown;
         for (const Mods::Mod& mod : list.mods) {
-            if (matches(mod, query)) {
+            if (Mods::matches(mod, query)) {
                 shown.push_back(&mod);
             }
         }

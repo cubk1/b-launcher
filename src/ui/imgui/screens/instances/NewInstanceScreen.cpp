@@ -27,6 +27,7 @@
 #include "ui/imgui/widget/TextFieldWidget.h"
 
 #include <core/instance/loader_editor.hpp>
+#include <core/base/strings.hpp>
 
 #include "imgui.h"
 
@@ -133,18 +134,6 @@ namespace NewInstanceScreen {
                 return binding;
             }();
             return value;
-        }
-
-        char lower(char c) {
-            return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c;
-        }
-
-        bool matches(const std::string& id, const std::string& query) {
-            if (query.empty()) {
-                return true;
-            }
-            return std::search(id.begin(), id.end(), query.begin(), query.end(),
-                               [](char a, char b) { return lower(a) == lower(b); }) != id.end();
         }
 
         std::string day(const std::string& time) {
@@ -308,7 +297,7 @@ namespace NewInstanceScreen {
             std::vector<const blb::meta::manifest_version*> shown;
             for (const blb::meta::manifest_version& version : all.list) {
                 if (std::find(kinds.begin(), kinds.end(), kindOf(version.type)) != kinds.end() &&
-                    matches(version.id, query)) {
+                    blb::icontains(version.id, query)) {
                     shown.push_back(&version);
                 }
             }

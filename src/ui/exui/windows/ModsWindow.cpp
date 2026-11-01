@@ -25,18 +25,6 @@ namespace ForgottenMelody {
     namespace {
         using exui::ControlKind;
 
-        bool contains(const std::string& text, const std::string& query) {
-            auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c; };
-            return std::search(text.begin(), text.end(), query.begin(), query.end(),
-                               [&](char a, char b) { return lower(a) == lower(b); }) != text.end();
-        }
-
-        // Like the default interface: by name, id or file name.
-        bool matches(const Mods::Mod& mod, const std::string& query) {
-            return query.empty() || contains(mod.info.name, query) || contains(mod.info.id, query) ||
-                    contains(mod.info.file_name, query);
-        }
-
         bool endsWith(const std::wstring& text, const std::wstring& suffix) {
             return text.size() >= suffix.size() &&
                     text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
@@ -138,7 +126,7 @@ namespace ForgottenMelody {
                 for (const Mods::Mod& mod : mods.mods) {
                     enabled += mod.info.enabled ? 1 : 0;
                     lacking += mod.missing.empty() ? 0 : 1;
-                    if (!matches(mod, query)) {
+                    if (!Mods::matches(mod, query)) {
                         continue;
                     }
                     const std::string& name = mod.info.name.empty() ? mod.info.file_name : mod.info.name;

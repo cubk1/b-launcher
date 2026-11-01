@@ -134,6 +134,11 @@ namespace Mods {
         }
     }
 
+    bool matches(const Mod& mod, std::string_view query) {
+        return blb::icontains(mod.info.name, query) || blb::icontains(mod.info.id, query) ||
+                blb::icontains(mod.info.file_name, query);
+    }
+
     const List& of(const std::string& instanceKey) {
         auto found = lists.find(instanceKey);
         if (found != lists.end()) {

@@ -61,6 +61,19 @@ iequals (std::string_view a, std::string_view b) noexcept
   return true;
 }
 
+bool
+icontains (std::string_view text, std::string_view needle) noexcept
+{
+  if (needle.empty ())
+    return true;
+  if (needle.size () > text.size ())
+    return false;
+  return std::search (text.begin (), text.end (), needle.begin (), needle.end (),
+                      [] (char a, char b) {
+                        return lower_ascii (a) == lower_ascii (b);
+                      }) != text.end ();
+}
+
 std::string_view
 trim (std::string_view text) noexcept
 {
