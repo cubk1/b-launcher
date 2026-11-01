@@ -6,6 +6,7 @@
 #include "app/system/Notices.h"
 
 #include <core/base/hash.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/instance/loader_editor.hpp>
 
@@ -545,15 +546,32 @@ namespace Instances {
                     continue;
                 }
                 blb::instance::instance_manager with(blb::meta::game_layout(source.root), isolation);
+                const auto folders = blb::fs::list_directory(with.layout().versions());
+                std::set<std::string> read;
                 for (const std::string& id : wanted->second) {
-                    auto info = with.get(id);
+                    std::string actual = id;
+                    if (!folders.contains(id)) {
+                        // A case-only rename can leave both spellings in the watch events.
+                        // Use the directory's spelling without folding distinct case-sensitive folders.
+                        auto alias = std::find_if(folders.begin(), folders.end(), [&](const auto& folder) {
+                            return folder.second.is_directory &&
+                                   blb::fs::same_file(with.layout().version_dir(id),
+                                                      with.layout().version_dir(folder.first));
+                        });
+                        if (alias != folders.end()) {
+                            actual = alias->first;
+                            out.gone.push_back(keyOf(source.key, id));
+                        }
+                    }
+                    if (!read.insert(actual).second) continue;
+                    auto info = with.get(actual);
                     if (!info) {
-                        out.gone.push_back(keyOf(source.key, id));
+                        out.gone.push_back(keyOf(source.key, actual));
                         continue;
                     }
                     Entry entry;
                     entry.source = source.key;
-                    entry.key = keyOf(source.key, id);
+                    entry.key = keyOf(source.key, actual);
                     entry.info = std::move(*info);
                     place(entry, with);
                     out.read.push_back(std::move(entry));
