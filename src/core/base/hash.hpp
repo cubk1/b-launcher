@@ -107,6 +107,7 @@ private:
 std::string to_hex (const sha1_digest &digest);
 std::optional<sha1_digest> parse_sha1 (std::string_view hex) noexcept;
 result<sha1_digest> sha1_file (const std::filesystem::path &path);
+result<sha256_digest> sha256_file (const std::filesystem::path &path);
 result<file_digests> digest_file (const std::filesystem::path &path);
 
 }

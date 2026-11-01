@@ -20,7 +20,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
@@ -130,37 +129,12 @@ namespace JavaDownloads {
             return out;
         }
 
-        std::string hexOf(const blb::sha256_digest& digest) {
-            static const char* const digits = "0123456789abcdef";
-            std::string out;
-            for (std::uint8_t byte : digest) {
-                out += digits[byte >> 4];
-                out += digits[byte & 0xF];
-            }
-            return out;
-        }
-
         bool verify(const std::filesystem::path& file, const std::string& expected) {
             if (expected.empty()) {
                 return true;
             }
-            std::ifstream in(file, std::ios::binary);
-            if (!in) {
-                return false;
-            }
-            blb::sha256 hasher;
-            std::vector<char> buffer(1 << 20);
-            while (in) {
-                in.read(buffer.data(), (std::streamsize) buffer.size());
-                std::streamsize got = in.gcount();
-                if (got > 0) {
-                    hasher.update(buffer.data(), (size_t) got);
-                }
-            }
-            std::string want = expected;
-            std::transform(want.begin(), want.end(), want.begin(),
-                           [](unsigned char c) { return (char) std::tolower(c); });
-            return hexOf(hasher.finish()) == want;
+            auto digest = blb::sha256_file(file);
+            return digest && blb::iequals(blb::to_hex(std::span<const std::uint8_t>(*digest)), expected);
         }
 
         std::string normalize(std::string path) {
