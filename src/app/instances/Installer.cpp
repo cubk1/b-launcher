@@ -451,7 +451,7 @@ namespace Installer {
         std::filesystem::path archive = local
                 ? pack.file
                 : std::filesystem::temp_directory_path() / blb::path_from_utf8("b-launcher-" + id + ".mrpack");
-        std::vector<std::filesystem::path> made = newFolders(root, {id, pack.minecraft});
+        std::vector<std::filesystem::path> made = newFolders(root, {id});
         blb::net::download_task download;
         download.urls = pack.urls;
         download.target = archive;
@@ -545,8 +545,7 @@ namespace Installer {
             }
             expected = loaders.empty() ? minecraft : blb::install::default_version_id(request, infos);
         }
-        std::vector<std::filesystem::path> made =
-                newFolders(root, {expected, loaders.empty() && id.empty() ? std::string() : minecraft});
+        std::vector<std::filesystem::path> made = newFolders(root, {expected});
         auto javaOptions = Catalog::javaScanOptions();
         worker = std::thread([root, request, token, made, javaOptions] {
             std::string result;

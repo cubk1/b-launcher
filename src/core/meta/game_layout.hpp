@@ -11,7 +11,8 @@ class game_layout
 {
 public:
   game_layout () = default;
-  explicit game_layout (std::filesystem::path root);
+  explicit game_layout (std::filesystem::path root,
+                        std::filesystem::path versions_directory = {});
 
   const std::filesystem::path &root () const noexcept;
   std::filesystem::path versions () const;
@@ -32,6 +33,7 @@ public:
 
 private:
   std::filesystem::path m_root;
+  std::filesystem::path m_versions;
 };
 
 }

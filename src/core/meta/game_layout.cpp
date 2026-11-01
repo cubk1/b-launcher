@@ -5,12 +5,15 @@
 namespace b_launcher_base::meta
 {
 
-game_layout::game_layout (std::filesystem::path root)
+game_layout::game_layout (std::filesystem::path root,
+                          std::filesystem::path versions_directory)
 {
   m_root = fs::absolute (root);
   if (m_root.has_filename () == false && m_root.has_parent_path ()
       && m_root != m_root.root_path ())
     m_root = m_root.parent_path ();
+  if (!versions_directory.empty ())
+    m_versions = fs::absolute (versions_directory);
 }
 
 const std::filesystem::path &
@@ -22,7 +25,7 @@ game_layout::root () const noexcept
 std::filesystem::path
 game_layout::versions () const
 {
-  return m_root / "versions";
+  return m_versions.empty () ? m_root / "versions" : m_versions;
 }
 
 std::filesystem::path
