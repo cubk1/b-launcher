@@ -450,6 +450,13 @@ namespace Platform {
     }
 
     bool openUrl(const std::string& url) {
+        size_t scheme = url.find("://");
+        if (scheme == std::string::npos ||
+            (!b_launcher_base::iequals(url.substr(0, scheme), "http") &&
+             !b_launcher_base::iequals(url.substr(0, scheme), "https"))) return false;
+        size_t host = scheme + 3;
+        if (host == url.size() || url.find_first_of("/\\?#", host) == host ||
+            std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; })) return false;
         HINSTANCE result = ShellExecuteW((HWND) window, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return (INT_PTR) result > 32;
     }
