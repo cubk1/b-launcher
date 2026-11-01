@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 class FlagBinding final : public Flag {
@@ -29,6 +30,43 @@ public:
 
     ModeBinding(const std::string& owner, std::function<std::string()> getter,
                 std::function<void(const std::string&)> setter, std::function<std::vector<std::string>()> source);
+
+    // Own the mapping so a popup can retain the binding after its caller returns.
+    // Unmapped values use the fallback label; unknown labels leave the value unchanged.
+    template <class Value>
+    static std::shared_ptr<ModeBinding> mapped(const std::string& owner, std::function<Value()> read,
+                                                std::function<void(Value)> write,
+                                                std::vector<std::pair<Value, std::string>> options,
+                                                std::string fallback = {}) {
+        auto mapping = std::make_shared<const std::vector<std::pair<Value, std::string>>>(std::move(options));
+        std::function<std::string()> label;
+        if (read) {
+            label = [mapping, read = std::move(read), fallback = std::move(fallback)] {
+                Value current = read();
+                for (const auto& [value, text] : *mapping) {
+                    if (value == current) return text;
+                }
+                return fallback;
+            };
+        }
+        return std::make_shared<ModeBinding>(
+                owner, std::move(label),
+                [mapping, write = std::move(write)](const std::string& picked) {
+                    if (!write) return;
+                    for (const auto& [value, text] : *mapping) {
+                        if (text == picked) {
+                            write(value);
+                            return;
+                        }
+                    }
+                },
+                [mapping] {
+                    std::vector<std::string> labels;
+                    labels.reserve(mapping->size());
+                    for (const auto& [value, text] : *mapping) labels.push_back(text);
+                    return labels;
+                });
+    }
     std::vector<std::string> options() override;
     bool selected(const std::string& option) override;
     void choose(const std::string& option) override;

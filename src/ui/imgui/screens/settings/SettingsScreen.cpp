@@ -70,41 +70,6 @@ namespace SettingsScreen {
             return Page::right() - mainX();
         }
 
-        struct Mode {
-            blb::instance::isolation_mode mode;
-            const char* label;
-        };
-
-        const Mode MODES[] = {
-                {blb::instance::isolation_mode::none, "不隔离"},
-                {blb::instance::isolation_mode::modded, "仅隔离 Mod 实例"},
-                {blb::instance::isolation_mode::all, "全部隔离"},
-        };
-
-        struct Language {
-            LaunchDefaults::Language language;
-            const char* label;
-        };
-
-        const Language LANGUAGES[] = {
-                {LaunchDefaults::Language::None, "不自动设置"},
-                {LaunchDefaults::Language::Chinese, "自动设置为中文"},
-                {LaunchDefaults::Language::English, "自动设置为英文"},
-        };
-
-        struct Collector {
-            blb::launch::gc_mode mode;
-            const char* label;
-        };
-
-        const Collector COLLECTORS[] = {
-                {blb::launch::gc_mode::zgc, "尽量使用 ZGC"},
-                {blb::launch::gc_mode::generational_zgc, "尽量使用分代 ZGC"},
-                {blb::launch::gc_mode::g1, "标准 G1GC"},
-                {blb::launch::gc_mode::tuned_g1, "调优 G1GC"},
-                {blb::launch::gc_mode::none, "不指定（可自定义）"},
-        };
-
         void explain(const std::string& id, const std::string& text, float rowY, float labelRight, bool blocked) {
             if (!blocked && NewUi::hit(mainX(), rowY, labelRight - mainX(), Page::ROW_H)) {
                 NewUi::markDoc(id, text, mainX() + 6.0f, rowY + Page::ROW_H + 10.0f);
@@ -148,32 +113,12 @@ namespace SettingsScreen {
 
         void instanceRows(float y, bool blocked) {
             Page::label("默认版本隔离", y);
-            select("settings#isolation",
-                   std::make_shared<ModeBinding>(
-                           "settings#isolation",
-                           [] {
-                               for (const Mode& mode : MODES) {
-                                   if (mode.mode == Instances::isolation()) {
-                                       return std::string(mode.label);
-                                   }
-                               }
-                               return std::string();
-                           },
-                           [](const std::string& option) {
-                               for (const Mode& mode : MODES) {
-                                   if (option == mode.label) {
-                                       Instances::setIsolation(mode.mode);
-                                   }
-                               }
-                           },
-                           [] {
-                               std::vector<std::string> options;
-                               for (const Mode& mode : MODES) {
-                                   options.push_back(mode.label);
-                               }
-                               return options;
-                           }),
-                   y, blocked);
+            static auto isolation = ModeBinding::mapped<blb::instance::isolation_mode>(
+                    "settings#isolation", Instances::isolation, Instances::setIsolation,
+                    {{blb::instance::isolation_mode::none, "不隔离"},
+                     {blb::instance::isolation_mode::modded, "仅隔离 Mod 实例"},
+                     {blb::instance::isolation_mode::all, "全部隔离"}});
+            select("settings#isolation", isolation, y, blocked);
             y += Page::ROW_H;
 
             Page::label("实例列表", y);
@@ -190,32 +135,12 @@ namespace SettingsScreen {
 
         void launchRows(float y, bool blocked) {
             Page::label("游戏语言", y);
-            select("settings#language",
-                   std::make_shared<ModeBinding>(
-                           "settings#language",
-                           [] {
-                               for (const Language& language : LANGUAGES) {
-                                   if (language.language == LaunchDefaults::language()) {
-                                       return std::string(language.label);
-                                   }
-                               }
-                               return std::string();
-                           },
-                           [](const std::string& option) {
-                               for (const Language& language : LANGUAGES) {
-                                   if (option == language.label) {
-                                       LaunchDefaults::setLanguage(language.language);
-                                   }
-                               }
-                           },
-                           [] {
-                               std::vector<std::string> options;
-                               for (const Language& language : LANGUAGES) {
-                                   options.push_back(language.label);
-                               }
-                               return options;
-                           }),
-                   y, blocked);
+            static auto language = ModeBinding::mapped<LaunchDefaults::Language>(
+                    "settings#language", LaunchDefaults::language, LaunchDefaults::setLanguage,
+                    {{LaunchDefaults::Language::None, "不自动设置"},
+                     {LaunchDefaults::Language::Chinese, "自动设置为中文"},
+                     {LaunchDefaults::Language::English, "自动设置为英文"}});
+            select("settings#language", language, y, blocked);
             explain("settings#language",
                     "启动时，如果游戏目录里还没有设置过语言（比如新实例第一次启动），就把游戏语言设为中文或英文；之后在"
                     "游戏里改的语言不会被覆盖。",
@@ -223,32 +148,14 @@ namespace SettingsScreen {
             y += Page::ROW_H;
 
             Page::label("内存管理", y);
-            select("settings#gc",
-                   std::make_shared<ModeBinding>(
-                           "settings#gc",
-                           [] {
-                               for (const Collector& collector : COLLECTORS) {
-                                   if (collector.mode == LaunchDefaults::gc()) {
-                                       return std::string(collector.label);
-                                   }
-                               }
-                               return std::string();
-                           },
-                           [](const std::string& option) {
-                               for (const Collector& collector : COLLECTORS) {
-                                   if (option == collector.label) {
-                                       LaunchDefaults::setGc(collector.mode);
-                                   }
-                               }
-                           },
-                           [] {
-                               std::vector<std::string> options;
-                               for (const Collector& collector : COLLECTORS) {
-                                   options.push_back(collector.label);
-                               }
-                               return options;
-                           }),
-                   y, blocked);
+            static auto gc = ModeBinding::mapped<blb::launch::gc_mode>(
+                    "settings#gc", LaunchDefaults::gc, LaunchDefaults::setGc,
+                    {{blb::launch::gc_mode::zgc, "尽量使用 ZGC"},
+                     {blb::launch::gc_mode::generational_zgc, "尽量使用分代 ZGC"},
+                     {blb::launch::gc_mode::g1, "标准 G1GC"},
+                     {blb::launch::gc_mode::tuned_g1, "调优 G1GC"},
+                     {blb::launch::gc_mode::none, "不指定（可自定义）"}});
+            select("settings#gc", gc, y, blocked);
             explain("settings#gc",
                     "游戏用的垃圾回收器。ZGC 停顿更短，需要 Java 15 以上，分代 ZGC 需要 Java 21 以上，Java "
                     "版本不够时改用标准 G1GC；调优 G1GC 是启动器默认的一组 G1 参数；不指定则不加回收器参数，可以在 JVM "
@@ -1043,22 +950,6 @@ namespace SettingsScreen {
             return y + Page::CAPTION_H + count * Page::ROW_H + Page::GAP;
         }
 
-        struct PatchOption {
-            const char* value;
-            const char* label;
-        };
-
-        const std::vector<PatchOption> SKIN_MODES = {
-                {"fallback", "只补全没有皮肤的玩家"},
-                {"override", "强制使用自定义皮肤"},
-        };
-
-        const std::vector<PatchOption> SKIN_SOURCES = {
-                {"mojang", "Mojang"},
-                {"littleskin", "LittleSkin"},
-                {"custom", "自定义"},
-        };
-
         std::string patchId(const char* key) {
             return std::string("settings#patch#") + key;
         }
@@ -1070,38 +961,20 @@ namespace SettingsScreen {
             explain(id, doc, y, Page::controlRight() - 40.0f, blocked);
         }
 
-        void patchSelect(const char* label, const char* key, const std::vector<PatchOption>& options, const char* doc,
+        std::shared_ptr<ModeBinding> patchChoice(std::string key,
+                                                   std::vector<std::pair<std::string, std::string>> options) {
+            std::string fallback = options.empty() ? std::string() : options.front().second;
+            return ModeBinding::mapped<std::string>(
+                    patchId(key.c_str()), [key] { return Patches::value(key); },
+                    [key](const std::string& value) { Patches::setValue(key, value); },
+                    std::move(options), std::move(fallback));
+        }
+
+        void patchSelect(const char* label, const std::shared_ptr<ModeBinding>& choice, const char* doc,
                          float y, bool blocked) {
             Page::label(label, y);
-            std::string id = patchId(key);
-            select(id,
-                   std::make_shared<ModeBinding>(
-                           id,
-                           [key, &options] {
-                               std::string current = Patches::value(key);
-                               for (const PatchOption& option : options) {
-                                   if (current == option.value) {
-                                       return std::string(option.label);
-                                   }
-                               }
-                               return std::string(options.front().label);
-                           },
-                           [key, &options](const std::string& picked) {
-                               for (const PatchOption& option : options) {
-                                   if (picked == option.label) {
-                                       Patches::setValue(key, option.value);
-                                   }
-                               }
-                           },
-                           [&options] {
-                               std::vector<std::string> labels;
-                               for (const PatchOption& option : options) {
-                                   labels.push_back(option.label);
-                               }
-                               return labels;
-                           }),
-                   y, blocked);
-            explain(id, doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
+            select(choice->owner, choice, y, blocked);
+            explain(choice->owner, doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
         }
 
         float patchText(const char* label, const char* key, const char* hint, const char* doc, float y, bool blocked,
@@ -1178,12 +1051,17 @@ namespace SettingsScreen {
             if (!Patches::flag("skin.authlib")) {
                 return;
             }
-            patchSelect("皮肤优先级", "skin.mode", SKIN_MODES,
+            static auto skinMode = patchChoice("skin.mode", {{"fallback", "只补全没有皮肤的玩家"},
+                                                             {"override", "强制使用自定义皮肤"}});
+            patchSelect("皮肤优先级", skinMode,
                         "只补全没有皮肤的玩家：正版玩家自带的皮肤不变，只给没有皮肤的玩家（如离线玩家）使用皮肤来源。"
                         "强制使用自定义皮肤：先查皮肤来源，皮肤来源没有的材质再用玩家原有的。",
                         y, blocked);
             y += Page::ROW_H;
-            patchSelect("皮肤来源", "skin.source", SKIN_SOURCES,
+            static auto skinSource = patchChoice("skin.source", {{"mojang", "Mojang"},
+                                                                 {"littleskin", "LittleSkin"},
+                                                                 {"custom", "自定义"}});
+            patchSelect("皮肤来源", skinSource,
                         "Mojang：从正版服务器获取皮肤；LittleSkin：按玩家名从 LittleSkin 皮肤站获取；自定义：使用选择的"
                         "皮肤和披风图片。",
                         y, blocked);
