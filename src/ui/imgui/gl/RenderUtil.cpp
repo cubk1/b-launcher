@@ -24,7 +24,8 @@ namespace RenderUtil {
         return ImGui::GetDrawListSharedData()->TexUvWhitePixel;
     }
 
-    void gradientH(float x, float y, float w, float h, uint32_t left, uint32_t right) {
+    static void gradient(float x, float y, float w, float h, uint32_t bottomLeft, uint32_t bottomRight,
+                         uint32_t topRight, uint32_t topLeft) {
         UiRender::flush();
         ImDrawList* dl = UiRender::drawList();
         if (dl == nullptr) {
@@ -33,10 +34,10 @@ namespace RenderUtil {
         ImVec2 uv = whiteUv();
         dl->PrimReserve(6, 4);
         unsigned int base = dl->_VtxCurrentIdx;
-        dl->PrimWriteVtx(screen(x, y + h), uv, toIm(left));
-        dl->PrimWriteVtx(screen(x + w, y + h), uv, toIm(right));
-        dl->PrimWriteVtx(screen(x + w, y), uv, toIm(right));
-        dl->PrimWriteVtx(screen(x, y), uv, toIm(left));
+        dl->PrimWriteVtx(screen(x, y + h), uv, toIm(bottomLeft));
+        dl->PrimWriteVtx(screen(x + w, y + h), uv, toIm(bottomRight));
+        dl->PrimWriteVtx(screen(x + w, y), uv, toIm(topRight));
+        dl->PrimWriteVtx(screen(x, y), uv, toIm(topLeft));
         dl->PrimWriteIdx((ImDrawIdx) base);
         dl->PrimWriteIdx((ImDrawIdx) (base + 1));
         dl->PrimWriteIdx((ImDrawIdx) (base + 2));
@@ -45,25 +46,12 @@ namespace RenderUtil {
         dl->PrimWriteIdx((ImDrawIdx) (base + 3));
     }
 
+    void gradientH(float x, float y, float w, float h, uint32_t left, uint32_t right) {
+        gradient(x, y, w, h, left, right, right, left);
+    }
+
     void gradientV(float x, float y, float w, float h, uint32_t top, uint32_t bottom) {
-        UiRender::flush();
-        ImDrawList* dl = UiRender::drawList();
-        if (dl == nullptr) {
-            return;
-        }
-        ImVec2 uv = whiteUv();
-        dl->PrimReserve(6, 4);
-        unsigned int base = dl->_VtxCurrentIdx;
-        dl->PrimWriteVtx(screen(x, y + h), uv, toIm(bottom));
-        dl->PrimWriteVtx(screen(x + w, y + h), uv, toIm(bottom));
-        dl->PrimWriteVtx(screen(x + w, y), uv, toIm(top));
-        dl->PrimWriteVtx(screen(x, y), uv, toIm(top));
-        dl->PrimWriteIdx((ImDrawIdx) base);
-        dl->PrimWriteIdx((ImDrawIdx) (base + 1));
-        dl->PrimWriteIdx((ImDrawIdx) (base + 2));
-        dl->PrimWriteIdx((ImDrawIdx) base);
-        dl->PrimWriteIdx((ImDrawIdx) (base + 2));
-        dl->PrimWriteIdx((ImDrawIdx) (base + 3));
+        gradient(x, y, w, h, bottom, bottom, top, top);
     }
 
     void triangle(float x1, float y1, float x2, float y2, float x3, float y3, uint32_t color) {

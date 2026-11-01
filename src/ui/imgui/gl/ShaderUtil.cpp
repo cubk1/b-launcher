@@ -1643,6 +1643,15 @@ void main() {
         return p;
     }
 
+    static Prim makeRect(int kind, float x, float y, float width, float height) {
+        Prim p = make(kind);
+        p.f[0] = x;
+        p.f[1] = y;
+        p.f[2] = width;
+        p.f[3] = height;
+        return p;
+    }
+
     void rect(float x, float y, float width, float height, uint32_t rgba) {
         roundRect(x, y, width, height, 0, rgba, 0);
     }
@@ -1664,11 +1673,7 @@ void main() {
 
     void roundRectRadii(float x, float y, float width, float height, float radius, uint32_t rgba, uint32_t rgbaB,
                         float gradient, float topLeft, float topRight, float bottomLeft, float bottomRight) {
-        Prim p = make(ROUND_RECT);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(ROUND_RECT, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = gradient;
         p.f[6] = topLeft;
@@ -1698,11 +1703,7 @@ void main() {
 
     void roundRectRing(float x, float y, float width, float height, float radius, float thickness, uint32_t rgbaTop,
                        uint32_t rgbaBottom, int cornerMask, float fadeEnd, bool horizontal, float dash, float gap) {
-        Prim p = make(RING);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(RING, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = thickness;
         p.f[6] = fadeEnd;
@@ -1717,11 +1718,7 @@ void main() {
 
     void roundRectShadow(float x, float y, float width, float height, float radius, float spread, float offsetY,
                          uint32_t rgba) {
-        Prim p = make(SHADOW);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(SHADOW, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = spread;
         p.f[6] = offsetY;
@@ -1731,11 +1728,7 @@ void main() {
 
     void roundRectBloom(float x, float y, float width, float height, float radius, float spread, float intensity,
                         uint32_t rgba) {
-        Prim p = make(BLOOM);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(BLOOM, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = spread;
         p.f[6] = intensity;
@@ -1745,11 +1738,7 @@ void main() {
 
     void kawaseBlur(float x, float y, float w, float h, float cornerRadius, float strength, uint32_t tintRgba,
                     int cornerMask, bool recapture) {
-        Prim p = make(KAWASE);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = w;
-        p.f[3] = h;
+        Prim p = makeRect(KAWASE, x, y, w, h);
         p.f[4] = cornerRadius;
         p.f[5] = strength;
         p.c[0] = tintRgba;
@@ -1768,11 +1757,7 @@ void main() {
 
     void blur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,
               int cornerMask, float gamma) {
-        Prim p = make(BLUR);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = w;
-        p.f[3] = h;
+        Prim p = makeRect(BLUR, x, y, w, h);
         p.f[4] = cornerRadius;
         p.f[5] = blurRadius;
         p.f[6] = gamma;
@@ -1787,11 +1772,7 @@ void main() {
 
     void pickerSurface(float x, float y, float width, float height, float radius, float hue, float sat, float val,
                        int mode, float alpha) {
-        Prim p = make(PICKER);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(PICKER, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = hue;
         p.f[6] = sat;
@@ -1803,11 +1784,7 @@ void main() {
 
     void roundTexture(uint32_t texture, float x, float y, float width, float height, float radius, int cornerMask,
                       float alpha, float fadeWidth, uint32_t fadeRgba, float uvScaleX, float uvScaleY) {
-        Prim p = make(ROUND_TEXTURE);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(ROUND_TEXTURE, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = alpha;
         p.f[6] = fadeWidth;
@@ -1826,11 +1803,7 @@ void main() {
 
     void roundTex(float x, float y, float width, float height, float radius, uint32_t texture, float u0, float v0,
                   float u1, float v1, uint32_t tintRgba, int cornerMask) {
-        Prim p = make(ROUND_TEX);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(ROUND_TEX, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = u0;
         p.f[6] = v0;
@@ -1881,11 +1854,7 @@ void main() {
 
     void shell(float x, float y, float width, float height, float split, float radius, uint32_t plateRgba,
                uint32_t mainRgba, float outerRadius) {
-        Prim p = make(SHELL);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(SHELL, x, y, width, height);
         p.f[4] = split;
         p.f[5] = radius;
         p.f[6] = outerRadius;
@@ -1899,11 +1868,7 @@ void main() {
         if (w <= 0.0f || h <= 0.0f) {
             return;
         }
-        Prim p = make(BLUR);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = w;
-        p.f[3] = h;
+        Prim p = makeRect(BLUR, x, y, w, h);
         p.f[4] = cornerRadius;
         p.f[5] = blurRadius;
         p.f[6] = gamma;
@@ -1926,11 +1891,7 @@ void main() {
         if (w <= 0.0f || h <= 0.0f) {
             return;
         }
-        Prim p = make(BLUR);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = w;
-        p.f[3] = h;
+        Prim p = makeRect(BLUR, x, y, w, h);
         p.f[4] = 1.0f;
         p.f[5] = blurRadius;
         p.f[6] = gamma;
@@ -1956,11 +1917,7 @@ void main() {
         if (width <= 0.0f || height <= 0.0f || ((rgba >> 24) & 0xFF) == 0) {
             return;
         }
-        Prim p = make(BLOOM);
-        p.f[0] = x;
-        p.f[1] = y;
-        p.f[2] = width;
-        p.f[3] = height;
+        Prim p = makeRect(BLOOM, x, y, width, height);
         p.f[4] = radius;
         p.f[5] = spread;
         p.f[6] = intensity;
