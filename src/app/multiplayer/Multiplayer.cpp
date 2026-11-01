@@ -134,6 +134,7 @@ namespace Multiplayer {
         int lookupLandedSerial = 0;
         int lookupSerial = 0;
         Lookup lookupShown;
+        std::optional<std::string> lookupPending;
 
         template <typename Change>
         void update(Change change) {
@@ -635,6 +636,34 @@ namespace Multiplayer {
             wantedName = name;
         }
 
+        void startLookup() {
+            if (lookupWorker.joinable() || !lookupPending) {
+                return;
+            }
+            std::string code = std::move(*lookupPending);
+            lookupPending.reset();
+            lookupCancel = blb::cancellation_source();
+            int serial = lookupSerial;
+            lookupDone = false;
+            lookupWorker = std::thread([code, serial, token = lookupCancel.token()] {
+                bool exists = false;
+                RoomApi::Reply reply = RoomApi::exists(code, exists, token);
+                Lookup out;
+                out.code = code;
+                out.done = true;
+                out.exists = exists;
+                if (!reply.ok && !RoomApi::gone(reply)) {
+                    out.error = RoomApi::describe(reply);
+                }
+                {
+                    std::lock_guard<std::mutex> guard(lookupLock);
+                    lookupLanded = std::move(out);
+                    lookupLandedSerial = serial;
+                }
+                lookupDone = true;
+            });
+        }
+
         void landLookup() {
             {
                 std::lock_guard<std::mutex> guard(lookupLock);
@@ -646,6 +675,7 @@ namespace Multiplayer {
             if (lookupWorker.joinable() && lookupDone.load()) {
                 lookupWorker.join();
             }
+            startLookup();
         }
 
         void landService() {
@@ -753,37 +783,18 @@ namespace Multiplayer {
             return;
         }
         lookupCancel.cancel();
-        if (lookupWorker.joinable()) {
-            lookupWorker.join();
-        }
-        lookupCancel = blb::cancellation_source();
-        int serial = ++lookupSerial;
+        lookupSerial++;
         lookupShown = Lookup();
         lookupShown.code = code;
         lookupShown.checking = true;
-        lookupDone = false;
-        lookupWorker = std::thread([code, serial, token = lookupCancel.token()] {
-            bool exists = false;
-            RoomApi::Reply reply = RoomApi::exists(code, exists, token);
-            Lookup out;
-            out.code = code;
-            out.done = true;
-            out.exists = exists;
-            if (!reply.ok && !RoomApi::gone(reply)) {
-                out.error = RoomApi::describe(reply);
-            }
-            {
-                std::lock_guard<std::mutex> guard(lookupLock);
-                lookupLanded = std::move(out);
-                lookupLandedSerial = serial;
-            }
-            lookupDone = true;
-        });
+        lookupPending = code;
+        landLookup();
     }
 
     void forgetLookup() {
         lookupCancel.cancel();
         lookupSerial++;
+        lookupPending.reset();
         lookupShown = Lookup();
     }
 
@@ -964,6 +975,7 @@ namespace Multiplayer {
             serviceWorker.join();
         }
         lookupCancel.cancel();
+        lookupPending.reset();
         if (lookupWorker.joinable()) {
             lookupWorker.join();
         }
