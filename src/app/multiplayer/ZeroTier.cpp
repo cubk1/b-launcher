@@ -15,10 +15,12 @@
 #include <ZeroTierSockets.h>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -36,6 +38,7 @@ namespace ZeroTier {
         using Clock = std::chrono::steady_clock;
 
         const char* const IDENTITY = "ZeroTierIdentity";
+        const char* const PORT = "ZeroTierPort";
         constexpr int SLICE = 250;
         constexpr size_t BUFFER = 32 * 1024;
         constexpr int CONNECT_LIMIT = 10000;
@@ -55,6 +58,11 @@ namespace ZeroTier {
         bool started = false;
         bool fresh = false;
         int startError = 0;
+        int rememberedPort = 0;
+
+        std::mutex moonsLock;
+        std::vector<std::pair<uint64_t, uint64_t>> wantedMoons;
+        std::vector<uint64_t> orbitedMoons;
 
         std::mutex linksLock;
         std::vector<std::unique_ptr<Link>> linked;
@@ -70,12 +78,12 @@ namespace ZeroTier {
             });
         }
 
-        uint64_t networkId(const std::string& network) {
-            if (network.size() != 16) {
+        uint64_t hexValue(const std::string& text) {
+            if (text.empty() || text.size() > 16) {
                 return 0;
             }
             uint64_t value = 0;
-            for (char c : network) {
+            for (char c : text) {
                 int digit = c >= '0' && c <= '9' ? c - '0'
                         : c >= 'a' && c <= 'f'   ? c - 'a' + 10
                         : c >= 'A' && c <= 'F'   ? c - 'A' + 10
@@ -86,6 +94,47 @@ namespace ZeroTier {
                 value = value << 4 | (uint64_t) digit;
             }
             return value;
+        }
+
+        uint64_t networkId(const std::string& network) {
+            return network.size() == 16 ? hexValue(network) : 0;
+        }
+
+        int loadPort() {
+            std::optional<std::string> text = Platform::loadValue(PORT);
+            int port = text ? std::atoi(text->c_str()) : 0;
+            return port >= 1024 && port <= 65535 ? port : 0;
+        }
+
+        bool portFree(int port) {
+            SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            if (probe == INVALID_SOCKET) {
+                return false;
+            }
+            sockaddr_in address{};
+            address.sin_family = AF_INET;
+            address.sin_port = htons((u_short) port);
+            bool free = bind(probe, (const sockaddr*) &address, sizeof(address)) == 0;
+            closesocket(probe);
+            return free;
+        }
+
+        void syncMoons() {
+            std::lock_guard<std::mutex> guard(moonsLock);
+            if (zts_node_is_online() != 1) {
+                return;
+            }
+            for (const auto& [id, seed] : wantedMoons) {
+                if (std::find(orbitedMoons.begin(), orbitedMoons.end(), id) == orbitedMoons.end() &&
+                    zts_moon_orbit(id, seed) == ZTS_ERR_OK) {
+                    orbitedMoons.push_back(id);
+                }
+            }
+            std::erase_if(orbitedMoons, [](uint64_t id) {
+                bool wanted = std::any_of(wantedMoons.begin(), wantedMoons.end(),
+                                          [id](const auto& moon) { return moon.first == id; });
+                return !wanted && zts_moon_deorbit(id) == ZTS_ERR_OK;
+            });
         }
 
         bool ended(const Link& link) {
@@ -374,6 +423,10 @@ namespace ZeroTier {
                     restored = zts_id_pair_is_valid(key, sizeof(key)) == 1 &&
                             zts_init_from_memory(key, sizeof(key)) == ZTS_ERR_OK;
                 }
+                rememberedPort = loadPort();
+                if (rememberedPort > 0 && portFree(rememberedPort)) {
+                    zts_init_set_port((unsigned short) rememberedPort);
+                }
                 startError = zts_node_start();
                 if (startError != ZTS_ERR_OK) {
                     return Start::Failed;
@@ -391,16 +444,38 @@ namespace ZeroTier {
                 return Start::Offline;
             }
         }
-        std::lock_guard<std::mutex> guard(startLock);
-        if (fresh) {
-            char key[ZTS_ID_STR_BUF_LEN] = {};
-            unsigned int length = sizeof(key);
-            if (zts_node_get_id_pair(key, &length) == ZTS_ERR_OK && length > 0 && length <= sizeof(key)) {
-                Platform::storeValue(IDENTITY, std::string(key, length), false);
+        {
+            std::lock_guard<std::mutex> guard(startLock);
+            if (fresh) {
+                char key[ZTS_ID_STR_BUF_LEN] = {};
+                unsigned int length = sizeof(key);
+                if (zts_node_get_id_pair(key, &length) == ZTS_ERR_OK && length > 0 && length <= sizeof(key)) {
+                    Platform::storeValue(IDENTITY, std::string(key, length), false);
+                }
+                fresh = false;
             }
-            fresh = false;
+            int port = zts_node_get_port();
+            if (port > 0 && port != rememberedPort && Platform::storeValue(PORT, std::to_string(port), true)) {
+                rememberedPort = port;
+            }
         }
+        syncMoons();
         return Start::Online;
+    }
+
+    void orbit(const std::vector<Moon>& moons) {
+        {
+            std::lock_guard<std::mutex> guard(moonsLock);
+            wantedMoons.clear();
+            for (const Moon& moon : moons) {
+                uint64_t id = hexValue(moon.id);
+                uint64_t seed = hexValue(moon.seed);
+                if (id != 0 && seed != 0) {
+                    wantedMoons.emplace_back(id, seed);
+                }
+            }
+        }
+        syncMoons();
     }
 
     std::string details() {
@@ -579,6 +654,8 @@ namespace ZeroTier {
     Start start(const blb::cancellation_token&) {
         return Start::Failed;
     }
+
+    void orbit(const std::vector<Moon>&) {}
 
     std::string details() {
         return "这个版本没有包含联机组件";

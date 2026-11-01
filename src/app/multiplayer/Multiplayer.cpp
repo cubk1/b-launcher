@@ -756,6 +756,9 @@ namespace Multiplayer {
         serviceWorker = std::thread([token = serviceCancel.token()] {
             RoomApi::Service status;
             RoomApi::Reply reply = RoomApi::service(status, token);
+            if (reply.ok) {
+                ZeroTier::orbit(status.moons);
+            }
             Service out;
             out.known = true;
             out.reachable = reply.ok;

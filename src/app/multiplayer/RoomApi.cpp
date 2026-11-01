@@ -188,6 +188,14 @@ namespace RoomApi {
         out.message = out.maintenance ? text(doc, "message") : std::string();
         out.available = (int) number(doc, "available");
         out.total = (int) number(doc, "total");
+        auto moons = doc.find("moons");
+        if (moons != doc.end() && moons->is_array()) {
+            for (const nlohmann::json& moon : *moons) {
+                if (moon.is_object()) {
+                    out.moons.push_back({text(moon, "id"), text(moon, "seed")});
+                }
+            }
+        }
         return reply;
     }
 
