@@ -285,6 +285,14 @@ namespace NewInstanceScreen {
             return typedName.empty() ? generatedName() : typedName;
         }
 
+        std::string sourceLabel(const Instances::Source& source) {
+            const auto& sources = Instances::sources();
+            bool duplicate = std::count_if(sources.begin(), sources.end(), [&](const auto& other) {
+                return other.label == source.label;
+            }) > 1;
+            return duplicate ? source.label + "（" + Platform::display(source.root) + "）" : source.label;
+        }
+
         const Instances::Source* targetSource() {
             if (const Instances::Source* source = Instances::source(target)) {
                 return source;
@@ -779,19 +787,20 @@ namespace NewInstanceScreen {
                         "new#place",
                         [] {
                             const Instances::Source* source = targetSource();
-                            return source != nullptr ? source->label : std::string();
+                            return source != nullptr ? sourceLabel(*source) : std::string();
                         },
                         [](const std::string& option) {
                             for (const Instances::Source& source : Instances::sources()) {
-                                if (source.label == option) {
+                                if (sourceLabel(source) == option) {
                                     target = source.key;
+                                    return;
                                 }
                             }
                         },
                         [] {
                             std::vector<std::string> options;
                             for (const Instances::Source& source : Instances::sources()) {
-                                options.push_back(source.label);
+                                options.push_back(sourceLabel(source));
                             }
                             return options;
                         });
