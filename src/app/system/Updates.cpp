@@ -40,24 +40,24 @@ namespace Updates {
         std::string latestVersion;
         std::string downloadUrl = About::RELEASES_URL;
 
-        std::vector<int> parts(const std::string& version) {
-            std::vector<int> out;
+        std::vector<std::string> parts(const std::string& version) {
+            std::vector<std::string> out;
             size_t i = 0;
             while (i < version.size() && (version[i] < '0' || version[i] > '9')) {
                 i++;
             }
             while (i < version.size()) {
-                int value = 0;
-                bool digits = false;
+                size_t start = i;
                 while (i < version.size() && version[i] >= '0' && version[i] <= '9') {
-                    value = value * 10 + (version[i] - '0');
-                    digits = true;
                     i++;
                 }
-                if (!digits) {
+                if (start == i) {
                     break;
                 }
-                out.push_back(value);
+                while (start + 1 < i && version[start] == '0') {
+                    start++;
+                }
+                out.push_back(version.substr(start, i - start));
                 if (i >= version.size() || version[i] != '.') {
                     break;
                 }
@@ -67,12 +67,20 @@ namespace Updates {
         }
 
         bool newer(const std::string& candidate, const std::string& current) {
-            std::vector<int> a = parts(candidate);
-            std::vector<int> b = parts(current);
+            std::vector<std::string> a = parts(candidate);
+            std::vector<std::string> b = parts(current);
             size_t n = std::max(a.size(), b.size());
-            a.resize(n, 0);
-            b.resize(n, 0);
-            return a > b;
+            a.resize(n, "0");
+            b.resize(n, "0");
+            for (size_t i = 0; i < n; i++) {
+                if (a[i].size() != b[i].size()) {
+                    return a[i].size() > b[i].size();
+                }
+                if (a[i] != b[i]) {
+                    return a[i] > b[i];
+                }
+            }
+            return false;
         }
 
         std::string text(const nlohmann::json& doc, const char* key) {
