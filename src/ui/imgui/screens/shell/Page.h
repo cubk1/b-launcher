@@ -34,8 +34,11 @@ namespace Page {
     float columnLeft();
     float columnWidth();
 
+    void centredText(const std::string& text, float cx, float y, float h, uint32_t color, float size);
     void title(const std::string& text, float x, float y);
     void caption(const std::string& text, float y);
+    void card(float x, float y, float w, float h);
+    void listCard(float x, float y, float w, float rowHeight, int rows);
     void card(float y, int rows);
     void label(const std::string& text, float y);
     void spinner(float cx, float cy, float radius, uint32_t color);
@@ -47,6 +50,7 @@ namespace Page {
     bool button(const std::string& id, const std::string& text, float x, float y, float w, bool primary, bool blocked,
                 int glyph = 0);
     float buttonWidth(const std::string& text, int glyph = 0);
+    int rowCorners(int index, int count);
     void rowHover(const std::string& id, float y, bool hovered, int corners);
     bool navRow(const std::string& id, const std::string& text, const std::string& value, float y, bool blocked,
                 int corners, int glyph = 0);

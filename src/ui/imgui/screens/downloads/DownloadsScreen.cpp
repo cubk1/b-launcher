@@ -160,15 +160,6 @@ namespace DownloadsScreen {
             return w;
         }
 
-        int corners(int index, int count) {
-            return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
-        }
-
-        void card(float x, float y, float w, float h) {
-            UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::surface());
-            UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
-        }
-
         void select(const std::string& id, const std::shared_ptr<Choice>& choice, float x, float y, float w,
                     bool blocked) {
             SelectWidget widget(id, choice);
@@ -473,7 +464,7 @@ namespace DownloadsScreen {
         }
 
         void filters(float y, int total, bool counted, bool blocked) {
-            card(mainX(), y, mainW(), FILTER_H);
+            Page::card(mainX(), y, mainW(), FILTER_H);
             float x = mainX() + FILTER_PAD;
             float w = mainW() - FILTER_PAD * 2;
             float rowY = y + FILTER_PAD;
@@ -1000,7 +991,7 @@ namespace DownloadsScreen {
             float hover = UiState::motion("downloads#hit#" + hit.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
-                                    corners(index, count));
+                                    Page::rowCorners(index, count));
             }
             projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON);
             float textX = x + 12.0f + RESULT_ICON + 12.0f;
@@ -1178,7 +1169,7 @@ namespace DownloadsScreen {
             if (stale) {
                 UiRender::alphaMul = saved * 0.5f;
             }
-            card(mainX(), rowsY, mainW(), contentH);
+            Page::card(mainX(), rowsY, mainW(), contentH);
             for (size_t i = 1; i < shown.hits.size(); i++) {
                 UiRender::hLine(mainX() + 14.0f, Page::right() - 14.0f, rowsY + i * RESULT_H, UiTheme::outlineSoft());
             }
@@ -1299,7 +1290,7 @@ namespace DownloadsScreen {
             float hover = UiState::motion("downloads#version#" + version.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
                 UiRender::roundRect(mainX(), rowY, mainW(), Page::ROW_H, CARD_RADIUS,
-                                    UiTheme::overlay(Ui::round(10 * hover)), corners(index, count));
+                                    UiTheme::overlay(Ui::round(10 * hover)), Page::rowCorners(index, count));
             }
             float centreY = rowY + Page::ROW_H * 0.5f;
             float x = mainX() + 14.0f;
@@ -1432,7 +1423,7 @@ namespace DownloadsScreen {
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
-            card(mainX(), y, mainW(), contentH);
+            Page::card(mainX(), y, mainW(), contentH);
             for (size_t i = 1; i < matching.size(); i++) {
                 UiRender::hLine(mainX() + 14.0f, Page::right() - 14.0f, y + i * Page::ROW_H, UiTheme::outlineSoft());
             }

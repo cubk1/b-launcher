@@ -63,10 +63,6 @@ namespace AccountsScreen {
         std::string focusNext;
         size_t chosenProfile = 0;
 
-        int corners(int index, int count) {
-            return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
-        }
-
         bool hasMicrosoft() {
             const std::vector<blb::auth::account>& accounts = Accounts::list();
             return std::any_of(accounts.begin(), accounts.end(), [](const blb::auth::account& account) {
@@ -154,7 +150,7 @@ namespace AccountsScreen {
                         bool blocked) {
             std::string key = Accounts::keyOf(account);
             bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-            Page::rowHover("accounts#row#" + key, rowY, hovered, corners(index, count));
+            Page::rowHover("accounts#row#" + key, rowY, hovered, Page::rowCorners(index, count));
             avatar(Textures::of(Accounts::face(account)), account.name, rowY);
             float nameW = UiFont::width(account.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             UiRender::textY(account.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
@@ -232,7 +228,7 @@ namespace AccountsScreen {
                 addingOffline = false;
                 return;
             }
-            Page::rowHover("accounts#row#new", rowY, false, corners(index, count));
+            Page::rowHover("accounts#row#new", rowY, false, Page::rowCorners(index, count));
             std::string typed = editing ? UiInput::get(NewUi::INPUT_TEXT) : offlineName;
             avatar(0, typed, rowY);
             float fieldX = nameX() - 9.0f;
@@ -467,11 +463,6 @@ namespace AccountsScreen {
             welcomeSteps.go(STEP_LAUNCHERS);
         }
 
-        void centredText(const std::string& text, float cx, float y, float h, uint32_t color, float size) {
-            float w = UiFont::width(text, UiFont::MEDIUM, size);
-            UiRender::textY(text, cx - w * 0.5f, y, h, color, UiFont::MEDIUM, size);
-        }
-
         void sourceIcon(const Source& source, float x, float y) {
             uint32_t image = 0;
             switch (source.app) {
@@ -496,7 +487,7 @@ namespace AccountsScreen {
             float hover = UiState::motion("accounts#source#" + source.launcher, hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, WELCOME_W, SOURCE_H, 12.0f, UiTheme::overlay(Ui::round(14 * hover)),
-                                    corners(index, count));
+                                    Page::rowCorners(index, count));
             }
             sourceIcon(source, x + 14.0f, y + (SOURCE_H - SOURCE_ICON) * 0.5f);
             UiRender::textY(source.launcher, x + 54.0f, y, SOURCE_H, UiTheme::textPrimary(), UiFont::MEDIUM,
@@ -544,7 +535,7 @@ namespace AccountsScreen {
             float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, WELCOME_W, Page::ROW_H, 12.0f, UiTheme::overlay(Ui::round(14 * hover)),
-                                    corners(index, count));
+                                    Page::rowCorners(index, count));
             }
             float centerY = y + Page::ROW_H * 0.5f;
             if (imported) {
@@ -604,7 +595,7 @@ namespace AccountsScreen {
                     return;
                 }
                 float y = middle - (24.0f + 18.0f + Page::FIELD_H) * 0.5f;
-                centredText("还没有账户", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
+                Page::centredText("还没有账户", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
                 loginButtons("accounts#welcome#login", "登录微软账户", cx, y + 24.0f + 18.0f, true, blocked);
                 return;
             }
@@ -612,14 +603,10 @@ namespace AccountsScreen {
             float listH = list.size() * SOURCE_H;
             float total = 24.0f + 18.0f + listH + 18.0f + Page::FIELD_H;
             float y = std::max(top, middle - total * 0.5f);
-            centredText("从其他启动器导入账户", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            Page::centredText("从其他启动器导入账户", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 18.0f;
             float x = cx - WELCOME_W * 0.5f;
-            UiRender::roundRect(x, y, WELCOME_W, listH, 12.0f, UiTheme::surface());
-            UiRender::outline(x, y, WELCOME_W, listH, 12.0f, UiTheme::outlineSoft());
-            for (size_t i = 1; i < list.size(); i++) {
-                UiRender::hLine(x + 14.0f, x + WELCOME_W - 14.0f, y + i * SOURCE_H, UiTheme::outlineSoft());
-            }
+            Page::listCard(x, y, WELCOME_W, SOURCE_H, (int) list.size());
             for (size_t i = 0; i < list.size(); i++) {
                 sourceRow(list[i], x, y + i * SOURCE_H, (int) i, (int) list.size(), blocked);
             }
@@ -638,15 +625,11 @@ namespace AccountsScreen {
             float listH = rows.size() * Page::ROW_H;
             float total = 24.0f + 18.0f + listH + 18.0f + Page::FIELD_H;
             float y = std::max(top, middle - total * 0.5f);
-            centredText("选择要从 " + pickingLauncher + " 导入的账户", cx, y, 24.0f, UiTheme::textPrimary(),
+            Page::centredText("选择要从 " + pickingLauncher + " 导入的账户", cx, y, 24.0f, UiTheme::textPrimary(),
                         Page::TITLE_SIZE);
             y += 24.0f + 18.0f;
             float x = cx - WELCOME_W * 0.5f;
-            UiRender::roundRect(x, y, WELCOME_W, listH, 12.0f, UiTheme::surface());
-            UiRender::outline(x, y, WELCOME_W, listH, 12.0f, UiTheme::outlineSoft());
-            for (size_t i = 1; i < rows.size(); i++) {
-                UiRender::hLine(x + 14.0f, x + WELCOME_W - 14.0f, y + i * Page::ROW_H, UiTheme::outlineSoft());
-            }
+            Page::listCard(x, y, WELCOME_W, Page::ROW_H, (int) rows.size());
             int unnamed = 0;
             int chosen = 0;
             bool importing = false;
@@ -693,7 +676,7 @@ namespace AccountsScreen {
             Accounts::Login state = Accounts::login();
             if (state != Accounts::Login::Idle) {
                 std::string status = state == Accounts::Login::Browser ? "在浏览器中完成登录" : "正在登录";
-                centredText(status, cx + 11.0f, middle - 28.0f, 24.0f, UiTheme::textSecondary(), UiWidgets::TEXT_BODY);
+                Page::centredText(status, cx + 11.0f, middle - 28.0f, 24.0f, UiTheme::textSecondary(), UiWidgets::TEXT_BODY);
                 float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
                 Page::spinner(cx + 11.0f - statusW * 0.5f - 14.0f, middle - 16.0f, 7.0f, UiTheme::accent());
                 if (centredButton("accounts#welcome#cancel", "取消", cx, middle + 8.0f, false, blocked, 0)) {
@@ -901,7 +884,7 @@ namespace AccountsScreen {
                 }
                 const blb::auth::yggdrasil_profile& profile = profiles[i];
                 bool hovered = !blocked && !outside && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-                Page::rowHover("accounts#profile#" + profile.id, rowY, hovered, corners(i, count));
+                Page::rowHover("accounts#profile#" + profile.id, rowY, hovered, Page::rowCorners(i, count));
                 avatar(0, profile.name, rowY);
                 UiRender::textY(profile.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);

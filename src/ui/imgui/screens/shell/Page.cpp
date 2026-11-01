@@ -73,6 +73,15 @@ namespace Page {
         return !clipping || (y + h >= clipTop && y <= clipBottom);
     }
 
+    void centredText(const std::string& text, float cx, float y, float h, uint32_t color, float size) {
+        float w = UiFont::width(text, UiFont::MEDIUM, size);
+        UiRender::textY(text, cx - w * 0.5f, y, h, color, UiFont::MEDIUM, size);
+    }
+
+    int rowCorners(int index, int count) {
+        return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
+    }
+
     void title(const std::string& text, float x, float y) {
         UiRender::textY(text, x, y, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, TITLE_SIZE);
     }
@@ -82,13 +91,20 @@ namespace Page {
                         UiWidgets::TEXT_SMALL);
     }
 
-    void card(float y, int rows) {
-        float h = rows * ROW_H;
-        UiRender::roundRect(columnLeft(), y, columnWidth(), h, CARD_RADIUS, UiTheme::surface());
-        UiRender::outline(columnLeft(), y, columnWidth(), h, CARD_RADIUS, UiTheme::outlineSoft());
+    void card(float x, float y, float w, float h) {
+        UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::surface());
+        UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
+    }
+
+    void listCard(float x, float y, float w, float rowHeight, int rows) {
+        card(x, y, w, rows * rowHeight);
         for (int i = 1; i < rows; i++) {
-            UiRender::hLine(columnLeft() + 14.0f, right() - 14.0f, y + i * ROW_H, UiTheme::outlineSoft());
+            UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * rowHeight, UiTheme::outlineSoft());
         }
+    }
+
+    void card(float y, int rows) {
+        listCard(columnLeft(), y, columnWidth(), ROW_H, rows);
     }
 
     void label(const std::string& text, float y) {

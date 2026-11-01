@@ -77,15 +77,6 @@ namespace MultiplayerScreen {
             return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
         }
 
-        int corners(int index, int count) {
-            return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
-        }
-
-        void centredText(const std::string& text, float cx, float y, float h, uint32_t color, float size) {
-            float w = UiFont::width(text, UiFont::MEDIUM, size);
-            UiRender::textY(text, cx - w * 0.5f, y, h, color, UiFont::MEDIUM, size);
-        }
-
         float paragraph(const std::string& text, float x, float y, float w, uint32_t color, bool centred) {
             std::vector<std::string> lines = UiFont::wrap(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w);
             for (size_t i = 0; i < lines.size(); i++) {
@@ -237,7 +228,8 @@ namespace MultiplayerScreen {
             bool hovered = live && NewUi::hit(x, y, w, h);
             float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
-                UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::overlay(Ui::round(14 * hover)), corners(index, count));
+                UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::overlay(Ui::round(14 * hover)),
+                                    Page::rowCorners(index, count));
             }
             float saved = UiRender::alphaMul;
             if (!enabled) {
@@ -271,15 +263,6 @@ namespace MultiplayerScreen {
                 return true;
             }
             return false;
-        }
-
-        void listCard(float x, float y, float w, float rowH, int rows) {
-            float h = rows * rowH;
-            UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
-            UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
-            for (int i = 1; i < rows; i++) {
-                UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * rowH, UiTheme::outlineSoft());
-            }
         }
 
         void dialogHeader(const std::string& title, const std::string& text, float x, float y, float w) {
@@ -393,7 +376,7 @@ namespace MultiplayerScreen {
             } else if (!joinNotice.empty()) {
                 std::string shown =
                         UiFont::fitEnd(joinNotice, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w - 2.0f * DIALOG_PAD);
-                centredText(shown, cx, noticeY, LINE_H, UiTheme::danger(), UiWidgets::TEXT_CONTROL);
+                Page::centredText(shown, cx, noticeY, LINE_H, UiTheme::danger(), UiWidgets::TEXT_CONTROL);
             }
 
             if (dialogButtons("multiplayer#join", retryable ? "重试" : "加入", retryable ? 0xf2f1 : 0xf2f6,
@@ -456,17 +439,17 @@ namespace MultiplayerScreen {
             float cx = Page::left() + Page::width() * 0.5f;
             float middle = MainWindow::height() * 0.5f;
             if (!Multiplayer::available()) {
-                centredText("这个版本没有包含联机组件", cx, middle - 12.0f, 24.0f, UiTheme::textMuted(),
+                Page::centredText("这个版本没有包含联机组件", cx, middle - 12.0f, 24.0f, UiTheme::textMuted(),
                             UiWidgets::TEXT_BODY);
                 return;
             }
             float cardH = 2 * OPTION_H;
             float total = 24.0f + 22.0f + cardH;
             float y = std::max(Page::TOP, middle - total * 0.5f);
-            centredText("联机", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            Page::centredText("联机", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 22.0f;
             float x = cx - WELCOME_W * 0.5f;
-            listCard(x, y, WELCOME_W, OPTION_H, 2);
+            Page::listCard(x, y, WELCOME_W, OPTION_H, 2);
             const Multiplayer::Service& service = Multiplayer::service();
             bool hostable = Multiplayer::canHost();
             std::string note = hostable ? std::string() : service.maintenance ? "维护中" : "暂时不可用";
@@ -502,14 +485,14 @@ namespace MultiplayerScreen {
             UiRender::circle(cx, y + 14.0f, 14.0f, UiTheme::accentSoft(36));
             UiWidgets::icon(Ui::glyph(0xf6ff), cx, y + 14.0f, UiTheme::accentText(), 12.0f);
             y += 28.0f + 18.0f;
-            centredText("在游戏里对局域网开放", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            Page::centredText("在游戏里对局域网开放", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 10.0f;
             y += paragraph(WAIT_TEXT, cx - textW * 0.5f, y, textW, UiTheme::textMuted(), true);
 
             if (rows > 1) {
                 y += 18.0f;
                 float x = cx - WELCOME_W * 0.5f;
-                listCard(x, y, WELCOME_W, Page::ROW_H, rows);
+                Page::listCard(x, y, WELCOME_W, Page::ROW_H, rows);
                 for (int i = 0; i < rows; i++) {
                     const LanWorlds::World& world = worlds[(size_t) i];
                     if (optionRow("multiplayer#world#" + std::to_string(world.port), 0, worldName(world),
@@ -530,7 +513,7 @@ namespace MultiplayerScreen {
                 float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float statusX = cx - (statusW + 18.0f) * 0.5f;
                 if (rows > 1) {
-                    centredText(status, cx, y, LINE_H, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
+                    Page::centredText(status, cx, y, LINE_H, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
                 } else {
                     Page::spinner(statusX + 5.0f, y + LINE_H * 0.5f, 5.0f, UiTheme::accent());
                     UiRender::textY(status, statusX + 18.0f, y, LINE_H, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -744,8 +727,7 @@ namespace MultiplayerScreen {
             Page::caption("错误详情", y);
             float top = y + Page::CAPTION_H;
             float h = errorHeight(state);
-            UiRender::roundRect(Page::left(), top, Page::width(), h, 12.0f, UiTheme::surface());
-            UiRender::outline(Page::left(), top, Page::width(), h, 12.0f, UiTheme::outlineSoft());
+            Page::card(Page::left(), top, Page::width(), h);
             std::vector<std::string> lines = detailLines(state.detail);
             float textY = top + 14.0f;
             for (size_t i = 0; i < lines.size(); i++) {
