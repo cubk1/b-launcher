@@ -8,6 +8,8 @@
 #include "ui/imgui/panel/UiImages.h"
 #include "ui/imgui/panel/UiRender.h"
 
+#include "imgui.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -60,6 +62,13 @@ namespace SvgPath {
         size_t textureCount = 0;
         uint64_t tick = 0;
         NSVGrasterizer* rasterizer = nullptr;
+
+        struct RetiredTexture {
+            GLuint id;
+            ImGuiContext* context;
+            int frame;
+        };
+        std::vector<RetiredTexture> retiredTextures;
 
         bool isSpace(char c) {
             return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
@@ -149,9 +158,32 @@ namespace SvgPath {
 
         void release(uint32_t texture) {
             if (texture != 0 && UiGL::DeleteTextures != nullptr) {
-                GLuint id = texture;
-                UiGL::DeleteTextures(1, &id);
+                ImGuiContext* context = ImGui::GetCurrentContext();
+                if (context != nullptr) {
+                    // Draw commands may still reference an evicted texture in this frame.
+                    retiredTextures.push_back({texture, context, ImGui::GetFrameCount()});
+                } else {
+                    GLuint id = texture;
+                    UiGL::DeleteTextures(1, &id);
+                }
             }
+        }
+
+        void collectTextures() {
+            if (retiredTextures.empty() || UiGL::DeleteTextures == nullptr) {
+                return;
+            }
+            ImGuiContext* context = ImGui::GetCurrentContext();
+            int frame = ImGui::GetFrameCount();
+            retiredTextures.erase(
+                    std::remove_if(retiredTextures.begin(), retiredTextures.end(), [&](const RetiredTexture& texture) {
+                        if (texture.context != context || texture.frame >= frame) {
+                            return false;
+                        }
+                        UiGL::DeleteTextures(1, &texture.id);
+                        return true;
+                    }),
+                    retiredTextures.end());
         }
 
         void evictShape() {
@@ -319,6 +351,7 @@ namespace SvgPath {
     }
 
     void draw(const std::string& data, float x, float y, float w, float h, uint32_t rgba, bool uniform) {
+        collectTextures();
         if (!(w > 0.0f) || !(h > 0.0f) || ((rgba >> 24) & 0xFF) == 0) {
             return;
         }
