@@ -27,10 +27,7 @@ namespace exui {
 
         // Depth first, parents before children: paint order and Tab order.
         void Collect(Widget& widget, std::vector<Widget*>& out) {
-            for (const auto& child : widget.GetChildren()) {
-                out.push_back(child.get());
-                Collect(*child, out);
-            }
+            widget.ForEachDescendant([&](Widget& child) { out.push_back(&child); });
         }
 
         // The topmost enabled descendant of parent at (x, y), in parent coordinates.

@@ -30,6 +30,14 @@ namespace exui {
         const std::vector<std::shared_ptr<Widget>>& GetChildren() const noexcept {
             return m_children;
         }
+        // Paint order: parents before their children. The visitor must not change the tree structure.
+        template <class F>
+        void ForEachDescendant(F&& visit) const {
+            for (const auto& child : m_children) {
+                visit(*child);
+                child->ForEachDescendant(visit);
+            }
+        }
         // Takes child from its old parent; its bounds stay relative to the new one.
         template <class T>
         T& Add(std::shared_ptr<T> child) {

@@ -4,16 +4,6 @@
 
 namespace exui {
 
-    namespace {
-        template <class F>
-        void ForEach(Widget& widget, F&& f) {
-            for (const auto& child : widget.GetChildren()) {
-                f(*child);
-                ForEach(*child, f);
-            }
-        }
-    } // namespace
-
     uint64_t Window::AnimationTime() const {
         return m_clock ? m_clock() : GetTickCount64();
     }
@@ -42,8 +32,8 @@ namespace exui {
     void Window::SetControlAnimationsEnabled(bool enabled) {
         m_controlAnimationsEnabled = enabled;
         if (enabled) return;
-        ForEach(*m_root, [](Widget& w) { w.FinishTransition(); });
-        ForEach(*m_chrome, [](Widget& w) { w.FinishTransition(); });
+        m_root->ForEachDescendant([](Widget& w) { w.FinishTransition(); });
+        m_chrome->ForEachDescendant([](Widget& w) { w.FinishTransition(); });
     }
 
     // One timer drives the window effect and every widget fade while any runs.
@@ -59,8 +49,8 @@ namespace exui {
             repaint = w.AdvanceTransition(now) || repaint;
             fading = fading || w.IsTransitionActive();
         };
-        ForEach(*m_chrome, step);
-        ForEach(*m_root, step);
+        m_chrome->ForEachDescendant(step);
+        m_root->ForEachDescendant(step);
         if (m_animator.IsActive()) {
             const bool closing = IsClosing();
             switch (m_animator.Advance(now, PhysicalWidth(), PhysicalHeight())) {
@@ -90,8 +80,8 @@ namespace exui {
         if (m_timerRunning && m_hwnd) KillTimer(m_hwnd, reinterpret_cast<UINT_PTR>(this));
         m_timerRunning = false;
         m_animator.Stop();
-        ForEach(*m_root, [](Widget& w) { w.FinishTransition(); });
-        ForEach(*m_chrome, [](Widget& w) { w.FinishTransition(); });
+        m_root->ForEachDescendant([](Widget& w) { w.FinishTransition(); });
+        m_chrome->ForEachDescendant([](Widget& w) { w.FinishTransition(); });
         if (m_destroying) {
             m_animationChildren.clear();
             return;

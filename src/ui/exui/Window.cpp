@@ -39,8 +39,7 @@ namespace exui {
 
         void InvalidateTree(const Widget& widget) {
             widget.Invalidate();
-            for (const auto& child : widget.GetChildren())
-                InvalidateTree(*child);
+            widget.ForEachDescendant([](const Widget& child) { child.Invalidate(); });
         }
     } // namespace
 
