@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/meta/asset_index.hpp>
 
@@ -54,6 +55,13 @@ parse_asset_index (std::string_view json)
                 }
             }
         }
+      if (index.is_virtual || index.map_to_resources)
+        for (const auto &object : index.objects)
+          if (!fs::safe_relative (object.name)
+              || object.name.find ('\0') != std::string::npos)
+            return make_error (
+                errc::parse,
+                sformat ("invalid asset path '{}'", object.name));
       return index;
     }
   catch (const simdjson::simdjson_error &e)
