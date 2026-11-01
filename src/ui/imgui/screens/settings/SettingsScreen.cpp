@@ -1246,8 +1246,8 @@ namespace SettingsScreen {
 
         void lanRows(float y, bool blocked) {
             patchToggle(
-                    "允许离线玩家加入", "lan.offlineJoin",
-                    "对局域网开放的世界不再验证正版账号，用离线账号登录的好友也能加入联机房间。只在房主的游戏里生效。",
+                    "离线加入局域网", "lan.offlineJoin",
+                    "在加入方的游戏中启用，允许离线账号在认证失败后继续尝试连接局域网世界。服务器仍按自身规则验证玩家。",
                     y, blocked);
         }
 
