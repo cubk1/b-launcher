@@ -1029,7 +1029,7 @@ namespace MainWindow {
     static void unfold() {
         if (!foldLoaded) {
             foldLoaded = true;
-            folded = Config::data().value("sidebarFolded", false);
+            folded = b_launcher_base::json_bool(Config::data(), "sidebarFolded");
         }
         fold = UiState::motionFrom("sidebar#fold", folded ? 1.0f : 0.0f, 12.0f, folded ? 1.0f : 0.0f);
         sideW = UiRender::snapLayout(UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold));
