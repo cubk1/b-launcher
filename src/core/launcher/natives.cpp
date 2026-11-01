@@ -232,6 +232,11 @@ prepare_natives (const meta::version &resolved,
                                     path_to_utf8 (archive.jar)));
       signature.update (path_to_utf8 (archive.jar));
       signature.update (sformat ("|{}|{}\n", st.size, st.mtime));
+      for (const auto &exclude : archive.exclude)
+        {
+          signature.update (sformat ("exclude:{}:", exclude.size ()));
+          signature.update (exclude);
+        }
     }
   auto stamp = to_hex (signature.finish ());
   auto target = directory;
