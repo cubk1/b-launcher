@@ -28,6 +28,7 @@ namespace GameLog {
         struct Log {
             int id = 0;
             std::string name;
+            std::mutex parserLock;
             Event events[2];
             bool xml[2] = {false, false};
             Level lastLevel[2] = {Level::Info, Level::Info};
@@ -161,6 +162,22 @@ namespace GameLog {
             log.lastLevel[stream] = level;
             std::lock_guard<std::mutex> guard(lock);
             push(log, std::move(text), level);
+        }
+
+        void plainLines(Log& log, std::string_view raw, int stream) {
+            size_t from = 0;
+            while (from < raw.size()) {
+                size_t end = raw.find('\n', from);
+                std::string_view line = raw.substr(from, end == std::string_view::npos ? end : end - from);
+                if (!line.empty() && line.back() == '\r') {
+                    line.remove_suffix(1);
+                }
+                plain(log, line, stream);
+                if (end == std::string_view::npos) {
+                    break;
+                }
+                from = end + 1;
+            }
         }
 
         std::string attribute(const std::string& event, const char* name) {
@@ -299,6 +316,7 @@ namespace GameLog {
         if (log == nullptr) {
             return;
         }
+        std::lock_guard<std::mutex> parserGuard(log->parserLock);
         int stream = error ? 1 : 0;
         Event& event = log->events[stream];
         size_t indent = line.find_first_not_of(" \t");
@@ -319,7 +337,7 @@ namespace GameLog {
                 GameLog::event(*log, event.text, stream);
             } else if (event.text.size() > (4u << 20)) {
                 event.open = false;
-                plain(*log, event.text, stream);
+                plainLines(*log, event.text, stream);
             }
             return;
         }
@@ -334,10 +352,24 @@ namespace GameLog {
     }
 
     void finish(int id) {
-        std::lock_guard<std::mutex> guard(lock);
-        if (std::shared_ptr<Log> log = find(id)) {
-            log->live = false;
+        std::shared_ptr<Log> log;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            log = find(id);
         }
+        if (log == nullptr) {
+            return;
+        }
+        std::lock_guard<std::mutex> parserGuard(log->parserLock);
+        for (int stream = 0; stream < 2; stream++) {
+            Event& event = log->events[stream];
+            if (event.open) {
+                plainLines(*log, event.text, stream);
+                event = Event();
+            }
+        }
+        std::lock_guard<std::mutex> guard(lock);
+        log->live = false;
     }
 
     void poll() {
@@ -461,17 +493,26 @@ namespace GameLog {
     }
 
     void clear() {
-        std::lock_guard<std::mutex> guard(lock);
-        if (current == nullptr) {
+        std::shared_ptr<Log> log;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            log = current;
+        }
+        if (log == nullptr) {
             return;
         }
-        current->kept.clear();
-        current->waiting.clear();
-        current->pending.clear();
-        current->pendingDropped = 0;
-        current->firstNumber = 0;
-        current->droppedCount = 0;
-        for (size_t& count : current->counts) {
+        std::lock_guard<std::mutex> parserGuard(log->parserLock);
+        std::lock_guard<std::mutex> guard(lock);
+        for (Event& event : log->events) {
+            event = Event();
+        }
+        log->kept.clear();
+        log->waiting.clear();
+        log->pending.clear();
+        log->pendingDropped = 0;
+        log->firstNumber = 0;
+        log->droppedCount = 0;
+        for (size_t& count : log->counts) {
             count = 0;
         }
         generationNumber++;
