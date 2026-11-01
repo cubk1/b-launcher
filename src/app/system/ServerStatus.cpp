@@ -114,6 +114,12 @@ namespace ServerStatus {
             state.address = address;
             if (!address.empty()) {
                 start();
+            } else {
+                ++serial;
+                std::lock_guard<std::mutex> guard(lock);
+                current.cancel();
+                queued.reset();
+                landed.reset();
             }
             return state;
         }
