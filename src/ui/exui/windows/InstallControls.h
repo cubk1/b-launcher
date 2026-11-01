@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/instances/Installer.h"
+#include "app/instances/LoaderSelection.h"
 #include "ui/exui/Form.h"
 
 #include <core/installer/loader.hpp>
@@ -45,22 +46,21 @@ namespace ForgottenMelody {
             return (int) types.size();
         }
         const std::map<blb::install::loader_type, std::string>& chosen() const {
-            return picked;
+            return selection.chosen();
         }
         std::vector<blb::install::loader_request> requests() const;
         std::vector<blb::install::loader_info> infos() const;
+        std::string defaultName() const { return selection.defaultName(); }
 
     private:
         exui::Form& form;
         uint32_t first;
-        std::string minecraft;
-        std::map<blb::install::loader_type, std::string> picked;
+        LoaderSelection selection;
         // The loader of each row shown, and the versions behind the options of its combo box after 未选择.
         std::vector<blb::install::loader_type> types;
         std::vector<std::vector<std::string>> versions;
         std::map<uint32_t, std::vector<std::wstring>> offered;
 
-        void sanitize();
         void setOptions(uint32_t id, const std::vector<std::wstring>& options, int selected);
     };
 

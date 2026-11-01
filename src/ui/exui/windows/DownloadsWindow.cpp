@@ -1396,11 +1396,7 @@ namespace ForgottenMelody {
                 if (modpack) {
                     return InstanceSettings::modpackName(modpack->title);
                 }
-                blb::install::install_request request;
-                request.minecraft = minecraft;
-                request.loaders = loaders.requests();
-                std::vector<blb::install::loader_info> infos = loaders.infos();
-                return blb::install::default_version_id(request, infos);
+                return loaders.defaultName();
             }
 
             // The game directory chosen, else the launcher's own one, else the first.

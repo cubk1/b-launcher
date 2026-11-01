@@ -4,6 +4,7 @@
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
+#include "app/instances/LoaderSelection.h"
 #include "app/instances/Instances.h"
 #include "app/instances/InstanceSettings.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -61,8 +62,9 @@ namespace NewInstanceScreen {
 
         PageTransition steps(STEP_VERSIONS);
         std::vector<std::string> kinds = {RELEASE};
-        std::string minecraft;
-        std::map<loader_type, std::string> chosen;
+        LoaderSelection loaderSelection;
+        const std::string& minecraft = loaderSelection.minecraft();
+        const auto& chosen = loaderSelection.chosen();
         loader_type picking = loader_type::forge;
         std::string typedName;
         std::string target;
@@ -203,55 +205,11 @@ namespace NewInstanceScreen {
             return coreName;
         }
 
-        std::vector<blb::install::loader_info> chosenInfos(loader_type skip, bool skipping) {
-            std::vector<blb::install::loader_info> out;
-            for (const auto& entry : chosen) {
-                if (!(skipping && entry.first == skip)) {
-                    out.push_back(blb::install::loader_info{entry.first, entry.second});
-                }
-            }
-            return out;
-        }
-
-        std::vector<blb::install::loader_request> chosenRequests() {
-            std::vector<blb::install::loader_request> out;
-            for (const auto& entry : chosen) {
-                out.push_back(blb::install::loader_request{entry.first, entry.second});
-            }
-            return out;
-        }
-
-        void sanitize() {
-            bool changed = true;
-            while (changed) {
-                changed = false;
-                for (const auto& entry : chosen) {
-                    std::vector<blb::install::loader_info> others = chosenInfos(entry.first, true);
-                    for (const blb::instance::loader_choice& choice :
-                         blb::instance::loader_choices(minecraft, others)) {
-                        if (choice.type == entry.first && choice.state != blb::instance::choice_state::available) {
-                            loader_type type = entry.first;
-                            chosen.erase(type);
-                            changed = true;
-                            break;
-                        }
-                    }
-                    if (changed) {
-                        break;
-                    }
-                }
-            }
-        }
-
         std::string generatedName() {
             if (modpack) {
                 return InstanceSettings::modpackName(modpack->title);
             }
-            blb::install::install_request request;
-            request.minecraft = minecraft;
-            request.loaders = chosenRequests();
-            std::vector<blb::install::loader_info> infos = chosenInfos(loader_type::forge, false);
-            return blb::install::default_version_id(request, infos);
+            return loaderSelection.defaultName();
         }
 
         std::string instanceName() {
@@ -283,8 +241,7 @@ namespace NewInstanceScreen {
         }
 
         void chooseVersion(const std::string& id) {
-            minecraft = id;
-            chosen.clear();
+            loaderSelection.reset(id);
             typedName.clear();
             steps.go(STEP_SETUP);
         }
@@ -469,12 +426,12 @@ namespace NewInstanceScreen {
                 if (installing) {
                     Installer::cancel();
                 } else if (!editing.empty()) {
-                    Installer::startModify(editing, chosenRequests());
+                    Installer::startModify(editing, loaderSelection.requests());
                 } else if (const Instances::Source* source = targetSource()) {
                     if (modpack) {
                         Installer::startModpack(source->key, modpack->pack, instanceName());
                     } else {
-                        Installer::start(source->key, minecraft, chosenRequests(), typedName);
+                        Installer::start(source->key, minecraft, loaderSelection.requests(), typedName);
                     }
                 }
             }
@@ -720,7 +677,7 @@ namespace NewInstanceScreen {
         void settings(float top, float bottom, float gone, bool blocked) {
             std::vector<blb::instance::loader_choice> choices = modpack
                     ? std::vector<blb::instance::loader_choice>()
-                    : blb::instance::loader_choices(minecraft, chosenInfos(loader_type::forge, false));
+                    : loaderSelection.choices();
             int loaderRows = modpack ? 4 : 1 + (int) choices.size();
             bool edit = !editing.empty();
             float contentH = edit ? Page::CAPTION_H + loaderRows * Page::ROW_H
@@ -822,7 +779,7 @@ namespace NewInstanceScreen {
                 uint32_t color = UiTheme::textMuted();
                 bool enabled = picked || choice.state == blb::instance::choice_state::available;
                 if (picked) {
-                    status = chosen[type];
+                    status = chosen.at(type);
                     color = UiTheme::textSecondary();
                 } else if (choice.state == blb::instance::choice_state::incompatible) {
                     status = "与 " + loaderLabelOf(choice.related) + " 不兼容";
@@ -841,8 +798,7 @@ namespace NewInstanceScreen {
                     picking = type;
                     steps.go(STEP_LOADER);
                 } else if (action == RowAction::Clear) {
-                    chosen.erase(type);
-                    sanitize();
+                    loaderSelection.remove(type);
                 }
                 y += Page::ROW_H;
             }
@@ -878,7 +834,7 @@ namespace NewInstanceScreen {
                 return;
             }
             uint32_t image = Icons::loader(picking);
-            const std::string current = chosen.count(picking) != 0 ? chosen[picking] : std::string();
+            const std::string current = chosen.count(picking) != 0 ? chosen.at(picking) : std::string();
             int clicked = list(
                     "new#loader#" + std::to_string((int) picking), Page::TOP + 40.0f, MainWindow::height() - 14.0f,
                     versions.list.size(), [&](int i, float rowY) {
@@ -911,8 +867,7 @@ namespace NewInstanceScreen {
                         }
                     });
             if (clicked >= 0) {
-                chosen[picking] = versions.list[clicked].version;
-                sanitize();
+                loaderSelection.select(picking, versions.list[clicked].version);
                 steps.go(STEP_SETUP);
             }
         }
@@ -921,7 +876,7 @@ namespace NewInstanceScreen {
     void openModpack(const Modpack& value) {
         reset();
         modpack = value;
-        minecraft = value.minecraft.empty() ? std::string("modpack") : value.minecraft;
+        loaderSelection.reset(value.minecraft.empty() ? std::string("modpack") : value.minecraft);
         steps.page = STEP_SETUP;
         steps.mix = 1.0f;
     }
@@ -939,10 +894,11 @@ namespace NewInstanceScreen {
         }
         reset();
         editing = instanceKey;
-        minecraft = entry->info.minecraft_version;
+        LoaderSelection::Choices installed;
         for (const blb::install::loader_info& loader : entry->info.loaders) {
-            chosen[loader.type] = loader.version;
+            installed[loader.type] = loader.version;
         }
+        loaderSelection.reset(entry->info.minecraft_version, std::move(installed));
         original = chosen;
         readingLoaders = true;
         unsigned generation = loaderReadGeneration;
@@ -954,9 +910,10 @@ namespace NewInstanceScreen {
                 Instances::notify(result.err().message, true);
                 return;
             }
-            chosen.clear();
+            LoaderSelection::Choices installed;
             for (const auto& loader : *result)
-                chosen[loader.type] = loader.version;
+                installed[loader.type] = loader.version;
+            loaderSelection.reset(minecraft, std::move(installed));
             original = chosen;
         });
         steps.page = STEP_SETUP;
@@ -964,8 +921,7 @@ namespace NewInstanceScreen {
     }
 
     void reset() {
-        minecraft.clear();
-        chosen.clear();
+        loaderSelection.reset();
         typedName.clear();
         modpack.reset();
         editing.clear();

@@ -72,49 +72,15 @@ namespace ForgottenMelody {
     }
 
     void LoaderRows::reset(const std::string& game, std::map<loader_type, std::string> chosen) {
-        minecraft = game;
-        picked = std::move(chosen);
+        selection.reset(game, std::move(chosen));
     }
 
     std::vector<blb::install::loader_request> LoaderRows::requests() const {
-        std::vector<blb::install::loader_request> out;
-        for (const auto& [type, version] : picked) {
-            out.push_back(blb::install::loader_request{type, version});
-        }
-        return out;
+        return selection.requests();
     }
 
     std::vector<blb::install::loader_info> LoaderRows::infos() const {
-        std::vector<blb::install::loader_info> out;
-        for (const auto& [type, version] : picked) {
-            out.push_back(blb::install::loader_info{type, version});
-        }
-        return out;
-    }
-
-    // Drops the loaders that the others no longer allow, as the default interface does after each change.
-    void LoaderRows::sanitize() {
-        bool changed = true;
-        while (changed) {
-            changed = false;
-            for (const auto& [type, version] : picked) {
-                std::vector<blb::install::loader_info> others;
-                for (const auto& [otherType, otherVersion] : picked) {
-                    if (otherType != type) {
-                        others.push_back(blb::install::loader_info{otherType, otherVersion});
-                    }
-                }
-                for (const blb::instance::loader_choice& choice : blb::instance::loader_choices(minecraft, others)) {
-                    if (choice.type == type && choice.state != blb::instance::choice_state::available) {
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    picked.erase(type);
-                    break;
-                }
-            }
-        }
+        return selection.infos();
     }
 
     void LoaderRows::setOptions(uint32_t id, const std::vector<std::wstring>& options, int selected) {
@@ -132,7 +98,9 @@ namespace ForgottenMelody {
     }
 
     void LoaderRows::refresh(bool enabled) {
-        std::vector<blb::instance::loader_choice> choices = blb::instance::loader_choices(minecraft, infos());
+        const auto& minecraft = selection.minecraft();
+        const auto& picked = selection.chosen();
+        std::vector<blb::instance::loader_choice> choices = selection.choices();
         if (choices.size() > MAX_ROWS) {
             choices.resize(MAX_ROWS);
         }
@@ -212,17 +180,16 @@ namespace ForgottenMelody {
             return true;
         }
         if (index == 0 || index > (int) versions[row].size()) {
-            picked.erase(types[row]);
+            selection.remove(types[row]);
         } else {
-            picked[types[row]] = versions[row][index - 1];
+            selection.select(types[row], versions[row][index - 1]);
         }
-        sanitize();
         return true;
     }
 
     void LoaderRows::reload() {
         for (loader_type type : types) {
-            Catalog::refreshLoader(type, minecraft);
+            Catalog::refreshLoader(type, selection.minecraft());
         }
     }
 
