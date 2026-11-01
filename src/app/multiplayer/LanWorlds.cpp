@@ -33,8 +33,8 @@ namespace LanWorlds {
         constexpr std::chrono::milliseconds PING_LIMIT(1500);
         constexpr std::chrono::seconds RECHECK(30);
         constexpr std::chrono::milliseconds ANNOUNCE_EVERY(1500);
-        const char* const GROUP = "224.0.2.60";
-        constexpr u_short GROUP_PORT = 4445;
+        const char* const LOCAL_BROADCAST = "127.255.255.255";
+        constexpr u_short ANNOUNCE_PORT = 4445;
 
         struct Known {
             std::optional<World> world;
@@ -139,20 +139,20 @@ namespace LanWorlds {
             sockaddr_in local{};
             local.sin_family = AF_INET;
             local.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-            in_addr loopback{};
-            loopback.s_addr = htonl(INADDR_LOOPBACK);
-            DWORD ttl = 1;
-            sockaddr_in group{};
-            group.sin_family = AF_INET;
-            group.sin_port = htons(GROUP_PORT);
+            // Discovery uses the packet's source as the game server address.
+            // Loopback broadcast reaches all local discovery sockets and keeps
+            // that address compatible with the loopback-only forwarding port.
+            BOOL broadcast = TRUE;
+            sockaddr_in target{};
+            target.sin_family = AF_INET;
+            target.sin_port = htons(ANNOUNCE_PORT);
             bool ready = bind(socket, (const sockaddr*) &local, sizeof(local)) == 0 &&
-                    setsockopt(socket, IPPROTO_IP, IP_MULTICAST_IF, (const char*) &loopback, sizeof(loopback)) == 0 &&
-                    inet_pton(AF_INET, GROUP, &group.sin_addr) == 1;
-            setsockopt(socket, IPPROTO_IP, IP_MULTICAST_TTL, (const char*) &ttl, sizeof(ttl));
+                    setsockopt(socket, SOL_SOCKET, SO_BROADCAST, (const char*) &broadcast, sizeof(broadcast)) == 0 &&
+                    inet_pton(AF_INET, LOCAL_BROADCAST, &target.sin_addr) == 1;
             std::unique_lock<std::mutex> guard(announceLock);
             while (ready && announcing) {
                 guard.unlock();
-                sendto(socket, payload.data(), (int) payload.size(), 0, (const sockaddr*) &group, sizeof(group));
+                sendto(socket, payload.data(), (int) payload.size(), 0, (const sockaddr*) &target, sizeof(target));
                 guard.lock();
                 announceWake.wait_for(guard, ANNOUNCE_EVERY, [] { return !announcing; });
             }
