@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
+#include <exception>
 #include <functional>
 #include <future>
 #include <memory>
@@ -66,6 +67,7 @@ parallel_for (thread_pool &pool, std::size_t count, F &&fn,
     std::atomic<std::size_t> finished { 0 };
     std::mutex mutex;
     std::condition_variable cv;
+    std::exception_ptr failure;
   };
   auto state = std::make_shared<shared_state> ();
   auto body = [state, count, grain, chunks, &fn] {
@@ -76,8 +78,17 @@ parallel_for (thread_pool &pool, std::size_t count, F &&fn,
           return;
         auto begin = chunk * grain;
         auto end = begin + grain < count ? begin + grain : count;
-        for (auto i = begin; i < end; ++i)
-          fn (i);
+        try
+          {
+            for (auto i = begin; i < end; ++i)
+              fn (i);
+          }
+        catch (...)
+          {
+            std::lock_guard lock (state->mutex);
+            if (!state->failure)
+              state->failure = std::current_exception ();
+          }
         if (state->finished.fetch_add (1, std::memory_order_acq_rel) + 1
             == chunks)
           {
@@ -89,13 +100,24 @@ parallel_for (thread_pool &pool, std::size_t count, F &&fn,
   std::size_t helpers = pool.size ();
   if (helpers > chunks - 1)
     helpers = chunks - 1;
-  for (std::size_t i = 0; i < helpers; ++i)
-    pool.post (body);
+  try
+    {
+      for (std::size_t i = 0; i < helpers; ++i)
+        pool.post (body);
+    }
+  catch (...)
+    {
+      std::lock_guard lock (state->mutex);
+      if (!state->failure)
+        state->failure = std::current_exception ();
+    }
   body ();
   std::unique_lock lock (state->mutex);
   state->cv.wait (lock, [&] {
     return state->finished.load (std::memory_order_acquire) == chunks;
   });
+  if (state->failure)
+    std::rethrow_exception (state->failure);
 }
 
 }
