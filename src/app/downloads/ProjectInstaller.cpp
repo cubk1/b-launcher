@@ -15,6 +15,14 @@
 #include <core/network/download_client.hpp>
 #include <core/network/mirror_provider.hpp>
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
 #include <atomic>
 #include <deque>
 #include <functional>
@@ -350,15 +358,21 @@ namespace ProjectInstaller {
         run(task, [task, target, gameVersion, loader, chosen, kind, title,
              instanceName](blb::cancellation_token token) -> Continuation {
             std::vector<blb::net::download_task> files;
-            std::set<std::string> names;
+            std::vector<std::wstring> names;
             auto add = [&](const Addons::Version& version) {
                 const Addons::File* file = version.file();
                 if (file == nullptr || file->url.empty()) {
                     throw std::runtime_error("模组文件信息无效");
                 }
-                if (names.insert(file->filename).second) {
-                    files.push_back(taskFor(*file, target));
+                auto task = taskFor(*file, target);
+                auto name = task.target.filename().wstring();
+                if (std::any_of(names.begin(), names.end(), [&](const auto& existing) {
+                        return CompareStringOrdinal(existing.c_str(), -1, name.c_str(), -1, TRUE) == CSTR_EQUAL;
+                    })) {
+                    throw std::runtime_error("模组文件名冲突：" + file->filename);
                 }
+                names.push_back(std::move(name));
+                files.push_back(std::move(task));
             };
             add(chosen);
             int dependencies = 0;
