@@ -618,6 +618,9 @@ namespace Multiplayer {
                     return pickedPort;
                 }
             }
+            if (pickedPort > 0) {
+                return 0;
+            }
             return shownWorlds.empty() ? 0 : shownWorlds.front().port;
         }
 
@@ -887,6 +890,7 @@ namespace Multiplayer {
         }
         bool finished = false;
         bool cancelled = false;
+        bool published = false;
         std::string notice;
         if (current.role != Role::None) {
             std::lock_guard<std::mutex> guard(lock);
@@ -897,12 +901,12 @@ namespace Multiplayer {
                 current.detail = shared.detail;
                 current.address = shared.address;
                 current.hostName = shared.hostName;
-                current.published = shared.published;
                 current.members = shared.members;
             }
             current.stage = cancel.is_cancelled() && !shared.done ? Stage::Closing : shared.stage;
             finished = shared.done;
             cancelled = shared.cancelled;
+            published = shared.published;
             notice = shared.notice;
         }
         std::vector<std::pair<bool, std::string>> messages;
@@ -937,6 +941,7 @@ namespace Multiplayer {
             }
         }
         current.target = current.role == Role::Host ? chooseTarget() : 0;
+        current.published = published && current.target > 0;
         forward = current.target;
     }
 
