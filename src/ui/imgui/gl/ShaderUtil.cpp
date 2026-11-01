@@ -34,7 +34,6 @@ namespace ShaderUtil {
 
     struct Shader {
         GLuint program = 0;
-        GLuint vao = 0;
         std::unordered_map<std::string, GLint> loc;
         GLint operator[](const char* name) const {
             auto it = loc.find(name);
@@ -86,8 +85,6 @@ namespace ShaderUtil {
     static float mvpFloats[16];
     static int fbWidth;
     static int fbHeight;
-    static GLint currentScissor[4];
-    static bool scissorValid;
 
     static GLuint compileStage(GLenum type, const char* const* sources, int count) {
         GLuint shader = CreateShader(type);
@@ -140,7 +137,6 @@ namespace ShaderUtil {
         DeleteShader(vs);
         DeleteShader(fs);
         out.program = program;
-        GenVertexArrays(1, &out.vao);
         for (const char* uniform : uniforms) {
             out.loc[uniform] = GetUniformLocation(program, uniform);
         }
