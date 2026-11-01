@@ -201,11 +201,8 @@ namespace JavaDownloads {
 
         bool safePath(const std::string& path) {
             if (!blb::fs::safe_relative(path)) return false;
-            for (unsigned char c : path) {
-                if (c < 32 || std::string_view("*?\"<>|").find(c) != std::string_view::npos) return false;
-            }
             for (auto part : blb::split(path, '/')) {
-                if (!part.empty() && part != "." && (part.back() == '.' || part.back() == ' ')) return false;
+                if (!part.empty() && part != "." && !blb::fs::safe_component(part)) return false;
             }
             return true;
         }

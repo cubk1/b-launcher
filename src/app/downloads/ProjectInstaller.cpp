@@ -171,24 +171,8 @@ namespace ProjectInstaller {
             std::map<std::string, std::pair<unsigned long long, unsigned long long>> sizes;
         };
 
-        bool safeFilename(std::string_view name) {
-            if (!blb::fs::safe_relative(name) || name == "." ||
-                name.find_first_of("/\\*?\"<>|") != std::string_view::npos ||
-                name.back() == '.' || name.back() == ' ') {
-                return false;
-            }
-            for (unsigned char c : name) {
-                if (c < 32 || c == 127) return false;
-            }
-            auto stem = blb::to_lower(name.substr(0, name.find('.')));
-            if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" ||
-                stem == "conin$" || stem == "conout$") return false;
-            return !(stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) &&
-                     stem[3] >= '1' && stem[3] <= '9');
-        }
-
         blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& directory) {
-            if (!safeFilename(file.filename) || directory.empty()) {
+            if (!blb::fs::safe_filename(file.filename) || directory.empty()) {
                 throw std::runtime_error("下载文件名或保存目录无效");
             }
             auto target = directory / blb::path_from_utf8(file.filename);
@@ -394,7 +378,7 @@ namespace ProjectInstaller {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
         std::string sub = folder(kind);
-        if (entry == nullptr || file == nullptr || sub.empty() || !safeFilename(file->filename)) {
+        if (entry == nullptr || file == nullptr || sub.empty() || !blb::fs::safe_filename(file->filename)) {
             return false;
         }
         return matches(*file, entry->gameDirectory / sub / blb::path_from_utf8(file->filename));
@@ -444,7 +428,7 @@ namespace ProjectInstaller {
                 for (size_t i = 1; i < resolved->size(); ++i) {
                     const auto& found = (*resolved)[i];
                     const auto* file = found.file();
-                    if (file == nullptr || !safeFilename(file->filename)) {
+                    if (file == nullptr || !blb::fs::safe_filename(file->filename)) {
                         throw std::runtime_error("必需前置没有有效的下载文件");
                     }
                     // The downloader verifies size and hash before reusing an existing file.

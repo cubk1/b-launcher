@@ -27,7 +27,6 @@ struct remote_file
   std::string server_side;
 };
 
-bool safe_relative (std::string_view path);
 bool glob_match (std::string_view pattern, std::string_view path);
 std::uint32_t curseforge_fingerprint (std::string_view data);
 std::string modrinth_mirror (std::string_view url);

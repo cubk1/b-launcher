@@ -123,7 +123,7 @@ collect_export_files (const std::filesystem::path &game_directory,
       for (const auto &pattern : options.exclude)
         if (detail::glob_match (pattern, path))
           excluded = true;
-      if (!excluded && detail::safe_relative (path))
+      if (!excluded && fs::safe_relative (path))
         out.push_back (path);
     }
   return out;
@@ -302,7 +302,7 @@ export_modpack (const install::game_installer &installer,
         writing.report ();
       }
     for (const auto &[source, name] : options.extra_files)
-      if (detail::safe_relative (name))
+      if (fs::safe_relative (name))
         BLB_TRY (zip.add_file (name, source));
     writing.finish ();
     BLB_TRY (zip.close ());

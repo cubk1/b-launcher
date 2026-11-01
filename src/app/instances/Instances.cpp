@@ -1087,22 +1087,15 @@ namespace Instances {
     }
 
     std::string checkId(const std::string& source, const std::string& id) {
-        if (id.empty()) {
-            return "名称不能为空";
-        }
         if (id.size() > 128) {
             return "名称太长";
         }
-        if (id == "." || id == "..") {
-            return "名称无效";
-        }
-        for (char c : id) {
-            if ((unsigned char) c < 0x20 || std::strchr("/\\:*?\"<>|", c) != nullptr) {
-                return "名称不能包含 / \\ : * ? \" < > |";
-            }
-        }
-        if (id.back() == '.' || id.back() == ' ') {
-            return "名称不能以点或空格结尾";
+        switch (blb::fs::check_component(id)) {
+            case blb::fs::component_error::empty: return "名称不能为空";
+            case blb::fs::component_error::dot: return "名称无效";
+            case blb::fs::component_error::invalid_character: return "名称不能包含 / \\ : * ? \" < > |";
+            case blb::fs::component_error::trailing_dot_or_space: return "名称不能以点或空格结尾";
+            case blb::fs::component_error::none: break;
         }
         const Source* target = sourceMutable(source);
         std::error_code error;

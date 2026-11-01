@@ -49,8 +49,25 @@ path temp_sibling (const path &target);
 bool same_volume (const path &a, const path &b) noexcept;
 bool same_file (const path &a, const path &b) noexcept;
 path absolute (const path &target);
+// Lexical traversal check only; allows '.' and empty path components.
 bool safe_relative (std::string_view relative) noexcept;
+
+enum class component_error : std::uint8_t
+{
+  none,
+  empty,
+  dot,
+  invalid_character,
+  trailing_dot_or_space,
+};
+
+// One name, without separators, control characters, or trailing dots/spaces.
+// Does not impose a length limit or reject Windows device names.
+component_error check_component (std::string_view name) noexcept;
 bool safe_component (std::string_view name) noexcept;
+// Download filenames additionally reject DEL and Windows device names.
+bool safe_filename (std::string_view name) noexcept;
+// Lexical containment is separate from checking existing links/reparse points.
 bool is_inside (const path &root, const path &target);
 path real_path (const path &target);
 path current_directory ();

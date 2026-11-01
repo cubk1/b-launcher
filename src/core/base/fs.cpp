@@ -589,17 +589,41 @@ safe_relative (std::string_view relative) noexcept
   return true;
 }
 
-bool
-safe_component (std::string_view name) noexcept
+component_error
+check_component (std::string_view name) noexcept
 {
-  if (name.empty () || name == "." || name == ".."
-      || name.back () == '.' || name.back () == ' ')
-    return false;
+  if (name.empty ())
+    return component_error::empty;
+  if (name == "." || name == "..")
+    return component_error::dot;
   for (unsigned char c : name)
     if (c < 32 || std::string_view ("/\\:*?\"<>|").find (c)
                       != std::string_view::npos)
+      return component_error::invalid_character;
+  if (name.back () == '.' || name.back () == ' ')
+    return component_error::trailing_dot_or_space;
+  return component_error::none;
+}
+
+bool
+safe_component (std::string_view name) noexcept
+{
+  return check_component (name) == component_error::none;
+}
+
+bool
+safe_filename (std::string_view name) noexcept
+{
+  if (!safe_component (name) || name.find ('\x7f') != std::string_view::npos)
+    return false;
+  auto stem = name.substr (0, name.find ('.'));
+  for (auto device : { "con", "prn", "aux", "nul", "conin$", "conout$" })
+    if (iequals (stem, device))
       return false;
-  return true;
+  return !(stem.size () == 4
+           && (iequals (stem.substr (0, 3), "com")
+               || iequals (stem.substr (0, 3), "lpt"))
+           && stem[3] >= '1' && stem[3] <= '9');
 }
 
 bool

@@ -389,17 +389,6 @@ format_name (pack_format format) noexcept
   return "unknown";
 }
 
-namespace detail
-{
-
-bool
-safe_relative (std::string_view path)
-{
-  return fs::safe_relative (path);
-}
-
-}
-
 result<pack_manifest>
 read_modpack (const std::filesystem::path &archive)
 try
@@ -434,7 +423,7 @@ try
   if (parsed->minecraft.empty ())
     return make_error (errc::parse, "modpack does not specify minecraft");
   std::erase_if (parsed->files, [] (const pack_file &f) {
-    return f.curseforge_file == 0 && !detail::safe_relative (f.path);
+    return f.curseforge_file == 0 && !fs::safe_relative (f.path);
   });
   if (parsed->name.empty ())
     parsed->name = path_to_utf8 (archive.stem ());

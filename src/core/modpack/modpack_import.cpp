@@ -62,7 +62,7 @@ extract_overrides (const std::filesystem::path &archive,
         if (entry.directory || name.ends_with ('/') || !name.starts_with (prefix))
           return true;
         auto relative = name.substr (prefix.size ());
-        if (relative.empty () || !detail::safe_relative (relative))
+        if (relative.empty () || !fs::safe_relative (relative))
           return true;
         auto target = game_dir / path_from_utf8 (relative);
         if (auto r = reader.extract_current (target); !r)
@@ -129,7 +129,7 @@ import_modpack (install::game_installer &installer,
         std::vector<install::planned_file> planned;
         for (const auto &f : files)
           {
-            if (f.urls.empty () || !detail::safe_relative (f.path))
+            if (f.urls.empty () || !fs::safe_relative (f.path))
               continue;
             install::planned_file p;
             p.kind = install::file_kind::other;
