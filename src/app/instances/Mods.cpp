@@ -1,4 +1,5 @@
 #include "app/instances/Mods.h"
+#include "app/system/AsyncTasks.h"
 #include "app/instances/Instances.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
@@ -7,29 +8,17 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
-#include <atomic>
-#include <deque>
-#include <list>
 #include <memory>
 #include <functional>
 #include <map>
-#include <mutex>
 #include <set>
-#include <thread>
 
 namespace Mods {
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-
-        struct Worker {
-            std::thread thread;
-            std::shared_ptr<std::atomic<bool>> done;
-        };
-        std::list<Worker> workers;
+        AsyncTasks tasks;
 
         std::map<std::string, List> lists;
         std::set<std::string> scanning;
@@ -37,23 +26,7 @@ namespace Mods {
         std::map<std::string, std::shared_ptr<const Pixels>> icons;
 
         void run(std::function<Continuation()> work) {
-            auto done = std::make_shared<std::atomic<bool>>(false);
-            Worker worker;
-            worker.done = done;
-            worker.thread = std::thread([work, done] {
-                Continuation next;
-                try {
-                    next = work();
-                } catch (const std::exception&) {
-                    next = nullptr;
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
-                done->store(true);
-            });
-            workers.push_back(std::move(worker));
+            tasks.run([work = std::move(work)](b_launcher_base::cancellation_token) { return work(); }, {});
         }
 
         std::string lower(std::string text) {
@@ -268,30 +241,10 @@ namespace Mods {
     }
 
     void poll() {
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            next();
-        }
-        for (auto it = workers.begin(); it != workers.end();) {
-            if (it->done->load()) {
-                it->thread.join();
-                it = workers.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        tasks.poll();
     }
 
     void shutdown() {
-        for (Worker& worker : workers) {
-            if (worker.thread.joinable()) {
-                worker.thread.join();
-            }
-        }
-        workers.clear();
+        tasks.stop();
     }
 }

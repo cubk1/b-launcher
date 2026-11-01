@@ -1,6 +1,6 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/downloads/Recent.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/instances/Instances.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
@@ -25,7 +25,6 @@
 #include <windows.h>
 
 #include <atomic>
-#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -33,14 +32,13 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
-#include <thread>
 
 namespace ProjectInstaller {
 
     namespace blb = b_launcher_base;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         constexpr size_t DEPENDENCY_LIMIT = 512;
 
@@ -49,10 +47,7 @@ namespace ProjectInstaller {
             std::atomic<float> fraction{-1.0f};
         };
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks background;
         std::map<std::string, std::shared_ptr<Task>> tasks;
 
         struct CheckedFile {
@@ -93,7 +88,7 @@ namespace ProjectInstaller {
                 checked = std::make_shared<CheckedFile>();
                 checked->size = stat.size;
                 checked->modified = stat.mtime;
-                workers.start([path, checked, token = stopping.token()] {
+                background.run([path, checked](blb::cancellation_token token) -> Continuation {
                     std::optional<blb::sha1_digest> digest;
                     try {
                         digest = fileHash(path, token);
@@ -104,19 +99,17 @@ namespace ProjectInstaller {
                     } catch (const std::exception&) {
                         digest.reset();
                     }
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back([checked, digest] {
+                    return [checked, digest] {
                         checked->digest = digest;
                         checked->ready = true;
-                    });
-                });
+                    };
+                }, {});
             }
             return checked->digest && *checked->digest == *expected;
         }
 
         void run(const std::shared_ptr<Task>& task, std::function<Continuation(blb::cancellation_token)> work) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, token, task] {
+            background.run([work = std::move(work), task](blb::cancellation_token token) -> Continuation {
                 Continuation next;
                 try {
                     next = work(token);
@@ -129,11 +122,8 @@ namespace ProjectInstaller {
                     next = [] { Notices::add(Notices::Kind::Failed, "下载失败，请重试", 5000); };
                 }
                 if (!next) task->state = (int) State::Failed;
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
-            });
+                return next;
+            }, {});
         }
 
         std::shared_ptr<Task> begin(const std::string& versionId) {
@@ -478,22 +468,11 @@ namespace ProjectInstaller {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        background.poll();
         checkedUse.trim(checkedFiles, 128, [](const auto& file) { return file->ready; });
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        background.stop();
     }
 }
