@@ -761,8 +761,14 @@ namespace Platform {
                 break;
             }
         }
+        DWORD code = 0;
+        if (!GetExitCodeProcess(process, &code)) {
+            error = "无法读取命令退出代码（错误 " + std::to_string(GetLastError()) + "）";
+        } else if (code != 0) {
+            error = "命令执行失败（退出代码 " + std::to_string(code) + "）";
+        }
         CloseHandle(process);
-        return {};
+        return error;
     }
 
     std::string startCommand(const std::string& command, const Environment& environment,
