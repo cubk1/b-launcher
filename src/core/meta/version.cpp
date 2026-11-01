@@ -781,22 +781,7 @@ save_version (const game_layout &layout, const version &value)
 std::vector<std::string>
 split_legacy_arguments (std::string_view text)
 {
-  std::vector<std::string> out;
-  std::string current;
-  for (char c : text)
-    {
-      if (c == ' ' || c == '\t')
-        {
-          if (!current.empty ())
-            out.push_back (std::move (current));
-          current.clear ();
-        }
-      else
-        current.push_back (c);
-    }
-  if (!current.empty ())
-    out.push_back (std::move (current));
-  return out;
+  return split_arguments (text);
 }
 
 }

@@ -26,40 +26,11 @@ namespace InstanceSettings {
     }
 
     std::string joinArgs(const std::vector<std::string>& args) {
-        std::string out;
-        for (const std::string& arg : args) {
-            if (!out.empty()) {
-                out += ' ';
-            }
-            out += arg.find(' ') != std::string::npos ? "\"" + arg + "\"" : arg;
-        }
-        return out;
+        return blb::join_arguments(args);
     }
 
     std::vector<std::string> splitArgs(const std::string& text) {
-        std::vector<std::string> out;
-        std::string current;
-        bool quoted = false;
-        bool any = false;
-        for (char c : text) {
-            if (c == '"') {
-                quoted = !quoted;
-                any = true;
-            } else if ((c == ' ' || c == '\t') && !quoted) {
-                if (any) {
-                    out.push_back(current);
-                }
-                current.clear();
-                any = false;
-            } else {
-                current += c;
-                any = true;
-            }
-        }
-        if (any) {
-            out.push_back(current);
-        }
-        return out;
+        return blb::split_arguments(text);
     }
 
     std::string joinEnvironment(const std::vector<std::pair<std::string, std::string>>& variables) {

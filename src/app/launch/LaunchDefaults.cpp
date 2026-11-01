@@ -1,6 +1,8 @@
 #include "app/launch/LaunchDefaults.h"
 #include "app/system/Config.h"
 
+#include <core/base/strings.hpp>
+
 #include <cstdlib>
 #include <fstream>
 #include <sstream>
@@ -112,29 +114,7 @@ namespace LaunchDefaults {
     }
 
     std::vector<std::string> split(const std::string& input) {
-        std::vector<std::string> out;
-        std::string current;
-        bool quoted = false;
-        bool any = false;
-        for (char c : input) {
-            if (c == '"') {
-                quoted = !quoted;
-                any = true;
-            } else if ((c == ' ' || c == '\t') && !quoted) {
-                if (any) {
-                    out.push_back(current);
-                }
-                current.clear();
-                any = false;
-            } else {
-                current += c;
-                any = true;
-            }
-        }
-        if (any) {
-            out.push_back(current);
-        }
-        return out;
+        return blb::split_arguments(input);
     }
 
     void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft) {

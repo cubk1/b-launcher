@@ -14,7 +14,7 @@
 // The parts of an instance's settings that are typed or chosen, shared by both interfaces.
 namespace InstanceSettings {
 
-    // Arguments in one line: spaces between them, double quotes around the ones that hold a space.
+    // Editable arguments: quote empty/whitespace values and double literal quotes inside quoted values.
     std::string joinArgs(const std::vector<std::string>& args);
     std::vector<std::string> splitArgs(const std::string& text);
     // NAME=value items in one line, quoted like arguments; items without a name are dropped.

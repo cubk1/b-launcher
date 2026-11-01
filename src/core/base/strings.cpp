@@ -150,6 +150,70 @@ to_hex (std::span<const std::uint8_t> bytes)
   return out;
 }
 
+std::vector<std::string>
+split_arguments (std::string_view text)
+{
+  std::vector<std::string> out;
+  std::string current;
+  bool quoted = false;
+  bool any = false;
+  for (std::size_t i = 0; i < text.size (); ++i)
+    {
+      char c = text[i];
+      if (c == '"')
+        {
+          if (quoted && i + 1 < text.size () && text[i + 1] == '"')
+            {
+              current += '"';
+              ++i;
+            }
+          else
+            quoted = !quoted;
+          any = true;
+        }
+      else if (!quoted && std::string_view (" \t\r\n\f").find (c)
+                               != std::string_view::npos)
+        {
+          if (any)
+            out.push_back (std::move (current));
+          current.clear ();
+          any = false;
+        }
+      else
+        {
+          current += c;
+          any = true;
+        }
+    }
+  if (any)
+    out.push_back (std::move (current));
+  return out;
+}
+
+std::string
+join_arguments (std::span<const std::string> arguments)
+{
+  std::string out;
+  for (const auto &arg : arguments)
+    {
+      if (!out.empty ())
+        out += ' ';
+      bool quote = arg.empty ()
+                   || arg.find_first_of (" \t\r\n\f\"") != std::string::npos;
+      if (quote)
+        out += '"';
+      for (char c : arg)
+        {
+          if (c == '"')
+            out += '"';
+          out += c;
+        }
+      if (quote)
+        out += '"';
+    }
+  return out;
+}
+
 bool
 from_hex (std::string_view text, std::span<std::uint8_t> out)
 {

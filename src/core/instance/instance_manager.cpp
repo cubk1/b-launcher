@@ -151,33 +151,7 @@ settings_from_json (const json &doc)
 std::vector<std::string>
 split_command (std::string_view text)
 {
-  std::vector<std::string> out;
-  std::string current;
-  bool quoted = false;
-  bool any = false;
-  for (char c : text)
-    {
-      if (c == '"')
-        {
-          quoted = !quoted;
-          any = true;
-        }
-      else if ((c == ' ' || c == '\t') && !quoted)
-        {
-          if (any)
-            out.push_back (std::move (current));
-          current.clear ();
-          any = false;
-        }
-      else
-        {
-          current.push_back (c);
-          any = true;
-        }
-    }
-  if (any)
-    out.push_back (std::move (current));
-  return out;
+  return split_arguments (text);
 }
 
 }
