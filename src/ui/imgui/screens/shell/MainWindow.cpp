@@ -45,6 +45,7 @@
 #include "imgui.h"
 
 #include <core/base/json.hpp>
+#include <core/base/strings.hpp>
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -365,14 +366,7 @@ namespace MainWindow {
     }
 
     static std::string brandText() {
-        std::string text = Appearance::brandTitle();
-        const std::string mark = "{FPS}";
-        for (size_t at = text.find(mark); at != std::string::npos; at = text.find(mark, at)) {
-            std::string value = std::to_string(fpsShown);
-            text.replace(at, mark.size(), value);
-            at += value.size();
-        }
-        return text;
+        return b_launcher_base::replace_all(Appearance::brandTitle(), "{FPS}", std::to_string(fpsShown));
     }
 
     static void brand() {
@@ -473,26 +467,11 @@ namespace MainWindow {
     }
 
     static std::string searchQuery() {
-        std::string query = Ui::trim(UiInput::get(SEARCH_ID));
-        for (char& c : query) {
-            if (c >= 'A' && c <= 'Z') {
-                c = (char) (c - 'A' + 'a');
-            }
-        }
-        return query;
+        return Ui::trim(UiInput::get(SEARCH_ID));
     }
 
     static bool matches(const std::string& id, const std::string& query) {
-        if (query.empty()) {
-            return true;
-        }
-        std::string lower = id;
-        for (char& c : lower) {
-            if (c >= 'A' && c <= 'Z') {
-                c = (char) (c - 'A' + 'a');
-            }
-        }
-        return lower.find(query) != std::string::npos;
+        return b_launcher_base::icontains(id, query);
     }
 
     static void focusSearch() {
