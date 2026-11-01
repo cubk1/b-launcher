@@ -32,6 +32,50 @@ namespace Platform {
         using b_launcher_base::detail::utf8_to_wide;
         using b_launcher_base::detail::wide_to_utf8;
 
+        class ComApartment {
+        public:
+            explicit ComApartment(DWORD flags = COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)
+                : status(CoInitializeEx(nullptr, flags)) {}
+            ComApartment(const ComApartment&) = delete;
+            ComApartment& operator=(const ComApartment&) = delete;
+            ~ComApartment() {
+                if (SUCCEEDED(status)) {
+                    CoUninitialize();
+                }
+            }
+
+        private:
+            HRESULT status;
+        };
+
+        void setDialogFolder(IFileDialog* dialog, const std::filesystem::path& folder) {
+            IShellItem* start = nullptr;
+            if (SUCCEEDED(SHCreateItemFromParsingName(folder.wstring().c_str(), nullptr, IID_PPV_ARGS(&start)))) {
+                dialog->SetFolder(start);
+                start->Release();
+            }
+        }
+
+        std::optional<std::filesystem::path> shellPath(IShellItem* item) {
+            PWSTR name = nullptr;
+            if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
+                return std::nullopt;
+            }
+            std::filesystem::path path(name);
+            CoTaskMemFree(name);
+            return path;
+        }
+
+        std::optional<std::filesystem::path> showFile(IFileDialog* dialog, void* owner) {
+            std::optional<std::filesystem::path> picked;
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dialog->Show((HWND) owner)) && SUCCEEDED(dialog->GetResult(&item))) {
+                picked = shellPath(item);
+                item->Release();
+            }
+            return picked;
+        }
+
         struct CaseLess {
             bool operator()(const std::wstring& a, const std::wstring& b) const {
                 return _wcsicmp(a.c_str(), b.c_str()) < 0;
@@ -277,7 +321,7 @@ namespace Platform {
             file += L".lnk";
         }
         std::wstring exe = selfPath();
-        HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        ComApartment com(COINIT_APARTMENTTHREADED);
         IShellLinkW* link = nullptr;
         HRESULT result = CoCreateInstance(__uuidof(ShellLink), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link));
         if (SUCCEEDED(result)) {
@@ -305,9 +349,6 @@ namespace Platform {
             if (SUCCEEDED(result)) {
                 SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, file.c_str(), nullptr);
             }
-        }
-        if (SUCCEEDED(com)) {
-            CoUninitialize();
         }
         if (FAILED(result)) {
             char code[16];
@@ -446,16 +487,13 @@ namespace Platform {
     }
 
     void reveal(const std::filesystem::path& path) {
-        HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        ComApartment com;
         PIDLIST_ABSOLUTE item = ILCreateFromPathW(path.wstring().c_str());
         if (item != nullptr) {
             SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
             ILFree(item);
         } else {
             open(path.parent_path());
-        }
-        if (SUCCEEDED(com)) {
-            CoUninitialize();
         }
     }
 
@@ -471,7 +509,7 @@ namespace Platform {
     }
 
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial) {
-        HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        ComApartment com;
         std::optional<std::filesystem::path> picked;
         IFileOpenDialog* dialog = nullptr;
         if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
@@ -479,28 +517,12 @@ namespace Platform {
             dialog->GetOptions(&options);
             dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
             dialog->SetTitle(L"选择游戏目录");
-            IShellItem* start = nullptr;
             std::error_code error;
-            if (!initial.empty() && std::filesystem::exists(initial, error) &&
-                SUCCEEDED(SHCreateItemFromParsingName(initial.wstring().c_str(), nullptr, IID_PPV_ARGS(&start)))) {
-                dialog->SetFolder(start);
-                start->Release();
+            if (!initial.empty() && std::filesystem::exists(initial, error)) {
+                setDialogFolder(dialog, initial);
             }
-            if (SUCCEEDED(dialog->Show((HWND) window))) {
-                IShellItem* item = nullptr;
-                if (SUCCEEDED(dialog->GetResult(&item))) {
-                    PWSTR name = nullptr;
-                    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                        picked = std::filesystem::path(name);
-                        CoTaskMemFree(name);
-                    }
-                    item->Release();
-                }
-            }
+            picked = showFile(dialog, window);
             dialog->Release();
-        }
-        if (SUCCEEDED(com)) {
-            CoUninitialize();
         }
         return picked;
     }
@@ -508,7 +530,7 @@ namespace Platform {
     namespace {
         std::optional<std::filesystem::path> pickFile(const std::filesystem::path& initial, const wchar_t* title,
                                                       const COMDLG_FILTERSPEC* filters, UINT filterCount) {
-            HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+            ComApartment com;
             std::optional<std::filesystem::path> picked;
             IFileOpenDialog* dialog = nullptr;
             if (SUCCEEDED(
@@ -521,27 +543,11 @@ namespace Platform {
                 std::error_code error;
                 std::filesystem::path folder =
                         std::filesystem::is_directory(initial, error) ? initial : initial.parent_path();
-                IShellItem* start = nullptr;
-                if (!folder.empty() && std::filesystem::is_directory(folder, error) &&
-                    SUCCEEDED(SHCreateItemFromParsingName(folder.wstring().c_str(), nullptr, IID_PPV_ARGS(&start)))) {
-                    dialog->SetFolder(start);
-                    start->Release();
+                if (!folder.empty() && std::filesystem::is_directory(folder, error)) {
+                    setDialogFolder(dialog, folder);
                 }
-                if (SUCCEEDED(dialog->Show((HWND) window))) {
-                    IShellItem* item = nullptr;
-                    if (SUCCEEDED(dialog->GetResult(&item))) {
-                        PWSTR name = nullptr;
-                        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                            picked = std::filesystem::path(name);
-                            CoTaskMemFree(name);
-                        }
-                        item->Release();
-                    }
-                }
+                picked = showFile(dialog, window);
                 dialog->Release();
-            }
-            if (SUCCEEDED(com)) {
-                CoUninitialize();
             }
             return picked;
         }
@@ -555,7 +561,7 @@ namespace Platform {
 
     std::vector<std::filesystem::path> pickFiles(const std::filesystem::path& initial, const wchar_t* title,
                                                  const wchar_t* typeName, const wchar_t* pattern) {
-        HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        ComApartment com;
         std::vector<std::filesystem::path> picked;
         IFileOpenDialog* dialog = nullptr;
         if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
@@ -566,11 +572,8 @@ namespace Platform {
             const COMDLG_FILTERSPEC filters[] = {{typeName, pattern}, {L"所有文件", L"*.*"}};
             dialog->SetFileTypes(2, filters);
             std::error_code error;
-            IShellItem* start = nullptr;
-            if (!initial.empty() && std::filesystem::is_directory(initial, error) &&
-                SUCCEEDED(SHCreateItemFromParsingName(initial.wstring().c_str(), nullptr, IID_PPV_ARGS(&start)))) {
-                dialog->SetFolder(start);
-                start->Release();
+            if (!initial.empty() && std::filesystem::is_directory(initial, error)) {
+                setDialogFolder(dialog, initial);
             }
             IShellItemArray* items = nullptr;
             if (SUCCEEDED(dialog->Show((HWND) window)) && SUCCEEDED(dialog->GetResults(&items))) {
@@ -579,10 +582,8 @@ namespace Platform {
                 for (DWORD i = 0; i < count; i++) {
                     IShellItem* item = nullptr;
                     if (SUCCEEDED(items->GetItemAt(i, &item))) {
-                        PWSTR name = nullptr;
-                        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                            picked.emplace_back(name);
-                            CoTaskMemFree(name);
+                        if (auto path = shellPath(item)) {
+                            picked.push_back(std::move(*path));
                         }
                         item->Release();
                     }
@@ -591,9 +592,6 @@ namespace Platform {
             }
             dialog->Release();
         }
-        if (SUCCEEDED(com)) {
-            CoUninitialize();
-        }
         return picked;
     }
 
@@ -601,7 +599,7 @@ namespace Platform {
         std::optional<std::filesystem::path> saveDialog(const std::filesystem::path& suggested, const wchar_t* title,
                                                         void* owner, const COMDLG_FILTERSPEC* filters, UINT filterCount,
                                                         const wchar_t* extension) {
-            HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+            ComApartment com;
             std::optional<std::filesystem::path> picked;
             IFileSaveDialog* dialog = nullptr;
             if (SUCCEEDED(
@@ -615,27 +613,11 @@ namespace Platform {
                 dialog->SetFileName(suggested.filename().wstring().c_str());
                 std::error_code error;
                 std::filesystem::path folder = suggested.parent_path();
-                IShellItem* start = nullptr;
-                if (!folder.empty() && std::filesystem::is_directory(folder, error) &&
-                    SUCCEEDED(SHCreateItemFromParsingName(folder.wstring().c_str(), nullptr, IID_PPV_ARGS(&start)))) {
-                    dialog->SetFolder(start);
-                    start->Release();
+                if (!folder.empty() && std::filesystem::is_directory(folder, error)) {
+                    setDialogFolder(dialog, folder);
                 }
-                if (SUCCEEDED(dialog->Show((HWND) (owner != nullptr ? owner : window)))) {
-                    IShellItem* item = nullptr;
-                    if (SUCCEEDED(dialog->GetResult(&item))) {
-                        PWSTR name = nullptr;
-                        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &name))) {
-                            picked = std::filesystem::path(name);
-                            CoTaskMemFree(name);
-                        }
-                        item->Release();
-                    }
-                }
+                picked = showFile(dialog, owner != nullptr ? owner : window);
                 dialog->Release();
-            }
-            if (SUCCEEDED(com)) {
-                CoUninitialize();
             }
             return picked;
         }
@@ -725,12 +707,7 @@ namespace Platform {
     }
 
     uint32_t totalMemoryMb() {
-        MEMORYSTATUSEX status = {};
-        status.dwLength = sizeof(status);
-        if (!GlobalMemoryStatusEx(&status)) {
-            return 8192;
-        }
-        return (uint32_t) (status.ullTotalPhys / (1024ull * 1024ull));
+        return memory().totalMb;
     }
 
     Memory memory() {
