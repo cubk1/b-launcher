@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace b_launcher_base::modpack
@@ -255,6 +256,59 @@ read_mcbbs (zip_reader &zip)
   return m;
 }
 
+std::string
+ini_string (std::string_view value)
+{
+  value = trim (value);
+  if (value.size () >= 2 && value.front () == '"' && value.back () == '"')
+    value = value.substr (1, value.size () - 2);
+  std::string out;
+  for (std::size_t i = 0; i < value.size (); ++i)
+    {
+      char c = value[i];
+      if (c != '\\' || i + 1 == value.size ())
+        {
+          out += c;
+          continue;
+        }
+      char escaped = value[++i];
+      switch (escaped)
+        {
+        case '\\': case '"': out += escaped; break;
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        default: out += '\\'; out += escaped; break;
+        }
+    }
+  return out;
+}
+
+std::unordered_map<std::string, std::string>
+multimc_settings (std::string_view text)
+{
+  if (text.starts_with ("\xEF\xBB\xBF"))
+    text.remove_prefix (3);
+  std::unordered_map<std::string, std::string> values;
+  bool general = true;
+  for (auto line : split (text, '\n'))
+    {
+      line = trim (line);
+      if (line.empty () || line.front () == '#' || line.front () == ';')
+        continue;
+      if (line.front () == '[' && line.back () == ']')
+        {
+          general = line == "[General]";
+          continue;
+        }
+      auto eq = line.find ('=');
+      if (general && eq != std::string_view::npos)
+        values[std::string (trim (line.substr (0, eq)))]
+            = ini_string (line.substr (eq + 1));
+    }
+  return values;
+}
+
 result<pack_manifest>
 read_multimc (zip_reader &zip, const std::string &prefix,
               const std::unordered_set<std::string> &names)
@@ -276,30 +330,21 @@ read_multimc (zip_reader &zip, const std::string &prefix,
           m.loaders.push_back (*loader);
     }
   if (auto cfg = zip.read (prefix + "instance.cfg"))
-    for (auto line : split (*cfg, '\n'))
-      {
-        auto eq = line.find ('=');
-        if (eq == std::string_view::npos)
-          continue;
-        auto key = trim (line.substr (0, eq));
-        auto value = std::string (trim (line.substr (eq + 1)));
-        if (key == "name")
-          m.name = value;
-        else if (key == "JvmArgs")
-          {
-            for (auto arg : split (value, ' '))
-              if (!trim (arg).empty ())
-                m.jvm_args.emplace_back (trim (arg));
-          }
-        else if (key == "MaxMemAlloc")
-          {
-            BLB_TRY_ASSIGN (m.max_memory_mb, memory_value (json (value)));
-          }
-        else if (key == "MinMemAlloc")
-          {
-            BLB_TRY_ASSIGN (m.min_memory_mb, memory_value (json (value)));
-          }
-      }
+    {
+      auto values = multimc_settings (*cfg);
+      if (auto it = values.find ("name"); it != values.end ())
+        m.name = it->second;
+      if (auto it = values.find ("JvmArgs"); it != values.end ())
+        m.jvm_args = split_arguments (it->second);
+      if (auto it = values.find ("MaxMemAlloc"); it != values.end ())
+        {
+          BLB_TRY_ASSIGN (m.max_memory_mb, memory_value (json (it->second)));
+        }
+      if (auto it = values.find ("MinMemAlloc"); it != values.end ())
+        {
+          BLB_TRY_ASSIGN (m.min_memory_mb, memory_value (json (it->second)));
+        }
+    }
   for (const char *dir : { ".minecraft/", "minecraft/" })
     {
       auto candidate = prefix + dir;
