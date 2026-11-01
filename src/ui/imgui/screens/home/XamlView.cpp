@@ -842,11 +842,17 @@ namespace XamlView {
 
         float measureBlocks(std::vector<Block>& blocks, float width);
 
+        const std::vector<Def>& gridDefinitions(const std::vector<Def>& definitions) {
+            if (!definitions.empty()) return definitions;
+            static const std::vector<Def> implicit{Def{}};
+            return implicit;
+        }
+
         void fitStars(const std::vector<Def>& definitions, std::vector<float>& sizes, float available) {
             if (!std::isfinite(available)) {
                 return;
             }
-            std::vector<Def> defs = definitions.empty() ? std::vector<Def>{Def{}} : definitions;
+            const auto& defs = gridDefinitions(definitions);
             std::vector<bool> settled(defs.size(), false);
             double remaining = available;
             for (size_t i = 0; i < defs.size(); i++) {
@@ -932,12 +938,14 @@ namespace XamlView {
                     break;
                 }
                 case Kind::Grid: {
-                    std::vector<Def> cols = e.columns.empty() ? std::vector<Def>{Def{}} : e.columns;
-                    std::vector<Def> rows = e.rows.empty() ? std::vector<Def>{Def{}} : e.rows;
+                    const auto& cols = gridDefinitions(e.columns);
+                    const auto& rows = gridDefinitions(e.rows);
                     size_t n = cols.size();
                     size_t m = rows.size();
-                    std::vector<float> colW(n, 0.0f);
-                    std::vector<float> rowH(m, 0.0f);
+                    auto& colW = e.colSizes;
+                    auto& rowH = e.rowSizes;
+                    colW.assign(n, 0.0f);
+                    rowH.assign(m, 0.0f);
                     float starTotal = 0.0f;
                     for (size_t j = 0; j < n; j++) {
                         if (cols[j].type == 0) {
@@ -994,8 +1002,6 @@ namespace XamlView {
                         }
                         measure(*child, cellW, cellH);
                     }
-                    e.colSizes = colW;
-                    e.rowSizes = rowH;
                     for (float w : colW) {
                         cw += w;
                     }
