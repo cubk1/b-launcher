@@ -5,6 +5,7 @@
 #include "app/system/Notices.h"
 
 #include <core/base/cancellation.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
@@ -21,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <stdexcept>
 #include <thread>
 
 namespace ProjectInstaller {
@@ -30,7 +32,7 @@ namespace ProjectInstaller {
     namespace {
         using Continuation = std::function<void()>;
 
-        constexpr int DEPENDENCY_DEPTH = 4;
+        constexpr size_t DEPENDENCY_LIMIT = 512;
 
         struct Task {
             std::atomic<int> state{(int) State::Idle};
@@ -43,16 +45,21 @@ namespace ProjectInstaller {
         blb::cancellation_source stopping;
         std::map<std::string, std::shared_ptr<Task>> tasks;
 
-        void run(std::function<Continuation(blb::cancellation_token)> work) {
+        void run(const std::shared_ptr<Task>& task, std::function<Continuation(blb::cancellation_token)> work) {
             blb::cancellation_token token = stopping.token();
-            workers.start([work, token] {
+            workers.start([work, token, task] {
                 Continuation next;
                 try {
                     next = work(token);
                 } catch (const std::exception& error) {
+                    task->state = (int) State::Failed;
                     std::string message = error.what();
                     next = [message] { Notices::add(Notices::Kind::Failed, "下载失败：" + message, 5000); };
+                } catch (...) {
+                    task->state = (int) State::Failed;
+                    next = [] { Notices::add(Notices::Kind::Failed, "下载失败，请重试", 5000); };
                 }
+                if (!next) task->state = (int) State::Failed;
                 if (next) {
                     std::lock_guard<std::mutex> guard(lock);
                     finished.push_back(std::move(next));
@@ -197,13 +204,18 @@ namespace ProjectInstaller {
         std::string loader = loaderOf(instanceKey);
         std::string instanceName = entry->info.id;
         Addons::Version chosen = version;
-        run([task, target, gameVersion, loader, chosen, kind, title,
+        run(task, [task, target, gameVersion, loader, chosen, kind, title,
              instanceName](blb::cancellation_token token) -> Continuation {
             std::vector<blb::net::download_task> files;
             std::set<std::string> projects = {chosen.projectId};
+            std::set<std::string> versions = {chosen.id};
             std::set<std::string> names;
             auto add = [&](const Addons::Version& version) {
                 const Addons::File* file = version.file();
+                if (file == nullptr || !blb::fs::safe_relative(file->filename) ||
+                    file->filename.find_first_of("/\\") != std::string::npos || file->url.empty()) {
+                    throw std::runtime_error("模组文件信息无效");
+                }
                 if (file != nullptr && names.insert(file->filename).second) {
                     files.push_back(taskFor(*file, target / blb::path_from_utf8(file->filename)));
                 }
@@ -211,13 +223,22 @@ namespace ProjectInstaller {
             add(chosen);
             int dependencies = 0;
             std::vector<Addons::Version> level = {chosen};
-            for (int depth = 0; kind == Addons::Kind::Mod && depth < DEPENDENCY_DEPTH && !level.empty(); depth++) {
+            while (kind == Addons::Kind::Mod && !level.empty()) {
                 std::vector<Addons::Version> next;
                 for (const Addons::Version& version : level) {
                     for (const Addons::Dependency& dependency : version.dependencies) {
-                        if (!dependency.required ||
-                            (!dependency.projectId.empty() && !projects.insert(dependency.projectId).second)) {
+                        if (!dependency.required) {
                             continue;
+                        }
+                        if (!dependency.projectId.empty()) {
+                            if (!projects.insert(dependency.projectId).second) continue;
+                        } else if (!dependency.versionId.empty()) {
+                            if (!versions.insert(dependency.versionId).second) continue;
+                        } else {
+                            throw std::runtime_error("必需前置缺少项目或版本信息");
+                        }
+                        if (projects.size() + versions.size() > DEPENDENCY_LIMIT) {
+                            throw std::runtime_error("依赖关系过多，无法完成安装");
                         }
                         Addons::Fetched fetched = !dependency.versionId.empty()
                                 ? Addons::fetchVersion(version.source, dependency.versionId)
@@ -227,17 +248,22 @@ namespace ProjectInstaller {
                             return nullptr;
                         }
                         if (!fetched.ok || fetched.versions.empty()) {
-                            continue;
+                            throw std::runtime_error("无法获取必需前置 " +
+                                    (dependency.versionId.empty() ? dependency.projectId : dependency.versionId) +
+                                    "：" + (fetched.error.empty() ? "没有兼容版本" : fetched.error));
                         }
                         const Addons::Version& found = fetched.versions.front();
                         const Addons::File* file = found.file();
                         std::error_code error;
-                        if (file == nullptr ||
-                            std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
-                            continue;
+                        if (file == nullptr) {
+                            throw std::runtime_error("必需前置没有可下载的文件");
                         }
-                        add(found);
-                        dependencies++;
+                        if (!std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
+                            add(found);
+                            dependencies++;
+                        }
+                        if (!found.projectId.empty()) projects.insert(found.projectId);
+                        versions.insert(found.id);
                         next.push_back(found);
                     }
                 }
@@ -269,7 +295,7 @@ namespace ProjectInstaller {
         std::shared_ptr<Task> task = begin(version.id);
         std::vector<blb::net::download_task> files = {taskFor(*file, folder / blb::path_from_utf8(file->filename))};
         std::string where = Platform::display(folder);
-        run([task, files, title, where](blb::cancellation_token token) -> Continuation {
+        run(task, [task, files, title, where](blb::cancellation_token token) -> Continuation {
             std::string problem = download(files, task, token);
             if (token.is_cancelled()) {
                 return nullptr;
