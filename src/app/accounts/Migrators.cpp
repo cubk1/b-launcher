@@ -1,6 +1,7 @@
 #include "app/accounts/Migrators.h"
 
 #include <core/base/strings.hpp>
+#include <core/base/fs.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -21,10 +22,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <regex>
-#include <sstream>
 
 namespace Migrators {
 
@@ -43,13 +42,11 @@ namespace Migrators {
             if (path.empty() || !std::filesystem::is_regular_file(path, error)) {
                 return std::nullopt;
             }
-            std::ifstream in(path, std::ios::binary);
-            if (!in) {
+            auto data = blb::fs::read_file(path);
+            if (!data) {
                 return std::nullopt;
             }
-            std::ostringstream content;
-            content << in.rdbuf();
-            return content.str();
+            return std::move(*data);
         }
 
         std::optional<std::string> unprotect(const std::string& data) {

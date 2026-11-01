@@ -71,6 +71,15 @@ namespace Accounts {
 
         const char* const STORE_VALUE = "Accounts";
 
+        // Completions look up the current list, which a rescan may have replaced.
+        void markImport(const std::string& token, Found::State state) {
+            for (Found& found : foundList) {
+                if (found.source.refreshToken == token) {
+                    found.state = state;
+                }
+            }
+        }
+
         void notify(const std::string& text, bool error) {
             Notices::add(error ? Notices::Kind::Failed : Notices::Kind::Done, text, error ? 5000 : 2500);
         }
@@ -738,25 +747,18 @@ namespace Accounts {
                     seed.refresh_token = refreshToken;
                     blb::auth::microsoft_authenticator authenticator(client);
                     auto result = authenticator.refresh(seed, token);
-                    auto mark = [refreshToken](Found::State state) {
-                        for (Found& found : foundList) {
-                            if (found.source.refreshToken == refreshToken) {
-                                found.state = state;
-                            }
-                        }
-                    };
                     if (!result) {
                         blb::error error = result.err();
-                        return [mark, error, launcher] {
-                            mark(Found::State::Failed);
+                        return [refreshToken, error, launcher] {
+                            markImport(refreshToken, Found::State::Failed);
                             if (error.code != blb::errc::cancelled) {
                                 notify("无法导入 " + launcher + " 的账户：" + describe(error), true);
                             }
                         };
                     }
                     blb::auth::account imported = *result;
-                    return [mark, imported] {
-                        mark(Found::State::Imported);
+                    return [refreshToken, imported] {
+                        markImport(refreshToken, Found::State::Imported);
                         std::string key = keyOf(imported);
                         if (find(key) != nullptr && !expired(key)) {
                             notify(imported.name + " 已经在账户列表里", false);
@@ -768,11 +770,7 @@ namespace Accounts {
                 },
                 [refreshToken](const std::string&) -> Continuation {
                     return [refreshToken] {
-                        for (Found& found : foundList) {
-                            if (found.source.refreshToken == refreshToken) {
-                                found.state = Found::State::Failed;
-                            }
-                        }
+                        markImport(refreshToken, Found::State::Failed);
                     };
                 });
     }
