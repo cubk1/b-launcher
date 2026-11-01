@@ -332,6 +332,26 @@ namespace InstancePage {
                     });
         }
 
+        std::shared_ptr<ModeBinding> optionalSetting(const std::string& id, const char* field,
+                                                       std::optional<bool> Settings::* member,
+                                                       const std::string& follow, const char* on, const char* off) {
+            return std::make_shared<ModeBinding>(
+                    owner(id, field),
+                    [id, member, follow, on, off] {
+                        const Settings* current = settingsOf(id);
+                        if (current == nullptr || !(current->*member)) return follow;
+                        return std::string(*(current->*member) ? on : off);
+                    },
+                    [id, member, follow, on](const std::string& option) {
+                        edit(id, [&](Settings& settings) {
+                            auto& value = settings.*member;
+                            if (option == follow) value.reset();
+                            else value = option == on;
+                        });
+                    },
+                    [follow, on, off] { return std::vector<std::string>{follow, on, off}; });
+        }
+
         std::string javaLabel(const Settings& settings, const std::vector<JavaOption>& options) {
             if (!settings.java) {
                 return AUTO_JAVA;
@@ -663,25 +683,7 @@ namespace InstancePage {
 
             Page::label("游戏目录", rowY);
             std::string follow = followLabel(entry);
-            auto isolation = std::make_shared<ModeBinding>(
-                    owner(id, "isolation"),
-                    [id, follow] {
-                        const Settings* current = settingsOf(id);
-                        if (current == nullptr || !current->isolated) {
-                            return follow;
-                        }
-                        return std::string(*current->isolated ? ISOLATED : SHARED);
-                    },
-                    [id, follow](const std::string& option) {
-                        edit(id, [&](Settings& settings) {
-                            if (option == follow) {
-                                settings.isolated.reset();
-                            } else {
-                                settings.isolated = option == ISOLATED;
-                            }
-                        });
-                    },
-                    [follow] { return std::vector<std::string>{follow, ISOLATED, SHARED}; });
+            auto isolation = optionalSetting(id, "isolation", &Settings::isolated, follow, ISOLATED, SHARED);
             select("instance#isolation", isolation, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
             rowY += Page::ROW_H;
 
@@ -701,49 +703,13 @@ namespace InstancePage {
             Page::label("显示游戏日志", rowY);
             std::string followLogs =
                     std::string("跟随全局（") + (LaunchDefaults::showLogs() ? "显示" : "不显示") + "）";
-            auto logs = std::make_shared<ModeBinding>(
-                    owner(id, "showLogs"),
-                    [id, followLogs] {
-                        const Settings* current = settingsOf(id);
-                        if (current == nullptr || !current->show_logs) {
-                            return followLogs;
-                        }
-                        return std::string(*current->show_logs ? "显示" : "不显示");
-                    },
-                    [id, followLogs](const std::string& option) {
-                        edit(id, [&](Settings& settings) {
-                            if (option == followLogs) {
-                                settings.show_logs.reset();
-                            } else {
-                                settings.show_logs = option == "显示";
-                            }
-                        });
-                    },
-                    [followLogs] { return std::vector<std::string>{followLogs, "显示", "不显示"}; });
+            auto logs = optionalSetting(id, "showLogs", &Settings::show_logs, followLogs, "显示", "不显示");
             select("instance#showLogs", logs, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
             rowY += Page::ROW_H;
 
             Page::label("启动器补丁", rowY);
             std::string followPatch = std::string("跟随全局（") + (Patches::all() ? "启用" : "不启用") + "）";
-            auto patch = std::make_shared<ModeBinding>(
-                    owner(id, "patch"),
-                    [id, followPatch] {
-                        const Settings* current = settingsOf(id);
-                        if (current == nullptr || !current->patch) {
-                            return followPatch;
-                        }
-                        return std::string(*current->patch ? "启用" : "不启用");
-                    },
-                    [id, followPatch](const std::string& option) {
-                        edit(id, [&](Settings& settings) {
-                            if (option == followPatch) {
-                                settings.patch.reset();
-                            } else {
-                                settings.patch = option == "启用";
-                            }
-                        });
-                    },
-                    [followPatch] { return std::vector<std::string>{followPatch, "启用", "不启用"}; });
+            auto patch = optionalSetting(id, "patch", &Settings::patch, followPatch, "启用", "不启用");
             select("instance#patch", patch, Page::controlRight() - SELECT_W, rowY, SELECT_W, blocked);
             rowY += Page::ROW_H;
 
@@ -964,29 +930,18 @@ namespace InstancePage {
             }
         }
 
-        bool loadsMods(const Instances::Entry& entry) {
-            for (const blb::install::loader_info& loader : entry.info.loaders) {
-                if (blb::install::is_primary_loader(loader.type) ||
-                    loader.type == blb::install::loader_type::liteloader) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         int manageCount(const Instances::Entry& entry) {
-            return (loadsMods(entry) ? 1 : 0) + 2;
+            return (Instances::hasModLoader(entry) ? 1 : 0) + 2;
         }
 
         void manageRows(const Instances::Entry& entry, float y, bool blocked) {
             int count = manageCount(entry);
             int index = 0;
-            auto corners = [&](int i) { return (i == 0 ? 1 | 2 : 0) | (i == count - 1 ? 4 | 8 : 0); };
-            if (loadsMods(entry)) {
+            if (Instances::hasModLoader(entry)) {
                 const Mods::List& mods = Mods::of(entry.key);
                 std::string value =
                         mods.loading && mods.mods.empty() ? std::string() : std::to_string(mods.mods.size()) + " 个";
-                if (Page::navRow("instance#mods", "模组管理", value, y, blocked, corners(index), 0xf12e)) {
+                if (Page::navRow("instance#mods", "模组管理", value, y, blocked, Page::rowCorners(index, count), 0xf12e)) {
                     Mods::rescan(entry.key);
                     sections.go(SECTION_MODS);
                 }
@@ -998,14 +953,14 @@ namespace InstancePage {
                 loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
             }
             if (Page::navRow("instance#loaders", "修改加载器", loaders.empty() ? std::string("未安装") : loaders, y,
-                             blocked || entry.info.minecraft_version.empty() || Installer::running(), corners(index),
+                             blocked || entry.info.minecraft_version.empty() || Installer::running(), Page::rowCorners(index, count),
                              0xf0ad)) {
                 NewInstanceScreen::openLoaderEdit(entry.key);
                 MainWindow::showLoaderEdit();
             }
             y += Page::ROW_H;
             index++;
-            if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid, corners(index),
+            if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid, Page::rowCorners(index, count),
                              0xf56e)) {
                 sections.go(SECTION_EXPORT);
             }

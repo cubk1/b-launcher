@@ -279,16 +279,6 @@ namespace Drops {
             return entry != nullptr ? entry->info.id : std::string();
         }
 
-        bool loadsMods(const Instances::Entry& entry) {
-            for (const blb::install::loader_info& loader : entry.info.loaders) {
-                if (blb::install::is_primary_loader(loader.type) ||
-                    loader.type == blb::install::loader_type::liteloader) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         void openModpack(const Item& item) {
             if (Installer::running()) {
                 Notices::add(Notices::Kind::Failed, "正在安装，等它完成后再拖入整合包", 4000);
@@ -330,7 +320,7 @@ namespace Drops {
                 return;
             }
             if (count(Kind::Mod) > 0) {
-                if (loadsMods(*entry)) {
+                if (Instances::hasModLoader(*entry)) {
                     addAll(key, found, Kind::Mod, "mods", "模组");
                 } else {
                     Notices::add(Notices::Kind::Failed, entry->info.id + " 没有安装模组加载器，不能添加模组", 5000);

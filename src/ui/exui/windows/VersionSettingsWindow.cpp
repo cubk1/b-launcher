@@ -602,12 +602,7 @@ namespace ForgottenMelody {
                 FindControl(NO_INTEGRITY_CHECK)
                         ->SetTooltipText(L"启动前不校验也不补全游戏文件，启动更快；文件缺失或损坏时游戏会启动失败。");
 
-                bool modded = false;
-                for (const auto& loader : entry.info.loaders) {
-                    modded = modded || blb::install::is_primary_loader(loader.type) ||
-                            loader.type == blb::install::loader_type::liteloader;
-                }
-                FindControl(MODS)->SetEnabled(modded);
+                FindControl(MODS)->SetEnabled(Instances::hasModLoader(entry));
                 // Like the default interface, an instance that cannot be read is not exported.
                 FindControl(EXPORT)->SetEnabled(entry.info.valid);
             }

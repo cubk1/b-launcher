@@ -55,10 +55,8 @@ namespace InstanceMods {
 
         float tag(const std::string& text, const std::string& hint, float x, float rowY, uint32_t fill, uint32_t ink,
                   bool blocked) {
-            float w = tagWidth(text);
+            float w = Page::tag(text, x, rowY, fill, ink);
             float y = rowY + (Page::ROW_H - 18.0f) * 0.5f;
-            UiRender::roundRect(x, y, w, 18.0f, 6.0f, fill);
-            UiRender::textY(text, x + 6.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             if (!hint.empty() && !blocked && NewUi::hit(x, y, w, 18.0f)) {
                 Page::tooltip(hint, x, y, w, 18.0f);
             }
@@ -97,7 +95,7 @@ namespace InstanceMods {
         void row(const std::string& key, const Mods::Mod& mod, int index, int count, float rowY, bool blocked) {
             std::string id = "mods#row#" + std::to_string(index);
             bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-            Page::rowHover(id, rowY, hovered, (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0));
+            Page::rowHover(id, rowY, hovered, Page::rowCorners(index, count));
 
             float menuX = Page::controlRight() - 24.0f;
             float toggleX = menuX - 10.0f - 30.0f;

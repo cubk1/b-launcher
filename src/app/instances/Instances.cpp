@@ -851,6 +851,12 @@ namespace Instances {
         return findMutable(key);
     }
 
+    bool hasModLoader(const Entry& entry) {
+        return std::any_of(entry.info.loaders.begin(), entry.info.loaders.end(), [](const auto& loader) {
+            return blb::install::is_primary_loader(loader.type) || loader.type == blb::install::loader_type::liteloader;
+        });
+    }
+
     std::string keyOf(const std::string& source, const std::string& id) {
         return source + "/" + id;
     }

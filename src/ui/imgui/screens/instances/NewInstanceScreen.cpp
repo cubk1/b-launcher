@@ -151,10 +151,6 @@ namespace NewInstanceScreen {
 
         constexpr float CARD_RADIUS = 12.0f;
 
-        int rowCorners(int index, int count) {
-            return (index == 0 ? 1 | 2 : 0) | (index == count - 1 ? 4 | 8 : 0);
-        }
-
         void rowHover(const std::string& id, float x, float y, float w, float h, bool hovered, int corners) {
             float amount = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (amount > 0.001f) {
@@ -230,8 +226,7 @@ namespace NewInstanceScreen {
             bool outside = body.begin();
             bool blocked = outside || NewUi::overlayCoversMouse();
             float y0 = body.top - body.offset;
-            UiRender::roundRect(Page::left(), y0, Page::width(), contentH, CARD_RADIUS, UiTheme::surface());
-            UiRender::outline(Page::left(), y0, Page::width(), contentH, CARD_RADIUS, UiTheme::outlineSoft());
+            Page::card(Page::left(), y0, Page::width(), contentH);
             int first = std::max(0, (int) std::floor((body.top - y0) / LIST_ROW));
             int last = std::min((int) count, (int) std::ceil((body.bottom - y0) / LIST_ROW) + 1);
             int clicked = -1;
@@ -242,7 +237,7 @@ namespace NewInstanceScreen {
                 }
                 bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), LIST_ROW);
                 rowHover(id + "#" + std::to_string(i), Page::left(), rowY, Page::width(), LIST_ROW, hovered,
-                         rowCorners(i, (int) count));
+                         Page::rowCorners(i, (int) count));
                 row(i, rowY);
                 if (!blocked && NewUi::click(Page::left(), rowY, Page::width(), LIST_ROW)) {
                     UiSound::request(UiSound::PAGE);
@@ -744,7 +739,7 @@ namespace NewInstanceScreen {
             } else if (Page::shown(y) &&
                        loaderRow("new#row#minecraft", Icons::vanilla(), 0, "Minecraft", minecraft,
                                  UiTheme::textSecondary(), true, false, y, rowsBlocked,
-                                 rowCorners(0, loaderRows)) == RowAction::Open) {
+                                 Page::rowCorners(0, loaderRows)) == RowAction::Open) {
                 steps.go(STEP_VERSIONS);
             }
             y += Page::ROW_H;
@@ -769,7 +764,7 @@ namespace NewInstanceScreen {
                 RowAction action = Page::shown(y)
                         ? loaderRow("new#row#" + std::to_string((int) type), Icons::loader(type), 0xf1b2,
                                     Installer::loaderName(type), status, color, enabled, picked, y, rowsBlocked,
-                                    rowCorners(index, loaderRows))
+                                    Page::rowCorners(index, loaderRows))
                         : RowAction::None;
                 if (action == RowAction::Open) {
                     picking = type;
