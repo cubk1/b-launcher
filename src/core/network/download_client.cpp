@@ -357,8 +357,7 @@ struct download_client::impl
     t->staging.append (data, n);
     if (t->staging.size () >= staging_limit)
       {
-        auto r = t->file.write_all (t->staging.data (), t->staging.size ());
-        t->staging.clear ();
+        auto r = flush (*t);
         if (!r)
           {
             t->write_error = std::move (r).err ();
@@ -570,13 +569,8 @@ struct download_client::impl
   void
   finish_streamed (std::unique_ptr<transfer> t)
   {
-    if (!t->staging.empty ())
-      {
-        auto r = t->file.write_all (t->staging.data (), t->staging.size ());
-        t->staging.clear ();
-        if (!r)
-          return fail (*t, std::move (r).err (), false);
-      }
+    if (auto r = flush (*t); !r)
+      return fail (*t, std::move (r).err (), false);
     if (auto r = t->file.close (); !r)
       return fail (*t, std::move (r).err (), false);
     if (auto reason = content_error (*t))
@@ -681,8 +675,9 @@ struct download_client::impl
   {
     if (t.staging.empty ())
       return b_launcher_base::ok ();
-    auto r = t.job->file.write_at (t.staged_at, t.staging.data (),
-                                   t.staging.size ());
+    auto r = t.job ? t.job->file.write_at (t.staged_at, t.staging.data (),
+                                           t.staging.size ())
+                   : t.file.write_all (t.staging.data (), t.staging.size ());
     t.staging.clear ();
     return r;
   }
@@ -1127,9 +1122,7 @@ struct download_client::impl
                   }
                 continue;
               }
-            auto max_attempts = std::max<std::size_t> (task.urls.size (),
-                                                       options.retries + 1);
-            if (!cancelled && c.retryable && c.attempt + 1 < max_attempts
+            if (!cancelled && c.retryable && c.attempt + 1 < max_attempts (task)
                 && c.failure->code != errc::cancelled)
               {
                 s_log.debug ("retry {} after: {}", path_to_utf8 (task.target),
