@@ -479,7 +479,12 @@ namespace Accounts {
         blb::cancellation_token token = loginCancel->token();
         run(
                 [redirect, client, state, token](blb::cancellation_token) -> Continuation {
-                    auto query = redirect->wait(MicrosoftClients::REDIRECT_PATH, token, LOGIN_TIMEOUT, resultPage);
+                    auto query = redirect->wait(
+                            MicrosoftClients::REDIRECT_PATH, token, LOGIN_TIMEOUT, resultPage,
+                            [state](const Redirect::Query& query) {
+                                auto found = query.find("state");
+                                return found != query.end() && found->second == state;
+                            });
                     redirect->close();
                     if (!query) {
                         return loginFailed(query.err());

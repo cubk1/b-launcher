@@ -191,7 +191,8 @@ void Redirect::close() {
 
 blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancellation_token token,
                                             std::chrono::seconds timeout,
-                                            const std::function<std::string(const Query&)>& page) {
+                                            const std::function<std::string(const Query&)>& page,
+                                            const std::function<bool(const Query&)>& accept) {
     auto deadline = Clock::now() + timeout;
     for (auto socket : sockets) {
         if ((SOCKET) socket != INVALID_SOCKET && !nonBlocking((SOCKET) socket)) {
@@ -239,7 +240,7 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
                 continue;
             }
             for (size_t accepted = 0; accepted < CLIENT_LIMIT; ++accepted) {
-                SOCKET socket = accept((SOCKET) s, nullptr, nullptr);
+                SOCKET socket = ::accept((SOCKET) s, nullptr, nullptr);
                 if (socket == INVALID_SOCKET) break;
                 if (clients.size() >= CLIENT_LIMIT || !nonBlocking(socket)) {
                     closesocket(socket);
@@ -275,8 +276,13 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
                         if (target.substr(0, mark) != path) {
                             client->reply = response("404 Not Found", "");
                         } else {
-                            client->accepted = mark == std::string::npos ? Query() : parseQuery(target.substr(mark + 1));
-                            client->reply = response("200 OK", page ? page(*client->accepted) : std::string());
+                            Query query = mark == std::string::npos ? Query() : parseQuery(target.substr(mark + 1));
+                            if (accept && !accept(query)) {
+                                client->reply = response("400 Bad Request", "");
+                            } else {
+                                client->reply = response("200 OK", page ? page(query) : std::string());
+                                client->accepted = std::move(query);
+                            }
                         }
                     }
                 }

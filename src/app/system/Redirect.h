@@ -20,7 +20,8 @@ public:
     b_launcher_base::result<void> open(int port);
     b_launcher_base::result<Query> wait(const std::string& path, b_launcher_base::cancellation_token token,
                                         std::chrono::seconds timeout,
-                                        const std::function<std::string(const Query&)>& page);
+                                        const std::function<std::string(const Query&)>& page,
+                                        const std::function<bool(const Query&)>& accept = {});
     void close();
 
 private:
