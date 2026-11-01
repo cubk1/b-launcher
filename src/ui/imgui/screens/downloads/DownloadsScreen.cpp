@@ -206,7 +206,7 @@ namespace DownloadsScreen {
             }
         }
 
-        void progressRing(float cx, float cy, float fraction) {
+        void progressRing(const std::string& id, float cx, float cy, float fraction) {
             if (fraction < 0.0f) {
                 Page::spinner(cx, cy, 7.0f, UiTheme::accent());
                 return;
@@ -218,7 +218,7 @@ namespace DownloadsScreen {
             float y = UiRender::transformY(cy);
             ShaderUtil::arc(x, y, r, stroke, 0.0f, tau,
                             UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
-            float shown = UiState::motion("downloads#ring", fraction, 10.0f);
+            float shown = UiState::motion("downloads#ring#" + id, fraction, 10.0f);
             if (shown > 0.001f) {
                 ShaderUtil::arc(x, y, r, stroke, -tau * 0.25f, -tau * 0.25f + tau * std::min(1.0f, shown),
                                 UiRender::applyAlpha(UiTheme::accent()));
@@ -1192,7 +1192,7 @@ namespace DownloadsScreen {
             float right = Page::right() - 12.0f;
             ProjectInstaller::State state = ProjectInstaller::state(version.id);
             if (state == ProjectInstaller::State::Running) {
-                progressRing(right - 20.0f, centreY, ProjectInstaller::progress(version.id));
+                progressRing(version.id, right - 20.0f, centreY, ProjectInstaller::progress(version.id));
                 return;
             }
             Kind kind = query.kind;
