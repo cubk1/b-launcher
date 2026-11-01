@@ -49,6 +49,7 @@ struct instance_settings
   std::string process_priority;
   std::optional<bool> show_logs;
   std::optional<bool> patch;
+  std::string options_file;
 };
 
 struct instance

@@ -144,8 +144,21 @@ namespace GameLog {
                     (startsWith(text.substr(i), "at ") || startsWith(text.substr(i), "... "));
         }
 
+        bool stackLine(std::string_view text) {
+            size_t i = text.find_first_not_of(" \t");
+            if (i == std::string_view::npos) {
+                return false;
+            }
+            std::string_view rest = text.substr(i);
+            if (startsWith(rest, "Caused by: ")) {
+                return true;
+            }
+            return i > 0 && (startsWith(rest, "at ") || startsWith(rest, "... ") || startsWith(rest, "Suppressed: "));
+        }
+
         void push(Log& log, std::string text, Level level) {
-            log.pending.push_back(Line{std::move(text), level});
+            bool trace = stackLine(text);
+            log.pending.push_back(Line{std::move(text), level, trace, GetTickCount64()});
             if (log.pending.size() > MAX_LINES + MAX_LINES / 4) {
                 size_t extra = log.pending.size() - MAX_LINES;
                 log.pending.erase(log.pending.begin(), log.pending.begin() + (ptrdiff_t) extra);

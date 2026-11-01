@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/multiplayer/ZeroTier.h"
+
 #include <core/base/cancellation.hpp>
 
 #include <chrono>
@@ -20,6 +22,7 @@ namespace RoomApi {
         std::string message;
         int available = 0;
         int total = 0;
+        std::vector<ZeroTier::Moon> moons;
     };
 
     struct Created {

@@ -82,6 +82,8 @@ settings_to_json (const instance_settings &s)
     out["showLogs"] = *s.show_logs;
   if (s.patch)
     out["patch"] = *s.patch;
+  if (!s.options_file.empty ())
+    out["optionsFile"] = s.options_file;
   return out;
 }
 
@@ -159,6 +161,8 @@ settings_from_json (const json &doc)
     s.show_logs = it->get<bool> ();
   if (auto it = doc.find ("patch"); it != doc.end () && it->is_boolean ())
     s.patch = it->get<bool> ();
+  if (auto it = doc.find ("optionsFile"); it != doc.end () && it->is_string ())
+    s.options_file = it->get<std::string> ();
   return s;
 }
 

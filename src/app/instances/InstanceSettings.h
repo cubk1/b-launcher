@@ -39,4 +39,7 @@ namespace InstanceSettings {
     std::vector<JavaOption> javaOptions();
     // Whether a chosen path is that installation: its java, its javaw or its home.
     bool isJava(const std::filesystem::path& chosen, const b_launcher_base::java::java_installation& java);
+
+    std::string optionsFile(const std::string& text);
+    std::string versionOptionsFile(const std::string& minecraft);
 }

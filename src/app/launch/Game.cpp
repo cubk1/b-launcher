@@ -509,9 +509,14 @@ namespace Game {
         std::vector<std::string> jvm = LaunchDefaults::split(LaunchDefaults::jvmArgs());
         std::filesystem::path patchJar;
         Patches::Plan patchPlan;
+        std::string optionsFile;
         if (Patches::enabled(options.patch)) {
             patchJar = Patches::jarIn(blb::meta::game_layout(root).cache());
             patchPlan = Patches::plan();
+            optionsFile = options.options_file;
+            if (!optionsFile.empty()) {
+                patchPlan.values.emplace_back("options.file", optionsFile);
+            }
         }
         jvm.insert(jvm.end(), settings.jvm_args.begin(), settings.jvm_args.end());
         settings.jvm_args = jvm;
@@ -542,7 +547,9 @@ namespace Game {
                       "正在启动 " + live.name + "（Minecraft " + entry->info.minecraft_version + "），账户 " +
                               account->name + "（" + Accounts::kindOf(*account) + "）");
         if (!patchJar.empty()) {
-            GameLog::note(log, "已启用启动器补丁");
+            GameLog::note(log,
+                          optionsFile.empty() ? std::string("已启用启动器补丁")
+                                              : "已启用启动器补丁，游戏设置保存在 " + optionsFile);
         }
         if (substituted && entry->info.settings.account.empty()) {
             GameLog::note(log, "这个实例指定了登录方式，没有使用当前账户");
@@ -567,7 +574,7 @@ namespace Game {
         lives.push_back(std::move(made));
         self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
                                       commandVariables, directory, language, minecraft, patchJar, patchPlan,
-                                      javaOptions]() mutable {
+                                      javaOptions, optionsFile]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;
@@ -618,7 +625,7 @@ namespace Game {
                         std::lock_guard<std::mutex> guard(self->lock);
                         self->javaUsed = java;
                     }
-                    LaunchDefaults::applyLanguage(language, directory, minecraft);
+                    LaunchDefaults::applyLanguage(language, directory, minecraft, optionsFile);
                     if (!preLaunch.empty()) {
                         commandVariables.emplace_back("INST_JAVA", java);
                         sink.on_stage("command", "start");

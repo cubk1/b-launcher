@@ -4,15 +4,22 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace ZeroTier {
 
     enum class Start { Online, Cancelled, Failed, Offline };
 
+    struct Moon {
+        std::string id;
+        std::string seed;
+    };
+
     constexpr int ONLINE_SECONDS = 45;
 
     bool available();
     Start start(const b_launcher_base::cancellation_token& token);
+    void orbit(const std::vector<Moon>& moons);
     std::string details();
     std::string networkStatus(const std::string& network);
     std::string device();
