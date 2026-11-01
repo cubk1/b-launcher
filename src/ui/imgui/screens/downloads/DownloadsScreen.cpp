@@ -11,6 +11,7 @@
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/system/Platform.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/downloads/ProjectBrowser.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
@@ -270,21 +271,7 @@ namespace DownloadsScreen {
         }
 
         void followInstance() {
-            const Instances::Entry* entry = Instances::find(target);
-            if (entry == nullptr) {
-                return;
-            }
-            if (query.kind != Kind::Modpack) {
-                query.gameVersion = entry->info.minecraft_version;
-            }
-            if (query.kind == Kind::Mod) {
-                std::string loader = ProjectInstaller::loaderOf(target);
-                query.loaders.clear();
-                if (!loader.empty()) {
-                    query.loaders.push_back(loader);
-                }
-            }
-            query.page = 0;
+            ProjectBrowser::followInstance(query, target);
         }
 
         std::vector<std::pair<std::string, std::string>> instanceOptions() {
@@ -1318,36 +1305,6 @@ namespace DownloadsScreen {
             }
         }
 
-        bool separator(char c) {
-            return c == ' ' || c == '-' || c == '_' || c == ':' || c == '|' || c == '/' || c == '(' || c == '[';
-        }
-
-        char lower(char c) {
-            return c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c;
-        }
-
-        size_t sameStart(const std::string& text, const std::string& head) {
-            size_t same = 0;
-            while (same < head.size() && same < text.size() && lower(text[same]) == lower(head[same])) {
-                same++;
-            }
-            return same;
-        }
-
-        std::string dropStart(const std::string& name, const std::string& head) {
-            if (head.empty() || sameStart(name, head) != head.size()) {
-                return name;
-            }
-            if (head.size() < name.size() && !separator(head.back()) && !separator(name[head.size()])) {
-                return name;
-            }
-            size_t start = head.size();
-            while (start < name.size() && separator(name[start])) {
-                start++;
-            }
-            return name.substr(start);
-        }
-
         const std::string& sharedPrefix(const Addons::Versions& versions) {
             static std::string cachedProject;
             static size_t cachedCount = (size_t) -1;
@@ -1357,31 +1314,8 @@ namespace DownloadsScreen {
             }
             cachedProject = project.id;
             cachedCount = versions.list.size();
-            prefix.clear();
-            if (versions.list.size() >= 2) {
-                prefix = versions.list.front().name;
-                for (const Addons::Version& version : versions.list) {
-                    prefix.resize(sameStart(version.name, prefix));
-                    if (prefix.empty()) {
-                        break;
-                    }
-                }
-            }
-            size_t cut = prefix.size();
-            while (cut > 0 && !separator(prefix[cut - 1])) {
-                cut--;
-            }
-            prefix.resize(cut);
+            prefix = ProjectBrowser::sharedPrefix(versions.list);
             return prefix;
-        }
-
-        std::string shortName(const Addons::Version& version, const std::string& prefix) {
-            std::string name = dropStart(version.name, prefix);
-            name = dropStart(name, project.title);
-            if (name.empty()) {
-                name = version.number.empty() ? version.name : version.number;
-            }
-            return name;
         }
 
         std::vector<std::pair<uint32_t, std::string>> loaderIcons(const Addons::Version& version) {
@@ -1446,7 +1380,7 @@ namespace DownloadsScreen {
             float typeRoom = typeLabel.empty()
                     ? 0.0f
                     : UiFont::width(typeLabel, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f + 8.0f;
-            std::string name = shortName(version, prefix);
+            std::string name = ProjectBrowser::shortName(version, prefix, project.title);
             std::string shownName = fitEnd(name, std::max(60.0f, limit - x - typeRoom), UiWidgets::TEXT_CONTROL);
             UiRender::textY(shownName, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
@@ -1521,13 +1455,7 @@ namespace DownloadsScreen {
                 return;
             }
             const std::string& prefix = sharedPrefix(versions);
-            std::vector<const Addons::Version*> matching;
-            for (const Addons::Version& version : versions.list) {
-                if ((versionFilter.empty() || contains(version.gameVersions, versionFilter)) &&
-                    (loaderFilter.empty() || contains(version.loaders, loaderFilter))) {
-                    matching.push_back(&version);
-                }
-            }
+            auto matching = ProjectBrowser::matching(versions.list, versionFilter, loaderFilter);
             if (matching.empty()) {
                 message("没有符合条件的版本", UiTheme::textMuted(), listTop, listBottom, false);
                 return;
