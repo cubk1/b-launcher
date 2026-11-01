@@ -102,7 +102,30 @@ namespace ProjectInstaller {
             std::map<std::string, std::pair<unsigned long long, unsigned long long>> sizes;
         };
 
-        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& target) {
+        bool safeFilename(std::string_view name) {
+            if (!blb::fs::safe_relative(name) || name == "." ||
+                name.find_first_of("/\\*?\"<>|") != std::string_view::npos ||
+                name.back() == '.' || name.back() == ' ') {
+                return false;
+            }
+            for (unsigned char c : name) {
+                if (c < 32 || c == 127) return false;
+            }
+            auto stem = blb::to_lower(name.substr(0, name.find('.')));
+            if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" ||
+                stem == "conin$" || stem == "conout$") return false;
+            return !(stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) &&
+                     stem[3] >= '1' && stem[3] <= '9');
+        }
+
+        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& directory) {
+            if (!safeFilename(file.filename) || directory.empty()) {
+                throw std::runtime_error("下载文件名或保存目录无效");
+            }
+            auto target = directory / blb::path_from_utf8(file.filename);
+            if (!blb::fs::is_inside(directory, target) || blb::fs::stat(target).is_link) {
+                throw std::runtime_error("下载路径超出保存目录或指向链接");
+            }
             blb::net::download_task task;
             task.urls = Addons::fileUrls(file.url);
             task.target = target;
@@ -183,7 +206,7 @@ namespace ProjectInstaller {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
         std::string sub = folder(kind);
-        if (entry == nullptr || file == nullptr || sub.empty()) {
+        if (entry == nullptr || file == nullptr || sub.empty() || !safeFilename(file->filename)) {
             return false;
         }
         std::error_code error;
@@ -212,12 +235,11 @@ namespace ProjectInstaller {
             std::set<std::string> names;
             auto add = [&](const Addons::Version& version) {
                 const Addons::File* file = version.file();
-                if (file == nullptr || !blb::fs::safe_relative(file->filename) ||
-                    file->filename.find_first_of("/\\") != std::string::npos || file->url.empty()) {
+                if (file == nullptr || file->url.empty()) {
                     throw std::runtime_error("模组文件信息无效");
                 }
-                if (file != nullptr && names.insert(file->filename).second) {
-                    files.push_back(taskFor(*file, target / blb::path_from_utf8(file->filename)));
+                if (names.insert(file->filename).second) {
+                    files.push_back(taskFor(*file, target));
                 }
             };
             add(chosen);
@@ -255,8 +277,8 @@ namespace ProjectInstaller {
                         const Addons::Version& found = fetched.versions.front();
                         const Addons::File* file = found.file();
                         std::error_code error;
-                        if (file == nullptr) {
-                            throw std::runtime_error("必需前置没有可下载的文件");
+                        if (file == nullptr || !safeFilename(file->filename)) {
+                            throw std::runtime_error("必需前置没有有效的下载文件");
                         }
                         if (!std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
                             add(found);
@@ -293,9 +315,12 @@ namespace ProjectInstaller {
             return;
         }
         std::shared_ptr<Task> task = begin(version.id);
-        std::vector<blb::net::download_task> files = {taskFor(*file, folder / blb::path_from_utf8(file->filename))};
+        Addons::File chosen = *file;
         std::string where = Platform::display(folder);
-        run(task, [task, files, title, where](blb::cancellation_token token) -> Continuation {
+        run(task, [task, chosen, folder, title, where](blb::cancellation_token token) -> Continuation {
+            // Construct and validate the target inside the task so rejection
+            // also clears Running and reports an ordinary download failure.
+            std::vector<blb::net::download_task> files = {taskFor(chosen, folder)};
             std::string problem = download(files, task, token);
             if (token.is_cancelled()) {
                 return nullptr;
