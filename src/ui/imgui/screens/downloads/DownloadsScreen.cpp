@@ -1149,10 +1149,7 @@ namespace DownloadsScreen {
             if (stale) {
                 UiRender::alphaMul = saved * 0.5f;
             }
-            Page::card(mainX(), rowsY, mainW(), contentH);
-            for (size_t i = 1; i < shown.hits.size(); i++) {
-                UiRender::hLine(mainX() + 14.0f, Page::right() - 14.0f, rowsY + i * RESULT_H, UiTheme::outlineSoft());
-            }
+            Page::listCard(mainX(), rowsY, mainW(), RESULT_H, (int) shown.hits.size());
             for (size_t i = 0; i < shown.hits.size(); i++) {
                 float rowY = rowsY + i * RESULT_H;
                 if (rowY + RESULT_H < listTop || rowY > listBottom) {
@@ -1251,8 +1248,15 @@ namespace DownloadsScreen {
             return out;
         }
 
+        bool hasLoaderIcons(const std::vector<const Addons::Version*>& versions) {
+            return std::any_of(versions.begin(), versions.end(), [](const Addons::Version* version) {
+                return std::any_of(version->loaders.begin(), version->loaders.end(),
+                                   [](const std::string& loader) { return loaderImage(loader) != 0; });
+            });
+        }
+
         void versionRow(const Addons::Version& version, const std::string& prefix, float rowY, int index, int count,
-                        size_t iconSlots, bool blocked) {
+                        bool showIcons, bool blocked) {
             bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
             float hover = UiState::motion("downloads#version#" + version.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
@@ -1262,7 +1266,7 @@ namespace DownloadsScreen {
             float centreY = rowY + Page::ROW_H * 0.5f;
             float x = mainX() + 14.0f;
             bool overIcon = false;
-            if (iconSlots > 0) {
+            if (showIcons) {
                 std::vector<std::pair<uint32_t, std::string>> icons = loaderIcons(version);
                 float iconY = centreY - LOADER_ICON * 0.5f;
                 if (!icons.empty()) {
@@ -1380,26 +1384,20 @@ namespace DownloadsScreen {
                 message("没有符合条件的版本", UiTheme::textMuted(), listTop, listBottom, false);
                 return;
             }
-            size_t iconSlots = 0;
-            for (const Addons::Version* version : matching) {
-                iconSlots = std::max(iconSlots, loaderIcons(*version).size());
-            }
+            bool showIcons = hasLoaderIcons(matching);
             float contentH = matching.size() * Page::ROW_H;
             Page::Scroll body("downloads#versions#" + std::to_string((int) source) + "#" + project.id, listTop,
                               listBottom, contentH, mainX(), mainW());
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
-            Page::card(mainX(), y, mainW(), contentH);
-            for (size_t i = 1; i < matching.size(); i++) {
-                UiRender::hLine(mainX() + 14.0f, Page::right() - 14.0f, y + i * Page::ROW_H, UiTheme::outlineSoft());
-            }
+            Page::listCard(mainX(), y, mainW(), Page::ROW_H, (int) matching.size());
             for (size_t i = 0; i < matching.size(); i++) {
                 float versionY = y + i * Page::ROW_H;
                 if (versionY + Page::ROW_H < listTop || versionY > listBottom) {
                     continue;
                 }
-                versionRow(*matching[i], prefix, versionY, (int) i, (int) matching.size(), iconSlots, blocked);
+                versionRow(*matching[i], prefix, versionY, (int) i, (int) matching.size(), showIcons, blocked);
             }
             body.end();
         }
