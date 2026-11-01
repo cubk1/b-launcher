@@ -1,4 +1,5 @@
 #include "app/instances/Exports.h"
+#include "app/system/AsyncTasks.h"
 #include "app/accounts/Accounts.h"
 #include "app/instances/Instances.h"
 #include "app/system/Config.h"
@@ -6,6 +7,7 @@
 #include "app/system/Platform.h"
 
 #include <core/base/cancellation.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
@@ -17,7 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
+#include <utility>
 
 namespace Exports {
 
@@ -26,16 +28,11 @@ namespace Exports {
     namespace {
         std::map<std::string, Options> remembered;
 
-        std::thread worker;
+        AsyncTasks tasks;
         std::shared_ptr<blb::cancellation_source> cancelling;
         bool busy = false;
         std::string busyKey;
-        std::mutex lock;
-        bool done = false;
-        std::string failure;
-        std::vector<std::string> warnings;
-        bool cancelled = false;
-        std::filesystem::path written;
+        std::mutex progressLock;
         std::string progress;
 
         std::string fileName(const Options& options) {
@@ -43,13 +40,37 @@ namespace Exports {
             if (!options.version.empty()) {
                 base += "-" + options.version;
             }
-            std::string out;
-            for (char c : base) {
-                if (std::string("\\/:*?\"<>|").find(c) == std::string::npos && (unsigned char) c >= 32) {
-                    out += c;
+            return blb::fs::filter_filename(base) + ".mrpack";
+        }
+
+        struct Finished {
+            std::filesystem::path file;
+            std::string error;
+            std::vector<std::string> notes;
+            bool cancelled = false;
+        };
+
+        void complete(const Finished& finished) {
+            busy = false;
+            busyKey.clear();
+            if (finished.cancelled) {
+                return;
+            }
+            if (!finished.error.empty()) {
+                Notices::add(Notices::Kind::Failed, "导出失败：" + finished.error, 5000);
+                return;
+            }
+            if (finished.notes.empty()) {
+                Notices::add(Notices::Kind::Done, "已导出 " + blb::path_to_utf8(finished.file.filename()), 4000);
+            } else {
+                Notices::add(Notices::Kind::Info, "已导出，但存在兼容性或文件来源问题", 15000);
+                for (const auto& note : finished.notes) {
+                    // The legacy UI queues failed notices in dialogs; both UIs
+                    // otherwise render ordinary notices as a single line.
+                    Notices::add(Notices::Kind::Failed, "导出提示：" + note, 15000);
                 }
             }
-            return out + ".mrpack";
+            Platform::reveal(finished.file);
         }
     }
 
@@ -108,59 +129,46 @@ namespace Exports {
             return;
         }
         std::filesystem::path output = *picked;
-        if (worker.joinable()) {
-            worker.join();
-        }
         busy = true;
         busyKey = instanceKey;
         {
-            std::lock_guard<std::mutex> guard(lock);
-            done = false;
-            failure.clear();
-            warnings.clear();
-            cancelled = false;
+            std::lock_guard<std::mutex> guard(progressLock);
             progress = "正在准备";
         }
         cancelling = std::make_shared<blb::cancellation_source>();
         blb::cancellation_token token = cancelling->token();
-        worker = std::thread([root, id, gameDirectory, output, chosen, token] {
-            std::string error;
-            std::vector<std::string> notes;
-            bool wasCancelled = false;
-            try {
-                blb::function_progress_sink sink([](const blb::progress_event& event) {
-                    char text[64];
-                    if (event.task == "export:hash") {
-                        std::snprintf(text, sizeof(text), "正在查找文件来源 %llu/%llu",
-                                      (unsigned long long) event.done_items, (unsigned long long) event.total_items);
-                    } else if (event.total_bytes > 0) {
-                        std::snprintf(text, sizeof(text), "正在打包 %d%%",
-                                      (int) (event.done_bytes * 100 / event.total_bytes));
-                    } else {
-                        std::snprintf(text, sizeof(text), "正在打包");
-                    }
-                    std::lock_guard<std::mutex> guard(lock);
-                    progress = text;
-                });
-                blb::install::install_options installOptions;
-                installOptions.mirror = blb::net::make_bmclapi_provider();
-                blb::install::game_installer installer(blb::meta::game_layout(root), installOptions);
-                auto report = blb::modpack::export_modpack(installer, id, gameDirectory, output, chosen, &sink, token);
-                if (!report) {
-                    error = report.err().message;
-                    wasCancelled = report.err().code == blb::errc::cancelled;
+        tasks.run([root, id, gameDirectory, output, chosen, token](blb::cancellation_token) -> AsyncTasks::Continuation {
+            Finished finished;
+            finished.file = output;
+            blb::function_progress_sink sink([](const blb::progress_event& event) {
+                char text[64];
+                if (event.task == "export:hash") {
+                    std::snprintf(text, sizeof(text), "正在查找文件来源 %llu/%llu",
+                                  (unsigned long long) event.done_items, (unsigned long long) event.total_items);
+                } else if (event.total_bytes > 0) {
+                    std::snprintf(text, sizeof(text), "正在打包 %d%%",
+                                  (int) (event.done_bytes * 100 / event.total_bytes));
                 } else {
-                    notes = std::move(report->warnings);
+                    std::snprintf(text, sizeof(text), "正在打包");
                 }
-            } catch (const std::exception& exception) {
-                error = exception.what();
+                std::lock_guard<std::mutex> guard(progressLock);
+                progress = text;
+            });
+            blb::install::install_options installOptions;
+            installOptions.mirror = blb::net::make_bmclapi_provider();
+            blb::install::game_installer installer(blb::meta::game_layout(root), installOptions);
+            auto report = blb::modpack::export_modpack(installer, id, gameDirectory, output, chosen, &sink, token);
+            if (!report) {
+                finished.error = report.err().message;
+                finished.cancelled = report.err().code == blb::errc::cancelled;
+            } else {
+                finished.notes = std::move(report->warnings);
             }
-            std::lock_guard<std::mutex> guard(lock);
-            failure = error;
-            warnings = std::move(notes);
-            cancelled = wasCancelled || (!error.empty() && token.is_cancelled());
-            written = output;
-            done = true;
+            finished.cancelled = finished.cancelled || (!finished.error.empty() && token.is_cancelled());
+            return [finished = std::move(finished)] { complete(finished); };
+        }, [output, token](const std::string& error) -> AsyncTasks::Continuation {
+            Finished finished{output, error, {}, !error.empty() && token.is_cancelled()};
+            return [finished = std::move(finished)] { complete(finished); };
         });
     }
 
@@ -179,57 +187,16 @@ namespace Exports {
     }
 
     std::string status() {
-        std::lock_guard<std::mutex> guard(lock);
+        std::lock_guard<std::mutex> guard(progressLock);
         return progress;
     }
 
     void poll() {
-        if (!busy) {
-            return;
-        }
-        std::string error;
-        std::vector<std::string> notes;
-        bool wasCancelled;
-        std::filesystem::path file;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            if (!done) {
-                return;
-            }
-            error = failure;
-            notes = warnings;
-            wasCancelled = cancelled;
-            file = written;
-        }
-        if (worker.joinable()) {
-            worker.join();
-        }
-        busy = false;
-        busyKey.clear();
-        if (wasCancelled) {
-            return;
-        }
-        if (!error.empty()) {
-            Notices::add(Notices::Kind::Failed, "导出失败：" + error, 5000);
-            return;
-        }
-        if (notes.empty()) {
-            Notices::add(Notices::Kind::Done, "已导出 " + blb::path_to_utf8(file.filename()), 4000);
-        } else {
-            Notices::add(Notices::Kind::Info, "已导出，但存在兼容性或文件来源问题", 15000);
-            for (const auto& note : notes) {
-                // The legacy UI queues failed notices in dialogs; both UIs
-                // otherwise render ordinary notices as a single line.
-                Notices::add(Notices::Kind::Failed, "导出提示：" + note, 15000);
-            }
-        }
-        Platform::reveal(file);
+        tasks.poll();
     }
 
     void shutdown() {
         cancel();
-        if (worker.joinable()) {
-            worker.join();
-        }
+        tasks.stop();
     }
 }
