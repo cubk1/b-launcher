@@ -23,6 +23,7 @@
 #include <deque>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -79,9 +80,17 @@ namespace JavaDownloads {
             return it != doc.end() && it->is_string() ? it->get<std::string>() : std::string();
         }
 
-        uint64_t count(const nlohmann::json& doc, const char* key) {
+        std::optional<uint64_t> count(const nlohmann::json& doc, const char* key,
+                                      uint64_t maximum = std::numeric_limits<uint64_t>::max()) {
             auto it = doc.find(key);
-            return it != doc.end() && it->is_number_unsigned() ? it->get<uint64_t>() : 0;
+            if (it == doc.end()) {
+                return 0;
+            }
+            if (!it->is_number_integer() || (!it->is_number_unsigned() && it->get<int64_t>() < 0)) {
+                return std::nullopt;
+            }
+            uint64_t value = it->get<uint64_t>();
+            return value <= maximum ? std::optional<uint64_t>(value) : std::nullopt;
         }
 
         bool safeFolder(const std::string& folder) {
@@ -102,6 +111,10 @@ namespace JavaDownloads {
                 if (!jdk.is_object() || packages == jdk.end() || !packages->is_array()) {
                     continue;
                 }
+                auto major = count(jdk, "jdk_version_major", std::numeric_limits<int>::max());
+                if (!major || *major == 0) {
+                    continue;
+                }
                 for (const nlohmann::json& item : *packages) {
                     if (!item.is_object() || text(item, "os") != "windows" || text(item, "arch") != "x86_64" ||
                         text(item, "package_type") != "zip") {
@@ -117,15 +130,19 @@ namespace JavaDownloads {
                     package.product = text(jdk, "product");
                     package.flavour = text(jdk, "flavour");
                     package.version = text(jdk, "jdk_version");
-                    auto major = jdk.find("jdk_version_major");
-                    package.major = major != jdk.end() && major->is_number_integer() ? major->get<int>() : 0;
+                    package.major = (int) *major;
                     auto preview = jdk.find("preview");
                     package.preview = preview != jdk.end() && preview->is_boolean() && preview->get<bool>();
                     package.sha256 = text(item, "sha256");
                     package.prefix = text(item, "unpack_prefix_filter");
                     package.homePrefix = text(item, "package_to_java_home_prefix");
-                    package.archiveSize = count(item, "archive_size");
-                    package.unpackedSize = count(item, "unpacked_size");
+                    auto archiveSize = count(item, "archive_size", std::numeric_limits<int64_t>::max());
+                    auto unpackedSize = count(item, "unpacked_size");
+                    if (!archiveSize || !unpackedSize) {
+                        continue;
+                    }
+                    package.archiveSize = *archiveSize;
+                    package.unpackedSize = *unpackedSize;
                     out.push_back(std::move(package));
                 }
             }
@@ -353,6 +370,10 @@ namespace JavaDownloads {
     }
 
     void install(const Package& package) {
+        if (package.archiveSize > (uint64_t) std::numeric_limits<int64_t>::max()) {
+            Notices::add(Notices::Kind::Failed, "Java 下载大小无效", 5000);
+            return;
+        }
         if (!safeFolder(package.folder) ||
             (!package.homePrefix.empty() && !safePath(normalize(package.homePrefix)))) {
             Notices::add(Notices::Kind::Failed, "Java 安装路径无效", 5000);
