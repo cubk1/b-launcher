@@ -128,6 +128,12 @@ quote_argument_file_entry (std::string_view arg)
   std::string out = "\"";
   for (char c : arg)
     {
+      if (c == '\n' || c == '\r' || c == '\t' || c == '\f')
+        {
+          out += '\\';
+          out += c == '\n' ? 'n' : c == '\r' ? 'r' : c == '\t' ? 't' : 'f';
+          continue;
+        }
       if (c == '\\' || c == '"')
         out += '\\';
       out += c;
