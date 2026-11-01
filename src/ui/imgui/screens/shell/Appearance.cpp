@@ -7,6 +7,7 @@
 #include "ui/imgui/panel/UiSound.h"
 
 #include <cstdio>
+#include <charconv>
 
 namespace Appearance {
 
@@ -45,8 +46,13 @@ namespace Appearance {
         }
 
         bool parseHex(const std::string& value, uint32_t& argb) {
-            unsigned int rgb = 0;
-            if (value.size() != 7 || value[0] != '#' || std::sscanf(value.c_str() + 1, "%6x", &rgb) != 1) {
+            if (value.size() != 7 || value[0] != '#') {
+                return false;
+            }
+            uint32_t rgb = 0;
+            const char* end = value.data() + value.size();
+            auto parsed = std::from_chars(value.data() + 1, end, rgb, 16);
+            if (parsed.ec != std::errc() || parsed.ptr != end) {
                 return false;
             }
             argb = 0xFF000000u | rgb;
