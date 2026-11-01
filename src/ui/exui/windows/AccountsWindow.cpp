@@ -197,13 +197,9 @@ namespace ForgottenMelody {
             bool choosing = false;
 
             std::string registerUrl() const {
-                std::string server = trimmed(Text(SERVER));
-                if (Checked(NIDE8)) {
-                    return blb::auth::valid_nide8_id(server) ? blb::auth::nide8_register_url(server) : std::string();
-                }
-                return blb::auth::same_yggdrasil_server(server, blb::auth::littleskin_api)
-                        ? std::string("https://littleskin.cn/auth/register")
-                        : std::string();
+                return Accounts::registrationUrl(
+                        Checked(NIDE8) ? blb::auth::account_type::nide8 : blb::auth::account_type::yggdrasil,
+                        trimmed(Text(SERVER)));
             }
 
             void login() {
@@ -211,26 +207,17 @@ namespace ForgottenMelody {
                     return;
                 }
                 bool nide8 = Checked(NIDE8);
+                auto type = nide8 ? blb::auth::account_type::nide8 : blb::auth::account_type::yggdrasil;
                 std::string server = trimmed(Text(SERVER));
                 std::string user = trimmed(Text(USER));
                 std::string password = Platform::narrow(Text(PASSWORD));
-                std::wstring problem;
-                if (server.empty()) {
-                    problem = nide8 ? L"请填写服务器 ID" : L"请填写认证服务器地址";
-                } else if (nide8 && !blb::auth::valid_nide8_id(server)) {
-                    problem = L"服务器 ID 应该是 32 位的字母和数字";
-                } else if (user.empty()) {
-                    problem = L"请填写账号";
-                } else if (password.empty()) {
-                    problem = L"请填写密码";
-                }
+                std::string problem = Accounts::serverLoginProblem(type, server, user, password);
                 if (!problem.empty()) {
-                    message(GetHwnd(), problem, L"外置登录");
+                    message(GetHwnd(), Platform::widen(problem), L"外置登录");
                     return;
                 }
                 remembered = {nide8, Text(SERVER), Text(USER)};
-                Accounts::startServerLogin(nide8 ? blb::auth::account_type::nide8 : blb::auth::account_type::yggdrasil,
-                                           server, user, password);
+                Accounts::startServerLogin(type, server, user, password);
                 refresh();
             }
         };

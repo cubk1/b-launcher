@@ -513,6 +513,29 @@ namespace Accounts {
         return serverState;
     }
 
+    std::string serverLoginProblem(blb::auth::account_type type, const std::string& server,
+                                   const std::string& username, const std::string& password) {
+        bool nide8 = type == blb::auth::account_type::nide8;
+        if (server.empty()) {
+            return nide8 ? "请填写服务器 ID" : "请填写认证服务器地址";
+        }
+        if (nide8 && !blb::auth::valid_nide8_id(server)) {
+            return "服务器 ID 应该是 32 位的字母和数字";
+        }
+        if (username.empty()) {
+            return "请填写账号";
+        }
+        return password.empty() ? "请填写密码" : std::string();
+    }
+
+    std::string registrationUrl(blb::auth::account_type type, const std::string& server) {
+        if (type == blb::auth::account_type::nide8) {
+            return blb::auth::valid_nide8_id(server) ? blb::auth::nide8_register_url(server) : std::string();
+        }
+        return blb::auth::same_yggdrasil_server(server, blb::auth::littleskin_api)
+                ? std::string("https://littleskin.cn/auth/register") : std::string();
+    }
+
     void startServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
                           const std::string& password) {
         profiles.clear();

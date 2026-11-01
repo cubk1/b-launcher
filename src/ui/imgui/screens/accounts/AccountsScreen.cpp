@@ -55,7 +55,6 @@ namespace AccountsScreen {
         const char* const ADDRESS_OWNER = "accounts#server#address";
         const char* const USER_OWNER = "accounts#server#user";
         const char* const PASSWORD_OWNER = "accounts#server#password";
-        const char* const LITTLESKIN_REGISTER = "https://littleskin.cn/auth/register";
 
         blb::auth::account_type serverType = blb::auth::account_type::yggdrasil;
         std::string serverAddress;
@@ -740,16 +739,7 @@ namespace AccountsScreen {
             std::string address = live(ADDRESS_OWNER, serverAddress);
             std::string user = live(USER_OWNER, serverUser);
             std::string password = live(PASSWORD_OWNER, serverPassword);
-            std::string problem;
-            if (address.empty()) {
-                problem = nide8() ? "请填写服务器 ID" : "请填写认证服务器地址";
-            } else if (nide8() && !blb::auth::valid_nide8_id(address)) {
-                problem = "服务器 ID 应该是 32 位的字母和数字";
-            } else if (user.empty()) {
-                problem = "请填写账号";
-            } else if (password.empty()) {
-                problem = "请填写密码";
-            }
+            std::string problem = Accounts::serverLoginProblem(serverType, address, user, password);
             if (!problem.empty()) {
                 Notifications::add(Notifications::FAILED, problem, 3500);
                 return;
@@ -811,14 +801,6 @@ namespace AccountsScreen {
             views.go(VIEW_LIST);
         }
 
-        std::string registerUrl(const std::string& address) {
-            if (nide8()) {
-                return blb::auth::valid_nide8_id(address) ? blb::auth::nide8_register_url(address) : std::string();
-            }
-            return blb::auth::same_yggdrasil_server(address, blb::auth::littleskin_api) ? LITTLESKIN_REGISTER
-                                                                                        : std::string();
-        }
-
         float fieldWidth() {
             return std::max(160.0f, std::min(360.0f, Page::controlRight() - Page::left() - 130.0f));
         }
@@ -867,7 +849,7 @@ namespace AccountsScreen {
                 }
             }
             x += presetW + 8.0f;
-            std::string signUp = registerUrl(live(ADDRESS_OWNER, serverAddress));
+            std::string signUp = Accounts::registrationUrl(serverType, live(ADDRESS_OWNER, serverAddress));
             if (!signUp.empty()) {
                 std::string text = "注册账号";
                 float w = Page::buttonWidth(text);

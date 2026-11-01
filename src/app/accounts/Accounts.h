@@ -33,6 +33,11 @@ namespace Accounts {
     void startLogin();
     void cancelLogin();
 
+    // Shared form rules; callers keep their input normalization and notice presentation.
+    std::string serverLoginProblem(blb::auth::account_type type, const std::string& server,
+                                   const std::string& username, const std::string& password);
+    std::string registrationUrl(blb::auth::account_type type, const std::string& server);
+
     enum class ServerLogin { Idle, Working, Choosing, Done };
     ServerLogin serverLogin();
     void startServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
