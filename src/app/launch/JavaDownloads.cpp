@@ -366,8 +366,9 @@ namespace JavaDownloads {
         run([package, job](blb::cancellation_token token) -> Continuation {
             std::filesystem::path base = root();
             std::filesystem::path target = base / blb::path_from_utf8(package.folder);
-            std::filesystem::path temp = base / blb::path_from_utf8(package.folder + ".part");
-            std::filesystem::path archive = base / blb::path_from_utf8(package.folder + ".zip");
+            std::filesystem::path temp = blb::fs::temp_sibling(target);
+            std::filesystem::path archive = temp;
+            archive += ".zip";
             std::error_code ec;
             std::filesystem::create_directories(base, ec);
             std::filesystem::remove_all(temp, ec);
