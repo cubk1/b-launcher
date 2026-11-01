@@ -247,14 +247,14 @@ collect_candidates (const scan_options &options)
 }
 
 result<java_installation>
-probe_with_process (java_installation install)
+probe_with_process (java_installation install, cancellation_token token)
 {
   process_options options;
   options.args = { path_to_utf8 (install.executable),
                    "-XshowSettings:properties", "-version" };
   BLB_TRY_ASSIGN (
       auto output,
-      run_process (options, {}, std::chrono::milliseconds (15000)));
+      run_process (options, token, std::chrono::milliseconds (15000)));
   auto text = output.err + output.out;
   for (auto line : split (text, '\n'))
     {
@@ -333,8 +333,9 @@ java_home_from_executable (const std::filesystem::path &executable)
 
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
-            bool allow_process)
+            bool allow_process, cancellation_token token)
 {
+  BLB_TRY (token.check ());
   auto st = fs::stat (home_or_executable);
   if (!st.exists)
     return make_error (
@@ -379,12 +380,14 @@ probe_java (const std::filesystem::path &home_or_executable,
         }
       return make_error (errc::java_not_found, "no release file");
     }
-  return probe_with_process (std::move (install));
+  return probe_with_process (std::move (install), token);
 }
 
 std::vector<java_installation>
 scan_java (const scan_options &options, cancellation_token token)
 {
+  if (token.is_cancelled ())
+    return {};
   auto candidates = collect_candidates (options);
   std::vector<candidate> unique;
   std::vector<std::string> keys;
@@ -401,7 +404,7 @@ scan_java (const scan_options &options, cancellation_token token)
   parallel_for (thread_pool::shared (), unique.size (), [&] (std::size_t i) {
     if (token.is_cancelled ())
       return;
-    auto probed = probe_java (unique[i].home, options.probe_process);
+    auto probed = probe_java (unique[i].home, options.probe_process, token);
     if (!probed)
       {
         s_log.debug ("skip {}: {}", path_to_utf8 (unique[i].home),

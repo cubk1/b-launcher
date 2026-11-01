@@ -261,7 +261,7 @@ install_runtime (install::game_installer &installer,
       fs::write_file_atomic (layout.runtime () / path_from_utf8 (component)
                                  / path_from_utf8 (platform) / ".version",
                              entry->version));
-  BLB_TRY_ASSIGN (auto install, probe_java (home, true));
+  BLB_TRY_ASSIGN (auto install, probe_java (home, true, token));
   install.source = java_source::managed;
   return install;
 }

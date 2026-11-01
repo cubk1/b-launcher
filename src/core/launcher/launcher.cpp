@@ -157,7 +157,7 @@ game_launcher::resolve_java (const meta::version &resolved,
 {
   if (settings.java)
     {
-      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java));
+      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true, token));
       install.source = java::java_source::user;
       return install;
     }

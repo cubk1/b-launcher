@@ -119,20 +119,25 @@ struct loader_installer::impl
   std::optional<std::vector<java::java_installation>> java_cache;
 
   result<java::java_installation>
-  default_java (const meta::version &vanilla)
+  default_java (const meta::version &vanilla, progress_sink *sink,
+                cancellation_token token)
   {
+    BLB_TRY (token.check ());
     auto requirement = java::requirement_for (vanilla);
     std::lock_guard lock (java_mutex);
+    BLB_TRY (token.check ());
     if (!java_cache)
       {
         auto options = installer->options ().java_scan;
         options.runtime_roots.push_back (installer->layout ().runtime ());
-        java_cache = java::scan_java (options);
+        auto found = java::scan_java (options, token);
+        BLB_TRY (token.check ());
+        java_cache = std::move (found);
       }
     if (auto chosen = java::select_java (*java_cache, requirement))
       return *chosen;
     BLB_TRY_ASSIGN (auto installed,
-                    java::install_runtime (*installer, requirement.component));
+                    java::install_runtime (*installer, requirement.component, sink, token));
     java_cache->push_back (installed);
     return installed;
   }
@@ -173,8 +178,8 @@ loader_installer::install (const install_request &request, progress_sink *sink,
   ctx.sink = sink;
   ctx.token = token;
   ctx.temp_dir = layout.cache () / "install" / random_bytes_hex (6);
-  ctx.java = m_impl->java ? m_impl->java : [this] (const meta::version &v) {
-    return m_impl->default_java (v);
+  ctx.java = m_impl->java ? m_impl->java : [this, sink, token] (const meta::version &v) {
+    return m_impl->default_java (v, sink, token);
   };
   for (const auto &l : request.loaders)
     if (l.type == loader_type::forge || l.type == loader_type::neoforge
@@ -261,8 +266,14 @@ loader_installer::install (const install_request &request, progress_sink *sink,
                                 },
                                 { naming });
       graph.add ("finalize:" + name,
-                 [&ctx, j = job.get ()] (cancellation_token) {
-                   return j->finalize (ctx);
+                 [this, &ctx, j = job.get ()] (cancellation_token t) {
+                   auto task = ctx;
+                   task.token = t;
+                   if (!m_impl->java)
+                     task.java = [this, sink = ctx.sink, t] (const meta::version &v) {
+                       return m_impl->default_java (v, sink, t);
+                     };
+                   return j->finalize (task);
                  },
                  { vanilla_core, prepare });
     }
