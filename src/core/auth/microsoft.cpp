@@ -408,6 +408,10 @@ microsoft_authenticator::fetch_profile (account current,
                                             response.status));
   current.uuid = strip_uuid (text_of (doc, "id"));
   current.name = text_of (doc, "name");
+  if (current.name.empty () || current.uuid.size () != 32
+      || current.uuid.find_first_not_of ("0123456789abcdef")
+             != std::string::npos)
+    return make_error (errc::auth, "invalid minecraft profile");
   if (auto skins = doc.find ("skins");
       skins != doc.end () && skins->is_array ())
     for (const auto &skin : *skins)
