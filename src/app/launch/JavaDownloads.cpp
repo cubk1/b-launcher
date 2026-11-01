@@ -1,4 +1,5 @@
 #include "app/launch/JavaDownloads.h"
+#include "app/system/TaskThreads.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
 #include "app/system/Server.h"
@@ -45,7 +46,7 @@ namespace JavaDownloads {
 
         std::mutex lock;
         std::deque<Continuation> finished;
-        std::vector<std::thread> workers;
+        TaskThreads workers;
         blb::cancellation_source stopping;
         List current;
         bool started = false;
@@ -53,7 +54,7 @@ namespace JavaDownloads {
 
         void run(std::function<Continuation(blb::cancellation_token)> work) {
             blb::cancellation_token token = stopping.token();
-            workers.emplace_back([work, token] {
+            workers.start([work, token] {
                 Continuation next;
                 try {
                     next = work(token);
@@ -397,6 +398,7 @@ namespace JavaDownloads {
     }
 
     void poll() {
+        workers.reap();
         std::deque<Continuation> ready;
         {
             std::lock_guard<std::mutex> guard(lock);
@@ -409,11 +411,6 @@ namespace JavaDownloads {
 
     void shutdown() {
         stopping.cancel();
-        for (std::thread& worker : workers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers.clear();
+        workers.joinAll();
     }
 }

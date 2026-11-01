@@ -19,6 +19,50 @@ namespace {
     constexpr int FALLBACK_RADIUS = 8;
     const wchar_t* const CLASS_NAME = L"b-launcher.window";
 
+    struct WindowClass {
+        HICON icon = nullptr;
+        HICON smallIcon = nullptr;
+        bool registered = false;
+
+        void releaseIcons() {
+            if (icon) DestroyIcon(icon);
+            if (smallIcon) DestroyIcon(smallIcon);
+            icon = smallIcon = nullptr;
+        }
+
+        bool ensure(WNDPROC procedure) {
+            if (registered) {
+                return true;
+            }
+            WNDCLASSEXW wc = {};
+            wc.cbSize = sizeof(wc);
+            wc.style = CS_OWNDC;
+            wc.lpfnWndProc = procedure;
+            wc.hInstance = GetModuleHandleW(nullptr);
+            wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+            icon = (HICON) LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                    GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+            smallIcon = (HICON) LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
+                    GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+            wc.hIcon = icon;
+            wc.hIconSm = smallIcon;
+            wc.lpszClassName = CLASS_NAME;
+            registered = RegisterClassExW(&wc) != 0;
+            if (!registered) {
+                releaseIcons();
+            }
+            return registered;
+        }
+
+        ~WindowClass() {
+            // Keep the class and its correctly sized icons for later windows.
+            // Icons must outlive every window still using this class.
+            if (!registered || UnregisterClassW(CLASS_NAME, GetModuleHandleW(nullptr))) {
+                releaseIcons();
+            }
+        }
+    };
+
     template<typename T>
     T glProc(const char* name) {
         PROC proc = wglGetProcAddress(name);
@@ -40,18 +84,13 @@ BorderlessWindow::BorderlessWindow() = default;
 BorderlessWindow::~BorderlessWindow() = default;
 
 bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int clientHeight, HGLRC share) {
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(wc);
-    wc.style = CS_OWNDC;
-    wc.lpfnWndProc = windowProc;
-    wc.hInstance = GetModuleHandleW(nullptr);
-    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
-    wc.hIcon = (HICON) LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
-                                  GetSystemMetrics(SM_CYICON), 0);
-    wc.hIconSm = (HICON) LoadImageW(wc.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
-                                    GetSystemMetrics(SM_CYSMICON), 0);
-    wc.lpszClassName = CLASS_NAME;
-    RegisterClassExW(&wc);
+    if (hwnd != nullptr) {
+        return false;
+    }
+    static WindowClass windowClass;
+    if (!windowClass.ensure(windowProc)) {
+        return false;
+    }
 
     POINT cursor;
     GetCursorPos(&cursor);
@@ -72,7 +111,7 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
     minWidth = clientWidth;
     minHeight = clientHeight;
     hwnd = CreateWindowExW(WS_EX_APPWINDOW, CLASS_NAME, title.c_str(), style, x, y, clientWidth, clientHeight, nullptr,
-                           nullptr, wc.hInstance, this);
+                           nullptr, GetModuleHandleW(nullptr), this);
     if (hwnd == nullptr) {
         return false;
     }
@@ -81,7 +120,18 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
     if (bigIcon != nullptr || smallIcon != nullptr) {
         setIcons(bigIcon, smallIcon);
     }
-    return createGlContext(share);
+    HDC previousDc = wglGetCurrentDC();
+    HGLRC previousContext = wglGetCurrentContext();
+    if (!createGlContext(share)) {
+        // createGlContext() can fail after acquiring a DC and a GL context.
+        // Leave the object reusable and restore the caller's current context.
+        destroy();
+        if (wglGetCurrentDC() != previousDc || wglGetCurrentContext() != previousContext) {
+            wglMakeCurrent(previousDc, previousContext);
+        }
+        return false;
+    }
+    return true;
 }
 
 void BorderlessWindow::resize(int clientWidth, int clientHeight) {
@@ -187,6 +237,9 @@ void BorderlessWindow::setDarkMode(bool dark) {
 
 bool BorderlessWindow::createGlContext(HGLRC share) {
     deviceContext = GetDC(hwnd);
+    if (deviceContext == nullptr) {
+        return false;
+    }
     PIXELFORMATDESCRIPTOR pfd = {};
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
@@ -223,7 +276,7 @@ void BorderlessWindow::destroy() {
         hwnd = nullptr;
         DestroyWindow(gone);
     }
-    UnregisterClassW(CLASS_NAME, GetModuleHandleW(nullptr));
+    deviceContext = nullptr;
 }
 
 void BorderlessWindow::show(bool maximized) {

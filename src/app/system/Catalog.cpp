@@ -1,4 +1,5 @@
 #include "app/system/Catalog.h"
+#include "app/system/TaskThreads.h"
 #include "app/system/Config.h"
 #include "app/instances/Instances.h"
 
@@ -24,7 +25,7 @@ namespace Catalog {
 
         std::mutex lock;
         std::deque<Continuation> finished;
-        std::vector<std::thread> workers;
+        TaskThreads workers;
         blb::cancellation_source stopping;
 
         Versions versions;
@@ -41,7 +42,7 @@ namespace Catalog {
         void run(std::function<Continuation(blb::cancellation_token)> work,
                  std::function<Continuation(const std::string&)> fail) {
             blb::cancellation_token token = stopping.token();
-            workers.emplace_back([work, fail, token] {
+            workers.start([work, fail, token] {
                 Continuation next;
                 try {
                     next = work(token);
@@ -307,6 +308,7 @@ namespace Catalog {
     }
 
     void poll() {
+        workers.reap();
         std::deque<Continuation> ready;
         {
             std::lock_guard<std::mutex> guard(lock);
@@ -321,11 +323,6 @@ namespace Catalog {
 
     void shutdown() {
         stopping.cancel();
-        for (std::thread& worker : workers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers.clear();
+        workers.joinAll();
     }
 }

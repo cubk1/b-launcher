@@ -30,6 +30,6 @@ public:
 
 private:
     std::thread thread;
-    void* stopping = nullptr;
+    void* completionPort = nullptr;
     std::vector<std::filesystem::path> watched;
 };

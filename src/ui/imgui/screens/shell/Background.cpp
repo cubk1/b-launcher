@@ -4,6 +4,7 @@
 #include "app/system/Notices.h"
 
 #include "ui/imgui/panel/UiImages.h"
+#include "ui/imgui/gl/UiGL.h"
 
 #include <core/base/strings.hpp>
 
@@ -186,12 +187,15 @@ namespace Background {
         }
 
         void release() {
+            if (sidebarTexture != 0 || panelTexture != 0) {
+                const GLuint textures[] = {sidebarTexture, panelTexture};
+                UiGL::DeleteTextures(2, textures);
+            }
             sidebarTexture = 0;
             panelTexture = 0;
         }
 
         void start() {
-            release();
             if (chosen.empty() || working) {
                 return;
             }
@@ -262,6 +266,11 @@ namespace Background {
     }
 
     void poll() {
+        // setPath() may run while this frame's draw list still references the
+        // old background. Retire textures here, before the next frame is built.
+        if (chosen.empty()) {
+            release();
+        }
         std::shared_ptr<Prepared> result;
         {
             std::lock_guard<std::mutex> guard(lock);
@@ -283,15 +292,25 @@ namespace Background {
             chosen.clear();
             Config::data()["backgroundPath"] = chosen;
             Config::save();
+            release();
             return;
         }
-        sidebarTexture = UiImages::upload(result->sidebar.rgba.data(), result->sidebar.width, result->sidebar.height);
-        panelTexture = UiImages::upload(result->panel.rgba.data(), result->panel.width, result->panel.height);
+        GLuint nextSidebar = UiImages::upload(result->sidebar.rgba.data(), result->sidebar.width, result->sidebar.height);
+        GLuint nextPanel = UiImages::upload(result->panel.rgba.data(), result->panel.width, result->panel.height);
+        release();
+        sidebarTexture = nextSidebar;
+        panelTexture = nextPanel;
     }
 
     void shutdown() {
         if (worker.joinable()) {
             worker.join();
         }
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            finished.reset();
+        }
+        working = false;
+        release();
     }
 }

@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/home/Homepage.h"
+#include "app/system/TaskThreads.h"
 #include "app/accounts/Accounts.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
@@ -116,7 +117,7 @@ namespace Homepage {
 
         std::mutex lock;
         std::deque<Continuation> finished;
-        std::vector<std::thread> workers;
+        TaskThreads workers;
         blb::cancellation_source stopping;
 
         std::vector<std::unique_ptr<View>> views;
@@ -136,7 +137,7 @@ namespace Homepage {
 
         void run(std::function<Continuation(blb::cancellation_token)> work) {
             blb::cancellation_token token = stopping.token();
-            workers.emplace_back([work, token] {
+            workers.start([work, token] {
                 Continuation next;
                 try {
                     next = work(token);
@@ -864,6 +865,7 @@ namespace Homepage {
     }
 
     void poll() {
+        workers.reap();
         WebImages::poll();
         std::deque<Continuation> ready;
         {
@@ -877,12 +879,7 @@ namespace Homepage {
 
     void shutdown() {
         stopping.cancel();
-        for (std::thread& worker : workers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers.clear();
+        workers.joinAll();
         WebImages::shutdown();
     }
 }

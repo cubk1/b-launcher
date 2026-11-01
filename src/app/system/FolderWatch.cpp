@@ -23,6 +23,8 @@ namespace {
         // DWORDs, as the notifications are aligned to them.
         std::vector<DWORD> buffer = std::vector<DWORD>(BUFFER_WORDS);
 
+        ~Watch() { close(); }
+
         bool read() {
             return ReadDirectoryChangesW(handle, buffer.data(), (DWORD) (buffer.size() * sizeof(DWORD)), TRUE, FILTER,
                                          nullptr, &overlapped, nullptr) != FALSE;
@@ -43,8 +45,9 @@ namespace {
         }
     };
 
-    void run(const std::vector<std::filesystem::path>& folders, const FolderWatch::Changed& changed, HANDLE stopping) {
-        // The reads in flight point into the watches, so they never move.
+    void run(const std::vector<std::filesystem::path>& folders, const FolderWatch::Changed& changed, HANDLE port) {
+        // Both the reads and queued completion keys point into these records.
+        // Keep them alive until the receive loop ends, including failed watches.
         std::vector<std::unique_ptr<Watch>> watches;
         for (const std::filesystem::path& folder : folders) {
             auto watch = std::make_unique<Watch>();
@@ -53,25 +56,29 @@ namespace {
                                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                                         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
             watch->overlapped.hEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-            if (watch->handle == INVALID_HANDLE_VALUE || watch->overlapped.hEvent == nullptr || !watch->read()) {
-                watch->close();
+            if (watch->handle == INVALID_HANDLE_VALUE || watch->overlapped.hEvent == nullptr ||
+                CreateIoCompletionPort(watch->handle, port, reinterpret_cast<ULONG_PTR>(watch.get()), 0) == nullptr) {
                 continue;
             }
             watches.push_back(std::move(watch));
+            if (!watches.back()->read()) {
+                watches.back()->close();
+            }
         }
         for (;;) {
-            std::vector<HANDLE> events = {stopping};
-            for (const auto& watch : watches) {
-                events.push_back(watch->overlapped.hEvent);
-            }
-            DWORD woke = WaitForMultipleObjects((DWORD) events.size(), events.data(), FALSE, INFINITE);
-            if (woke == WAIT_OBJECT_0 || woke == WAIT_FAILED || woke >= WAIT_OBJECT_0 + events.size()) {
+            DWORD bytes = 0;
+            ULONG_PTR key = 0;
+            OVERLAPPED* completed = nullptr;
+            bool ok = GetQueuedCompletionStatus(port, &bytes, &key, &completed, INFINITE) != FALSE;
+            // stop() posts a packet without an OVERLAPPED. A port failure also
+            // returns no request, whereas a failed directory read has one.
+            if (completed == nullptr) {
                 break;
             }
-            size_t index = woke - WAIT_OBJECT_0 - 1;
-            Watch& watch = *watches[index];
-            DWORD bytes = 0;
-            bool ok = GetOverlappedResult(watch.handle, &watch.overlapped, &bytes, FALSE) != FALSE;
+            Watch& watch = *reinterpret_cast<Watch*>(key);
+            if (watch.handle == INVALID_HANDLE_VALUE) {
+                continue;
+            }
             if (!ok || bytes == 0) {
                 // Gone, or more changes than the buffer holds.
                 changed(watch.folder, std::wstring(), true);
@@ -89,12 +96,11 @@ namespace {
             }
             if (!ok || !watch.read()) {
                 watch.close();
-                watches.erase(watches.begin() + (ptrdiff_t) index);
             }
         }
-        for (const auto& watch : watches) {
-            watch->close();
-        }
+        // Watch destructors cancel and wait for outstanding I/O before freeing
+        // buffers. Remaining completion packets are discarded when the owner
+        // closes the port, after joining this thread.
     }
 }
 
@@ -104,27 +110,38 @@ FolderWatch::~FolderWatch() {
 
 void FolderWatch::start(std::vector<std::filesystem::path> folders, Changed changed) {
     stop();
-    watched = folders;
     if (folders.empty()) {
         return;
     }
-    HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (event == nullptr) {
+    HANDLE port = CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 1);
+    if (port == nullptr) {
         return;
     }
-    stopping = event;
-    thread = std::thread(
-            [folders = std::move(folders), changed = std::move(changed), event] { run(folders, changed, event); });
+    completionPort = port;
+    try {
+        watched = folders;
+        thread = std::thread(
+                [folders = std::move(folders), changed = std::move(changed), port] { run(folders, changed, port); });
+    } catch (...) {
+        CloseHandle(port);
+        completionPort = nullptr;
+        watched.clear();
+        throw;
+    }
 }
 
 void FolderWatch::stop() {
     if (thread.joinable()) {
-        SetEvent((HANDLE) stopping);
+        if (!PostQueuedCompletionStatus((HANDLE) completionPort, 0, 0, nullptr)) {
+            // Closing the port wakes GetQueuedCompletionStatus on Windows 10+.
+            CloseHandle((HANDLE) completionPort);
+            completionPort = nullptr;
+        }
         thread.join();
     }
-    if (stopping != nullptr) {
-        CloseHandle((HANDLE) stopping);
-        stopping = nullptr;
+    if (completionPort != nullptr) {
+        CloseHandle((HANDLE) completionPort);
+        completionPort = nullptr;
     }
     watched.clear();
 }

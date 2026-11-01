@@ -1,4 +1,5 @@
 #include "app/accounts/Accounts.h"
+#include "app/system/TaskThreads.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
@@ -46,7 +47,7 @@ namespace Accounts {
 
         std::mutex lock;
         std::deque<Continuation> finished;
-        std::vector<std::thread> workers;
+        TaskThreads workers;
         blb::cancellation_source stopping;
 
         std::vector<blb::auth::account> accounts;
@@ -78,7 +79,7 @@ namespace Accounts {
         void run(std::function<Continuation(blb::cancellation_token)> work,
                  std::function<Continuation(const std::string&)> fail) {
             blb::cancellation_token token = stopping.token();
-            workers.emplace_back([work, fail, token] {
+            workers.start([work, fail, token] {
                 Continuation next;
                 try {
                     next = work(token);
@@ -314,6 +315,7 @@ namespace Accounts {
     }
 
     void poll() {
+        workers.reap();
         std::deque<Continuation> ready;
         {
             std::lock_guard<std::mutex> guard(lock);
@@ -334,12 +336,7 @@ namespace Accounts {
         if (serverCancel) {
             serverCancel->cancel();
         }
-        for (std::thread& worker : workers) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers.clear();
+        workers.joinAll();
     }
 
     std::string keyOf(const blb::auth::account& account) {
