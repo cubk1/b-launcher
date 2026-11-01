@@ -1064,7 +1064,7 @@ struct download_client::impl
     download_report report;
     report.total = tasks.size ();
     auto settings = get_network_settings ();
-    auto proxy = effective_proxy ();
+    auto proxy = detail::proxy_for (settings);
 
     std::deque<std::pair<std::size_t, unsigned>> pending;
     for (std::size_t i = 0; i < tasks.size (); ++i)

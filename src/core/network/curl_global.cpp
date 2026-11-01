@@ -145,16 +145,21 @@ get_network_settings ()
 std::string
 effective_proxy ()
 {
-  auto settings = get_network_settings ();
+  return detail::proxy_for (get_network_settings ());
+}
+
+namespace detail
+{
+
+std::string
+proxy_for (const network_settings &settings)
+{
   if (!settings.proxy.empty ())
     return settings.proxy;
   if (settings.use_system_proxy)
     return system_proxy ();
   return {};
 }
-
-namespace detail
-{
 
 void
 ensure_curl ()

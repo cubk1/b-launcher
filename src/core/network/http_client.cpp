@@ -78,7 +78,7 @@ http_send (const http_request &request, cancellation_token token)
   BLB_TRY (token.check ());
   detail::ensure_curl ();
   auto settings = get_network_settings ();
-  auto proxy = effective_proxy ();
+  auto proxy = detail::proxy_for (settings);
   CURL *easy = thread_easy ();
   if (!easy)
     return make_error (errc::network, "cannot create curl handle");

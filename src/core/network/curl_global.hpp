@@ -9,6 +9,7 @@ namespace b_launcher_base::net::detail
 
 void ensure_curl ();
 CURLSH *shared_handle ();
+std::string proxy_for (const network_settings &settings);
 void apply_common_options (CURL *easy, const network_settings &settings,
                            const std::string &proxy);
 error curl_failure (CURLcode code, const char *buffer, std::string_view url);
