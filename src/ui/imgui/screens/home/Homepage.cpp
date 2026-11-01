@@ -31,6 +31,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
@@ -78,7 +79,7 @@ namespace Homepage {
         const char* const URL_CHOICE = "自定义网址";
 
         int preset() {
-            std::string name = Config::data().value("homepagePreset", std::string());
+            std::string name = blb::json_text(Config::data(), "homepagePreset");
             for (int i = 0; i < PRESET_COUNT; i++) {
                 if (name == PRESETS[i].name) {
                     return i;
@@ -665,7 +666,7 @@ namespace Homepage {
 
     int source() {
         const nlohmann::json& doc = Config::data();
-        std::string value = doc.value("homepage", std::string("none"));
+        std::string value = blb::json_text(doc, "homepage", "none");
         if (value == "none") {
             return SOURCE_NONE;
         }
@@ -720,7 +721,7 @@ namespace Homepage {
     }
 
     std::string url() {
-        return Config::data().value("homepageUrl", std::string());
+        return blb::json_text(Config::data(), "homepageUrl");
     }
 
     void setUrl(const std::string& value) {
@@ -735,7 +736,7 @@ namespace Homepage {
     }
 
     std::string file() {
-        return Config::data().value("homepageFile", std::string());
+        return blb::json_text(Config::data(), "homepageFile");
     }
 
     void setFile(const std::string& value) {
