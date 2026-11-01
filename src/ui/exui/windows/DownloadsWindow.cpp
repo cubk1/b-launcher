@@ -36,6 +36,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace ForgottenMelody {
@@ -940,10 +942,13 @@ namespace ForgottenMelody {
                 instanceKeys.clear();
                 int selected = 0;
                 const std::vector<Instances::Entry>& list = Instances::list();
+                std::unordered_map<std::string_view, size_t> nameCounts;
+                nameCounts.reserve(list.size());
+                for (const auto& entry : list) {
+                    ++nameCounts[entry.info.id];
+                }
                 for (const Instances::Entry& entry : list) {
-                    bool shared = std::count_if(list.begin(), list.end(), [&](const Instances::Entry& other) {
-                                      return other.info.id == entry.info.id;
-                                  }) > 1;
+                    bool shared = nameCounts[entry.info.id] > 1;
                     std::wstring label = Platform::widen(entry.info.id);
                     if (shared) {
                         const Instances::Source* where = Instances::source(entry.source);

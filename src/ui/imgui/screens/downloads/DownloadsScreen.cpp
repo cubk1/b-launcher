@@ -274,23 +274,6 @@ namespace DownloadsScreen {
             ProjectBrowser::followInstance(query, target);
         }
 
-        std::vector<std::pair<std::string, std::string>> instanceOptions() {
-            std::vector<std::pair<std::string, std::string>> out;
-            const std::vector<Instances::Entry>& list = Instances::list();
-            for (const Instances::Entry& entry : list) {
-                bool shared = std::count_if(list.begin(), list.end(), [&](const Instances::Entry& other) {
-                                  return other.info.id == entry.info.id;
-                              }) > 1;
-                std::string label = entry.info.id;
-                if (shared) {
-                    const Instances::Source* source = Instances::source(entry.source);
-                    label += "（" + (source != nullptr ? source->label : entry.source) + "）";
-                }
-                out.emplace_back(label, entry.key);
-            }
-            return out;
-        }
-
         void chooseTarget(const std::string& key) {
             target = key;
             saveTarget();
