@@ -125,21 +125,6 @@ namespace ForgottenMelody {
                 {Kind::Datapack, L"数据包", DATAPACK_PANEL},
         };
 
-        struct SortOption {
-            Addons::Sort sort;
-            const wchar_t* label;
-        };
-        const std::vector<SortOption> MODRINTH_SORTS = {
-                {Addons::Sort::Relevance, L"相关度"}, {Addons::Sort::Downloads, L"下载量"},
-                {Addons::Sort::Follows, L"关注数"},   {Addons::Sort::Newest, L"最新发布"},
-                {Addons::Sort::Updated, L"最近更新"},
-        };
-        const std::vector<SortOption> CURSE_SORTS = {
-                {Addons::Sort::Popularity, L"热门"},  {Addons::Sort::Downloads, L"下载量"},
-                {Addons::Sort::Updated, L"最近更新"}, {Addons::Sort::Newest, L"最新发布"},
-                {Addons::Sort::Name, L"名称"},
-        };
-
         // LiveForm's refresh timer is 1.
         constexpr UINT_PTR SEARCH_TIMER = 2;
         // The search waits for a pause in the typing, as in the default interface.
@@ -812,35 +797,16 @@ namespace ForgottenMelody {
             // The generated name last put in the name box, which follows the loaders until it is edited.
             std::wstring nameShown;
 
-            static bool usesInstance(Kind kind) {
-                return kind != Kind::Modpack;
-            }
-
             bool hasLoaders() const {
-                if (source == Source::CurseForge) {
-                    return query.kind == Kind::Mod || query.kind == Kind::Modpack;
-                }
-                return query.kind == Kind::Mod || query.kind == Kind::Modpack || query.kind == Kind::Shader;
+                return ProjectBrowser::hasLoaders(source, query.kind);
             }
 
-            std::vector<std::string> loaderTags() const {
-                if (source == Source::CurseForge) {
-                    if (query.kind == Kind::Modpack) {
-                        return {"forge", "fabric", "neoforge", "quilt"};
-                    }
-                    return {"forge", "fabric", "neoforge", "quilt", "liteloader"};
-                }
-                if (query.kind == Kind::Shader) {
-                    return {"iris", "optifine", "canvas", "vanilla"};
-                }
-                if (query.kind == Kind::Modpack) {
-                    return {"fabric", "forge", "neoforge", "quilt"};
-                }
-                return {"fabric", "forge", "neoforge", "quilt", "legacy-fabric", "liteloader"};
+            const std::vector<std::string>& loaderTags() const {
+                return ProjectBrowser::loaderTags(source, query.kind);
             }
 
-            const std::vector<SortOption>& sorts() const {
-                return source == Source::CurseForge ? CURSE_SORTS : MODRINTH_SORTS;
+            const std::vector<ProjectBrowser::SortOption>& sorts() const {
+                return ProjectBrowser::sorts(source);
             }
 
             // Fills a combo box only when its choices change, so that an open one stays as it is.
@@ -985,7 +951,7 @@ namespace ForgottenMelody {
             void fillLoaders(uint32_t id, const std::string& chosen) {
                 std::vector<std::wstring> options = {L"全部加载器"};
                 int selected = 0;
-                std::vector<std::string> tags = loaderTags();
+                const auto& tags = loaderTags();
                 for (size_t i = 0; i < tags.size(); i++) {
                     options.push_back(Platform::widen(Modrinth::label(tags[i])));
                     selected = chosen == tags[i] ? (int) i + 1 : selected;
@@ -995,7 +961,7 @@ namespace ForgottenMelody {
 
             // The filters of the kind and the source, laid out in a row without the ones that do not apply.
             void fillFilters() {
-                bool instance = usesInstance(query.kind);
+                bool instance = ProjectBrowser::usesInstance(query.kind);
                 FindControl(INSTANCE)->SetVisible(instance);
                 FindControl(SEARCH)->SetBounds(131, 11, instance ? 300 : 528, 26);
                 if (instance) {
@@ -1033,7 +999,7 @@ namespace ForgottenMelody {
                 options.clear();
                 selected = 0;
                 for (size_t i = 0; i < sorts().size(); i++) {
-                    options.push_back(sorts()[i].label);
+                    options.push_back(Platform::widen(sorts()[i].label));
                     selected = sorts()[i].sort == query.sort ? (int) i : selected;
                 }
                 setOptions(SORT, options, selected);
@@ -1115,7 +1081,7 @@ namespace ForgottenMelody {
 
             void showProject() {
                 header->updateIcon();
-                bool instance = usesInstance(query.kind);
+                bool instance = ProjectBrowser::usesInstance(query.kind);
                 FindControl(PROJECT_INSTANCE)->SetVisible(instance);
                 int x = 15;
                 if (instance) {

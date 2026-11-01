@@ -38,6 +38,43 @@ namespace ProjectBrowser {
         }
     }
 
+    bool usesInstance(Addons::Kind kind) {
+        return kind != Addons::Kind::Modpack;
+    }
+
+    bool hasLoaders(Addons::Source source, Addons::Kind kind) {
+        return kind == Addons::Kind::Mod || kind == Addons::Kind::Modpack ||
+                (source != Addons::Source::CurseForge && kind == Addons::Kind::Shader);
+    }
+
+    const std::vector<std::string>& loaderTags(Addons::Source source, Addons::Kind kind) {
+        if (source == Addons::Source::CurseForge) {
+            static const std::vector<std::string> packs = {"forge", "fabric", "neoforge", "quilt"};
+            static const std::vector<std::string> mods = {"forge", "fabric", "neoforge", "quilt", "liteloader"};
+            return kind == Addons::Kind::Modpack ? packs : mods;
+        }
+        static const std::vector<std::string> shaders = {"iris", "optifine", "canvas", "vanilla"};
+        static const std::vector<std::string> packs = {"fabric", "forge", "neoforge", "quilt"};
+        static const std::vector<std::string> mods = {"fabric", "forge", "neoforge", "quilt", "legacy-fabric", "liteloader"};
+        if (kind == Addons::Kind::Shader) {
+            return shaders;
+        }
+        return kind == Addons::Kind::Modpack ? packs : mods;
+    }
+
+    const std::vector<SortOption>& sorts(Addons::Source source) {
+        using Addons::Sort;
+        static const std::vector<SortOption> modrinth = {
+                {Sort::Relevance, "相关度"}, {Sort::Downloads, "下载量"}, {Sort::Follows, "关注数"},
+                {Sort::Newest, "最新发布"}, {Sort::Updated, "最近更新"},
+        };
+        static const std::vector<SortOption> curseforge = {
+                {Sort::Popularity, "热门"}, {Sort::Downloads, "下载量"}, {Sort::Updated, "最近更新"},
+                {Sort::Newest, "最新发布"}, {Sort::Name, "名称"},
+        };
+        return source == Addons::Source::CurseForge ? curseforge : modrinth;
+    }
+
     void followInstance(Addons::Query& query, const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
         if (entry == nullptr) {

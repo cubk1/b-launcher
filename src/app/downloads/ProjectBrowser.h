@@ -4,6 +4,16 @@
 
 namespace ProjectBrowser {
 
+    bool usesInstance(Addons::Kind kind);
+    bool hasLoaders(Addons::Source source, Addons::Kind kind);
+    const std::vector<std::string>& loaderTags(Addons::Source source, Addons::Kind kind);
+
+    struct SortOption {
+        Addons::Sort sort;
+        const char* label;
+    };
+    const std::vector<SortOption>& sorts(Addons::Source source);
+
     // A missing instance leaves the current search unchanged.
     void followInstance(Addons::Query& query, const std::string& instanceKey);
 

@@ -225,35 +225,16 @@ namespace DownloadsScreen {
             }
         }
 
-        bool usesInstance(Kind kind) {
-            return kind != Kind::Modpack;
-        }
-
         bool hasLoaders(Kind kind) {
-            if (source == Source::CurseForge) {
-                return kind == Kind::Mod || kind == Kind::Modpack;
-            }
-            return kind == Kind::Mod || kind == Kind::Modpack || kind == Kind::Shader;
+            return ProjectBrowser::hasLoaders(source, kind);
         }
 
         std::string categoryLabel(const std::string& name) {
             return source == Source::Modrinth ? Modrinth::label(name) : name;
         }
 
-        std::vector<std::string> loaderTags(Kind kind) {
-            if (source == Source::CurseForge) {
-                if (kind == Kind::Modpack) {
-                    return {"forge", "fabric", "neoforge", "quilt"};
-                }
-                return {"forge", "fabric", "neoforge", "quilt", "liteloader"};
-            }
-            if (kind == Kind::Shader) {
-                return {"iris", "optifine", "canvas", "vanilla"};
-            }
-            if (kind == Kind::Modpack) {
-                return {"fabric", "forge", "neoforge", "quilt"};
-            }
-            return {"fabric", "forge", "neoforge", "quilt", "legacy-fabric", "liteloader"};
+        const std::vector<std::string>& loaderTags(Kind kind) {
+            return ProjectBrowser::loaderTags(source, kind);
         }
 
         void saveTarget() {
@@ -397,23 +378,22 @@ namespace DownloadsScreen {
             return choice;
         }
 
+        int sortGlyph(Addons::Sort sort) {
+            switch (sort) {
+                case Addons::Sort::Relevance: return 0xf002;
+                case Addons::Sort::Downloads: return 0xf019;
+                case Addons::Sort::Follows: return 0xf004;
+                case Addons::Sort::Newest: return 0xf271;
+                case Addons::Sort::Updated: return 0xf2f1;
+                case Addons::Sort::Popularity: return 0xf06d;
+                case Addons::Sort::Name: return 0xf15d;
+            }
+            return 0;
+        }
+
         std::shared_ptr<ModeBinding> sortChoice() {
-            struct SortOption {
-                Addons::Sort sort;
-                const char* label;
-                int glyph;
-            };
-            static const std::vector<SortOption> modrinthSorts = {
-                    {Addons::Sort::Relevance, "相关度", 0xf002}, {Addons::Sort::Downloads, "下载量", 0xf019},
-                    {Addons::Sort::Follows, "关注数", 0xf004},   {Addons::Sort::Newest, "最新发布", 0xf271},
-                    {Addons::Sort::Updated, "最近更新", 0xf2f1},
-            };
-            static const std::vector<SortOption> curseSorts = {
-                    {Addons::Sort::Popularity, "热门", 0xf06d},  {Addons::Sort::Downloads, "下载量", 0xf019},
-                    {Addons::Sort::Updated, "最近更新", 0xf2f1}, {Addons::Sort::Newest, "最新发布", 0xf271},
-                    {Addons::Sort::Name, "名称", 0xf15d},
-            };
-            const std::vector<SortOption>* sorts = source == Source::CurseForge ? &curseSorts : &modrinthSorts;
+            using ProjectBrowser::SortOption;
+            const auto* sorts = &ProjectBrowser::sorts(source);
             auto choice = std::make_shared<ModeBinding>(
                     "downloads#sort",
                     [sorts] {
@@ -440,7 +420,7 @@ namespace DownloadsScreen {
                         return labels;
                     });
             for (const SortOption& option : *sorts) {
-                choice->icon(option.label, option.glyph);
+                choice->icon(option.label, sortGlyph(option.sort));
             }
             return choice;
         }
@@ -469,7 +449,7 @@ namespace DownloadsScreen {
             float w = mainW() - FILTER_PAD * 2;
             float rowY = y + FILTER_PAD;
             float nameX = x;
-            if (usesInstance(query.kind)) {
+            if (ProjectBrowser::usesInstance(query.kind)) {
                 float instanceW = 160.0f;
                 instancePicker(x, rowY, instanceW, blocked);
                 nameX += instanceW + GAP;
@@ -696,7 +676,7 @@ namespace DownloadsScreen {
                 return 0.0f;
             }
             {
-                std::vector<std::string> tags = loaderTags(query.kind);
+                const auto& tags = loaderTags(query.kind);
                 bool more = tags.size() > LOADERS_SHOWN + 1;
                 std::vector<Filter> rows;
                 for (size_t i = 0; i < tags.size(); i++) {
@@ -818,7 +798,7 @@ namespace DownloadsScreen {
                 return 0.0f;
             }
             {
-                std::vector<std::string> tags = loaderTags(query.kind);
+                const auto& tags = loaderTags(query.kind);
                 bool more = tags.size() > LOADERS_SHOWN + 1;
                 size_t rows = 0;
                 for (size_t i = 0; i < tags.size(); i++) {
@@ -1378,7 +1358,7 @@ namespace DownloadsScreen {
 
             float rowY = Page::TOP + 46.0f;
             float filterX = mainX();
-            if (usesInstance(query.kind)) {
+            if (ProjectBrowser::usesInstance(query.kind)) {
                 float instanceW = 150.0f;
                 instancePicker(mainX(), rowY, instanceW, covered);
                 filterX += instanceW + GAP;
