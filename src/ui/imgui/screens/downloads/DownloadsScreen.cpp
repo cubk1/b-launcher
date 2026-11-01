@@ -1238,19 +1238,6 @@ namespace DownloadsScreen {
             }
         }
 
-        const std::string& sharedPrefix(const Addons::Versions& versions) {
-            static std::string cachedProject;
-            static size_t cachedCount = (size_t) -1;
-            static std::string prefix;
-            if (cachedProject == project.id && cachedCount == versions.list.size()) {
-                return prefix;
-            }
-            cachedProject = project.id;
-            cachedCount = versions.list.size();
-            prefix = ProjectBrowser::sharedPrefix(versions.list);
-            return prefix;
-        }
-
         std::vector<std::pair<uint32_t, std::string>> loaderIcons(const Addons::Version& version) {
             std::vector<std::pair<uint32_t, std::string>> out;
             for (const std::string& loader : version.loaders) {
@@ -1387,7 +1374,7 @@ namespace DownloadsScreen {
                 }
                 return;
             }
-            const std::string& prefix = sharedPrefix(versions);
+            std::string prefix = ProjectBrowser::sharedPrefix(versions.list);
             auto matching = ProjectBrowser::matching(versions.list, versionFilter, loaderFilter);
             if (matching.empty()) {
                 message("没有符合条件的版本", UiTheme::textMuted(), listTop, listBottom, false);
