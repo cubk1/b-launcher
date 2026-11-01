@@ -1141,9 +1141,7 @@ namespace ForgottenMelody {
                 bool loading = found.status == Addons::Status::Loading;
                 bool failed = found.status == Addons::Status::Failed;
                 if (found.status == Addons::Status::Ready &&
-                    (found.total != shown.total || found.hits.size() != shown.hits.size() ||
-                     !std::equal(found.hits.begin(), found.hits.end(), shown.hits.begin(),
-                                 [](const Addons::Hit& a, const Addons::Hit& b) { return a.id == b.id; }))) {
+                    (found.total != shown.total || found.hits != shown.hits)) {
                     shown = found;
                     std::vector<ProjectList::Row> rows;
                     for (const Addons::Hit& hit : shown.hits) {

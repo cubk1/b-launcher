@@ -46,6 +46,8 @@ namespace Addons {
         std::vector<std::string> loaders;
         long long downloads = 0;
         long long follows = 0;
+
+        bool operator==(const Hit&) const = default;
     };
 
     struct Results {
