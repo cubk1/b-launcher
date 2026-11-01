@@ -1,4 +1,5 @@
 #include "app/downloads/ProjectInstaller.h"
+#include "app/downloads/Recent.h"
 #include "app/system/TaskThreads.h"
 #include "app/instances/Instances.h"
 #include "app/system/Platform.h"
@@ -53,6 +54,65 @@ namespace ProjectInstaller {
         TaskThreads workers;
         blb::cancellation_source stopping;
         std::map<std::string, std::shared_ptr<Task>> tasks;
+
+        struct CheckedFile {
+            uint64_t size = 0;
+            int64_t modified = 0;
+            std::optional<blb::sha1_digest> digest;
+            bool ready = false;
+        };
+        std::map<std::string, std::shared_ptr<CheckedFile>> checkedFiles;
+        Recent checkedUse;
+
+        std::optional<blb::sha1_digest> fileHash(const std::filesystem::path& path,
+                                                blb::cancellation_token token) {
+            auto file = blb::fs::native_file::open(path, blb::fs::native_file::mode::read);
+            if (!file) return std::nullopt;
+            blb::sha1 hash;
+            std::vector<char> buffer(64 * 1024);
+            while (!token.is_cancelled()) {
+                auto got = file->read(buffer.data(), buffer.size());
+                if (!got) return std::nullopt;
+                if (*got == 0) return hash.finish();
+                hash.update(buffer.data(), *got);
+            }
+            return std::nullopt;
+        }
+
+        bool matches(const Addons::File& file, const std::filesystem::path& path) {
+            auto stat = blb::fs::stat(path);
+            if (!stat.exists || stat.is_directory ||
+                (file.size >= 0 && stat.size != (uint64_t) file.size)) return false;
+            if (file.sha1.empty()) return true;
+            auto expected = blb::parse_sha1(file.sha1);
+            if (!expected) return false;
+            std::string key = blb::path_to_utf8(blb::fs::absolute(path));
+            checkedUse.use(key);
+            auto& checked = checkedFiles[key];
+            if (!checked || checked->size != stat.size || checked->modified != stat.mtime) {
+                checked = std::make_shared<CheckedFile>();
+                checked->size = stat.size;
+                checked->modified = stat.mtime;
+                workers.start([path, checked, token = stopping.token()] {
+                    std::optional<blb::sha1_digest> digest;
+                    try {
+                        digest = fileHash(path, token);
+                        auto now = blb::fs::stat(path);
+                        if (!now.exists || now.size != checked->size || now.mtime != checked->modified) {
+                            digest.reset();
+                        }
+                    } catch (const std::exception&) {
+                        digest.reset();
+                    }
+                    std::lock_guard<std::mutex> guard(lock);
+                    finished.push_back([checked, digest] {
+                        checked->digest = digest;
+                        checked->ready = true;
+                    });
+                });
+            }
+            return checked->digest && *checked->digest == *expected;
+        }
 
         void run(const std::shared_ptr<Task>& task, std::function<Continuation(blb::cancellation_token)> work) {
             blb::cancellation_token token = stopping.token();
@@ -337,8 +397,7 @@ namespace ProjectInstaller {
         if (entry == nullptr || file == nullptr || sub.empty() || !safeFilename(file->filename)) {
             return false;
         }
-        std::error_code error;
-        return std::filesystem::exists(entry->gameDirectory / sub / blb::path_from_utf8(file->filename), error);
+        return matches(*file, entry->gameDirectory / sub / blb::path_from_utf8(file->filename));
     }
 
     void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
@@ -446,6 +505,7 @@ namespace ProjectInstaller {
                 next();
             }
         }
+        checkedUse.trim(checkedFiles, 128, [](const auto& file) { return file->ready; });
     }
 
     void shutdown() {
