@@ -1,5 +1,5 @@
 #include "app/downloads/Modrinth.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/downloads/Recent.h"
 
 #include <core/base/cancellation.hpp>
@@ -10,15 +10,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <condition_variable>
 #include <cstdio>
-#include <deque>
-#include <functional>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <set>
-#include <thread>
 #include <unordered_map>
 
 namespace Modrinth {
@@ -40,38 +35,18 @@ namespace Modrinth {
     using Addons::Versions;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         const char* const API = "https://api.modrinth.com/v2";
         const char* const API_MIRROR = "https://mod.mcimirror.top/modrinth/v2";
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
 
         std::map<std::string, Results> searches;
         std::map<int, std::vector<Category>> categoryLists;
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
         Recent searchUse, versionUse;
-
-        void run(std::function<Continuation(blb::cancellation_token)> work,
-                 std::function<Continuation(const std::string&)> fail) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, fail, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    next = fail ? fail(error.what()) : nullptr;
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
-            });
-        }
 
         std::string text(const json& node, const char* key) {
             auto it = node.find(key);
@@ -178,7 +153,7 @@ namespace Modrinth {
                     "&facets=" + blb::url_encode(facets.dump()) + "&index=" + sortIndex(query.sort) +
                     "&offset=" + std::to_string(query.page * PAGE_SIZE) + "&limit=" + std::to_string(PAGE_SIZE);
             std::string kind = projectType(query.kind);
-            run(
+            tasks.run(
                     [key, path, kind](blb::cancellation_token token) -> Continuation {
                         auto doc = api(path, token);
                         if (!doc) {
@@ -227,7 +202,7 @@ namespace Modrinth {
 
         void fetchCategories() {
             categoriesStarted = true;
-            run(
+            tasks.run(
                     [](blb::cancellation_token token) -> Continuation {
                         auto doc = api("/tag/category", token);
                         if (!doc || !doc->is_array()) {
@@ -309,7 +284,7 @@ namespace Modrinth {
             Versions& entry = versionLists[projectId];
             entry.status = Status::Loading;
             entry.error.clear();
-            run(
+            tasks.run(
                     [projectId](blb::cancellation_token token) -> Continuation {
                         auto doc = api("/project/" + blb::url_encode(projectId) + "/version", token);
                         if (!doc) {
@@ -493,17 +468,7 @@ namespace Modrinth {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        tasks.poll();
         // What is still loading is written when it arrives.
         searchUse.trim(searches, Addons::KEPT_SEARCHES,
                        [](const Results& results) { return results.status != Status::Loading; });
@@ -512,8 +477,7 @@ namespace Modrinth {
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        tasks.stop();
     }
 
     Fetched fetchVersion(const std::string& versionId, blb::cancellation_token token) {

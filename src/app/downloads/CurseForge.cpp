@@ -1,5 +1,5 @@
 #include "app/downloads/CurseForge.h"
-#include "app/system/TaskThreads.h"
+#include "app/system/AsyncTasks.h"
 #include "app/downloads/Recent.h"
 
 #include <core/base/cancellation.hpp>
@@ -10,12 +10,8 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <deque>
-#include <functional>
 #include <map>
-#include <mutex>
 #include <set>
-#include <thread>
 
 namespace CurseForge {
 
@@ -35,7 +31,7 @@ namespace CurseForge {
     using Addons::Versions;
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = AsyncTasks::Continuation;
 
         const char* const API = "https://api.curseforge.com/v1";
         const char* const API_MIRROR = "https://mod.mcimirror.top/curseforge/v1";
@@ -44,33 +40,13 @@ namespace CurseForge {
         const int FILE_PAGE = 50;
         const int FILE_PAGES = 20;
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
-        TaskThreads workers;
-        blb::cancellation_source stopping;
+        AsyncTasks tasks;
 
         std::map<std::string, Results> searches;
         std::map<int, std::vector<Category>> categoryLists;
         bool categoriesStarted = false;
         std::map<std::string, Versions> versionLists;
         Recent searchUse, versionUse;
-
-        void run(std::function<Continuation(blb::cancellation_token)> work,
-                 std::function<Continuation(const std::string&)> fail) {
-            blb::cancellation_token token = stopping.token();
-            workers.start([work, fail, token] {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    next = fail ? fail(error.what()) : nullptr;
-                }
-                if (next) {
-                    std::lock_guard<std::mutex> guard(lock);
-                    finished.push_back(std::move(next));
-                }
-            });
-        }
 
         std::string text(const json& node, const char* key) {
             auto it = node.find(key);
@@ -272,7 +248,7 @@ namespace CurseForge {
             if (!ids.empty()) {
                 path += "&categoryIds=" + blb::url_encode(ids.dump());
             }
-            run(
+            tasks.run(
                     [key, path](blb::cancellation_token token) -> Continuation {
                         auto doc = api(path, std::string(), token);
                         if (!doc) {
@@ -306,7 +282,7 @@ namespace CurseForge {
 
         void fetchCategories() {
             categoriesStarted = true;
-            run(
+            tasks.run(
                     [](blb::cancellation_token token) -> Continuation {
                         auto doc = api("/categories?gameId=" + std::to_string(GAME), std::string(), token);
                         auto data = doc ? doc->find("data") : json::iterator();
@@ -448,7 +424,7 @@ namespace CurseForge {
             Versions& entry = versionLists[projectId];
             entry.status = Status::Loading;
             entry.error.clear();
-            run(
+            tasks.run(
                     [projectId](blb::cancellation_token token) -> Continuation {
                         auto list = allFiles(projectId, std::string(), token);
                         if (!list) {
@@ -569,17 +545,7 @@ namespace CurseForge {
     }
 
     void poll() {
-        workers.reap();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        tasks.poll();
         // What is still loading is written when it arrives.
         searchUse.trim(searches, Addons::KEPT_SEARCHES,
                        [](const Results& results) { return results.status != Status::Loading; });
@@ -588,7 +554,6 @@ namespace CurseForge {
     }
 
     void shutdown() {
-        stopping.cancel();
-        workers.joinAll();
+        tasks.stop();
     }
 }
