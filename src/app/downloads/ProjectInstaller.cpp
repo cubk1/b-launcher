@@ -374,11 +374,9 @@ namespace ProjectInstaller {
                     if (file == nullptr || !safeFilename(file->filename)) {
                         throw std::runtime_error("必需前置没有有效的下载文件");
                     }
-                    std::error_code error;
-                    if (!std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
-                        add(found);
-                        dependencies++;
-                    }
+                    // The downloader verifies size and hash before reusing an existing file.
+                    add(found);
+                    dependencies++;
                 }
             }
             std::error_code error;
