@@ -65,17 +65,8 @@ namespace Drops {
         std::deque<Request> requests;
         std::deque<Batch> completed;
 
-        std::string lower(std::string text) {
-            for (char& c : text) {
-                if (c >= 'A' && c <= 'Z') {
-                    c = (char) (c - 'A' + 'a');
-                }
-            }
-            return text;
-        }
-
         std::string nameOf(const std::filesystem::path& file) {
-            return lower(blb::path_to_utf8(file.filename()));
+            return blb::to_lower(blb::path_to_utf8(file.filename()));
         }
 
         bool endsWith(const std::string& text, const std::string& tail) {

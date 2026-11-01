@@ -29,19 +29,10 @@ namespace Mods {
             tasks.run([work = std::move(work)](b_launcher_base::cancellation_token) { return work(); }, {});
         }
 
-        std::string lower(std::string text) {
-            for (char& c : text) {
-                if (c >= 'A' && c <= 'Z') {
-                    c = (char) (c - 'A' + 'a');
-                }
-            }
-            return text;
-        }
-
         std::string iconKey(const blb::modpack::mod_info& mod) {
             std::string name = blb::path_to_utf8(mod.file);
             const std::string disabled = ".disabled";
-            if (name.size() > disabled.size() && lower(name.substr(name.size() - disabled.size())) == disabled) {
+            if (name.size() > disabled.size() && blb::to_lower(name.substr(name.size() - disabled.size())) == disabled) {
                 name.resize(name.size() - disabled.size());
             }
             return name + "#" + std::to_string(mod.size);
@@ -117,7 +108,7 @@ namespace Mods {
                         list.mods.push_back(std::move(mod));
                     }
                     std::stable_sort(list.mods.begin(), list.mods.end(), [](const Mod& a, const Mod& b) {
-                        return lower(a.info.name) < lower(b.info.name);
+                        return blb::to_lower(a.info.name) < blb::to_lower(b.info.name);
                     });
                     checkDependencies(list);
                     list.loading = false;

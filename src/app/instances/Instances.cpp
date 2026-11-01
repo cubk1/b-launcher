@@ -493,13 +493,6 @@ namespace Instances {
             }
         }
 
-        std::string lowered(std::string text) {
-            for (char& c : text) {
-                c = c >= 'A' && c <= 'Z' ? (char) (c - 'A' + 'a') : c;
-            }
-            return text;
-        }
-
         // The instances to read again, by game folder, after their versions changed: those versions, the instances
         // made of them, and those that did not resolve, which may have lacked one of them.
         std::map<std::string, std::set<std::string>>
@@ -515,13 +508,13 @@ namespace Instances {
                 std::set<std::string> names;
                 for (const std::string& id : changed) {
                     ids.insert(id);
-                    names.insert(lowered(id));
+                    names.insert(blb::to_lower(id));
                 }
                 for (const Entry& entry : entries) {
                     if (entry.source == source->key &&
                         (!entry.info.valid ||
                          std::any_of(entry.info.chain.begin(), entry.info.chain.end(),
-                                     [&](const std::string& id) { return names.count(lowered(id)) != 0; }))) {
+                                     [&](const std::string& id) { return names.count(blb::to_lower(id)) != 0; }))) {
                         ids.insert(entry.info.id);
                     }
                 }

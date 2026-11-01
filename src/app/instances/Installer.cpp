@@ -694,19 +694,6 @@ namespace Installer {
     }
 
     std::string loaderName(blb::install::loader_type type) {
-        switch (type) {
-            case blb::install::loader_type::forge: return "Forge";
-            case blb::install::loader_type::neoforge: return "NeoForge";
-            case blb::install::loader_type::cleanroom: return "Cleanroom";
-            case blb::install::loader_type::fabric: return "Fabric";
-            case blb::install::loader_type::legacy_fabric: return "Legacy Fabric";
-            case blb::install::loader_type::quilt: return "Quilt";
-            case blb::install::loader_type::liteloader: return "LiteLoader";
-            case blb::install::loader_type::optifine: return "OptiFine";
-            case blb::install::loader_type::fabric_api: return "Fabric API";
-            case blb::install::loader_type::legacy_fabric_api: return "Legacy Fabric API";
-            case blb::install::loader_type::quilt_api: return "QSL";
-        }
-        return std::string(blb::install::loader_name(type));
+        return loaderShown(std::string(blb::install::loader_name(type)));
     }
 }
