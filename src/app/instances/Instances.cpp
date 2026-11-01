@@ -7,6 +7,7 @@
 
 #include <core/base/hash.hpp>
 #include <core/base/strings.hpp>
+#include <core/instance/loader_editor.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -891,6 +892,23 @@ namespace Instances {
         }
         notify("已创建 " + Platform::display(target->root), false);
         refresh();
+    }
+
+    void readLoaders(const std::string& key,
+                     std::function<void(blb::result<std::vector<blb::install::loader_info>>)> done) {
+        const Entry* entry = find(key);
+        const Source* from = entry != nullptr ? source(entry->source) : nullptr;
+        if (from == nullptr) {
+            done(blb::make_error(blb::errc::not_found, "找不到这个实例"));
+            return;
+        }
+        flushSaves();
+        auto with = managerFor(from->root);
+        std::string id = entry->info.id;
+        submit([with, id, done]() -> Continuation {
+            auto result = blb::instance::installed_loaders(with, id);
+            return [result = std::move(result), done] { done(result); };
+        }, [done](const std::string& message) { done(blb::make_error(blb::errc::io, message)); });
     }
 
     std::string addFolder(const std::filesystem::path& picked) {

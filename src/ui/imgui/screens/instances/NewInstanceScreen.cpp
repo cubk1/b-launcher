@@ -69,6 +69,9 @@ namespace NewInstanceScreen {
         std::optional<Modpack> modpack;
         std::string editing;
         std::map<loader_type, std::string> original;
+        bool readingLoaders = false;
+        std::string loaderReadError;
+        unsigned loaderReadGeneration = 0;
 
         std::string kindOf(const std::string& type) {
             if (type == "release") {
@@ -669,7 +672,7 @@ namespace NewInstanceScreen {
             float bodyTop = Page::TOP + 54.0f;
             float bodyBottom = buttonBottom - BUTTON_H - 12.0f;
             if (phase < 0.99f) {
-                settings(bodyTop, bodyBottom, phase, blocked || installing);
+                settings(bodyTop, bodyBottom, phase, blocked || installing || readingLoaders || !loaderReadError.empty());
             }
             if (phase > 0.01f) {
                 progressBars(bodyTop, phase);
@@ -678,7 +681,9 @@ namespace NewInstanceScreen {
             std::string problem;
             if (!installing && !editing.empty()) {
                 const Instances::Entry* entry = Instances::find(editing);
-                problem = entry == nullptr                        ? std::string("实例已不存在")
+                problem = readingLoaders                          ? std::string("正在读取已安装的加载器…")
+                        : !loaderReadError.empty()                ? loaderReadError
+                        : entry == nullptr                        ? std::string("实例已不存在")
                         : chosen == original && entry->info.valid ? std::string("没有改动")
                                                                   : std::string();
             } else if (!installing) {
@@ -936,6 +941,20 @@ namespace NewInstanceScreen {
             chosen[loader.type] = loader.version;
         }
         original = chosen;
+        readingLoaders = true;
+        unsigned generation = loaderReadGeneration;
+        Instances::readLoaders(instanceKey, [instanceKey, generation](auto result) {
+            if (generation != loaderReadGeneration || editing != instanceKey) return;
+            readingLoaders = false;
+            if (!result) {
+                loaderReadError = "读取加载器失败，请重新打开此页面";
+                Instances::notify(result.err().message, true);
+                return;
+            }
+            chosen.clear();
+            for (const auto& loader : *result) chosen[loader.type] = loader.version;
+            original = chosen;
+        });
         steps.page = STEP_SETUP;
         steps.mix = 1.0f;
     }
@@ -947,6 +966,9 @@ namespace NewInstanceScreen {
         modpack.reset();
         editing.clear();
         original.clear();
+        ++loaderReadGeneration;
+        readingLoaders = false;
+        loaderReadError.clear();
         steps.go(STEP_VERSIONS);
         steps.mix = 1.0f;
         last.clear();

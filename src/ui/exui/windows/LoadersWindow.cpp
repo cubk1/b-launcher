@@ -95,6 +95,7 @@ namespace ForgottenMelody {
                 SetText(GAME, Platform::widen(minecraft));
                 FindControl(REFRESH)->SetTooltipText(L"重新获取加载器的版本列表");
                 startRefreshing();
+                readLoaders();
                 return true;
             }
 
@@ -122,21 +123,21 @@ namespace ForgottenMelody {
                     return;
                 }
 
-                // The rows follow the instance until they are changed, so that they show what a change made of it.
-                std::map<loader_type, std::string> current = loadersOf(*entry);
-                if (current != original && rows.chosen() == original) {
-                    rows.reset(minecraft, current);
+                if (reloadAfterInstall && !Installer::running()) {
+                    reloadAfterInstall = false;
+                    readLoaders();
                 }
-                original = current;
-                bool busy = Installer::running();
+                bool busy = Installer::running() || readingLoaders || !readError.empty();
                 rows.refresh(!busy);
-                std::wstring problem = busy                              ? L"正在安装，等它完成后再修改加载器"
+                std::wstring problem = readingLoaders                    ? L"正在读取已安装的加载器…"
+                        : !readError.empty()                            ? readError
+                        : busy                                          ? L"正在安装，等它完成后再修改加载器"
                         : rows.chosen() == original && entry->info.valid ? L"没有改动"
                                                                          : L"";
                 setText(STATUS, problem);
                 setText(APPLY, L"应用");
                 FindControl(APPLY)->SetEnabled(problem.empty());
-                FindControl(REFRESH)->SetEnabled(!busy);
+                FindControl(REFRESH)->SetEnabled(!Installer::running() && !readingLoaders);
             }
 
             void OnSelection(uint32_t id, int index) override {
@@ -151,6 +152,7 @@ namespace ForgottenMelody {
                         if (!started) {
                             Installer::startModify(key, rows.requests());
                             started = Installer::running();
+                            reloadAfterInstall = started;
                         } else if (!progress.hasEnded()) {
                             progress.cancel();
                         } else {
@@ -158,7 +160,7 @@ namespace ForgottenMelody {
                             started = false;
                         }
                         break;
-                    case REFRESH: rows.reload(); break;
+                    case REFRESH: rows.reload(); readLoaders(); break;
                     case CLOSE: CloseWindow(); return;
                 }
                 refresh();
@@ -172,6 +174,28 @@ namespace ForgottenMelody {
             InstallProgress progress{*this, PROGRESS, L"修改"};
             // Whether this dialog started the change the installer makes, rather than another install.
             bool started = false;
+            bool readingLoaders = false, reloadAfterInstall = false;
+            std::wstring readError;
+            std::shared_ptr<int> lifetime = std::make_shared<int>(0);
+
+            void readLoaders() {
+                if (readingLoaders) return;
+                readingLoaders = true;
+                readError.clear();
+                std::weak_ptr<int> alive = lifetime;
+                Instances::readLoaders(key, [this, alive](auto result) {
+                    if (alive.expired()) return;
+                    readingLoaders = false;
+                    if (!result) {
+                        readError = L"读取失败，点击刷新列表重试";
+                        return;
+                    }
+                    std::map<loader_type, std::string> current;
+                    for (const auto& loader : *result) current[loader.type] = loader.version;
+                    if (rows.chosen() == original || started) rows.reset(minecraft, current);
+                    original = std::move(current);
+                });
+            }
 
             void setText(uint32_t id, const std::wstring& text) {
                 if (Text(id) != text) {

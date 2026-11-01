@@ -51,6 +51,8 @@ namespace Instances {
     void setIsolation(blb::instance::isolation_mode mode);
     void refresh();
     void refresh(std::function<void()> done);
+    void readLoaders(const std::string& key,
+                     std::function<void(blb::result<std::vector<blb::install::loader_info>>)> done);
     void createFolder(const std::string& source);
     std::string addFolder(const std::filesystem::path& folder);
     void removeFolder(const std::string& source);
