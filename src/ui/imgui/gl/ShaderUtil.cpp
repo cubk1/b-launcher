@@ -30,6 +30,7 @@ namespace ShaderUtil {
     static std::vector<Prim> pendingPrims;
     static bool captureValid = false;
     static int captureFrame = -1;
+    static HGLRC captureContext = nullptr;
 
     struct Shader {
         GLuint program = 0;
@@ -1182,7 +1183,8 @@ void main() {
     }
 
     static void captureScreen(int frame) {
-        if (captureValid && captureFrame == frame) {
+        HGLRC context = wglGetCurrentContext();
+        if (captureValid && captureFrame == frame && captureContext == context) {
             return;
         }
         GLint drawFbo = 0;
@@ -1204,6 +1206,7 @@ void main() {
         captureGeneration++;
         captureValid = true;
         captureFrame = frame;
+        captureContext = context;
     }
 
     static GLuint createGlowTexture(int w, int h) {
