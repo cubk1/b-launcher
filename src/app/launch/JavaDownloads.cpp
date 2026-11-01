@@ -75,11 +75,6 @@ namespace JavaDownloads {
             return value <= maximum ? std::optional<uint64_t>(value) : std::nullopt;
         }
 
-        bool safeFolder(const std::string& folder) {
-            return blb::fs::safe_relative(folder) && folder.find_first_of("/\\") == std::string::npos &&
-                    folder != "." && folder.back() != '.' && folder.back() != ' ';
-        }
-
         std::vector<Package> parse(const std::string& body, std::string& error) {
             nlohmann::json doc = nlohmann::json::parse(body, nullptr, false);
             auto jdks = doc.is_object() ? doc.find("jdks") : doc.end();
@@ -105,7 +100,7 @@ namespace JavaDownloads {
                     Package package;
                     package.folder = text(item, "install_folder_name");
                     package.url = text(item, "url");
-                    if (!safeFolder(package.folder) || package.url.empty()) {
+                    if (!blb::fs::safe_filename(package.folder) || package.url.empty()) {
                         continue;
                     }
                     package.vendor = text(jdk, "vendor");
@@ -353,7 +348,7 @@ namespace JavaDownloads {
             Notices::add(Notices::Kind::Failed, "Java 下载大小无效", 5000);
             return;
         }
-        if (!safeFolder(package.folder) ||
+        if (!blb::fs::safe_filename(package.folder) ||
             (!package.homePrefix.empty() && !safePath(normalize(package.homePrefix)))) {
             Notices::add(Notices::Kind::Failed, "Java 安装路径无效", 5000);
             return;
