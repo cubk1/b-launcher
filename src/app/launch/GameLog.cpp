@@ -386,24 +386,27 @@ namespace GameLog {
     }
 
     void poll() {
-        std::vector<std::pair<std::shared_ptr<Log>, std::vector<Line>>> arrived;
-        std::vector<uint64_t> lost;
+        struct Batch {
+            std::shared_ptr<Log> log;
+            std::vector<Line> lines;
+            uint64_t dropped;
+        };
+        std::vector<Batch> arrived;
         {
             std::lock_guard<std::mutex> guard(lock);
             for (const std::shared_ptr<Log>& log : logs) {
                 if (log->pending.empty() && log->pendingDropped == 0) {
                     continue;
                 }
-                arrived.emplace_back(log, std::vector<Line>());
-                arrived.back().second.swap(log->pending);
-                lost.push_back(log->pendingDropped);
+                arrived.push_back({log, {}, log->pendingDropped});
+                arrived.back().lines.swap(log->pending);
                 log->pendingDropped = 0;
             }
         }
-        for (size_t i = 0; i < arrived.size(); i++) {
-            Log& log = *arrived[i].first;
-            std::vector<Line>& lines = arrived[i].second;
-            log.droppedCount += lost[i];
+        for (Batch& batch : arrived) {
+            Log& log = *batch.log;
+            std::vector<Line>& lines = batch.lines;
+            log.droppedCount += batch.dropped;
             if (log.paused) {
                 for (Line& line : lines) {
                     log.waiting.push_back(std::move(line));
