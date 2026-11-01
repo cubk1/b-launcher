@@ -1,10 +1,25 @@
 #include "Setting.h"
 #include "../panel/UiCommon.h"
 
+#include <utility>
+
 Setting::Setting(Kind kind, const std::string& id, const std::string& label) : kind(kind), id(id), label(label) {}
 
 static std::string ownerOr(const std::string& owner, const std::string& label) {
     return owner.empty() ? label : owner;
+}
+
+static SettingList visibleSettings(const std::function<SettingList()>& provider) {
+    SettingList out;
+    if (provider) {
+        SettingList all = provider();
+        for (const auto& item : all) {
+            if (item && item->visible()) {
+                out.push_back(item);
+            }
+        }
+    }
+    return out;
 }
 
 SettingPtr Setting::toggle(const std::string& label, std::shared_ptr<Flag> flag) {
@@ -75,7 +90,7 @@ SettingPtr Setting::swatch(std::shared_ptr<ColorValue> value) {
 }
 
 SettingPtr Setting::sub(SettingList list) {
-    children = [list] { return list; };
+    children = [list = std::move(list)] { return list; };
     return shared_from_this();
 }
 
@@ -103,17 +118,7 @@ bool Setting::hasChildren() const {
 }
 
 SettingList Setting::visibleChildren() const {
-    SettingList out;
-    if (!children) {
-        return out;
-    }
-    SettingList all = children();
-    for (const SettingPtr& child : all) {
-        if (child && child->visible()) {
-            out.push_back(child);
-        }
-    }
-    return out;
+    return visibleSettings(children);
 }
 
 SettingsPagePtr Setting::page() const {
@@ -127,7 +132,7 @@ SettingsPage::SettingsPage(const std::string& id, const std::string& title, std:
       items(std::move(items)) {}
 
 SettingsPagePtr SettingsPage::of(const std::string& id, const std::string& title, SettingList items) {
-    return std::make_shared<SettingsPage>(id, title, [items] { return items; });
+    return std::make_shared<SettingsPage>(id, title, [items = std::move(items)] { return items; });
 }
 
 SettingsPagePtr SettingsPage::of(const std::string& id, const std::string& title, std::function<SettingList()> items) {
@@ -135,15 +140,5 @@ SettingsPagePtr SettingsPage::of(const std::string& id, const std::string& title
 }
 
 SettingList SettingsPage::visibleItems() const {
-    SettingList out;
-    if (!items) {
-        return out;
-    }
-    SettingList all = items();
-    for (const SettingPtr& item : all) {
-        if (item && item->visible()) {
-            out.push_back(item);
-        }
-    }
-    return out;
+    return visibleSettings(items);
 }
