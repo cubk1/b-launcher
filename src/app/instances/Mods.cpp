@@ -3,6 +3,7 @@
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
 
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 
 #include <algorithm>
@@ -243,11 +244,9 @@ namespace Mods {
                     copied++;
                     continue;
                 }
-                copyError.clear();
-                std::filesystem::copy_file(file, destination, std::filesystem::copy_options::overwrite_existing,
-                                           copyError);
-                if (copyError) {
-                    problem = blb::path_to_utf8(file.filename()) + "：" + copyError.message();
+                auto copiedFile = blb::fs::copy_file(file, destination);
+                if (!copiedFile) {
+                    problem = blb::path_to_utf8(file.filename()) + "：" + copiedFile.err().message;
                 } else {
                     copied++;
                 }
