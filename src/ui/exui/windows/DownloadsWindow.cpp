@@ -1185,6 +1185,9 @@ namespace ForgottenMelody {
                 header->show(project);
                 auto& website = Control<exui::Hyperlink>(WEBSITE);
                 website.SetTargetUrl(Platform::widen(project.pageUrl));
+                website.OnOpenTarget = [](std::wstring_view url) {
+                    Platform::openUrl(Platform::narrow(std::wstring(url)));
+                };
                 SetText(WEBSITE, L"在 " + Platform::widen(Addons::sourceName(source)) + L" 上查看");
                 website.SetVisible(!project.pageUrl.empty());
                 shownVersions.clear();
