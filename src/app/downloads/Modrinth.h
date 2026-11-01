@@ -15,9 +15,9 @@ namespace Modrinth {
     const Addons::Versions& versions(const std::string& projectId);
     void refreshVersions(const std::string& projectId);
     std::string label(const std::string& tag);
-    Addons::Fetched fetchVersion(const std::string& versionId);
+    Addons::Fetched fetchVersion(const std::string& versionId, b_launcher_base::cancellation_token token);
     Addons::Fetched fetchProjectVersions(const std::string& projectId, const std::string& gameVersion,
-                                         const std::string& loader);
+                                         const std::string& loader, b_launcher_base::cancellation_token token);
     void poll();
     void shutdown();
 }

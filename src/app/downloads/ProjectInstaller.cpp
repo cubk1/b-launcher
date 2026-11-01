@@ -173,8 +173,8 @@ namespace ProjectInstaller {
                 auto found = cached.find({source, version});
                 if (version.empty() || found == cached.end()) {
                     auto response = version.empty()
-                            ? Addons::fetchProjectVersions(source, project, gameVersion, loader)
-                            : Addons::fetchVersion(source, version);
+                            ? Addons::fetchProjectVersions(source, project, gameVersion, loader, token)
+                            : Addons::fetchVersion(source, version, token);
                     BLB_TRY(token.check());
                     if (!response.ok || response.versions.empty()) {
                         auto error = blb::make_error(blb::errc::network, "无法获取必需前置 " +

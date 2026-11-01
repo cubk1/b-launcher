@@ -206,14 +206,15 @@ namespace Addons {
         }
     }
 
-    Fetched fetchVersion(Source source, const std::string& versionId) {
-        return source == Source::CurseForge ? CurseForge::fetchVersion(versionId) : Modrinth::fetchVersion(versionId);
+    Fetched fetchVersion(Source source, const std::string& versionId, blb::cancellation_token token) {
+        return source == Source::CurseForge ? CurseForge::fetchVersion(versionId, token)
+                                            : Modrinth::fetchVersion(versionId, token);
     }
 
     Fetched fetchProjectVersions(Source source, const std::string& projectId, const std::string& gameVersion,
-                                 const std::string& loader) {
-        return source == Source::CurseForge ? CurseForge::fetchProjectVersions(projectId, gameVersion, loader)
-                                            : Modrinth::fetchProjectVersions(projectId, gameVersion, loader);
+                                 const std::string& loader, blb::cancellation_token token) {
+        return source == Source::CurseForge ? CurseForge::fetchProjectVersions(projectId, gameVersion, loader, token)
+                                            : Modrinth::fetchProjectVersions(projectId, gameVersion, loader, token);
     }
 
     std::shared_ptr<const Pixels> icon(const std::string& url) {

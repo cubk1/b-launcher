@@ -516,9 +516,9 @@ namespace Modrinth {
         workers.joinAll();
     }
 
-    Fetched fetchVersion(const std::string& versionId) {
+    Fetched fetchVersion(const std::string& versionId, blb::cancellation_token token) {
         Fetched out;
-        auto doc = api("/version/" + blb::url_encode(versionId), stopping.token());
+        auto doc = api("/version/" + blb::url_encode(versionId), token);
         if (!doc) {
             out.error = doc.err().message;
             return out;
@@ -529,7 +529,7 @@ namespace Modrinth {
     }
 
     Fetched fetchProjectVersions(const std::string& projectId, const std::string& gameVersion,
-                                 const std::string& loader) {
+                                 const std::string& loader, blb::cancellation_token token) {
         Fetched out;
         std::string path = "/project/" + blb::url_encode(projectId) + "/version";
         std::string separator = "?";
@@ -540,7 +540,7 @@ namespace Modrinth {
         if (!gameVersion.empty()) {
             path += separator + "game_versions=" + blb::url_encode(json::array({gameVersion}).dump());
         }
-        auto doc = api(path, stopping.token());
+        auto doc = api(path, token);
         if (!doc) {
             out.error = doc.err().message;
             return out;

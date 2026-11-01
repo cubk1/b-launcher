@@ -528,14 +528,14 @@ namespace CurseForge {
         }
     }
 
-    Fetched fetchVersion(const std::string& fileId) {
+    Fetched fetchVersion(const std::string& fileId, blb::cancellation_token token) {
         Fetched out;
         if (!numeric(fileId)) {
             out.error = "CurseForge 上找不到这个文件";
             return out;
         }
         json body = {{"fileIds", json::array({std::stoll(fileId)})}};
-        auto doc = api("/mods/files", body.dump(), stopping.token());
+        auto doc = api("/mods/files", body.dump(), token);
         if (!doc) {
             out.error = doc.err().message;
             return out;
@@ -549,7 +549,7 @@ namespace CurseForge {
     }
 
     Fetched fetchProjectVersions(const std::string& projectId, const std::string& gameVersion,
-                                 const std::string& loader) {
+                                 const std::string& loader, blb::cancellation_token token) {
         Fetched out;
         std::string filter;
         if (!gameVersion.empty()) {
@@ -558,7 +558,7 @@ namespace CurseForge {
         if (int type = loaderType(loader)) {
             filter += "&modLoaderType=" + std::to_string(type);
         }
-        auto list = allFiles(projectId, filter, stopping.token());
+        auto list = allFiles(projectId, filter, token);
         if (!list) {
             out.error = list.err().message;
             return out;

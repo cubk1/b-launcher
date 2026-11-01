@@ -2,6 +2,8 @@
 
 #include "app/system/Pixels.h"
 
+#include <core/base/cancellation.hpp>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -109,9 +111,9 @@ namespace Addons {
     const std::vector<Category>& categories(Source source, Kind kind);
     const Versions& versions(Source source, const std::string& projectId);
     void refreshVersions(Source source, const std::string& projectId);
-    Fetched fetchVersion(Source source, const std::string& versionId);
+    Fetched fetchVersion(Source source, const std::string& versionId, b_launcher_base::cancellation_token token);
     Fetched fetchProjectVersions(Source source, const std::string& projectId, const std::string& gameVersion,
-                                 const std::string& loader);
+                                 const std::string& loader, b_launcher_base::cancellation_token token);
 
     std::shared_ptr<const Pixels> icon(const std::string& url);
     std::string count(long long value);
