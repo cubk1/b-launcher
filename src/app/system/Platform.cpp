@@ -1,6 +1,7 @@
 #include "app/system/Platform.h"
 
 #include <core/base/strings.hpp>
+#include <core/base/win_util.hpp>
 #include <core/meta/game_layout.hpp>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -28,25 +29,8 @@ namespace Platform {
     namespace {
         const wchar_t* const STORE_KEY = L"Software\\BLAUNCHER";
 
-        std::string utf8(const std::wstring& text) {
-            if (text.empty()) {
-                return {};
-            }
-            int length = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), nullptr, 0, nullptr, nullptr);
-            std::string out(length, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), out.data(), length, nullptr, nullptr);
-            return out;
-        }
-
-        std::wstring wide(const std::string& text) {
-            if (text.empty()) {
-                return {};
-            }
-            int length = MultiByteToWideChar(CP_UTF8, 0, text.data(), (int) text.size(), nullptr, 0);
-            std::wstring out(length, L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, text.data(), (int) text.size(), out.data(), length);
-            return out;
-        }
+        using b_launcher_base::detail::utf8_to_wide;
+        using b_launcher_base::detail::wide_to_utf8;
 
         struct CaseLess {
             bool operator()(const std::wstring& a, const std::wstring& b) const {
@@ -71,7 +55,7 @@ namespace Platform {
             }
             for (const auto& [name, value] : extra) {
                 if (!name.empty()) {
-                    variables[wide(name)] = wide(value);
+                    variables[utf8_to_wide(name)] = utf8_to_wide(value);
                 }
             }
             std::vector<wchar_t> block;
@@ -93,7 +77,7 @@ namespace Platform {
                      std::string& error, HANDLE job = nullptr) {
             const wchar_t* comspec = _wgetenv(L"ComSpec");
             std::wstring shell = comspec != nullptr && *comspec != 0 ? comspec : L"cmd.exe";
-            std::wstring line = L"\"" + shell + L"\" /d /s /c \"" + wide(command) + L"\"";
+            std::wstring line = L"\"" + shell + L"\" /d /s /c \"" + utf8_to_wide(command) + L"\"";
             std::vector<wchar_t> buffer(line.begin(), line.end());
             buffer.push_back(0);
             std::vector<wchar_t> block = environmentBlock(environment);
@@ -161,7 +145,7 @@ namespace Platform {
     }
 
     std::wstring widen(const std::string& text) {
-        return wide(text);
+        return utf8_to_wide(text);
     }
 
     namespace {
@@ -214,7 +198,7 @@ namespace Platform {
     }
 
     std::string narrow(const std::wstring& text) {
-        return utf8(text);
+        return wide_to_utf8(text);
     }
 
     std::filesystem::path desktopDirectory() {
@@ -298,8 +282,8 @@ namespace Platform {
         HRESULT result = CoCreateInstance(__uuidof(ShellLink), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link));
         if (SUCCEEDED(result)) {
             link->SetPath(exe.c_str());
-            link->SetArguments(wide(shortcut.arguments).c_str());
-            link->SetDescription(wide(shortcut.description).c_str());
+            link->SetArguments(utf8_to_wide(shortcut.arguments).c_str());
+            link->SetDescription(utf8_to_wide(shortcut.description).c_str());
             if (shortcut.relative) {
                 link->SetWorkingDirectory(L"");
                 link->SetRelativePath(file.c_str(), 0);
@@ -342,7 +326,7 @@ namespace Platform {
         std::string key;
         for (int i = 1; i + 1 < count; i++) {
             if (std::wcscmp(args[i], L"--launch") == 0) {
-                key = utf8(args[i + 1]);
+                key = wide_to_utf8(args[i + 1]);
             }
         }
         LocalFree(args);
@@ -372,7 +356,7 @@ namespace Platform {
         std::string style;
         for (int i = 1; i < count; i++) {
             if (std::wcsncmp(args[i], L"--ui=", 5) == 0) {
-                style = utf8(args[i] + 5);
+                style = wide_to_utf8(args[i] + 5);
             }
         }
         LocalFree(args);
@@ -430,7 +414,7 @@ namespace Platform {
         DWORD pid = 0;
         GetWindowThreadProcessId(search.found, &pid);
         AllowSetForegroundWindow(pid);
-        std::wstring text = wide(key);
+        std::wstring text = utf8_to_wide(key);
         COPYDATASTRUCT data = {(ULONG_PTR) (quiet ? LAUNCH_QUIET_MESSAGE : LAUNCH_MESSAGE),
                                (DWORD) ((text.size() + 1) * sizeof(wchar_t)), (PVOID) text.c_str()};
         DWORD_PTR answer = 0;
@@ -457,7 +441,7 @@ namespace Platform {
         size_t host = scheme + 3;
         if (host == url.size() || url.find_first_of("/\\?#", host) == host ||
             std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; })) return false;
-        HINSTANCE result = ShellExecuteW((HWND) window, L"open", wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        HINSTANCE result = ShellExecuteW((HWND) window, L"open", utf8_to_wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return (INT_PTR) result > 32;
     }
 
@@ -690,7 +674,7 @@ namespace Platform {
         if (RegOpenKeyExW(HKEY_CURRENT_USER, STORE_KEY, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
             return std::nullopt;
         }
-        std::wstring valueName = wide(name);
+        std::wstring valueName = utf8_to_wide(name);
         DWORD type = 0;
         DWORD size = 0;
         std::optional<std::string> out;
@@ -704,7 +688,7 @@ namespace Platform {
                     while (!text.empty() && text.back() == L'\0') {
                         text.pop_back();
                     }
-                    out = utf8(text);
+                    out = wide_to_utf8(text);
                 } else {
                     out = std::move(bytes);
                 }
@@ -720,10 +704,10 @@ namespace Platform {
             ERROR_SUCCESS) {
             return false;
         }
-        std::wstring valueName = wide(name);
+        std::wstring valueName = utf8_to_wide(name);
         LSTATUS status;
         if (text) {
-            std::wstring value = wide(data);
+            std::wstring value = utf8_to_wide(data);
             status = RegSetValueExW(key, valueName.c_str(), 0, REG_SZ, (const BYTE*) value.c_str(),
                                     (DWORD) ((value.size() + 1) * sizeof(wchar_t)));
         } else {
