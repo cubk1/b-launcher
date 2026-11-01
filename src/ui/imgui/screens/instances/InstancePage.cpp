@@ -771,7 +771,25 @@ namespace InstancePage {
         const char* const FOLLOW_ACCOUNT = "跟随当前账号";
 
         std::string accountLabel(const blb::auth::account& account) {
-            return account.name + "（" + Accounts::kindOf(account) + "）";
+            auto base = [](const blb::auth::account& item) {
+                return item.name + "（" + Accounts::kindOf(item) + "）";
+            };
+            std::string label = base(account);
+            const auto& accounts = Accounts::list();
+            if (std::count_if(accounts.begin(), accounts.end(), [&](const auto& item) {
+                    return base(item) == label;
+                }) > 1) {
+                bool sameServer = std::count_if(accounts.begin(), accounts.end(), [&](const auto& item) {
+                    return base(item) == label && item.server == account.server;
+                }) > 1;
+                if (!account.server.empty()) {
+                    label += " · " + account.server;
+                }
+                if (account.server.empty() || sameServer) {
+                    label += " · " + blb::auth::format_uuid(account.uuid);
+                }
+            }
+            return label;
         }
 
         std::shared_ptr<ModeBinding> accountSetting(const std::string& id) {
@@ -788,13 +806,18 @@ namespace InstancePage {
                         return accountLabel(*bound);
                     },
                     [id](const std::string& label) {
-                        std::string chosen;
+                        if (label == FOLLOW_ACCOUNT) {
+                            Game::setAccount(id, std::string());
+                            return;
+                        }
+                        const Settings* settings = settingsOf(id);
                         for (const blb::auth::account& account : Accounts::list()) {
-                            if (accountLabel(account) == label) {
-                                chosen = Accounts::keyOf(account);
+                            if (accountLabel(account) == label &&
+                                (settings == nullptr || Accounts::suits(account, settings->login, settings->auth_server))) {
+                                Game::setAccount(id, Accounts::keyOf(account));
+                                return;
                             }
                         }
-                        Game::setAccount(id, chosen);
                     },
                     [id] {
                         std::vector<std::string> labels = {FOLLOW_ACCOUNT};
