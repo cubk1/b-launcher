@@ -2,6 +2,8 @@
 
 #include <charconv>
 #include <cstdio>
+#include <limits>
+#include <stdexcept>
 
 namespace b_launcher_base::detail
 {
@@ -42,6 +44,9 @@ parse_spec (std::string_view text)
     }
   while (!text.empty () && text[0] >= '0' && text[0] <= '9')
     {
+      if (spec.width > (std::numeric_limits<std::size_t>::max ()
+                        - static_cast<std::size_t> (text[0] - '0')) / 10)
+        throw std::length_error ("format width is too large");
       spec.width = spec.width * 10 + static_cast<std::size_t> (text[0] - '0');
       text.remove_prefix (1);
     }
@@ -51,6 +56,9 @@ parse_spec (std::string_view text)
       spec.precision = 0;
       while (!text.empty () && text[0] >= '0' && text[0] <= '9')
         {
+          if (spec.precision > (std::numeric_limits<int>::max ()
+                                - (text[0] - '0')) / 10)
+            throw std::length_error ("format precision is too large");
           spec.precision = spec.precision * 10 + (text[0] - '0');
           text.remove_prefix (1);
         }
@@ -130,13 +138,24 @@ append (std::string &out, const format_arg &arg, std::string_view spec_text)
       }
     case format_arg::kind::floating:
       {
-        int n = spec.precision >= 0
-                    ? std::snprintf (buffer, sizeof (buffer), "%.*f",
+        auto render = [&] (char *data, std::size_t size) {
+          return spec.precision >= 0
+                    ? std::snprintf (data, size, "%.*f",
                                      spec.precision, arg.floating_value)
-                    : std::snprintf (buffer, sizeof (buffer), "%g",
+                    : std::snprintf (data, size, "%g",
                                      arg.floating_value);
+        };
+        int n = render (buffer, sizeof (buffer));
         if (n < 0)
           n = 0;
+        if (static_cast<std::size_t> (n) >= sizeof (buffer))
+          {
+            std::string expanded (static_cast<std::size_t> (n) + 1, '\0');
+            render (expanded.data (), expanded.size ());
+            expanded.resize (static_cast<std::size_t> (n));
+            pad (out, expanded, spec, true);
+            return;
+          }
         pad (out, std::string_view (buffer, static_cast<std::size_t> (n)),
              spec, true);
         return;
