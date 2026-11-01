@@ -2,6 +2,7 @@
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/Recent.h"
+#include "app/system/CallbackQueue.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/network/http_client.hpp>
@@ -21,7 +22,6 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -32,16 +32,13 @@ namespace Addons {
     namespace blb = b_launcher_base;
 
     namespace {
-        using Continuation = std::function<void()>;
-
         constexpr int ICON_SIZE = 64;
         // 16 KB each: the icons used last, the categories' and a few pages of results.
         constexpr size_t KEPT_ICONS = 100;
         constexpr int ICON_WORKERS = 4;
         const char* const MIRROR = "https://mod.mcimirror.top";
 
-        std::mutex lock;
-        std::deque<Continuation> finished;
+        CallbackQueue finished;
         blb::cancellation_source stopping;
 
         struct Icon {
@@ -55,11 +52,6 @@ namespace Addons {
         std::deque<std::string> iconQueue;
         std::vector<std::thread> iconWorkers;
         bool iconsStopping = false;
-
-        void hand(Continuation next) {
-            std::lock_guard<std::mutex> guard(lock);
-            finished.push_back(std::move(next));
-        }
 
         void roundCorners(std::vector<unsigned char>& rgba) {
             const float radius = ICON_SIZE * 0.22f;
@@ -150,7 +142,7 @@ namespace Addons {
                 auto data = blb::net::http_get(fileUrls(url), token);
                 auto rgba = std::make_shared<std::vector<unsigned char>>();
                 if (data && decodeIcon(*data, *rgba)) {
-                    hand([url, rgba] {
+                    finished.post([url, rgba] {
                         icons[url].pixels = std::make_shared<const Pixels>(Pixels{ICON_SIZE, ICON_SIZE, *rgba});
                     });
                 }
@@ -276,16 +268,7 @@ namespace Addons {
     void poll() {
         Modrinth::poll();
         CurseForge::poll();
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        finished.poll();
         // An icon still on its way, or that failed, is only its address.
         iconUse.trim(icons, KEPT_ICONS, [](const Icon& icon) { return icon.pixels != nullptr; });
     }

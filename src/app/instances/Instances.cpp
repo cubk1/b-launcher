@@ -4,6 +4,7 @@
 #include "app/system/FolderWatch.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
+#include "app/system/CallbackQueue.h"
 
 #include <core/base/hash.hpp>
 #include <core/base/fs.hpp>
@@ -30,7 +31,7 @@
 namespace Instances {
 
     namespace {
-        using Continuation = std::function<void()>;
+        using Continuation = CallbackQueue::Callback;
         using Task = std::function<Continuation()>;
         using Failure = std::function<void(const std::string&)>;
         struct Job {
@@ -46,10 +47,10 @@ namespace Instances {
         const char* const ORDER = "instanceOrder";
 
         std::thread worker;
-        std::mutex lock;
+        std::mutex jobLock;
         std::condition_variable wake;
         std::deque<Job> jobs;
-        std::deque<Continuation> finished;
+        CallbackQueue finished;
         bool stopping = false;
 
         std::vector<Source> roots;
@@ -293,7 +294,7 @@ namespace Instances {
             for (;;) {
                 Job job;
                 {
-                    std::unique_lock<std::mutex> guard(lock);
+                    std::unique_lock<std::mutex> guard(jobLock);
                     wake.wait(guard, [] { return stopping || !jobs.empty(); });
                     if (jobs.empty()) {
                         return;
@@ -314,8 +315,7 @@ namespace Instances {
                         }
                     };
                 }
-                std::lock_guard<std::mutex> guard(lock);
-                finished.push_back(std::move(next));
+                finished.post(std::move(next));
             }
         }
 
@@ -339,7 +339,7 @@ namespace Instances {
 
         void submit(Task task, Failure failed = {}) {
             {
-                std::lock_guard<std::mutex> guard(lock);
+                std::lock_guard<std::mutex> guard(jobLock);
                 jobs.push_back(Job{std::move(task), std::move(failed)});
             }
             wake.notify_one();
@@ -707,16 +707,7 @@ namespace Instances {
     }
 
     void poll() {
-        std::deque<Continuation> ready;
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            ready.swap(finished);
-        }
-        for (Continuation& next : ready) {
-            if (next) {
-                next();
-            }
-        }
+        finished.poll();
         Clock::time_point now = Clock::now();
         for (auto it = pendingSaves.begin(); it != pendingSaves.end();) {
             double delay = it->second.failed ? 2.0 : SAVE_DELAY;
@@ -816,7 +807,7 @@ namespace Instances {
         watch.stop();
         flushSaves();
         {
-            std::lock_guard<std::mutex> guard(lock);
+            std::lock_guard<std::mutex> guard(jobLock);
             stopping = true;
         }
         wake.notify_one();

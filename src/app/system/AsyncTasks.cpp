@@ -15,23 +15,13 @@ void AsyncTasks::run(Work work, Failure fail) {
         } catch (const std::exception& error) {
             next = fail ? fail(error.what()) : nullptr;
         }
-        if (next) {
-            std::lock_guard<std::mutex> guard(lock);
-            finished.push_back(std::move(next));
-        }
+        finished.post(std::move(next));
     });
 }
 
 void AsyncTasks::poll() {
     workers.reap();
-    std::deque<Continuation> ready;
-    {
-        std::lock_guard<std::mutex> guard(lock);
-        ready.swap(finished);
-    }
-    for (Continuation& next : ready) {
-        next();
-    }
+    finished.poll();
 }
 
 void AsyncTasks::cancel() {
