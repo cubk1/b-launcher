@@ -46,12 +46,6 @@ make_job (const loader_request &request)
   return nullptr;
 }
 
-std::string
-library_key (const meta::library &lib)
-{
-  return lib.artifact.key () + (lib.is_legacy_native () ? ":natives" : "");
-}
-
 meta::version
 merge_patches (const std::vector<detail::loader_patch> &patches,
                const meta::version &vanilla, const std::string &id,
@@ -72,14 +66,14 @@ merge_patches (const std::vector<detail::loader_patch> &patches,
   std::vector<meta::library> addons;
   std::unordered_set<std::string> seen;
   for (const auto &lib : out.libraries)
-    seen.insert (library_key (lib));
+    seen.insert (lib.merge_key ());
   std::vector<std::string> tweakers;
   for (const auto &p : patches)
     {
       if (&p == primary)
         continue;
       for (const auto &lib : p.json.libraries)
-        if (seen.insert (library_key (lib)).second)
+        if (seen.insert (lib.merge_key ()).second)
           addons.push_back (lib);
       tweakers.insert (tweakers.end (), p.tweakers.begin (),
                        p.tweakers.end ());

@@ -40,6 +40,8 @@ struct library
 
   bool is_legacy_native () const noexcept;
   bool is_modern_native () const noexcept;
+  // Library identity when merging versions, with legacy natives kept separate.
+  std::string merge_key () const;
   std::optional<std::string>
   native_classifier (const rule_context &context) const;
   std::string relative_path () const;

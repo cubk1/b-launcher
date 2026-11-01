@@ -490,6 +490,12 @@ library::is_modern_native () const noexcept
   return artifact.classifier.starts_with ("natives-");
 }
 
+std::string
+library::merge_key () const
+{
+  return artifact.key () + (is_legacy_native () ? ":natives" : "");
+}
+
 std::optional<std::string>
 library::native_classifier (const rule_context &context) const
 {
@@ -693,17 +699,11 @@ merge_versions (const version &parent, const version &child)
   out.jvm_arguments.insert (out.jvm_arguments.end (),
                             child.jvm_arguments.begin (),
                             child.jvm_arguments.end ());
-  auto library_key = [] (const library &lib) {
-    auto key = lib.artifact.key ();
-    if (lib.is_legacy_native ())
-      key += ":natives";
-    return key;
-  };
   std::unordered_set<std::string> overridden;
   for (const auto &lib : child.libraries)
-    overridden.insert (library_key (lib));
+    overridden.insert (lib.merge_key ());
   for (const auto &lib : parent.libraries)
-    if (!overridden.contains (library_key (lib)))
+    if (!overridden.contains (lib.merge_key ()))
       out.libraries.push_back (lib);
   if (!out.asset_index)
     out.asset_index = parent.asset_index;
