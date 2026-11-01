@@ -85,6 +85,7 @@ namespace exui {
         };
         static constexpr size_t npos = size_t(-1);
         void Remember();
+        bool Restore(std::vector<Snapshot>& from, std::vector<Snapshot>& to);
         std::wstring m_text;
         size_t m_anchor = 0, m_caret = 0;
         size_t m_typingEnd = npos; // caret position after the last typed character

@@ -194,11 +194,11 @@ namespace exui {
         return Replace({});
     }
 
-    bool TextBuffer::Undo() {
-        if (m_undo.empty()) return false;
-        m_redo.push_back({m_text, m_anchor, m_caret});
-        auto snapshot = std::move(m_undo.back());
-        m_undo.pop_back();
+    bool TextBuffer::Restore(std::vector<Snapshot>& from, std::vector<Snapshot>& to) {
+        if (from.empty()) return false;
+        to.push_back({m_text, m_anchor, m_caret});
+        auto snapshot = std::move(from.back());
+        from.pop_back();
         m_text = std::move(snapshot.text);
         m_anchor = snapshot.anchor;
         m_caret = snapshot.caret;
@@ -206,16 +206,12 @@ namespace exui {
         return true;
     }
 
+    bool TextBuffer::Undo() {
+        return Restore(m_undo, m_redo);
+    }
+
     bool TextBuffer::Redo() {
-        if (m_redo.empty()) return false;
-        m_undo.push_back({m_text, m_anchor, m_caret});
-        auto snapshot = std::move(m_redo.back());
-        m_redo.pop_back();
-        m_text = std::move(snapshot.text);
-        m_anchor = snapshot.anchor;
-        m_caret = snapshot.caret;
-        m_typingEnd = npos;
-        return true;
+        return Restore(m_redo, m_undo);
     }
 
 } // namespace exui
