@@ -1155,13 +1155,17 @@ namespace ForgottenMelody {
                     }
                     results->setRows(std::move(rows));
                 }
+                if (failed && !shown.hits.empty()) {
+                    shown = Addons::Results();
+                    results->setRows({});
+                }
                 std::wstring sourceName = Platform::widen(Addons::sourceName(source));
                 results->setMessage(failed ? L"搜索失败：" + Platform::widen(found.error)
                                             : loading ? L"正在搜索 " + sourceName + L"…"
                                                       : L"没有找到符合条件的内容");
                 results->setStale(loading || failed);
                 results->updateIcons();
-                FindControl(RETRY)->SetVisible(failed && shown.hits.empty());
+                FindControl(RETRY)->SetVisible(failed);
 
                 bool counted = !shown.hits.empty() || found.status == Addons::Status::Ready;
                 setText(COUNT, counted ? L"共 " + std::to_wstring(shown.total) + L" 个" : L"");
