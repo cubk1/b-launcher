@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
 
@@ -48,6 +49,8 @@ public:
     if (name.empty ())
       name = sformat ("{}-{}.jar", loader_name (m_request.type),
                       chosen->version);
+    if (!fs::safe_component (name))
+      return make_error (errc::parse, "invalid mod filename");
     std::string sha1;
     if (auto *hashes = meta::detail::member (file, "hashes"))
       sha1 = meta::detail::string_of (*hashes, "sha1");

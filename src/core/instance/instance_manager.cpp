@@ -22,13 +22,7 @@ constexpr log::logger s_log ("instance");
 bool
 valid_id (std::string_view id)
 {
-  if (id.empty () || id.size () > 128 || id == "." || id == "..")
-    return false;
-  for (char c : id)
-    if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"'
-        || c == '<' || c == '>' || c == '|')
-      return false;
-  return id.back () != '.' && id.back () != ' ';
+  return id.size () <= 128 && fs::safe_component (id);
 }
 
 json
@@ -241,7 +235,7 @@ instance_manager::set_isolation (isolation_mode mode) noexcept
 bool
 instance_manager::exists (std::string_view id) const
 {
-  return fs::exists (m_layout.version_json (id));
+  return valid_id (id) && fs::exists (m_layout.version_json (id));
 }
 
 result<instance>
@@ -328,6 +322,8 @@ instance_manager::game_directory (const instance &value) const
 result<instance_settings>
 instance_manager::load_settings (std::string_view id) const
 {
+  if (!valid_id (id))
+    return make_error (errc::invalid_argument, "invalid instance id");
   auto file = m_layout.version_dir (id) / settings_file;
   auto text = fs::read_file (file);
   if (!text)
@@ -354,6 +350,8 @@ result<void>
 instance_manager::save_settings (std::string_view id,
                                  const instance_settings &settings) const
 {
+  if (!valid_id (id))
+    return make_error (errc::invalid_argument, "invalid instance id");
   if (!exists (id))
     return make_error (errc::version_not_found,
                        sformat ("instance '{}' does not exist", id));
@@ -364,6 +362,9 @@ instance_manager::save_settings (std::string_view id,
 result<void>
 instance_manager::rename (std::string_view from, std::string_view to) const
 {
+  if (!valid_id (from))
+    return make_error (errc::invalid_argument,
+                       sformat ("invalid instance id '{}'", from));
   if (!valid_id (to))
     return make_error (errc::invalid_argument,
                        sformat ("invalid instance id '{}'", to));

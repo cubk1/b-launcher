@@ -590,6 +590,19 @@ safe_relative (std::string_view relative) noexcept
 }
 
 bool
+safe_component (std::string_view name) noexcept
+{
+  if (name.empty () || name == "." || name == ".."
+      || name.back () == '.' || name.back () == ' ')
+    return false;
+  for (unsigned char c : name)
+    if (c < 32 || std::string_view ("/\\:*?\"<>|").find (c)
+                      != std::string_view::npos)
+      return false;
+  return true;
+}
+
+bool
 is_inside (const path &root, const path &target)
 {
   auto relative

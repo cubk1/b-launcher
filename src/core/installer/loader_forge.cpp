@@ -75,6 +75,9 @@ public:
   {
     BLB_TRY (resolve_version (ctx));
     BLB_TRY_ASSIGN (auto source, locate_installer (ctx));
+    if (!fs::safe_relative (source.artifact.path ())
+        || source.artifact.path ().find ('\0') != std::string::npos)
+      return make_error (errc::parse, "invalid installer artifact path");
     m_installer_path = ctx.layout ().library (source.artifact.path ());
     BLB_TRY (download_file (
         ctx, source.url, m_installer_path,
@@ -173,6 +176,9 @@ private:
   {
     for (const auto &lib : libraries)
       {
+        BLB_TRY (meta::validate_paths (lib));
+        if (lib.artifact.name.empty ())
+          continue;
         bool remote = (lib.download && !lib.download->url.empty ())
                       || (!lib.download && !lib.url.empty ());
         if (remote)
@@ -201,6 +207,9 @@ private:
     auto coords = meta::detail::string_of (install, "path");
     auto artifact = meta::maven_artifact::parse (coords);
     if (!artifact)
+      return make_error (errc::parse, "invalid forge install path");
+    if (!fs::safe_relative (artifact->path ())
+        || artifact->path ().find ('\0') != std::string::npos)
       return make_error (errc::parse, "invalid forge install path");
     BLB_TRY (
         zip.extract (file_path, ctx.layout ().library (artifact->path ())));
@@ -283,6 +292,9 @@ private:
     if (!artifact)
       return make_error (errc::parse,
                          sformat ("invalid artifact '{}'", coords));
+    if (!fs::safe_relative (artifact->path ())
+        || artifact->path ().find ('\0') != std::string::npos)
+      return make_error (errc::parse, "invalid processor artifact path");
     return path_to_utf8 (ctx.layout ().library (artifact->path ()));
   }
 
@@ -311,6 +323,9 @@ private:
           m_data[key] = value.substr (1, value.size () - 2);
         else if (value.starts_with ('/'))
           {
+            if (!fs::safe_relative (std::string_view (value).substr (1))
+                || value.find ('\0') != std::string::npos)
+              return make_error (errc::parse, "invalid installer resource path");
             auto target = ctx.temp_dir / path_from_utf8 (value.substr (1));
             BLB_TRY (zip.extract (value, target));
             m_data[key] = path_to_utf8 (target);

@@ -107,6 +107,8 @@ struct version
 
 result<version> parse_version (std::string_view json);
 result<library> parse_library (std::string_view json);
+result<void> validate_paths (const library &value);
+result<void> validate_paths (const version &value);
 std::string serialize_version (const version &value);
 version merge_versions (const version &parent, const version &child);
 result<version> load_version (const game_layout &layout, std::string_view id);

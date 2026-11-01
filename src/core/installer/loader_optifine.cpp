@@ -15,12 +15,16 @@ namespace
 
 constexpr log::logger s_log ("optifine");
 
-meta::library
+result<meta::library>
 make_library (std::string_view name)
 {
   meta::library lib;
   lib.name = std::string (name);
-  lib.artifact = *meta::maven_artifact::parse (name);
+  auto artifact = meta::maven_artifact::parse (name);
+  if (!artifact)
+    return make_error (errc::parse, "invalid optifine artifact");
+  lib.artifact = *artifact;
+  BLB_TRY (meta::validate_paths (lib));
   return lib;
 }
 
@@ -58,26 +62,28 @@ public:
       }
     BLB_TRY_ASSIGN (auto zip, zip_reader::open (m_installer));
     m_patcher = zip.contains ("optifine/Patcher.class");
-    m_library = make_library ("optifine:OptiFine:" + m_full);
+    BLB_TRY_ASSIGN (m_library, make_library ("optifine:OptiFine:" + m_full));
     m_libraries.push_back (m_library);
     if (auto text = zip.read ("launchwrapper-of.txt"))
       {
         auto version = std::string (trim (*text));
-        auto lib = make_library ("optifine:launchwrapper-of:" + version);
+        BLB_TRY_ASSIGN (auto lib,
+                        make_library ("optifine:launchwrapper-of:" + version));
         BLB_TRY (zip.extract (sformat ("launchwrapper-of-{}.jar", version),
                               ctx.layout ().library (lib.artifact.path ())));
         m_libraries.push_back (lib);
       }
     else if (zip.contains ("launchwrapper-2.0.jar"))
       {
-        auto lib = make_library ("optifine:launchwrapper:2.0");
+        BLB_TRY_ASSIGN (auto lib, make_library ("optifine:launchwrapper:2.0"));
         BLB_TRY (zip.extract ("launchwrapper-2.0.jar",
                               ctx.layout ().library (lib.artifact.path ())));
         m_libraries.push_back (lib);
       }
     else
       {
-        auto lib = make_library ("net.minecraft:launchwrapper:1.12");
+        BLB_TRY_ASSIGN (auto lib,
+                        make_library ("net.minecraft:launchwrapper:1.12"));
         m_libraries.push_back (lib);
         BLB_TRY (download_libraries (ctx, { lib }, "optifine"));
       }

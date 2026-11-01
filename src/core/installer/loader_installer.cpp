@@ -161,8 +161,10 @@ result<std::string>
 loader_installer::install (const install_request &request, progress_sink *sink,
                            cancellation_token token)
 {
-  if (request.minecraft.empty ())
-    return make_error (errc::invalid_argument, "minecraft version is empty");
+  if (!fs::safe_component (request.minecraft))
+    return make_error (errc::invalid_argument, "invalid minecraft version");
+  if (!request.id.empty () && !fs::safe_component (request.id))
+    return make_error (errc::invalid_argument, "invalid instance id");
   BLB_TRY (check_loader_combination (request.loaders, request.minecraft));
   auto &installer = *m_impl->installer;
   const auto &layout = installer.layout ();
@@ -244,6 +246,8 @@ loader_installer::install (const install_request &request, progress_sink *sink,
           resolved.push_back (
               { job->request ().type, job->request ().version });
         id = default_version_id (request, resolved);
+        if (!fs::safe_component (id))
+          return make_error (errc::invalid_argument, "invalid instance id");
         ctx.target_id = id;
         ctx.mods_dir = request.mods_directory.empty ()
                            ? layout.version_dir (id) / "mods"

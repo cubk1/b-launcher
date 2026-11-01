@@ -118,6 +118,9 @@ parse_runtime_manifest (std::string_view json)
         {
           runtime_file file;
           file.path = std::string (std::string_view (entry.unescaped_key ()));
+          if (!fs::safe_relative (file.path)
+              || file.path.find ('\0') != std::string::npos)
+            return make_error (errc::parse, "invalid runtime file path");
           for (auto field : entry.value ().get_object ())
             {
               std::string_view key = field.unescaped_key ();
@@ -187,6 +190,8 @@ install_runtime (install::game_installer &installer,
                  std::string_view component, progress_sink *sink,
                  cancellation_token token, std::optional<cpu_arch> arch)
 {
+  if (!fs::safe_component (component))
+    return make_error (errc::invalid_argument, "invalid runtime component");
   const auto &platform_info = current_platform ();
   auto platform
       = mojang_platform (platform_info.os, arch.value_or (platform_info.arch));
@@ -251,7 +256,11 @@ install_runtime (install::game_installer &installer,
       auto target = base / path_from_utf8 (file.path);
       if (file.type == runtime_file_type::link)
         {
-          (void)fs::create_symlink (path_from_utf8 (file.target), target);
+          auto source = path_from_utf8 (file.target);
+          if (file.target.find ('\0') != std::string::npos
+              || !fs::is_inside (base, target.parent_path () / source))
+            return make_error (errc::parse, "invalid runtime link target");
+          BLB_TRY (fs::create_symlink (source, target));
         }
       else if (file.type == runtime_file_type::file && file.executable)
         (void)fs::set_executable (target);

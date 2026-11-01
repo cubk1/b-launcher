@@ -44,7 +44,11 @@ public:
                                          "LiteLoaderTweaker");
     meta::library main;
     main.name = "com.mumfrey:liteloader:" + chosen->version;
-    main.artifact = *meta::maven_artifact::parse (main.name);
+    auto artifact = meta::maven_artifact::parse (main.name);
+    if (!artifact)
+      return make_error (errc::parse, "invalid liteloader artifact");
+    main.artifact = *artifact;
+    BLB_TRY (meta::validate_paths (main));
     meta::download_artifact download;
     download.path = main.artifact.path ();
     if (chosen->stable)

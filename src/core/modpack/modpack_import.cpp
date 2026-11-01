@@ -92,6 +92,8 @@ import_modpack (install::game_installer &installer,
   BLB_TRY_ASSIGN (auto manifest, read_modpack (archive));
   const auto &layout = installer.layout ();
   auto id = options.id.empty () ? sanitize_id (manifest.name) : options.id;
+  if (!fs::safe_component (id))
+    return make_error (errc::invalid_argument, "invalid instance id");
   if (fs::exists (layout.version_json (id)) && !options.overwrite)
     return make_error (errc::already_exists,
                        sformat ("instance '{}' already exists", id));

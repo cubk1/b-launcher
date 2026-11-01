@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/download_plan.hpp>
@@ -447,6 +448,7 @@ download_libraries (loader_context &ctx,
   meta::version holder;
   holder.id = ctx.target_id;
   holder.libraries = libraries;
+  BLB_TRY (meta::validate_paths (holder));
   plan_options options;
   options.client = false;
   options.asset_index = false;
@@ -483,20 +485,30 @@ download_file (loader_context &ctx, std::string_view url,
 result<void>
 detail::loader_job::resolve_version (loader_context &ctx)
 {
+  auto valid = [&] (std::string_view version) {
+    return is_addon_mod (m_request.type) || fs::safe_component (version);
+  };
   if (!m_request.version.empty ())
-    return ok ();
+    return valid (m_request.version)
+               ? ok ()
+               : result<void> (make_error (errc::parse,
+                                           "invalid loader version"));
   BLB_TRY_ASSIGN (auto versions,
                   list_loader_versions (m_request.type, ctx.minecraft,
                                         ctx.mirror (), ctx.token));
   for (const auto &v : versions)
     if (v.stable)
       {
+        if (!valid (v.version))
+          return make_error (errc::parse, "invalid loader version");
         m_request.version = v.version;
         m_resolved = v;
         return ok ();
       }
   if (!versions.empty ())
     {
+      if (!valid (versions.front ().version))
+        return make_error (errc::parse, "invalid loader version");
       m_request.version = versions.front ().version;
       m_resolved = versions.front ();
       return ok ();

@@ -605,6 +605,7 @@ parse_version (std::string_view json_text)
   auto out = detail::version_from_json (node);
   if (out.id.empty ())
     return make_error (errc::parse, "version json has no id");
+  BLB_TRY (validate_paths (out));
   return out;
 }
 
@@ -614,7 +615,50 @@ parse_library (std::string_view json_text)
   BLB_TRY_ASSIGN (auto node, detail::parse_json (json_text));
   if (!node.is_object ())
     return make_error (errc::parse, "library json is not an object");
-  return detail::library_from_json (node);
+  auto out = detail::library_from_json (node);
+  BLB_TRY (validate_paths (out));
+  return out;
+}
+
+result<void>
+validate_paths (const library &value)
+{
+  auto safe = [] (std::string_view path) {
+    return fs::safe_relative (path)
+           && path.find ('\0') == std::string_view::npos;
+  };
+  if (!value.artifact.name.empty () && !safe (value.artifact.path ()))
+    return make_error (errc::parse, "invalid library artifact path");
+  if (value.download && !value.download->path.empty ()
+      && !safe (value.download->path))
+    return make_error (errc::parse, "invalid library download path");
+  for (const auto &[name, file] : value.classifiers)
+    if (!file.path.empty () && !safe (file.path))
+      return make_error (errc::parse, "invalid native library path");
+  for (const auto &[os, classifier] : value.natives)
+    if (!value.artifact.name.empty ()
+        && !safe (value.artifact.with_classifier (classifier).path ()))
+      return make_error (errc::parse, "invalid native classifier path");
+  return ok ();
+}
+
+result<void>
+validate_paths (const version &value)
+{
+  if (!fs::safe_component (value.id))
+    return make_error (errc::parse, "invalid version id");
+  for (const auto &name : { value.inherits_from, value.jar, value.assets })
+    if (!name.empty () && !fs::safe_component (name))
+      return make_error (errc::parse, "invalid version path reference");
+  if (value.asset_index && !value.asset_index->id.empty ()
+      && !fs::safe_component (value.asset_index->id))
+    return make_error (errc::parse, "invalid asset index id");
+  if (value.logging && !value.logging->file_id.empty ()
+      && !fs::safe_component (value.logging->file_id))
+    return make_error (errc::parse, "invalid logging file id");
+  for (const auto &lib : value.libraries)
+    BLB_TRY (validate_paths (lib));
+  return ok ();
 }
 
 std::string
@@ -682,6 +726,8 @@ merge_versions (const version &parent, const version &child)
 result<version>
 load_version (const game_layout &layout, std::string_view id)
 {
+  if (!fs::safe_component (id))
+    return make_error (errc::invalid_argument, "invalid version id");
   auto file = layout.version_json (id);
   auto text = fs::read_file (file);
   if (!text)
@@ -727,6 +773,7 @@ resolve_version (const game_layout &layout, std::string_view id)
 result<void>
 save_version (const game_layout &layout, const version &value)
 {
+  BLB_TRY (validate_paths (value));
   return fs::write_file_atomic (layout.version_json (value.id),
                                 serialize_version (value));
 }

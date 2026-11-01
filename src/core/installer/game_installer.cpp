@@ -146,6 +146,8 @@ result<meta::version>
 game_installer::fetch_version_json (std::string_view id,
                                     cancellation_token token)
 {
+  if (!fs::safe_component (id))
+    return make_error (errc::invalid_argument, "invalid version id");
   auto file = m_impl->layout.version_json (id);
   BLB_TRY_ASSIGN (auto list, manifest (token));
   const auto *entry = list.find (id);
@@ -255,6 +257,7 @@ game_installer::complete_version (const meta::version &resolved,
                                   cancellation_token token,
                                   bool include_natives, completion_scope scope)
 {
+  BLB_TRY (meta::validate_paths (resolved));
   auto files
       = plan_version_files (resolved, m_impl->layout, mirror (), context);
   if (!include_natives)
@@ -327,6 +330,7 @@ result<void>
 game_installer::prepare_legacy_assets (const meta::version &resolved,
                                        const std::filesystem::path &game_dir)
 {
+  BLB_TRY (meta::validate_paths (resolved));
   if (!resolved.asset_index)
     return ok ();
   auto text
