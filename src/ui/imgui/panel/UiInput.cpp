@@ -372,7 +372,7 @@ namespace UiInput {
             paste(id);
             return true;
         }
-        if (ctrl && key == ImGuiKey_Z) {
+        if (ctrl && !shift && key == ImGuiKey_Z) {
             undo(id);
             return true;
         }
