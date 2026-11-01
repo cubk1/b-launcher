@@ -38,6 +38,8 @@ namespace Catalog {
     };
 
     const JavaList& java();
+    // Capture the configured search paths on the UI thread before starting work.
+    blb::java::scan_options javaScanOptions();
     void refreshJava();
     void addJava(const std::filesystem::path& path);
     bool addedByHand(const std::filesystem::path& executable);

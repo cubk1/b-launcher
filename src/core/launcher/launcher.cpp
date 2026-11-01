@@ -136,7 +136,7 @@ game_launcher::java_candidates (bool rescan)
   std::lock_guard lock (m_impl->java_mutex);
   if (!m_impl->java_cache || rescan)
     {
-      java::scan_options options;
+      auto options = m_impl->installer->options ().java_scan;
       options.runtime_roots.push_back (
           m_impl->installer->layout ().runtime ());
       m_impl->java_cache = java::scan_java (options);

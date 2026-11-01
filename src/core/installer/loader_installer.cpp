@@ -125,7 +125,7 @@ struct loader_installer::impl
     std::lock_guard lock (java_mutex);
     if (!java_cache)
       {
-        java::scan_options options;
+        auto options = installer->options ().java_scan;
         options.runtime_roots.push_back (installer->layout ().runtime ());
         java_cache = java::scan_java (options);
       }

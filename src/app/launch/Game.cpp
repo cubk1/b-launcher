@@ -7,6 +7,7 @@
 #include "app/system/Platform.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
+#include "app/system/Catalog.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/progress.hpp>
@@ -555,9 +556,10 @@ namespace Game {
         Platform::Environment commandVariables = live.variables;
         std::filesystem::path directory = live.commandDirectory;
         Live* self = &live;
+        auto javaOptions = Catalog::javaScanOptions();
         lives.push_back(std::move(made));
         self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
-                                      commandVariables, directory, language, minecraft, patchJar, patchPlan]() mutable {
+                                      commandVariables, directory, language, minecraft, patchJar, patchPlan, javaOptions]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;
@@ -576,6 +578,7 @@ namespace Game {
                 }
                 blb::install::install_options options;
                 options.mirror = blb::net::make_bmclapi_provider();
+                options.java_scan = javaOptions;
                 auto installer = std::make_shared<blb::install::game_installer>(blb::meta::game_layout(root), options);
                 blb::launch::game_launcher launcher(installer);
                 if (authenticator) {

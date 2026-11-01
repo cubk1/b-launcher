@@ -5,6 +5,7 @@
 #include <core/base/progress.hpp>
 #include <core/installer/download_plan.hpp>
 #include <core/installer/integrity.hpp>
+#include <core/java/java_detect.hpp>
 #include <core/meta/game_layout.hpp>
 #include <core/meta/rules.hpp>
 #include <core/meta/version.hpp>
@@ -30,6 +31,7 @@ struct install_options
   bool discover_import_sources = true;
   bool verify_imported = true;
   bool assets = true;
+  java::scan_options java_scan;
 };
 
 enum class completion_scope : std::uint8_t

@@ -2,6 +2,7 @@
 #include "app/system/TaskThreads.h"
 #include "app/system/Config.h"
 #include "app/instances/Instances.h"
+#include "app/launch/JavaDownloads.h"
 
 #include <core/base/strings.hpp>
 
@@ -174,13 +175,7 @@ namespace Catalog {
         void scanJava() {
             javaStarted = true;
             javaList.status = Status::Loading;
-            blb::java::scan_options options;
-            for (const Instances::Source& source : Instances::sources()) {
-                options.runtime_roots.push_back(blb::meta::game_layout(source.root).runtime());
-            }
-            for (const std::string& path : pathList("javaPaths")) {
-                options.extra_homes.push_back(blb::java::java_home_from_executable(blb::path_from_utf8(path)));
-            }
+            auto options = javaScanOptions();
             run(
                     [options](blb::cancellation_token token) -> Continuation {
                         std::vector<blb::java::java_installation> found = blb::java::scan_java(options, token);
@@ -212,6 +207,18 @@ namespace Catalog {
             scanJava();
         }
         return javaList;
+    }
+
+    blb::java::scan_options javaScanOptions() {
+        blb::java::scan_options options;
+        for (const Instances::Source& source : Instances::sources()) {
+            options.runtime_roots.push_back(blb::meta::game_layout(source.root).runtime());
+        }
+        options.extra_roots.push_back(JavaDownloads::root());
+        for (const std::string& path : pathList("javaPaths")) {
+            options.extra_homes.push_back(blb::path_from_utf8(path));
+        }
+        return options;
     }
 
     void refreshJava() {
