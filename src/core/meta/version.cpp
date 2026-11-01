@@ -6,6 +6,7 @@
 
 #include "core/meta/json_util.hpp"
 
+#include <limits>
 #include <set>
 #include <unordered_set>
 
@@ -34,6 +35,8 @@ string_of (const json &node, std::string_view key, std::string fallback)
     return fallback;
   if (value->is_string ())
     return value->get<std::string> ();
+  if (value->is_number_unsigned ())
+    return std::to_string (value->get<std::uint64_t> ());
   if (value->is_number_integer ())
     return std::to_string (value->get<std::int64_t> ());
   return fallback;
@@ -45,12 +48,43 @@ int_of (const json &node, std::string_view key, std::int64_t fallback)
   auto *value = member (node, key);
   if (!value)
     return fallback;
-  if (value->is_number ())
+  if (value->is_number_unsigned ())
+    {
+      auto number = value->get<std::uint64_t> ();
+      return number <= static_cast<std::uint64_t> (
+                           std::numeric_limits<std::int64_t>::max ())
+                 ? static_cast<std::int64_t> (number) : fallback;
+    }
+  if (value->is_number_integer ())
     return value->get<std::int64_t> ();
+  if (value->is_number_float ())
+    {
+      double number = value->get<double> ();
+      double lower = static_cast<double> (
+          std::numeric_limits<std::int64_t>::min ());
+      if (number >= lower && number < -lower)
+        return static_cast<std::int64_t> (number);
+      return fallback;
+    }
   if (value->is_string ())
     if (auto parsed = parse_int (value->get<std::string> ()))
       return *parsed;
   return fallback;
+}
+
+namespace
+{
+
+int
+int32_of (const json &node, std::string_view key)
+{
+  auto number = int_of (node, key);
+  if (number < std::numeric_limits<int>::min ()
+      || number > std::numeric_limits<int>::max ())
+    return 0;
+  return static_cast<int> (number);
+}
+
 }
 
 bool
@@ -322,9 +356,9 @@ version_from_json (const json &node)
       for (const auto &patch : *patches)
         if (patch.is_object () && string_of (patch, "id") == "game")
           out.client_version = string_of (patch, "version");
-  out.compliance_level = static_cast<int> (int_of (node, "complianceLevel"));
+  out.compliance_level = int32_of (node, "complianceLevel");
   out.minimum_launcher_version
-      = static_cast<int> (int_of (node, "minimumLauncherVersion"));
+      = int32_of (node, "minimumLauncherVersion");
   if (auto *args = member (node, "arguments"); args && args->is_object ())
     {
       out.has_arguments = true;
@@ -348,8 +382,7 @@ version_from_json (const json &node)
         out.downloads.emplace (it.key (), artifact_from_json (*it));
   if (auto *java = member (node, "javaVersion"); java && java->is_object ())
     out.java_version = java_version_ref { string_of (*java, "component"),
-                                          static_cast<int> (int_of (
-                                              *java, "majorVersion")) };
+                                          int32_of (*java, "majorVersion") };
   if (auto *logging = member (node, "logging"))
     if (auto *client = member (*logging, "client");
         client && client->is_object ())
