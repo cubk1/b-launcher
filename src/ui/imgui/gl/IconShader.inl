@@ -31,6 +31,7 @@ R"GLSL(                    float polyClaude(vec2 p) {
             vec2 a = CLAUDE[i];
             vec2 b = CLAUDE[i + 1 == end ? start : i + 1];
             vec2 e = b - a;
+            if (dot(e, e) == 0.0) continue;
             vec2 pa = p - a;
             vec2 q = pa - e * clamp(dot(pa, e) / dot(e, e), 0.0, 1.0);
             d = min(d, dot(q, q));
@@ -58,6 +59,7 @@ float polyCodex(vec2 p) {
             vec2 a = CODEX[i];
             vec2 b = CODEX[i + 1 == end ? start : i + 1];
             vec2 e = b - a;
+            if (dot(e, e) == 0.0) continue;
             vec2 pa = p - a;
             vec2 q = pa - e * clamp(dot(pa, e) / dot(e, e), 0.0, 1.0);
             d = min(d, dot(q, q));
