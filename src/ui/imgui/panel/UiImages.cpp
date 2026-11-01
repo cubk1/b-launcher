@@ -11,6 +11,8 @@
 #include "stb_image.h"
 
 #include <algorithm>
+#include <deque>
+#include <utility>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -25,13 +27,16 @@ namespace UiImages {
     static std::mutex lock;
     static std::unordered_map<std::string, int> kinds;
     static std::unordered_map<std::string, std::vector<unsigned char>> pending;
-    static std::unordered_map<std::string, uint32_t> textures;
-    static std::unordered_map<std::string, int> widths;
-    static std::unordered_map<std::string, int> heights;
-    static std::unordered_map<std::string, std::vector<uint32_t>> frames;
-    static std::unordered_map<std::string, std::vector<int>> delays;
-    static std::unordered_map<std::string, int> totals;
-    static std::vector<std::string> queue;
+    struct Frame {
+        uint32_t texture;
+        int until;
+    };
+    struct Image {
+        Resolved resolved{0, 16, 16};
+        std::vector<Frame> frames;
+    };
+    static std::unordered_map<std::string, Image> images;
+    static std::deque<std::string> queue;
     static bool working = false;
 
     static int kindOf(const std::string& source, bool& known) {
@@ -81,9 +86,7 @@ namespace UiImages {
             setKind(source, KIND_MISSING);
             return KIND_MISSING;
         }
-        textures[source] = resolved.texture;
-        widths[source] = 16;
-        heights[source] = 16;
+        images[source].resolved = {resolved.texture, 16, 16};
         setKind(source, KIND_ITEM);
         return KIND_ITEM;
     }
@@ -95,9 +98,7 @@ namespace UiImages {
             setKind(source, KIND_MISSING);
             return KIND_MISSING;
         }
-        textures[source] = resolved.texture;
-        widths[source] = 64;
-        heights[source] = 64;
+        images[source].resolved = {resolved.texture, 64, 64};
         setKind(source, KIND_TEXTURE);
         return KIND_TEXTURE;
     }
@@ -124,8 +125,8 @@ namespace UiImages {
                     working = false;
                     return;
                 }
-                source = queue.front();
-                queue.erase(queue.begin());
+                source = std::move(queue.front());
+                queue.pop_front();
             }
             fetchOne(source);
         }
@@ -207,9 +208,7 @@ namespace UiImages {
             setKind(source, KIND_FAILED);
             return;
         }
-        textures[source] = id;
-        widths[source] = width;
-        heights[source] = height;
+        images[source].resolved = {id, width, height};
         setKind(source, KIND_TEXTURE);
         promoted = true;
     }
@@ -236,59 +235,49 @@ namespace UiImages {
             }
             return false;
         }
-        std::vector<uint32_t> ids;
-        std::vector<int> gaps;
+        std::vector<Frame> frames;
+        frames.reserve((size_t) count);
         int total = 0;
         size_t frameBytes = (size_t) width * (size_t) height * 4;
         for (int i = 0; i < count; i++) {
             uint32_t id = upload(pixels + frameBytes * (size_t) i, width, height);
-            ids.push_back(id);
             int millis = std::max(20, frameDelays != nullptr ? frameDelays[i] : 100);
             total += millis;
-            gaps.push_back(total);
+            frames.push_back(Frame{id, total});
         }
         stbi_image_free(pixels);
         if (frameDelays != nullptr) {
             stbi_image_free(frameDelays);
         }
-        frames[source] = ids;
-        delays[source] = gaps;
-        totals[source] = total;
-        textures[source] = ids[0];
-        widths[source] = width;
-        heights[source] = height;
+        Image& image = images[source];
+        image.resolved = {frames.front().texture, width, height};
+        image.frames = std::move(frames);
         setKind(source, KIND_TEXTURE);
         promoted = true;
         return true;
     }
 
     int widthOf(const std::string& source) {
-        auto it = widths.find(source);
-        return it == widths.end() ? 16 : it->second;
+        auto it = images.find(source);
+        return it == images.end() ? 16 : it->second.resolved.width;
     }
 
     int heightOf(const std::string& source) {
-        auto it = heights.find(source);
-        return it == heights.end() ? 16 : it->second;
+        auto it = images.find(source);
+        return it == images.end() ? 16 : it->second.resolved.height;
     }
 
     uint32_t textureOf(const std::string& source) {
-        auto ids = frames.find(source);
-        if (ids == frames.end() || ids->second.empty()) {
-            auto it = textures.find(source);
-            return it == textures.end() ? 0 : it->second;
+        auto it = images.find(source);
+        if (it == images.end()) return 0;
+        const Image& image = it->second;
+        if (image.frames.empty()) return image.resolved.texture;
+        int total = image.frames.back().until;
+        if (total <= 0) return image.frames.front().texture;
+        long long now = Ui::millis() % total;
+        for (const Frame& frame : image.frames) {
+            if (now < frame.until) return frame.texture;
         }
-        auto total = totals.find(source);
-        auto gaps = delays.find(source);
-        if (total == totals.end() || total->second <= 0 || gaps == delays.end()) {
-            return ids->second[0];
-        }
-        long long now = Ui::millis() % total->second;
-        for (size_t i = 0; i < gaps->second.size(); i++) {
-            if (now < gaps->second[i]) {
-                return ids->second[i];
-            }
-        }
-        return ids->second.back();
+        return image.frames.back().texture;
     }
 }
