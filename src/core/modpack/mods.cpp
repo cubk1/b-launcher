@@ -179,20 +179,29 @@ read_forge_toml (mod_info &mod, const json &doc, zip_reader &zip)
     }
   for (std::size_t i = 1; i < mods->size (); ++i)
     mod.provides.push_back (text_of ((*mods)[i], "modId"));
-  if (auto deps = doc.find ("dependencies"); deps != doc.end ())
-    if (auto list = deps->find (mod.id);
-        list != deps->end () && list->is_array ())
-      for (const auto &d : *list)
-        {
-          bool required = true;
-          if (auto m = d.find ("mandatory"); m != d.end () && m->is_boolean ())
-            required = m->get<bool> ();
-          if (auto t = d.find ("type"); t != d.end () && t->is_string ())
-            required = to_lower (t->get<std::string> ()) == "required";
-          mod.dependencies.push_back (
-              { text_of (d, "modId"), text_of (d, "versionRange"),
-                required, to_lower (text_of (d, "side")) != "server" });
-        }
+  if (auto deps = doc.find ("dependencies");
+      deps != doc.end () && deps->is_object ())
+    for (const auto &entry : *mods)
+      {
+        auto id = text_of (entry, "modId");
+        if (id.empty ())
+          continue;
+        if (auto list = deps->find (id);
+            list != deps->end () && list->is_array ())
+          for (const auto &d : *list)
+            {
+              bool required = true;
+              if (auto m = d.find ("mandatory");
+                  m != d.end () && m->is_boolean ())
+                required = m->get<bool> ();
+              if (auto t = d.find ("type");
+                  t != d.end () && t->is_string ())
+                required = to_lower (t->get<std::string> ()) == "required";
+              mod.dependencies.push_back (
+                  { text_of (d, "modId"), text_of (d, "versionRange"),
+                    required, to_lower (text_of (d, "side")) != "server" });
+            }
+      }
 }
 
 void
