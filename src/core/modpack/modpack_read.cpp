@@ -332,17 +332,30 @@ read_multimc (zip_reader &zip, const std::string &prefix,
   if (auto cfg = zip.read (prefix + "instance.cfg"))
     {
       auto values = multimc_settings (*cfg);
+      auto enabled = [&] (const char *key, bool fallback = false) {
+        auto it = values.find (key);
+        if (it == values.end ())
+          return fallback;
+        auto value = to_lower (trim (it->second));
+        return value == "true" || value == "1";
+      };
       if (auto it = values.find ("name"); it != values.end ())
         m.name = it->second;
-      if (auto it = values.find ("JvmArgs"); it != values.end ())
-        m.jvm_args = split_arguments (it->second);
-      if (auto it = values.find ("MaxMemAlloc"); it != values.end ())
+      if (enabled ("OverrideJavaArgs", enabled ("OverrideJava")))
+        if (auto it = values.find ("JvmArgs"); it != values.end ())
+          m.jvm_args = split_arguments (it->second);
+      if (enabled ("OverrideMemory"))
         {
-          BLB_TRY_ASSIGN (m.max_memory_mb, memory_value (json (it->second)));
-        }
-      if (auto it = values.find ("MinMemAlloc"); it != values.end ())
-        {
-          BLB_TRY_ASSIGN (m.min_memory_mb, memory_value (json (it->second)));
+          if (auto it = values.find ("MaxMemAlloc"); it != values.end ())
+            {
+              BLB_TRY_ASSIGN (m.max_memory_mb,
+                              memory_value (json (it->second)));
+            }
+          if (auto it = values.find ("MinMemAlloc"); it != values.end ())
+            {
+              BLB_TRY_ASSIGN (m.min_memory_mb,
+                              memory_value (json (it->second)));
+            }
         }
     }
   for (const char *dir : { ".minecraft/", "minecraft/" })
