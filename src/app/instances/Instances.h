@@ -39,6 +39,8 @@ namespace Instances {
     std::string activityOf(const std::string& key);
     const std::vector<Source>& sources();
     const Source* source(const std::string& key);
+    // Prefer the chosen source, then an existing local source, then the first.
+    const Source* installSource(const std::string& preferred);
     const std::vector<Entry>& list();
     const Entry* find(const std::string& key);
     std::string keyOf(const std::string& source, const std::string& id);

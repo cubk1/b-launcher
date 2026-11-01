@@ -837,6 +837,18 @@ namespace Instances {
         return sourceMutable(key);
     }
 
+    const Source* installSource(const std::string& preferred) {
+        if (const Source* chosen = source(preferred)) {
+            return chosen;
+        }
+        for (const Source& entry : roots) {
+            if (entry.key == "local" && entry.exists) {
+                return &entry;
+            }
+        }
+        return roots.empty() ? nullptr : &roots.front();
+    }
+
     const std::vector<Entry>& list() {
         return entries;
     }

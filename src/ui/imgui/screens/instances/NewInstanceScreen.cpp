@@ -225,19 +225,7 @@ namespace NewInstanceScreen {
         }
 
         const Instances::Source* targetSource() {
-            if (const Instances::Source* source = Instances::source(target)) {
-                return source;
-            }
-            const Instances::Source* fallback = nullptr;
-            for (const Instances::Source& source : Instances::sources()) {
-                if (source.key == "local" && source.exists) {
-                    return &source;
-                }
-                if (fallback == nullptr) {
-                    fallback = &source;
-                }
-            }
-            return fallback;
+            return Instances::installSource(target);
         }
 
         void chooseVersion(const std::string& id) {

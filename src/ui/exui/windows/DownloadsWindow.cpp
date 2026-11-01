@@ -1302,19 +1302,7 @@ namespace ForgottenMelody {
 
             // The game directory chosen, else the launcher's own one, else the first.
             const Instances::Source* targetSource() const {
-                if (const Instances::Source* chosen = Instances::source(placeKey)) {
-                    return chosen;
-                }
-                const Instances::Source* fallback = nullptr;
-                for (const Instances::Source& source : Instances::sources()) {
-                    if (source.key == "local" && source.exists) {
-                        return &source;
-                    }
-                    if (fallback == nullptr) {
-                        fallback = &source;
-                    }
-                }
-                return fallback;
+                return Instances::installSource(placeKey);
             }
 
             void showSetup() {
