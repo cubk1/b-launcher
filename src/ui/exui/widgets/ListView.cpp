@@ -2,17 +2,13 @@
 #include "ui/exui/widgets/Label.h"
 #include "ui/exui/Window.h"
 #include <cmath>
-#include <limits>
+#include <climits>
 
 namespace exui {
     using namespace Gdiplus;
     namespace {
         bool Contains(const RectF& r, int x, int y) {
             return r.Contains(static_cast<float>(x), static_cast<float>(y));
-        }
-        int BoundedAdd(int value, int amount) {
-            return static_cast<int>(std::clamp(static_cast<long long>(value) + amount, static_cast<long long>(INT_MIN),
-                                               static_cast<long long>(INT_MAX)));
         }
     } // namespace
 
@@ -381,7 +377,7 @@ namespace exui {
         SetTooltipText(L"");
         Layout();
         if (!m_vVisible) return false;
-        ScrollTo(BoundedAdd(m_scrollY, (delta > 0 ? -3 : 3) * GetRowHeight())); // three rows per notch
+        ScrollTo(m_vScrollBar->PositionAfter((delta > 0 ? -3 : 3) * GetRowHeight())); // three rows per notch
         return true;
     }
     bool ListView::OnKeyDown(UINT vk, UINT) {

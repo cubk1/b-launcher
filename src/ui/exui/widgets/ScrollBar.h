@@ -32,6 +32,8 @@ namespace exui {
             Gdiplus::RectF decrement, increment, track, thumb;
         };
         Geometry GetGeometry() const;
+        // The clamped target of an offset, without moving or notifying.
+        int PositionAfter(int amount) const;
         // Moves by amount and reports a change through OnScroll.
         void ScrollBy(int amount);
         std::function<void(int)> OnScroll;

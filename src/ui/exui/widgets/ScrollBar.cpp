@@ -1,15 +1,7 @@
 #include "ui/exui/widgets/ScrollBar.h"
-#include <climits>
 
 namespace exui {
     using namespace Gdiplus;
-
-    namespace {
-        int BoundedAdd(int value, int amount) {
-            return int(std::clamp(static_cast<long long>(value) + amount, static_cast<long long>(INT_MIN),
-                                  static_cast<long long>(INT_MAX)));
-        }
-    } // namespace
 
     ScrollBar::ScrollBar(int x, int y, int w, int h, bool vertical) : m_vertical(vertical) {
         SetBounds(x, y, w, h);
@@ -36,8 +28,13 @@ namespace exui {
         Invalidate();
     }
 
+    int ScrollBar::PositionAfter(int amount) const {
+        return int(std::clamp(static_cast<long long>(m_pos) + amount, static_cast<long long>(m_minPos),
+                              static_cast<long long>(m_maxPos)));
+    }
+
     void ScrollBar::ScrollBy(int amount) {
-        const int pos = std::clamp(BoundedAdd(m_pos, amount), m_minPos, m_maxPos);
+        const int pos = PositionAfter(amount);
         if (pos == m_pos) return;
         SetPosition(pos);
         if (const auto callback = OnScroll) callback(pos);

@@ -47,9 +47,6 @@ namespace exui {
         virtual WidgetState PressedState() const noexcept {
             return WidgetState::Pressed;
         }
-        bool Contains(int x, int y) const noexcept {
-            return x >= 0 && y >= 0 && x < GetWidth() && y < GetHeight();
-        }
         virtual void PaintBackground(Gdiplus::Graphics& g, Gdiplus::RectF& paintBounds);
         // Returns true if the derived hook handled focus decoration.
         virtual bool PaintForeground(Gdiplus::Graphics& g, const Gdiplus::RectF& paintBounds,

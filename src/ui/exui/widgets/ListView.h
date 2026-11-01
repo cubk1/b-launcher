@@ -86,9 +86,8 @@ namespace exui {
             Layout();
             return *m_hScrollBar;
         }
-        // Original vtable+316 fires on left release over the current selection,
-        // including releases without a prior press. -1 denotes the native 0/0
-        // match (no selected row and no row hit); callers must handle that value.
+        // Pointer presses on a row notify even when already selected. Keyboard
+        // navigation notifies only when the selection changes.
         std::function<void(int)> OnSelectionChanged;
         void OnPaint(Gdiplus::Graphics& g) override;
         void OnMouseLeave() override;
