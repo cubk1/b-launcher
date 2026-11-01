@@ -16,5 +16,6 @@ namespace WebImages {
     const Image& get(const std::string& source, const std::string& fallback = std::string());
     long long generation();
     void poll();
+    void retryFailed();
     void shutdown();
 }

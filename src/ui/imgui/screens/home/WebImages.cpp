@@ -43,6 +43,7 @@ namespace WebImages {
             std::string key;
             std::string source;
             std::string fallback;
+            bool retry = false;
         };
 
         struct Decoded {
@@ -52,7 +53,13 @@ namespace WebImages {
             int height = 0;
         };
 
-        std::map<std::string, Image> images;
+        using Clock = std::chrono::steady_clock;
+        struct CachedImage {
+            Image image;
+            Clock::time_point retryAt;
+            std::chrono::seconds retryDelay{1};
+        };
+        std::map<std::string, CachedImage> images;
         long long generationCount = 0;
         std::mutex lock;
         std::condition_variable wake;
@@ -61,6 +68,13 @@ namespace WebImages {
         std::thread worker;
         bool stopping = false;
         blb::cancellation_source cancel;
+
+        void failed(CachedImage& cached) {
+            cached.image.done = true;
+            cached.image.failed = true;
+            cached.retryAt = Clock::now() + cached.retryDelay;
+            cached.retryDelay = std::min(cached.retryDelay * 2, std::chrono::seconds(30));
+        }
 
         std::string lower(std::string text) {
             std::transform(text.begin(), text.end(), text.begin(),
@@ -123,7 +137,7 @@ namespace WebImages {
             return std::filesystem::file_time_type::clock::now() - written < CACHE_AGE;
         }
 
-        std::optional<std::string> bytesOf(const std::string& source) {
+        std::optional<std::string> bytesOf(const std::string& source, bool retry) {
             if (source.empty()) {
                 return std::nullopt;
             }
@@ -138,7 +152,9 @@ namespace WebImages {
                 return std::nullopt;
             }
             std::filesystem::path file = cacheFile(source);
-            if (!file.empty() && fresh(file)) {
+            // A decode failure may have left an invalid response in the disk
+            // cache. A retry must get another chance to download the image.
+            if (!retry && !file.empty() && fresh(file)) {
                 if (auto data = blb::fs::read_file(file)) {
                     return std::move(*data);
                 }
@@ -230,7 +246,7 @@ namespace WebImages {
                 bool ok = false;
                 if (factory != nullptr) {
                     for (const std::string& source : {job.source, job.fallback}) {
-                        if (std::optional<std::string> data = bytesOf(source); data && decode(factory, *data, result)) {
+                        if (std::optional<std::string> data = bytesOf(source, job.retry); data && decode(factory, *data, result)) {
                             ok = true;
                             break;
                         }
@@ -255,30 +271,52 @@ namespace WebImages {
 
     const Image& get(const std::string& source, const std::string& fallback) {
         std::string key = source + '\x1f' + fallback;
-        auto found = images.find(key);
-        if (found != images.end()) {
-            return found->second;
+        auto [found, inserted] = images.try_emplace(key);
+        CachedImage& cached = found->second;
+        Image& image = cached.image;
+        if (!inserted) {
+            if (!image.done || !image.failed || Clock::now() < cached.retryAt) {
+                return image;
+            }
+            // Retain the map entry so references held by views stay valid.
+            // Mark it loading before enqueueing to avoid duplicate retries.
+            image = Image();
+            generationCount++;
         }
-        Image& image = images[key];
         if (std::optional<Image> local = builtin(source)) {
             image = *local;
             if (image.failed && !fallback.empty()) {
                 image = Image();
             } else {
+                if (image.failed) {
+                    failed(cached);
+                }
                 return image;
             }
         }
         std::lock_guard<std::mutex> guard(lock);
-        if (!worker.joinable() && !stopping) {
+        if (stopping) {
+            failed(cached);
+            return image;
+        }
+        if (!worker.joinable()) {
             worker = std::thread(run);
         }
-        jobs.push_back(Job{key, source, fallback});
+        jobs.push_back(Job{key, source, fallback, !inserted});
         wake.notify_one();
         return image;
     }
 
     long long generation() {
         return generationCount;
+    }
+
+    void retryFailed() {
+        for (auto& [key, cached] : images) {
+            if (cached.image.done && cached.image.failed) {
+                cached.retryAt = Clock::time_point();
+            }
+        }
     }
 
     void poll() {
@@ -288,15 +326,21 @@ namespace WebImages {
             ready.swap(finished);
         }
         for (Decoded& result : ready) {
-            Image& image = images[result.key];
+            CachedImage& cached = images[result.key];
+            Image& image = cached.image;
             image.done = true;
             if (result.rgba.empty()) {
-                image.failed = true;
+                failed(cached);
             } else {
                 image.texture = UiImages::upload(result.rgba.data(), result.width, result.height);
                 image.width = result.width;
                 image.height = result.height;
                 image.failed = image.texture == 0;
+                if (image.failed) {
+                    failed(cached);
+                } else {
+                    cached.retryDelay = std::chrono::seconds(1);
+                }
             }
             generationCount++;
         }

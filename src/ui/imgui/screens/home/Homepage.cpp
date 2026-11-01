@@ -760,6 +760,7 @@ namespace Homepage {
         if (!started) {
             return;
         }
+        WebImages::retryFailed();
         views.resize(std::min<size_t>(views.size(), 1));
         modal = Modal();
         loadHome();

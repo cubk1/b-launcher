@@ -5,6 +5,7 @@
 #include <reproc/reproc.h>
 
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -34,32 +35,65 @@ public:
   feed (std::string_view chunk, output_stream stream,
         const output_callback &callback)
   {
-    m_pending.append (chunk);
-    std::size_t start = 0;
-    for (;;)
+    // Search only new input. Keep a bounded prefix of an overlong physical
+    // line, then discard its remainder until newline/EOF and mark it once.
+    while (!chunk.empty ())
       {
-        auto pos = m_pending.find ('\n', start);
-        if (pos == std::string::npos)
+        auto newline = chunk.find ('\n');
+        auto part = chunk.substr (0, newline);
+        auto take = std::min (part.size (), max_line_bytes - m_pending.size ());
+        m_pending.append (part.data (), take);
+        m_truncated |= take != part.size ();
+        if (newline == std::string_view::npos)
           break;
-        auto line = std::string_view (m_pending).substr (start, pos - start);
-        if (!line.empty () && line.back () == '\r')
-          line.remove_suffix (1);
-        callback (line, stream);
-        start = pos + 1;
+        emit (stream, callback, true);
+        chunk.remove_prefix (newline + 1);
       }
-    m_pending.erase (0, start);
   }
 
   void
   flush (output_stream stream, const output_callback &callback)
   {
-    if (!m_pending.empty ())
-      callback (m_pending, stream);
-    m_pending.clear ();
+    if (!m_pending.empty () || m_truncated)
+      emit (stream, callback, false);
   }
 
 private:
+  static constexpr std::size_t max_line_bytes = 64 * 1024;
   std::string m_pending;
+  bool m_truncated = false;
+
+  void
+  emit (output_stream stream, const output_callback &callback, bool newline)
+  {
+    if (m_truncated)
+      {
+        // Do not leave half a UTF-8 character before the marker: downstream
+        // log decoding would otherwise treat the whole prefix as legacy text.
+        if (!m_pending.empty ())
+          {
+            auto lead = m_pending.size () - 1;
+            while (lead > 0 && m_pending.size () - lead < 4
+                   && (static_cast<unsigned char> (m_pending[lead]) & 0xc0)
+                          == 0x80)
+              --lead;
+            auto byte = static_cast<unsigned char> (m_pending[lead]);
+            std::size_t needed = byte >= 0xc2 && byte <= 0xdf ? 2
+                                 : byte >= 0xe0 && byte <= 0xef ? 3
+                                 : byte >= 0xf0 && byte <= 0xf4 ? 4
+                                                               : 1;
+            if (m_pending.size () - lead < needed)
+              m_pending.resize (lead);
+          }
+        m_pending += " [line truncated]";
+      }
+    auto line = std::string_view (m_pending);
+    if (newline && !m_truncated && !line.empty () && line.back () == '\r')
+      line.remove_suffix (1);
+    callback (line, stream);
+    m_pending.clear ();
+    m_truncated = false;
+  }
 };
 
 }

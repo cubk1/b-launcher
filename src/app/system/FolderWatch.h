@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <atomic>
 #include <functional>
 #include <string>
 #include <thread>
@@ -28,8 +29,11 @@ public:
         return watched;
     }
 
+    bool needsRestart() const { return restartRequired.load(); }
+
 private:
     std::thread thread;
     void* completionPort = nullptr;
     std::vector<std::filesystem::path> watched;
+    std::atomic<bool> restartRequired{false};
 };

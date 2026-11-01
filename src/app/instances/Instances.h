@@ -3,6 +3,7 @@
 #include <core/instance/instance_manager.hpp>
 
 #include <filesystem>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -25,6 +26,7 @@ namespace Instances {
         blb::instance::instance info;
         bool isolated = false;
         std::filesystem::path gameDirectory;
+        uint64_t settingsRevision = 0;
     };
 
     void init();

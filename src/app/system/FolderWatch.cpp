@@ -45,7 +45,8 @@ namespace {
         }
     };
 
-    void run(const std::vector<std::filesystem::path>& folders, const FolderWatch::Changed& changed, HANDLE port) {
+    void run(const std::vector<std::filesystem::path>& folders, const FolderWatch::Changed& changed, HANDLE port,
+             std::atomic<bool>& restartRequired) {
         // Both the reads and queued completion keys point into these records.
         // Keep them alive until the receive loop ends, including failed watches.
         std::vector<std::unique_ptr<Watch>> watches;
@@ -58,10 +59,12 @@ namespace {
             watch->overlapped.hEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
             if (watch->handle == INVALID_HANDLE_VALUE || watch->overlapped.hEvent == nullptr ||
                 CreateIoCompletionPort(watch->handle, port, reinterpret_cast<ULONG_PTR>(watch.get()), 0) == nullptr) {
+                restartRequired = true;
                 continue;
             }
             watches.push_back(std::move(watch));
             if (!watches.back()->read()) {
+                restartRequired = true;
                 watches.back()->close();
             }
         }
@@ -95,6 +98,7 @@ namespace {
                 }
             }
             if (!ok || !watch.read()) {
+                restartRequired = true;
                 watch.close();
             }
         }
@@ -110,6 +114,7 @@ FolderWatch::~FolderWatch() {
 
 void FolderWatch::start(std::vector<std::filesystem::path> folders, Changed changed) {
     stop();
+    restartRequired = false;
     if (folders.empty()) {
         return;
     }
@@ -121,7 +126,9 @@ void FolderWatch::start(std::vector<std::filesystem::path> folders, Changed chan
     try {
         watched = folders;
         thread = std::thread(
-                [folders = std::move(folders), changed = std::move(changed), port] { run(folders, changed, port); });
+                [this, folders = std::move(folders), changed = std::move(changed), port] {
+                    run(folders, changed, port, restartRequired);
+                });
     } catch (...) {
         CloseHandle(port);
         completionPort = nullptr;

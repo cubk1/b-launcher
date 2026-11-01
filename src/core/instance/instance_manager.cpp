@@ -260,6 +260,13 @@ instance_manager::get (std::string_view id) const
     }
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
+  else
+    {
+      out.valid = false;
+      if (!out.problem.empty ())
+        out.problem += "; ";
+      out.problem += settings.err ().message;
+    }
   return out;
 }
 
@@ -314,9 +321,17 @@ instance_manager::load_settings (std::string_view id) const
       return text.err ();
     }
   auto doc = json::parse (*text, nullptr, false);
-  if (doc.is_discarded ())
+  if (doc.is_discarded () || !doc.is_object ())
     return make_error (errc::parse, "invalid instance settings");
-  return settings_from_json (doc);
+  try
+    {
+      return settings_from_json (doc);
+    }
+  catch (const json::exception &e)
+    {
+      return make_error (errc::parse,
+                         sformat ("invalid instance settings: {}", e.what ()));
+    }
 }
 
 result<void>

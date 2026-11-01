@@ -29,7 +29,12 @@ namespace Instances {
 
     namespace {
         using Continuation = std::function<void()>;
-        using Job = std::function<Continuation()>;
+        using Task = std::function<Continuation()>;
+        using Failure = std::function<void(const std::string&)>;
+        struct Job {
+            Task work;
+            Failure failed;
+        };
         using Clock = std::chrono::steady_clock;
 
         constexpr double SAVE_DELAY = 0.5;
@@ -56,7 +61,10 @@ namespace Instances {
         // What runs on each instance being copied, renamed or removed.
         std::unordered_map<std::string, std::string> operating;
         std::unordered_map<std::string, Clock::time_point> pendingSaves;
+        uint64_t settingsRevision = 0;
         int scansInFlight = 0;
+        bool checkingRoots = false;
+        Clock::time_point nextRootCheck;
 
         // What changed in the game folders since they were last read: the versions touched, by game folder, or
         // everything when there is no telling which.
@@ -74,6 +82,7 @@ namespace Instances {
         struct Scan {
             std::vector<Entry> entries;
             std::unordered_map<std::string, bool> exists;
+            uint64_t revision = 0;
         };
 
         blb::instance::instance_manager managerFor(const std::filesystem::path& root) {
@@ -127,7 +136,7 @@ namespace Instances {
                     folders.push_back(source.root);
                 }
             }
-            if (folders == watch.folders()) {
+            if (folders == watch.folders() && !watch.needsRestart()) {
                 return;
             }
             watch.start(folders, [](const std::filesystem::path& folder, const std::wstring& path, bool moved) {
@@ -147,8 +156,9 @@ namespace Instances {
             });
         }
 
-        Scan scan(const std::vector<Source>& from, blb::instance::isolation_mode isolation) {
+        Scan scan(const std::vector<Source>& from, blb::instance::isolation_mode isolation, uint64_t revision) {
             Scan out;
+            out.revision = revision;
             // It reads what changed so far.
             {
                 std::lock_guard<std::mutex> guard(changesLock);
@@ -223,22 +233,33 @@ namespace Instances {
             }
         }
 
+        void preserveSettings(Entry& entry, const Entry* old, uint64_t revision) {
+            if (old == nullptr) {
+                return;
+            }
+            // A save removes the dirty marker, but does not make older reads
+            // current. Retain edits made after this read was requested too.
+            if (pendingSaves.count(entry.key) != 0 || old->settingsRevision > revision) {
+                entry.info.settings = old->info.settings;
+            }
+            entry.settingsRevision = old->settingsRevision;
+        }
+
         void apply(Scan& result) {
+            std::unordered_map<std::string, const Entry*> previous;
+            for (const Entry& entry : entries) {
+                previous.emplace(entry.key, &entry);
+            }
             std::vector<Entry> next;
             for (Entry& entry : result.entries) {
-                if (std::none_of(roots.begin(), roots.end(),
-                                 [&](const Source& source) { return source.key == entry.source; })) {
+                auto source = std::find_if(roots.begin(), roots.end(),
+                        [&](const Source& source) { return source.key == entry.source; });
+                if (source == roots.end()) {
                     continue;
                 }
-                if (pendingSaves.count(entry.key) != 0) {
-                    for (const Entry& old : entries) {
-                        if (old.key == entry.key) {
-                            entry.info.settings = old.info.settings;
-                            entry.isolated = old.isolated;
-                            entry.gameDirectory = old.gameDirectory;
-                        }
-                    }
-                }
+                auto old = previous.find(entry.key);
+                preserveSettings(entry, old != previous.end() ? old->second : nullptr, result.revision);
+                place(entry, managerFor(source->root));
                 next.push_back(std::move(entry));
             }
             entries = std::move(next);
@@ -267,10 +288,16 @@ namespace Instances {
                 }
                 Continuation next;
                 try {
-                    next = job();
+                    next = job.work();
                 } catch (const std::exception& error) {
                     std::string text = error.what();
-                    next = [text] { notify("操作失败：" + text, true); };
+                    next = [text, failed = std::move(job.failed)] {
+                        if (failed) {
+                            failed(text);
+                        } else {
+                            notify("操作失败：" + text, true);
+                        }
+                    };
                 }
                 std::lock_guard<std::mutex> guard(lock);
                 finished.push_back(std::move(next));
@@ -295,12 +322,18 @@ namespace Instances {
             }
         }
 
-        void submit(Job job) {
+        void submit(Task task, Failure failed = {}) {
             {
                 std::lock_guard<std::mutex> guard(lock);
-                jobs.push_back(std::move(job));
+                jobs.push_back(Job{std::move(task), std::move(failed)});
             }
             wake.notify_one();
+        }
+
+        void scanFailed(const std::string& error) {
+            --scansInFlight;
+            scanned = true;
+            notify("读取实例失败：" + error, true);
         }
 
         void loadConfig() {
@@ -474,11 +507,13 @@ namespace Instances {
         struct Update {
             std::vector<Entry> read;
             std::vector<std::string> gone;
+            uint64_t revision = 0;
         };
 
         Update reread(const std::vector<Source>& from, const std::map<std::string, std::set<std::string>>& ids,
-                      blb::instance::isolation_mode isolation) {
+                      blb::instance::isolation_mode isolation, uint64_t revision) {
             Update out;
+            out.revision = revision;
             for (const Source& source : from) {
                 auto wanted = ids.find(source.key);
                 if (wanted == ids.end()) {
@@ -506,17 +541,16 @@ namespace Instances {
         // folder, then by name.
         void merge(Update& update) {
             for (Entry& entry : update.read) {
-                Entry* old = findMutable(entry.key);
-                if (old == nullptr) {
-                    if (sourceMutable(entry.source) != nullptr) {
-                        entries.push_back(std::move(entry));
-                    }
+                const Source* source = sourceMutable(entry.source);
+                if (source == nullptr) {
                     continue;
                 }
-                if (pendingSaves.count(entry.key) != 0) {
-                    entry.info.settings = old->info.settings;
-                    entry.isolated = old->isolated;
-                    entry.gameDirectory = old->gameDirectory;
+                Entry* old = findMutable(entry.key);
+                preserveSettings(entry, old, update.revision);
+                place(entry, managerFor(source->root));
+                if (old == nullptr) {
+                    entries.push_back(std::move(entry));
+                    continue;
                 }
                 *old = std::move(entry);
             }
@@ -549,14 +583,15 @@ namespace Instances {
             std::string id = entry->info.id;
             std::vector<Source> all = roots;
             blb::instance::isolation_mode isolation = mode;
+            uint64_t revision = settingsRevision;
             running++;
             activityText = activity + " " + id;
             operating[key] = activity;
             std::string notice = Notices::live(Notices::Kind::Info, activityText);
-            submit([key, with, id, all, isolation, success, failure, notice, operation, done]() -> Continuation {
+            submit([key, with, id, all, isolation, revision, success, failure, notice, operation, done]() -> Continuation {
                 blb::result<void> outcome = operation(with, id);
                 std::string error = outcome ? std::string() : outcome.err().message;
-                Scan fresh = scan(all, isolation);
+                Scan fresh = scan(all, isolation, revision);
                 return [key, success, failure, notice, done, error, fresh]() mutable {
                     if (--running == 0) {
                         activityText.clear();
@@ -572,6 +607,15 @@ namespace Instances {
                         done(error);
                     }
                 };
+            }, [key, failure, notice, done](const std::string& error) {
+                if (--running == 0) {
+                    activityText.clear();
+                }
+                operating.erase(key);
+                Notices::finish(notice, Notices::Kind::Failed, failure + error, 4000);
+                if (done) {
+                    done(error);
+                }
             });
         }
 
@@ -633,6 +677,43 @@ namespace Instances {
                 ++it;
             }
         }
+        // A missing root cannot notify us when it comes back. Probe only these
+        // paths on the worker; read instance JSON only after a root reappears.
+        if (scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
+            !checkingRoots && now >= nextRootCheck) {
+            nextRootCheck = now + std::chrono::seconds(2);
+            std::vector<Source> missing;
+            for (const Source& source : roots) {
+                if (!source.exists) {
+                    missing.push_back(source);
+                }
+            }
+            if (!missing.empty()) {
+                checkingRoots = true;
+                submit([missing = std::move(missing)]() -> Continuation {
+                    std::vector<Source> returned;
+                    for (const Source& source : missing) {
+                        std::error_code error;
+                        if (std::filesystem::is_directory(source.root, error)) {
+                            returned.push_back(source);
+                        }
+                    }
+                    return [returned = std::move(returned)] {
+                        checkingRoots = false;
+                        for (const Source& source : returned) {
+                            const Source* current = sourceMutable(source.key);
+                            if (current != nullptr && current->root == source.root && !current->exists) {
+                                refresh();
+                                break;
+                            }
+                        }
+                    };
+                }, [](const std::string& error) {
+                    checkingRoots = false;
+                    notify("检查游戏目录失败：" + error, true);
+                });
+            }
+        }
         // While the launcher changes instances itself, it reads them again when it is done anyway.
         Clock::rep at = changedAt;
         if (at != 0 && scanned && scansInFlight == 0 && running == 0 && !Installer::running() &&
@@ -647,10 +728,11 @@ namespace Instances {
             flushSaves();
             std::vector<Source> all = roots;
             blb::instance::isolation_mode isolation = mode;
+            uint64_t revision = settingsRevision;
             if (taken.everything) {
                 scansInFlight++;
-                submit([all, isolation]() -> Continuation {
-                    Scan fresh = scan(all, isolation);
+                submit([all, isolation, revision]() -> Continuation {
+                    Scan fresh = scan(all, isolation, revision);
                     return [fresh]() mutable {
                         scansInFlight--;
                         if (running == 0 && !Installer::running()) {
@@ -658,13 +740,13 @@ namespace Instances {
                         }
                         apply(fresh);
                     };
-                });
+                }, scanFailed);
             } else if (!taken.versions.empty()) {
                 // Only the instances the changes touch are read again.
                 std::map<std::string, std::set<std::string>> ids = affected(taken.versions);
                 scansInFlight++;
-                submit([all, isolation, ids]() -> Continuation {
-                    Update update = reread(all, ids, isolation);
+                submit([all, isolation, revision, ids]() -> Continuation {
+                    Update update = reread(all, ids, isolation, revision);
                     return [update]() mutable {
                         scansInFlight--;
                         if (running == 0 && !Installer::running()) {
@@ -672,7 +754,7 @@ namespace Instances {
                         }
                         merge(update);
                     };
-                });
+                }, scanFailed);
             }
         }
     }
@@ -777,9 +859,10 @@ namespace Instances {
         flushSaves();
         std::vector<Source> all = roots;
         blb::instance::isolation_mode isolation = mode;
+        uint64_t revision = settingsRevision;
         scansInFlight++;
-        submit([all, isolation, done]() -> Continuation {
-            Scan fresh = scan(all, isolation);
+        submit([all, isolation, revision, done]() -> Continuation {
+            Scan fresh = scan(all, isolation, revision);
             return [fresh, done]() mutable {
                 scansInFlight--;
                 apply(fresh);
@@ -787,6 +870,11 @@ namespace Instances {
                     done();
                 }
             };
+        }, [done](const std::string& error) {
+            scanFailed(error);
+            if (done) {
+                done();
+            }
         });
     }
 
@@ -854,6 +942,7 @@ namespace Instances {
             return;
         }
         edit(entry->info.settings);
+        entry->settingsRevision = ++settingsRevision;
         place(*entry, managerFor(from->root));
         pendingSaves[key] = Clock::now();
     }
