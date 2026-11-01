@@ -41,6 +41,9 @@ namespace Page {
     void listCard(float x, float y, float w, float rowHeight, int rows);
     void card(float y, int rows);
     void label(const std::string& text, float y);
+    float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink, float padding = 6.0f);
+    // Paint the supplied fraction; callers own animation and unknown-progress state.
+    void progressRing(float cx, float cy, float fraction);
     void spinner(float cx, float cy, float radius, uint32_t color);
     void spinnerArc(float& from, float& to);
     // Shared controls in the main window's page coordinate space.

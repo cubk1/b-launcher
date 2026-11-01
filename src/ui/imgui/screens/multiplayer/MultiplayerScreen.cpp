@@ -39,7 +39,6 @@ namespace MultiplayerScreen {
         constexpr int VIEW_ROOM = 2;
 
         constexpr float CODE_SIZE = 18.0f;
-        constexpr float TAG_H = 18.0f;
         constexpr float BUTTON_MIN = 96.0f;
         constexpr float ICON_INSET = 20.0f;
         constexpr float WELCOME_W = 360.0f;
@@ -128,14 +127,6 @@ namespace MultiplayerScreen {
                     UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, std::max(0.0f, right - left));
             UiRender::textY(shown, left, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
-        }
-
-        float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink) {
-            float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
-            float y = rowY + (Page::ROW_H - TAG_H) * 0.5f;
-            UiRender::roundRect(x, y, w, TAG_H, 6.0f, fill);
-            UiRender::textY(text, x + 6.0f, y, TAG_H, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            return w;
         }
 
         std::string digits(const std::string& text, size_t limit) {
@@ -655,10 +646,10 @@ namespace MultiplayerScreen {
                             UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             x += UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
             if (member.host) {
-                x += tag("房主", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText()) + 4.0f;
+                x += Page::tag("房主", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText()) + 4.0f;
             }
             if (member.self) {
-                x += tag("你", x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
+                x += Page::tag("你", x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
             }
             float right = Page::controlRight();
             if (manage && !member.self) {

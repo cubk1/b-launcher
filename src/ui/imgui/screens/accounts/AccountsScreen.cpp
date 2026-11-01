@@ -70,14 +70,6 @@ namespace AccountsScreen {
             });
         }
 
-        float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink) {
-            float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 14.0f;
-            float y = rowY + (Page::ROW_H - 18.0f) * 0.5f;
-            UiRender::roundRect(x, y, w, 18.0f, 6.0f, fill);
-            UiRender::textY(text, x + 7.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            return w;
-        }
-
         void avatar(uint32_t face, const std::string& name, float rowY) {
             float x = Page::left() + 16.0f;
             float y = rowY + (Page::ROW_H - AVATAR) * 0.5f;
@@ -156,10 +148,10 @@ namespace AccountsScreen {
             UiRender::textY(account.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             float tagX = nameX() + nameW + 10.0f;
-            tagX += tag(Accounts::kindOf(account), tagX, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) +
+            tagX += Page::tag(Accounts::kindOf(account), tagX, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary(), 7.0f) +
                     6.0f;
             if (Accounts::expired(key)) {
-                tag("需要重新登录", tagX, rowY, UiTheme::dangerSoft(), UiTheme::danger());
+                Page::tag("需要重新登录", tagX, rowY, UiTheme::dangerSoft(), UiTheme::danger(), 7.0f);
             }
 
             float menuX = Page::controlRight() - 26.0f;

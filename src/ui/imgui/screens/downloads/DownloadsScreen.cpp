@@ -13,7 +13,6 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/downloads/ProjectBrowser.h"
 
-#include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
@@ -211,18 +210,8 @@ namespace DownloadsScreen {
                 Page::spinner(cx, cy, 7.0f, UiTheme::accent());
                 return;
             }
-            const float tau = 6.28318531f;
-            float r = UiRender::transformW(7.0f);
-            float stroke = UiRender::transformW(1.7f);
-            float x = UiRender::transformX(cx);
-            float y = UiRender::transformY(cy);
-            ShaderUtil::arc(x, y, r, stroke, 0.0f, tau,
-                            UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
             float shown = UiState::motion("downloads#ring#" + id, fraction, 10.0f);
-            if (shown > 0.001f) {
-                ShaderUtil::arc(x, y, r, stroke, -tau * 0.25f, -tau * 0.25f + tau * std::min(1.0f, shown),
-                                UiRender::applyAlpha(UiTheme::accent()));
-            }
+            Page::progressRing(cx, cy, shown);
         }
 
         bool hasLoaders(Kind kind) {

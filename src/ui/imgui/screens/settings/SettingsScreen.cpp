@@ -23,7 +23,6 @@
 
 #include <core/base/strings.hpp>
 
-#include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
@@ -547,14 +546,6 @@ namespace SettingsScreen {
             }
         }
 
-        float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink) {
-            float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
-            float y = rowY + (Page::ROW_H - 18.0f) * 0.5f;
-            UiRender::roundRect(x, y, w, 18.0f, 6.0f, fill);
-            UiRender::textY(text, x + 6.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            return w;
-        }
-
         void javaMenu(const blb::java::java_installation& java, float x, float y) {
             std::filesystem::path executable = java.executable;
             std::filesystem::path home = java.home;
@@ -632,7 +623,7 @@ namespace SettingsScreen {
                 const blb::java::java_installation& java = list[i];
                 std::string id = "settings#java#" + std::to_string(i);
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == rows - 1 ? 4 | 8 : 0));
+                Page::rowHover(id, rowY, hovered, Page::rowCorners(i, rows));
                 UiWidgets::icon(Ui::glyph(0xf0f4), mainX() + 24.0f, rowY + Page::ROW_H * 0.5f, UiTheme::textMuted(),
                                 12.0f);
                 std::string name = "Java " + (java.version.empty() ? std::to_string(java.major) : java.version);
@@ -640,13 +631,13 @@ namespace SettingsScreen {
                 UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
                 x += UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
-                x += tag(java.jdk ? "JDK" : "JRE", x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
+                x += Page::tag(java.jdk ? "JDK" : "JRE", x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
                 std::string arch = archName(java.arch);
                 if (!arch.empty()) {
-                    x += tag(arch, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
+                    x += Page::tag(arch, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
                 }
                 if (Catalog::addedByHand(java.executable)) {
-                    x += tag("手动添加", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText()) + 4.0f;
+                    x += Page::tag("手动添加", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText()) + 4.0f;
                 }
                 float menuX = Page::controlRight() - 28.0f;
                 std::string where = Platform::display(java.home);
@@ -665,20 +656,6 @@ namespace SettingsScreen {
                 }
             }
             body.end();
-        }
-
-        void javaRing(float cx, float cy, float fraction) {
-            const float tau = 6.28318531f;
-            float r = UiRender::transformW(7.0f);
-            float stroke = UiRender::transformW(1.7f);
-            float x = UiRender::transformX(cx);
-            float y = UiRender::transformY(cy);
-            ShaderUtil::arc(x, y, r, stroke, 0.0f, tau,
-                            UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
-            if (fraction > 0.001f) {
-                ShaderUtil::arc(x, y, r, stroke, -tau * 0.25f, -tau * 0.25f + tau * std::min(1.0f, fraction),
-                                UiRender::applyAlpha(UiTheme::accent()));
-            }
         }
 
         std::shared_ptr<ModeBinding> majorChoice(const std::vector<JavaDownloads::Package>& packages) {
@@ -753,7 +730,7 @@ namespace SettingsScreen {
                 const JavaDownloads::Package& package = *shown[i];
                 std::string id = "settings#java#get#" + package.folder;
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == rows - 1 ? 4 | 8 : 0));
+                Page::rowHover(id, rowY, hovered, Page::rowCorners(i, rows));
                 float cy = rowY + Page::ROW_H * 0.5f;
                 UiWidgets::icon(Ui::glyph(0xf0f4), mainX() + 24.0f, cy, UiTheme::textMuted(), 12.0f);
 
@@ -762,7 +739,7 @@ namespace SettingsScreen {
                 float right = Page::controlRight();
                 float actionX = right;
                 if (state == JavaDownloads::State::Running) {
-                    javaRing(right - 10.0f, cy, JavaDownloads::progress(package.folder));
+                    Page::progressRing(right - 10.0f, cy, JavaDownloads::progress(package.folder));
                     actionX = right - 24.0f;
                 } else if (done) {
                     std::string text = "已安装";
@@ -797,9 +774,9 @@ namespace SettingsScreen {
                 UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
                 x += UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
-                x += tag(package.version, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
+                x += Page::tag(package.version, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
                 if (package.preview) {
-                    tag("预览", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText());
+                    Page::tag("预览", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText());
                 }
             }
             body.end();
@@ -901,8 +878,7 @@ namespace SettingsScreen {
         }
 
         void hero(float y, bool blocked) {
-            UiRender::roundRect(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::surface());
-            UiRender::outline(mainX(), y, mainW(), HERO_H, 12.0f, UiTheme::outlineSoft());
+            Page::card(mainX(), y, mainW(), HERO_H);
             Logo::draw(mainX() + 20.0f, y + (HERO_H - LOGO) * 0.5f, LOGO);
             const std::string name = About::BRAND;
             float textX = mainX() + 20.0f + LOGO + 14.0f;
@@ -910,7 +886,7 @@ namespace SettingsScreen {
             float x = textX;
             UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += tag(std::string("v") + About::VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
+            x += Page::tag(std::string("v") + About::VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
                      UiTheme::accentText());
             tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);
@@ -925,7 +901,7 @@ namespace SettingsScreen {
                 }
                 std::string id = std::string(prefix) + link.name;
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, (i == 0 ? 1 | 2 : 0) | (i == count - 1 ? 4 | 8 : 0));
+                Page::rowHover(id, rowY, hovered, Page::rowCorners(i, count));
                 Page::label(link.name, rowY);
                 float amount = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
                 float linkX = Page::controlRight() - 6.0f;

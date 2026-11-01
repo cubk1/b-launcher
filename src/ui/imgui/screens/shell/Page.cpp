@@ -112,6 +112,29 @@ namespace Page {
                         UiWidgets::TEXT_CONTROL);
     }
 
+    float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink, float padding) {
+        constexpr float height = 18.0f;
+        float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 2.0f * padding;
+        float y = rowY + (ROW_H - height) * 0.5f;
+        UiRender::roundRect(x, y, w, height, 6.0f, fill);
+        UiRender::textY(text, x + padding, y, height, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+        return w;
+    }
+
+    void progressRing(float cx, float cy, float fraction) {
+        const float tau = 6.28318531f;
+        float r = UiRender::transformW(7.0f);
+        float stroke = UiRender::transformW(1.7f);
+        float x = UiRender::transformX(cx);
+        float y = UiRender::transformY(cy);
+        ShaderUtil::arc(x, y, r, stroke, 0.0f, tau,
+                        UiRender::applyAlpha((UiTheme::accent() & 0x00FFFFFFu) | 0x40000000u));
+        if (fraction > 0.001f) {
+            ShaderUtil::arc(x, y, r, stroke, -tau * 0.25f, -tau * 0.25f + tau * std::min(1.0f, fraction),
+                            UiRender::applyAlpha(UiTheme::accent()));
+        }
+    }
+
     void tooltip(const std::string& text, float x, float y, float w, float h) {
         float tipW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22;
         NewUi::tooltipText = text;
