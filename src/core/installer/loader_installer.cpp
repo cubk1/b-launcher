@@ -119,20 +119,25 @@ struct loader_installer::impl
   std::optional<std::vector<java::java_installation>> java_cache;
 
   result<java::java_installation>
-  default_java (const meta::version &vanilla)
+  default_java (const meta::version &vanilla, progress_sink *sink,
+                cancellation_token token)
   {
+    BLB_TRY (token.check ());
     auto requirement = java::requirement_for (vanilla);
     std::lock_guard lock (java_mutex);
+    BLB_TRY (token.check ());
     if (!java_cache)
       {
         auto options = installer->options ().java_scan;
         options.runtime_roots.push_back (installer->layout ().runtime ());
-        java_cache = java::scan_java (options);
+        auto found = java::scan_java (options, token);
+        BLB_TRY (token.check ());
+        java_cache = std::move (found);
       }
     if (auto chosen = java::select_java (*java_cache, requirement))
       return *chosen;
     BLB_TRY_ASSIGN (auto installed,
-                    java::install_runtime (*installer, requirement.component));
+                    java::install_runtime (*installer, requirement.component, sink, token));
     java_cache->push_back (installed);
     return installed;
   }
@@ -162,16 +167,19 @@ loader_installer::install (const install_request &request, progress_sink *sink,
   auto &installer = *m_impl->installer;
   const auto &layout = installer.layout ();
   auto started = std::chrono::steady_clock::now ();
-  bool vanilla_existed = fs::exists (layout.version_json (request.minecraft));
+  // Official metadata and client jars are inputs, not user instances. Keep
+  // them separate while sharing the libraries, assets and managed runtimes.
+  meta::game_layout base_layout (layout.root (), layout.cache () / "vanilla");
+  game_installer base_installer (base_layout, installer.options ());
 
   detail::loader_context ctx;
-  ctx.installer = &installer;
+  ctx.installer = &base_installer;
   ctx.minecraft = request.minecraft;
   ctx.sink = sink;
   ctx.token = token;
   ctx.temp_dir = layout.cache () / "install" / random_bytes_hex (6);
-  ctx.java = m_impl->java ? m_impl->java : [this] (const meta::version &v) {
-    return m_impl->default_java (v);
+  ctx.java = m_impl->java ? m_impl->java : [this, sink, token] (const meta::version &v) {
+    return m_impl->default_java (v, sink, token);
   };
   for (const auto &l : request.loaders)
     if (l.type == loader_type::forge || l.type == loader_type::neoforge
@@ -181,6 +189,11 @@ loader_installer::install (const install_request &request, progress_sink *sink,
         ctx.modern_forge = compare_versions (request.minecraft, "1.13") >= 0;
       }
   BLB_TRY (fs::create_directories (ctx.temp_dir));
+  struct cleanup
+  {
+    std::filesystem::path directory;
+    ~cleanup () { (void)fs::remove_all (directory); }
+  } remove_temp { ctx.temp_dir };
 
   std::vector<std::unique_ptr<detail::loader_job>> jobs;
   for (const auto &l : request.loaders)
@@ -191,9 +204,26 @@ loader_installer::install (const install_request &request, progress_sink *sink,
   task_graph graph;
   auto vanilla_json
       = graph.add ("vanilla:json", [&] (cancellation_token t) -> result<void> {
-          BLB_TRY (installer.fetch_version_json (request.minecraft, t));
+          BLB_TRY_ASSIGN (auto manifest, base_installer.manifest (t));
+          if (manifest.find (request.minecraft))
+            BLB_TRY (base_installer.fetch_version_json (request.minecraft, t));
+          else
+            {
+              // Preserve support for locally supplied base versions, but take
+              // a fresh snapshot rather than preparing files in their folder.
+              BLB_TRY_ASSIGN (auto local, meta::resolve_version (layout, request.minecraft));
+              auto source = layout.version_jar (local.jar_id ());
+              auto target = base_layout.version_jar (request.minecraft);
+              if (fs::exists (source))
+                BLB_TRY (fs::copy_file (source, target));
+              else
+                BLB_TRY (fs::remove_file (target));
+              local.inherits_from.clear ();
+              local.jar.clear ();
+              BLB_TRY (meta::save_version (base_layout, local));
+            }
           BLB_TRY_ASSIGN (vanilla,
-                          meta::resolve_version (layout, request.minecraft));
+                          meta::resolve_version (base_layout, request.minecraft));
           ctx.vanilla = &vanilla;
           return {};
         });
@@ -221,7 +251,7 @@ loader_installer::install (const install_request &request, progress_sink *sink,
       resolves);
   auto vanilla_core = graph.add ("vanilla:core",
                                  [&] (cancellation_token t) -> result<void> {
-                                   BLB_TRY (installer.complete_version (
+                                   BLB_TRY (base_installer.complete_version (
                                        vanilla, meta::rule_context::current (),
                                        sink, t, true, completion_scope::core));
                                    return {};
@@ -236,56 +266,44 @@ loader_installer::install (const install_request &request, progress_sink *sink,
                                 },
                                 { naming });
       graph.add ("finalize:" + name,
-                 [&ctx, j = job.get ()] (cancellation_token) {
-                   return j->finalize (ctx);
+                 [this, &ctx, j = job.get ()] (cancellation_token t) {
+                   auto task = ctx;
+                   task.token = t;
+                   if (!m_impl->java)
+                     task.java = [this, sink = ctx.sink, t] (const meta::version &v) {
+                       return m_impl->default_java (v, sink, t);
+                     };
+                   return j->finalize (task);
                  },
                  { vanilla_core, prepare });
     }
   graph.add ("vanilla:assets",
              [&] (cancellation_token t) -> result<void> {
-               BLB_TRY (installer.complete_version (
+               BLB_TRY (base_installer.complete_version (
                    vanilla, meta::rule_context::current (), sink, t, true,
                    completion_scope::assets));
                return {};
              },
              { vanilla_json });
-  auto graph_result = graph.run (token, sink);
-  (void)fs::remove_all (ctx.temp_dir);
-  BLB_TRY (graph_result);
+  BLB_TRY (graph.run (token, sink));
+  BLB_TRY (token.check ());
 
   std::vector<detail::loader_patch> patches;
   for (const auto &job : jobs)
     if (auto p = job->patch ())
       patches.push_back (std::move (*p));
-  if (patches.empty ())
-    {
-      s_log.info ("installed {} without version patches", id);
-      if (id == request.minecraft)
-        return id;
-    }
   auto merged = merge_patches (patches, vanilla, id, request.minecraft);
   if (merged.main_class.empty ())
     merged.main_class = vanilla.main_class;
-  meta::version standalone;
-  if (id == request.minecraft)
-    {
-      standalone = meta::merge_versions (vanilla, merged);
-    }
-  else
-    {
-      BLB_TRY (meta::save_version (layout, merged));
-      BLB_TRY_ASSIGN (standalone, meta::resolve_version (layout, id));
-      auto vanilla_jar = layout.version_jar (vanilla.jar_id ());
-      if (fs::exists (vanilla_jar))
-        BLB_TRY (fs::copy_file (vanilla_jar, layout.version_jar (id)));
-    }
+  auto standalone = meta::merge_versions (vanilla, merged);
+  auto vanilla_jar = base_layout.version_jar (vanilla.jar_id ());
+  if (fs::exists (vanilla_jar))
+    BLB_TRY (fs::copy_file (vanilla_jar, layout.version_jar (id)));
   standalone.inherits_from.clear ();
   standalone.chain.clear ();
   standalone.jar.clear ();
   standalone.client_version = request.minecraft;
   BLB_TRY (meta::save_version (layout, standalone));
-  if (!vanilla_existed && id != request.minecraft)
-    (void)fs::remove_all (layout.version_dir (request.minecraft));
   BLB_TRY_ASSIGN (auto final_version, meta::resolve_version (layout, id));
   BLB_TRY (installer.complete_version (final_version,
                                        meta::rule_context::current (), sink,

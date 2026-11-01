@@ -51,7 +51,7 @@ std::filesystem::path
 java_home_from_executable (const std::filesystem::path &executable);
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
-            bool allow_process = true);
+            bool allow_process = true, cancellation_token token = {});
 std::vector<java_installation> scan_java (const scan_options &options = {},
                                           cancellation_token token = {});
 

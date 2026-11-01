@@ -21,6 +21,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <thread>
@@ -102,7 +103,30 @@ namespace ProjectInstaller {
             std::map<std::string, std::pair<unsigned long long, unsigned long long>> sizes;
         };
 
-        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& target) {
+        bool safeFilename(std::string_view name) {
+            if (!blb::fs::safe_relative(name) || name == "." ||
+                name.find_first_of("/\\*?\"<>|") != std::string_view::npos ||
+                name.back() == '.' || name.back() == ' ') {
+                return false;
+            }
+            for (unsigned char c : name) {
+                if (c < 32 || c == 127) return false;
+            }
+            auto stem = blb::to_lower(name.substr(0, name.find('.')));
+            if (stem == "con" || stem == "prn" || stem == "aux" || stem == "nul" ||
+                stem == "conin$" || stem == "conout$") return false;
+            return !(stem.size() == 4 && (stem.starts_with("com") || stem.starts_with("lpt")) &&
+                     stem[3] >= '1' && stem[3] <= '9');
+        }
+
+        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& directory) {
+            if (!safeFilename(file.filename) || directory.empty()) {
+                throw std::runtime_error("下载文件名或保存目录无效");
+            }
+            auto target = directory / blb::path_from_utf8(file.filename);
+            if (!blb::fs::is_inside(directory, target) || blb::fs::stat(target).is_link) {
+                throw std::runtime_error("下载路径超出保存目录或指向链接");
+            }
             blb::net::download_task task;
             task.urls = Addons::fileUrls(file.url);
             task.target = target;
@@ -128,6 +152,125 @@ namespace ProjectInstaller {
         void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text) {
             task->state = (int) (ok ? State::Done : State::Failed);
             Notices::add(ok ? Notices::Kind::Done : Notices::Kind::Failed, text, ok ? 3000 : 5000);
+        }
+
+        blb::result<std::vector<Addons::Version>> resolveDependencies(
+                const Addons::Version& root, const std::string& gameVersion,
+                const std::string& loader, blb::cancellation_token token) {
+            using Key = std::pair<Addons::Source, std::string>;
+            if (root.id.empty() || root.projectId.empty()) {
+                return blb::make_error(blb::errc::parse, "模组缺少项目或版本信息");
+            }
+            Key rootKey{root.source, root.projectId};
+            std::map<Key, Addons::Version> selected{{rootKey, root}};
+            std::map<Key, Addons::Version> cached{{{root.source, root.id}, root}};
+            std::map<Key, blb::error> unavailable;
+            auto fetch = [&](Addons::Source source, const std::string& project,
+                             const std::string& version) -> blb::result<Addons::Version> {
+                BLB_TRY(token.check());
+                Key lookup{source, version.empty() ? "project:" + project : "version:" + version};
+                if (auto failed = unavailable.find(lookup); failed != unavailable.end()) return failed->second;
+                auto found = cached.find({source, version});
+                if (version.empty() || found == cached.end()) {
+                    auto response = version.empty()
+                            ? Addons::fetchProjectVersions(source, project, gameVersion, loader)
+                            : Addons::fetchVersion(source, version);
+                    BLB_TRY(token.check());
+                    if (!response.ok || response.versions.empty()) {
+                        auto error = blb::make_error(blb::errc::network, "无法获取必需前置 " +
+                                (version.empty() ? project : version) + "：" +
+                                (response.error.empty() ? "没有兼容版本" : response.error));
+                        unavailable.emplace(lookup, error);
+                        return error;
+                    }
+                    auto value = std::move(response.versions.front());
+                    if (value.id.empty() || value.projectId.empty() ||
+                        (!version.empty() && value.id != version)) {
+                        return blb::make_error(blb::errc::parse, "前置返回的版本信息无效");
+                    }
+                    value.source = source;
+                    found = cached.insert_or_assign(Key{source, value.id}, value).first;
+                }
+                if (!project.empty() && found->second.projectId != project) {
+                    return blb::make_error(blb::errc::parse, "前置版本不属于指定的项目");
+                }
+                return found->second;
+            };
+
+            for (size_t round = 0; round < DEPENDENCY_LIMIT; ++round) {
+                BLB_TRY(token.check());
+                size_t knownBefore = selected.size();
+                std::map<Key, std::set<std::string>> pins{{rootKey, {root.id}}};
+                std::set<Key> visited;
+                std::vector<Key> queue{rootKey};
+                std::vector<Addons::Version> reached;
+                std::optional<blb::error> failure;
+                for (size_t i = 0; i < queue.size(); ++i) {
+                    Key key = queue[i];
+                    if (!visited.insert(key).second) continue;
+                    const auto& value = selected.at(key);
+                    reached.push_back(value);
+                    for (const auto& dependency : value.dependencies) {
+                        if (!dependency.required) continue;
+                        std::string project = dependency.projectId;
+                        if (project.empty()) {
+                            if (dependency.versionId.empty()) {
+                                return blb::make_error(blb::errc::parse, "必需前置缺少项目或版本信息");
+                            }
+                            auto exact = fetch(value.source, {}, dependency.versionId);
+                            if (!exact) {
+                                if (exact.err().code == blb::errc::cancelled) return exact.err();
+                                failure = exact.err();
+                                continue;
+                            }
+                            project = exact->projectId;
+                        }
+                        Key next{value.source, project};
+                        if (!dependency.versionId.empty()) pins[next].insert(dependency.versionId);
+                        if (!selected.contains(next)) {
+                            if (selected.size() >= DEPENDENCY_LIMIT) {
+                                return blb::make_error(blb::errc::parse, "依赖关系过多，无法完成安装");
+                            }
+                            auto candidate = fetch(value.source, project, dependency.versionId);
+                            if (!candidate) {
+                                if (candidate.err().code == blb::errc::cancelled) return candidate.err();
+                                failure = candidate.err();
+                                continue;
+                            }
+                            selected.emplace(next, std::move(*candidate));
+                        }
+                        queue.push_back(next);
+                    }
+                }
+                bool changed = false;
+                for (const auto& [key, versions] : pins) {
+                    if (versions.size() != 1) continue;
+                    auto current = selected.find(key);
+                    if (current != selected.end() && current->second.id == *versions.begin()) continue;
+                    auto exact = fetch(key.first, key.second, *versions.begin());
+                    if (!exact) {
+                        if (exact.err().code == blb::errc::cancelled) return exact.err();
+                        failure = exact.err();
+                        continue;
+                    }
+                    selected[key] = std::move(*exact);
+                    changed = true;
+                }
+                // A pin can replace an unconstrained choice. Rebuild reachable
+                // dependencies before judging conflicts or downloading files,
+                // since dependencies of the replaced version no longer apply.
+                if (changed || (failure && selected.size() != knownBefore)) continue;
+                for (const auto& [key, versions] : pins) {
+                    if (versions.size() > 1) {
+                        std::vector<std::string> ids(versions.begin(), versions.end());
+                        return blb::make_error(blb::errc::incompatible,
+                                "前置版本冲突：" + key.second + " 同时要求 " + blb::join(ids, "、"));
+                    }
+                }
+                if (failure) return *failure;
+                return reached;
+            }
+            return blb::make_error(blb::errc::incompatible, "依赖版本约束无法满足");
         }
     }
 
@@ -183,7 +326,7 @@ namespace ProjectInstaller {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
         std::string sub = folder(kind);
-        if (entry == nullptr || file == nullptr || sub.empty()) {
+        if (entry == nullptr || file == nullptr || sub.empty() || !safeFilename(file->filename)) {
             return false;
         }
         std::error_code error;
@@ -207,67 +350,36 @@ namespace ProjectInstaller {
         run(task, [task, target, gameVersion, loader, chosen, kind, title,
              instanceName](blb::cancellation_token token) -> Continuation {
             std::vector<blb::net::download_task> files;
-            std::set<std::string> projects = {chosen.projectId};
-            std::set<std::string> versions = {chosen.id};
             std::set<std::string> names;
             auto add = [&](const Addons::Version& version) {
                 const Addons::File* file = version.file();
-                if (file == nullptr || !blb::fs::safe_relative(file->filename) ||
-                    file->filename.find_first_of("/\\") != std::string::npos || file->url.empty()) {
+                if (file == nullptr || file->url.empty()) {
                     throw std::runtime_error("模组文件信息无效");
                 }
-                if (file != nullptr && names.insert(file->filename).second) {
-                    files.push_back(taskFor(*file, target / blb::path_from_utf8(file->filename)));
+                if (names.insert(file->filename).second) {
+                    files.push_back(taskFor(*file, target));
                 }
             };
             add(chosen);
             int dependencies = 0;
-            std::vector<Addons::Version> level = {chosen};
-            while (kind == Addons::Kind::Mod && !level.empty()) {
-                std::vector<Addons::Version> next;
-                for (const Addons::Version& version : level) {
-                    for (const Addons::Dependency& dependency : version.dependencies) {
-                        if (!dependency.required) {
-                            continue;
-                        }
-                        if (!dependency.projectId.empty()) {
-                            if (!projects.insert(dependency.projectId).second) continue;
-                        } else if (!dependency.versionId.empty()) {
-                            if (!versions.insert(dependency.versionId).second) continue;
-                        } else {
-                            throw std::runtime_error("必需前置缺少项目或版本信息");
-                        }
-                        if (projects.size() + versions.size() > DEPENDENCY_LIMIT) {
-                            throw std::runtime_error("依赖关系过多，无法完成安装");
-                        }
-                        Addons::Fetched fetched = !dependency.versionId.empty()
-                                ? Addons::fetchVersion(version.source, dependency.versionId)
-                                : Addons::fetchProjectVersions(version.source, dependency.projectId, gameVersion,
-                                                               loader);
-                        if (token.is_cancelled()) {
-                            return nullptr;
-                        }
-                        if (!fetched.ok || fetched.versions.empty()) {
-                            throw std::runtime_error("无法获取必需前置 " +
-                                    (dependency.versionId.empty() ? dependency.projectId : dependency.versionId) +
-                                    "：" + (fetched.error.empty() ? "没有兼容版本" : fetched.error));
-                        }
-                        const Addons::Version& found = fetched.versions.front();
-                        const Addons::File* file = found.file();
-                        std::error_code error;
-                        if (file == nullptr) {
-                            throw std::runtime_error("必需前置没有可下载的文件");
-                        }
-                        if (!std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
-                            add(found);
-                            dependencies++;
-                        }
-                        if (!found.projectId.empty()) projects.insert(found.projectId);
-                        versions.insert(found.id);
-                        next.push_back(found);
+            if (kind == Addons::Kind::Mod) {
+                auto resolved = resolveDependencies(chosen, gameVersion, loader, token);
+                if (!resolved) {
+                    if (resolved.err().code == blb::errc::cancelled) return nullptr;
+                    throw std::runtime_error(resolved.err().message);
+                }
+                for (size_t i = 1; i < resolved->size(); ++i) {
+                    const auto& found = (*resolved)[i];
+                    const auto* file = found.file();
+                    if (file == nullptr || !safeFilename(file->filename)) {
+                        throw std::runtime_error("必需前置没有有效的下载文件");
+                    }
+                    std::error_code error;
+                    if (!std::filesystem::exists(target / blb::path_from_utf8(file->filename), error)) {
+                        add(found);
+                        dependencies++;
                     }
                 }
-                level = std::move(next);
             }
             std::error_code error;
             std::filesystem::create_directories(target, error);
@@ -293,9 +405,12 @@ namespace ProjectInstaller {
             return;
         }
         std::shared_ptr<Task> task = begin(version.id);
-        std::vector<blb::net::download_task> files = {taskFor(*file, folder / blb::path_from_utf8(file->filename))};
+        Addons::File chosen = *file;
         std::string where = Platform::display(folder);
-        run(task, [task, files, title, where](blb::cancellation_token token) -> Continuation {
+        run(task, [task, chosen, folder, title, where](blb::cancellation_token token) -> Continuation {
+            // Construct and validate the target inside the task so rejection
+            // also clears Running and reports an ordinary download failure.
+            std::vector<blb::net::download_task> files = {taskFor(chosen, folder)};
             std::string problem = download(files, task, token);
             if (token.is_cancelled()) {
                 return nullptr;

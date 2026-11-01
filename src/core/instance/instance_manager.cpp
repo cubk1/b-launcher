@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace b_launcher_base::instance
 {
@@ -90,7 +91,22 @@ settings_to_json (const instance_settings &s)
   return out;
 }
 
-instance_settings
+result<std::uint32_t>
+memory_from_json (const json &doc, const char *key)
+{
+  auto it = doc.find (key);
+  if (it == doc.end ())
+    return 0u;
+  if (!it->is_number_integer ()
+      || (!it->is_number_unsigned () && it->get<std::int64_t> () < 0)
+      || it->get<std::uint64_t> () > std::numeric_limits<std::uint32_t>::max ())
+    return make_error (errc::parse,
+                       sformat ("{} must be an integer between 0 and {}", key,
+                                std::numeric_limits<std::uint32_t>::max ()));
+  return it->get<std::uint32_t> ();
+}
+
+result<instance_settings>
 settings_from_json (const json &doc)
 {
   instance_settings s;
@@ -100,8 +116,8 @@ settings_from_json (const json &doc)
     s.isolated = it->get<bool> ();
   if (auto it = doc.find ("java"); it != doc.end () && it->is_string ())
     s.java = path_from_utf8 (it->get<std::string> ());
-  s.max_memory_mb = doc.value ("maxMemory", 0u);
-  s.min_memory_mb = doc.value ("minMemory", 0u);
+  BLB_TRY_ASSIGN (s.max_memory_mb, memory_from_json (doc, "maxMemory"));
+  BLB_TRY_ASSIGN (s.min_memory_mb, memory_from_json (doc, "minMemory"));
   if (auto it = doc.find ("jvmArgs"); it != doc.end () && it->is_array ())
     for (const auto &v : *it)
       if (v.is_string ())

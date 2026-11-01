@@ -61,7 +61,15 @@ namespace Instances {
         std::string activityText;
         // What runs on each instance being copied, renamed or removed.
         std::unordered_map<std::string, std::string> operating;
-        std::unordered_map<std::string, Clock::time_point> pendingSaves;
+        struct PendingSave {
+            Clock::time_point attempted;
+            std::filesystem::path root;
+            std::string id;
+            blb::instance::instance_settings settings;
+            uint64_t revision = 0;
+            bool failed = false;
+        };
+        std::unordered_map<std::string, PendingSave> pendingSaves;
         uint64_t settingsRevision = 0;
         int scansInFlight = 0;
         bool checkingRoots = false;
@@ -235,12 +243,17 @@ namespace Instances {
         }
 
         void preserveSettings(Entry& entry, const Entry* old, uint64_t revision) {
+            if (auto pending = pendingSaves.find(entry.key); pending != pendingSaves.end()) {
+                entry.info.settings = pending->second.settings;
+                entry.settingsRevision = pending->second.revision;
+                return;
+            }
             if (old == nullptr) {
                 return;
             }
             // A save removes the dirty marker, but does not make older reads
             // current. Retain edits made after this read was requested too.
-            if (pendingSaves.count(entry.key) != 0 || old->settingsRevision > revision) {
+            if (old->settingsRevision > revision) {
                 entry.info.settings = old->info.settings;
             }
             entry.settingsRevision = old->settingsRevision;
@@ -449,23 +462,34 @@ namespace Instances {
             return nullptr;
         }
 
-        void writeSettings(const std::string& key) {
+        bool writeSettings(const std::string& key, PendingSave& pending) {
+            pending.attempted = Clock::now();
             Entry* entry = findMutable(key);
-            const Source* from = entry != nullptr ? sourceMutable(entry->source) : nullptr;
-            if (from == nullptr) {
-                return;
-            }
-            auto saved = managerFor(from->root).save_settings(entry->info.id, entry->info.settings);
+            // Keep the snapshot until a temporarily missing instance is read
+            // again, so a scan cannot lose it between disk write and apply.
+            if (entry == nullptr) return false;
+            auto saved = managerFor(pending.root).save_settings(pending.id, pending.settings);
             if (!saved) {
-                notify("保存 " + entry->info.id + " 的设置失败：" + saved.err().message, true);
+                if (!pending.failed) {
+                    notify("保存 " + pending.id + " 的设置失败，将自动重试：" + saved.err().message, true);
+                }
+                pending.failed = true;
+            } else {
+                // A deferred save invalidates reads requested while it failed,
+                // even when the edit itself predates those reads.
+                entry->settingsRevision = ++settingsRevision;
             }
+            return bool(saved);
         }
 
         void flushSaves() {
-            for (const auto& pending : pendingSaves) {
-                writeSettings(pending.first);
+            for (auto it = pendingSaves.begin(); it != pendingSaves.end();) {
+                if (writeSettings(it->first, it->second)) {
+                    it = pendingSaves.erase(it);
+                } else {
+                    ++it;
+                }
             }
-            pendingSaves.clear();
         }
 
         std::string lowered(std::string text) {
@@ -580,6 +604,12 @@ namespace Instances {
                 return;
             }
             flushSaves();
+            if (pendingSaves.contains(key)) {
+                std::string error = "实例设置尚未保存，请稍后重试";
+                notify(error, true);
+                if (done) done(error);
+                return;
+            }
             blb::instance::instance_manager with = managerFor(from->root);
             std::string id = entry->info.id;
             std::vector<Source> all = roots;
@@ -671,9 +701,13 @@ namespace Instances {
         }
         Clock::time_point now = Clock::now();
         for (auto it = pendingSaves.begin(); it != pendingSaves.end();) {
-            if (std::chrono::duration<double>(now - it->second).count() >= SAVE_DELAY) {
-                writeSettings(it->first);
-                it = pendingSaves.erase(it);
+            double delay = it->second.failed ? 2.0 : SAVE_DELAY;
+            if (std::chrono::duration<double>(now - it->second.attempted).count() >= delay) {
+                if (writeSettings(it->first, it->second)) {
+                    it = pendingSaves.erase(it);
+                } else {
+                    ++it;
+                }
             } else {
                 ++it;
             }
@@ -903,6 +937,10 @@ namespace Instances {
             return;
         }
         flushSaves();
+        if (pendingSaves.contains(key)) {
+            done(blb::make_error(blb::errc::io, "实例设置尚未保存，请稍后重试"));
+            return;
+        }
         auto with = managerFor(from->root);
         std::string id = entry->info.id;
         submit([with, id, done]() -> Continuation {
@@ -941,6 +979,12 @@ namespace Instances {
         }
         std::string label = found->label;
         flushSaves();
+        if (std::any_of(pendingSaves.begin(), pendingSaves.end(), [&](const auto& item) {
+                return item.second.root == found->root;
+            })) {
+            notify("这个目录还有未保存的实例设置，暂时不能移除", true);
+            return;
+        }
         roots.erase(found);
         if (arranged.erase(key) != 0) {
             saveOrder();
@@ -962,7 +1006,9 @@ namespace Instances {
         edit(entry->info.settings);
         entry->settingsRevision = ++settingsRevision;
         place(*entry, managerFor(from->root));
-        pendingSaves[key] = Clock::now();
+        bool failed = pendingSaves.contains(key) && pendingSaves.at(key).failed;
+        pendingSaves[key] = PendingSave{Clock::now(), from->root, entry->info.id,
+                                      entry->info.settings, entry->settingsRevision, failed};
     }
 
     void rename(const std::string& key, const std::string& to, Done done) {
