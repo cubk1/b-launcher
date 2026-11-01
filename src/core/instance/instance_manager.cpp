@@ -1,5 +1,6 @@
 #include <core/base/format.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/json.hpp>
 #include <core/base/log.hpp>
 #include <core/base/strings.hpp>
 #include <core/instance/instance_manager.hpp>
@@ -130,14 +131,8 @@ settings_from_json (const json &doc)
     s.java = path_from_utf8 (it->get<std::string> ());
   BLB_TRY_ASSIGN (s.max_memory_mb, memory_from_json (doc, "maxMemory"));
   BLB_TRY_ASSIGN (s.min_memory_mb, memory_from_json (doc, "minMemory"));
-  if (auto it = doc.find ("jvmArgs"); it != doc.end () && it->is_array ())
-    for (const auto &v : *it)
-      if (v.is_string ())
-        s.jvm_args.push_back (v.get<std::string> ());
-  if (auto it = doc.find ("gameArgs"); it != doc.end () && it->is_array ())
-    for (const auto &v : *it)
-      if (v.is_string ())
-        s.game_args.push_back (v.get<std::string> ());
+  s.jvm_args = json_strings (doc, "jvmArgs");
+  s.game_args = json_strings (doc, "gameArgs");
   BLB_TRY_ASSIGN (s.width, dimension_from_json (doc, "width"));
   BLB_TRY_ASSIGN (s.height, dimension_from_json (doc, "height"));
   s.fullscreen = doc.value ("fullscreen", false);

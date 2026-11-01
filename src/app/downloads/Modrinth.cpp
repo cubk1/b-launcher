@@ -53,19 +53,6 @@ namespace Modrinth {
             return it != node.end() && it->is_number() ? it->get<long long>() : 0;
         }
 
-        std::vector<std::string> strings(const json& node, const char* key) {
-            std::vector<std::string> out;
-            auto it = node.find(key);
-            if (it != node.end() && it->is_array()) {
-                for (const json& item : *it) {
-                    if (item.is_string()) {
-                        out.push_back(item.get<std::string>());
-                    }
-                }
-            }
-            return out;
-        }
-
         blb::result<json> api(const std::string& path, blb::cancellation_token token) {
             std::vector<std::string> urls = {std::string(API) + path, std::string(API_MIRROR) + path};
             auto body = blb::net::http_get(urls, token);
@@ -175,9 +162,9 @@ namespace Modrinth {
                                         "https://modrinth.com/" + kind + "/" + (hit.slug.empty() ? hit.id : hit.slug);
                                 hit.downloads = number(item, "downloads");
                                 hit.follows = number(item, "follows");
-                                std::vector<std::string> tags = strings(item, "display_categories");
+                                std::vector<std::string> tags = blb::json_strings(item, "display_categories");
                                 if (tags.empty()) {
-                                    tags = strings(item, "categories");
+                                    tags = blb::json_strings(item, "categories");
                                 }
                                 for (const std::string& tag : tags) {
                                     (isLoader(tag) ? hit.loaders : hit.categories).push_back(tag);
@@ -230,8 +217,8 @@ namespace Modrinth {
             version.name = blb::json_text(item, "name");
             version.number = blb::json_text(item, "version_number");
             version.type = blb::json_text(item, "version_type");
-            version.gameVersions = strings(item, "game_versions");
-            version.loaders = strings(item, "loaders");
+            version.gameVersions = blb::json_strings(item, "game_versions");
+            version.loaders = blb::json_strings(item, "loaders");
             version.published = blb::json_text(item, "date_published");
             version.downloads = number(item, "downloads");
             auto files = item.find("files");

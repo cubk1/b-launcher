@@ -5,6 +5,7 @@
 #include "app/launch/JavaDownloads.h"
 
 #include <core/base/strings.hpp>
+#include <core/base/json.hpp>
 
 #include <core/base/cancellation.hpp>
 #include <core/meta/game_layout.hpp>
@@ -49,7 +50,7 @@ namespace Catalog {
                             };
                         }
                         std::vector<blb::meta::manifest_version> list = std::move(result->versions);
-                        return [list]() mutable {
+                        return [list = std::move(list)]() mutable {
                             versions.status = Status::Ready;
                             versions.list = std::move(list);
                         };
@@ -79,7 +80,7 @@ namespace Catalog {
                             };
                         }
                         std::vector<blb::install::loader_version> list = std::move(*result);
-                        return [key, list]() mutable {
+                        return [key, list = std::move(list)]() mutable {
                             loaderLists[key].status = Status::Ready;
                             loaderLists[key].list = std::move(list);
                         };
@@ -98,17 +99,7 @@ namespace Catalog {
         }
 
         std::vector<std::string> pathList(const char* key) {
-            std::vector<std::string> out;
-            const nlohmann::json& data = Config::data();
-            auto found = data.find(key);
-            if (found != data.end() && found->is_array()) {
-                for (const nlohmann::json& item : *found) {
-                    if (item.is_string()) {
-                        out.push_back(item.get<std::string>());
-                    }
-                }
-            }
-            return out;
+            return blb::json_strings(Config::data(), key);
         }
 
         void savePathList(const char* key, const std::vector<std::string>& list) {
@@ -138,11 +129,6 @@ namespace Catalog {
                        list.end());
         }
 
-        bool hidden(const blb::java::java_installation& java) {
-            std::vector<std::string> list = pathList("javaHidden");
-            return !list.empty() && listed(list, java.executable);
-        }
-
         void sortJava(std::vector<blb::java::java_installation>& list) {
             std::stable_sort(list.begin(), list.end(),
                              [](const blb::java::java_installation& a, const blb::java::java_installation& b) {
@@ -157,12 +143,14 @@ namespace Catalog {
             tasks.run(
                     [options](blb::cancellation_token token) -> Continuation {
                         std::vector<blb::java::java_installation> found = blb::java::scan_java(options, token);
-                        return [found]() mutable {
-                            found.erase(std::remove_if(found.begin(), found.end(),
-                                                       [](const blb::java::java_installation& java) {
-                                                           return hidden(java) && !addedByHand(java.executable);
-                                                       }),
-                                        found.end());
+                        return [found = std::move(found)]() mutable {
+                            auto hiddenPaths = pathList("javaHidden");
+                            if (!hiddenPaths.empty()) {
+                                auto addedPaths = pathList("javaPaths");
+                                std::erase_if(found, [&](const blb::java::java_installation& java) {
+                                    return listed(hiddenPaths, java.executable) && !listed(addedPaths, java.executable);
+                                });
+                            }
                             for (const blb::java::java_installation& added : javaList.list) {
                                 if (std::none_of(found.begin(), found.end(),
                                                  [&](const blb::java::java_installation& java) {
