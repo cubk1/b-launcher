@@ -1,7 +1,7 @@
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "ui/imgui/screens/home/HomeOptions.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
-#include "app/system/Config.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
@@ -32,11 +32,7 @@ namespace QuickActions {
         constexpr float TEXT_X = 46.0f;
         const char* const SECTION = "quickActions";
 
-        struct Action {
-            const char* id;
-            const char* label;
-            int glyph;
-        };
+        using Action = HomeOptions::Item;
 
         const Action ACTIONS[] = {
                 {"newInstance", "下载游戏", 0xf019},     {"addAccount", "添加账号", 0xf234},
@@ -44,84 +40,7 @@ namespace QuickActions {
                 {"importModpack", "导入整合包", 0xf56f}, {"openFolder", "打开游戏目录", 0xf07c},
         };
 
-        const char* const DEFAULTS[] = {"newInstance", "addAccount", "downloadMods"};
-
-        bool loaded = false;
-        std::vector<std::string> order;
-        std::vector<std::string> enabled;
-
-        const Action* byId(const std::string& id) {
-            for (const Action& action : ACTIONS) {
-                if (id == action.id) {
-                    return &action;
-                }
-            }
-            return nullptr;
-        }
-
-        const Action* byLabel(const std::string& label) {
-            for (const Action& action : ACTIONS) {
-                if (label == action.label) {
-                    return &action;
-                }
-            }
-            return nullptr;
-        }
-
-        std::vector<std::string> knownIds(const nlohmann::json& list) {
-            std::vector<std::string> out;
-            if (!list.is_array()) {
-                return out;
-            }
-            for (const nlohmann::json& item : list) {
-                if (item.is_string() && byId(item.get<std::string>()) != nullptr &&
-                    std::find(out.begin(), out.end(), item.get<std::string>()) == out.end()) {
-                    out.push_back(item.get<std::string>());
-                }
-            }
-            return out;
-        }
-
-        void load() {
-            if (loaded) {
-                return;
-            }
-            loaded = true;
-            const nlohmann::json& doc = Config::data();
-            auto saved = doc.find(SECTION);
-            bool present = saved != doc.end() && saved->is_object();
-            order = present && saved->contains("order") ? knownIds((*saved)["order"]) : std::vector<std::string>();
-            for (const Action& action : ACTIONS) {
-                if (std::find(order.begin(), order.end(), action.id) == order.end()) {
-                    order.push_back(action.id);
-                }
-            }
-            if (present && saved->contains("enabled")) {
-                enabled = knownIds((*saved)["enabled"]);
-            } else {
-                enabled.assign(std::begin(DEFAULTS), std::end(DEFAULTS));
-            }
-        }
-
-        void save() {
-            Config::data()[SECTION] = {{"order", order}, {"enabled", enabled}};
-            Config::save();
-        }
-
-        bool on(const std::string& id) {
-            return std::find(enabled.begin(), enabled.end(), id) != enabled.end();
-        }
-
-        std::vector<const Action*> shown() {
-            load();
-            std::vector<const Action*> out;
-            for (const std::string& id : order) {
-                if (on(id)) {
-                    out.push_back(byId(id));
-                }
-            }
-            return out;
-        }
+        HomeOptions options(SECTION, ACTIONS, {"newInstance", "addAccount", "downloadMods"}, "关闭");
 
         void perform(const std::string& id) {
             if (id == "newInstance") {
@@ -152,74 +71,6 @@ namespace QuickActions {
             }
         }
 
-        class ActionChoice final : public Choice {
-        public:
-            ActionChoice() : Choice("settings#quickActions") {}
-
-            std::vector<std::string> options() override {
-                load();
-                std::vector<std::string> out;
-                for (const std::string& id : order) {
-                    out.push_back(byId(id)->label);
-                }
-                return out;
-            }
-
-            bool multi() override {
-                return true;
-            }
-
-            bool selected(const std::string& option) override {
-                load();
-                const Action* action = byLabel(option);
-                return action != nullptr && on(action->id);
-            }
-
-            void choose(const std::string& option) override {
-                load();
-                const Action* action = byLabel(option);
-                if (action == nullptr) {
-                    return;
-                }
-                auto found = std::find(enabled.begin(), enabled.end(), action->id);
-                if (found != enabled.end()) {
-                    enabled.erase(found);
-                } else {
-                    enabled.push_back(action->id);
-                }
-                save();
-            }
-
-            std::string label() override {
-                std::string out;
-                for (const Action* action : shown()) {
-                    out += (out.empty() ? "" : "、") + std::string(action->label);
-                }
-                return out.empty() ? std::string("关闭") : out;
-            }
-
-            bool reorderable() override {
-                return true;
-            }
-
-            void reorder(int from, int to) override {
-                load();
-                int size = (int) order.size();
-                if (from < 0 || from >= size || to < 0 || to >= size || from == to) {
-                    return;
-                }
-                std::string moved = order[from];
-                order.erase(order.begin() + from);
-                order.insert(order.begin() + to, moved);
-                save();
-            }
-
-            std::string optionIcon(const std::string& option) override {
-                const Action* action = byLabel(option);
-                return action != nullptr ? Ui::glyph(action->glyph) : std::string();
-            }
-        };
-
         void row(const Action& action, float x, float y, float w, int index, int count, bool blocked) {
             std::string id = std::string("home#quick#") + action.id;
             bool hovered = !blocked && NewUi::hit(x, y, w, ROW_H);
@@ -241,15 +92,15 @@ namespace QuickActions {
     }
 
     std::shared_ptr<Choice> choice() {
-        return std::make_shared<ActionChoice>();
+        return options.choice();
     }
 
     float height() {
-        return shown().size() * ROW_H;
+        return options.shown().size() * ROW_H;
     }
 
     void draw(float x, float y, float w, bool blocked) {
-        std::vector<const Action*> list = shown();
+        std::vector<const Action*> list = options.shown();
         if (list.empty()) {
             return;
         }

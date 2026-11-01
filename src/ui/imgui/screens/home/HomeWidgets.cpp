@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/home/HomeWidgets.h"
+#include "ui/imgui/screens/home/HomeOptions.h"
 #include "app/accounts/Accounts.h"
 #include "app/system/Config.h"
 #include "app/system/ServerStatus.h"
@@ -44,11 +45,7 @@ namespace HomeWidgets {
         const char* const SECTION = "homeWidgets";
         const char* const SERVER_SECTION = "homeServer";
 
-        struct Kind {
-            const char* id;
-            const char* label;
-            int glyph;
-        };
+        using Kind = HomeOptions::Item;
 
         const Kind KINDS[] = {
                 {QUICK, "快捷操作", 0xf0e7},
@@ -56,142 +53,7 @@ namespace HomeWidgets {
                 {ACCOUNT, "当前账号", 0xf007},
         };
 
-        bool loaded = false;
-        std::vector<std::string> order;
-        std::vector<std::string> chosen;
-
-        const Kind* byId(const std::string& id) {
-            for (const Kind& kind : KINDS) {
-                if (id == kind.id) {
-                    return &kind;
-                }
-            }
-            return nullptr;
-        }
-
-        const Kind* byLabel(const std::string& label) {
-            for (const Kind& kind : KINDS) {
-                if (label == kind.label) {
-                    return &kind;
-                }
-            }
-            return nullptr;
-        }
-
-        std::vector<std::string> knownIds(const nlohmann::json& list) {
-            std::vector<std::string> out;
-            if (!list.is_array()) {
-                return out;
-            }
-            for (const nlohmann::json& item : list) {
-                if (item.is_string() && byId(item.get<std::string>()) != nullptr &&
-                    std::find(out.begin(), out.end(), item.get<std::string>()) == out.end()) {
-                    out.push_back(item.get<std::string>());
-                }
-            }
-            return out;
-        }
-
-        void load() {
-            if (loaded) {
-                return;
-            }
-            loaded = true;
-            const nlohmann::json& doc = Config::data();
-            auto saved = doc.find(SECTION);
-            bool present = saved != doc.end() && saved->is_object();
-            order = present && saved->contains("order") ? knownIds((*saved)["order"]) : std::vector<std::string>();
-            for (const Kind& kind : KINDS) {
-                if (std::find(order.begin(), order.end(), kind.id) == order.end()) {
-                    order.push_back(kind.id);
-                }
-            }
-            if (present && saved->contains("enabled")) {
-                chosen = knownIds((*saved)["enabled"]);
-            } else {
-                chosen = {QUICK};
-            }
-        }
-
-        void save() {
-            Config::data()[SECTION] = {{"order", order}, {"enabled", chosen}};
-            Config::save();
-        }
-
-        bool on(const std::string& id) {
-            return std::find(chosen.begin(), chosen.end(), id) != chosen.end();
-        }
-
-        class WidgetChoice final : public Choice {
-        public:
-            WidgetChoice() : Choice("settings#homeWidgets") {}
-
-            std::vector<std::string> options() override {
-                load();
-                std::vector<std::string> out;
-                for (const std::string& id : order) {
-                    out.push_back(byId(id)->label);
-                }
-                return out;
-            }
-
-            bool multi() override {
-                return true;
-            }
-
-            bool selected(const std::string& option) override {
-                load();
-                const Kind* kind = byLabel(option);
-                return kind != nullptr && on(kind->id);
-            }
-
-            void choose(const std::string& option) override {
-                load();
-                const Kind* kind = byLabel(option);
-                if (kind == nullptr) {
-                    return;
-                }
-                auto found = std::find(chosen.begin(), chosen.end(), kind->id);
-                if (found != chosen.end()) {
-                    chosen.erase(found);
-                } else {
-                    chosen.push_back(kind->id);
-                }
-                save();
-            }
-
-            std::string label() override {
-                load();
-                std::string out;
-                for (const std::string& id : order) {
-                    if (on(id)) {
-                        out += (out.empty() ? "" : "、") + std::string(byId(id)->label);
-                    }
-                }
-                return out.empty() ? std::string("只显示标志") : out;
-            }
-
-            bool reorderable() override {
-                return true;
-            }
-
-            void reorder(int from, int to) override {
-                load();
-                int size = (int) order.size();
-                if (from < 0 || from >= size || to < 0 || to >= size || from == to) {
-                    return;
-                }
-                std::string moved = order[from];
-                order.erase(order.begin() + from);
-                order.insert(order.begin() + to, moved);
-                save();
-            }
-
-            std::string optionIcon(const std::string& option) override {
-                const Kind* kind = byLabel(option);
-                return kind != nullptr ? Ui::glyph(kind->glyph) : std::string();
-            }
-        };
+        HomeOptions options(SECTION, KINDS, {QUICK}, "只显示标志");
 
         std::string serverField(const char* key) {
             const nlohmann::json& doc = Config::data();
@@ -491,11 +353,10 @@ namespace HomeWidgets {
         }
 
         std::vector<std::string> visible() {
-            load();
             std::vector<std::string> out;
-            for (const std::string& id : order) {
-                if (on(id) && heightOf(id) > 0.0f) {
-                    out.push_back(id);
+            for (const auto* item : options.shown()) {
+                if (heightOf(item->id) > 0.0f) {
+                    out.push_back(item->id);
                 }
             }
             return out;
@@ -503,12 +364,11 @@ namespace HomeWidgets {
     }
 
     std::shared_ptr<Choice> choice() {
-        return std::make_shared<WidgetChoice>();
+        return options.choice();
     }
 
     bool enabled(const std::string& id) {
-        load();
-        return on(id);
+        return options.enabled(id);
     }
 
     std::string serverAddress() {
