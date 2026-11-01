@@ -2565,14 +2565,20 @@ namespace XamlView {
                 e->kind = Kind::Grid;
                 addChildren(b, node, *e);
                 int count = (int) e->children.size();
-                int cols = (int) number(p.get("Columns"), 0.0f);
-                int rows = (int) number(p.get("Rows"), 0.0f);
+                float columnCount = std::max(0.0f, number(p.get("Columns"), 0.0f));
+                float rowsCount = std::max(0.0f, number(p.get("Rows"), 0.0f));
+                if (columnCount > 4096.0f || rowsCount > 4096.0f) {
+                    b.error = "UniformGrid 行列数不能超过 4096";
+                    columnCount = rowsCount = 0.0f;
+                }
+                int cols = (int) columnCount;
+                int rows = (int) rowsCount;
                 if (cols <= 0) {
-                    cols = rows > 0 ? (count + rows - 1) / rows
+                    cols = rows > 0 ? count / rows + (count % rows != 0)
                                     : std::max(1, (int) std::ceil(std::sqrt((float) std::max(1, count))));
                 }
                 cols = std::max(1, cols);
-                int rowCount = std::max(1, (count + cols - 1) / cols);
+                int rowCount = std::max(1, count / cols + (count % cols != 0));
                 e->columns.assign((size_t) cols, Def{});
                 e->rows.assign((size_t) rowCount, Def{1, 1.0f, 0.0f, INF});
                 for (int i = 0; i < count; i++) {
