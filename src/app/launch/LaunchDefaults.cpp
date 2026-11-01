@@ -1,10 +1,10 @@
 #include "app/launch/LaunchDefaults.h"
 #include "app/system/Config.h"
 
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 
 #include <cstdlib>
-#include <fstream>
 #include <sstream>
 
 namespace LaunchDefaults {
@@ -124,15 +124,11 @@ namespace LaunchDefaults {
         bool legacy = legacyCodes(minecraft);
         std::string code = language == Language::Chinese ? (legacy ? "zh_CN" : "zh_cn") : (legacy ? "en_US" : "en_us");
         std::filesystem::path file = gameDirectory / "options.txt";
-        std::string content;
-        {
-            std::ifstream in(file, std::ios::binary);
-            if (in) {
-                std::ostringstream read;
-                read << in.rdbuf();
-                content = read.str();
-            }
+        auto existing = blb::fs::read_file(file);
+        if (!existing && existing.err().code != blb::errc::not_found) {
+            return;
         }
+        std::string content = existing ? std::move(*existing) : std::string();
         std::istringstream lines(content);
         std::string line;
         while (std::getline(lines, line)) {
@@ -144,9 +140,6 @@ namespace LaunchDefaults {
             content += '\n';
         }
         content += "lang:" + code + "\n";
-        std::error_code error;
-        std::filesystem::create_directories(gameDirectory, error);
-        std::ofstream out(file, std::ios::binary | std::ios::trunc);
-        out << content;
+        (void) blb::fs::write_file_atomic(file, content);
     }
 }
