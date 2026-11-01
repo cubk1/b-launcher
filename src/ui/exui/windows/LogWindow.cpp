@@ -239,8 +239,9 @@ namespace ForgottenMelody {
                 query = lower;
                 matches.clear();
                 current = -1;
+                scanned = GameLog::end();
                 if (!query.empty()) {
-                    for (uint64_t number = GameLog::first(); number < GameLog::end(); number++) {
+                    for (uint64_t number = GameLog::first(); number < scanned; number++) {
                         if (contains(lineAt(number).text)) {
                             matches.push_back(number);
                         }
