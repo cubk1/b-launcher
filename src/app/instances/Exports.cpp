@@ -33,6 +33,7 @@ namespace Exports {
         std::mutex lock;
         bool done = false;
         std::string failure;
+        std::vector<std::string> warnings;
         bool cancelled = false;
         std::filesystem::path written;
         std::string progress;
@@ -116,6 +117,7 @@ namespace Exports {
             std::lock_guard<std::mutex> guard(lock);
             done = false;
             failure.clear();
+            warnings.clear();
             cancelled = false;
             progress = "正在准备";
         }
@@ -123,6 +125,7 @@ namespace Exports {
         blb::cancellation_token token = cancelling->token();
         worker = std::thread([root, id, gameDirectory, output, chosen, token] {
             std::string error;
+            std::vector<std::string> notes;
             bool wasCancelled = false;
             try {
                 blb::function_progress_sink sink([](const blb::progress_event& event) {
@@ -146,17 +149,16 @@ namespace Exports {
                 if (!report) {
                     error = report.err().message;
                     wasCancelled = report.err().code == blb::errc::cancelled;
+                } else {
+                    notes = std::move(report->warnings);
                 }
             } catch (const std::exception& exception) {
                 error = exception.what();
             }
-            if (!error.empty()) {
-                std::error_code removeError;
-                std::filesystem::remove(output, removeError);
-            }
             std::lock_guard<std::mutex> guard(lock);
             failure = error;
-            cancelled = wasCancelled || token.is_cancelled();
+            warnings = std::move(notes);
+            cancelled = wasCancelled || (!error.empty() && token.is_cancelled());
             written = output;
             done = true;
         });
@@ -186,6 +188,7 @@ namespace Exports {
             return;
         }
         std::string error;
+        std::vector<std::string> notes;
         bool wasCancelled;
         std::filesystem::path file;
         {
@@ -194,6 +197,7 @@ namespace Exports {
                 return;
             }
             error = failure;
+            notes = warnings;
             wasCancelled = cancelled;
             file = written;
         }
@@ -209,7 +213,16 @@ namespace Exports {
             Notices::add(Notices::Kind::Failed, "导出失败：" + error, 5000);
             return;
         }
-        Notices::add(Notices::Kind::Done, "已导出 " + blb::path_to_utf8(file.filename()), 4000);
+        if (notes.empty()) {
+            Notices::add(Notices::Kind::Done, "已导出 " + blb::path_to_utf8(file.filename()), 4000);
+        } else {
+            Notices::add(Notices::Kind::Info, "已导出，但存在兼容性或文件来源问题", 15000);
+            for (const auto& note : notes) {
+                // The legacy UI queues failed notices in dialogs; both UIs
+                // otherwise render ordinary notices as a single line.
+                Notices::add(Notices::Kind::Failed, "导出提示：" + note, 15000);
+            }
+        }
         Platform::reveal(file);
     }
 

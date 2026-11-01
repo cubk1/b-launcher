@@ -279,6 +279,11 @@ export_modpack (const install::game_installer &installer,
     index["summary"] = options.summary;
 
   auto temp = fs::temp_sibling (output);
+  struct cleanup
+  {
+    std::filesystem::path file;
+    ~cleanup () { (void)fs::remove_file (file); }
+  } remove_temp { temp };
   {
     BLB_TRY_ASSIGN (auto zip, zip_writer::create (temp));
     BLB_TRY (zip.add_buffer ("modrinth.index.json", index.dump (2)));
@@ -302,6 +307,7 @@ export_modpack (const install::game_installer &installer,
     writing.finish ();
     BLB_TRY (zip.close ());
   }
+  BLB_TRY (token.check ());
   BLB_TRY (fs::rename_file (temp, output));
   s_log.info ("exported {} to {} ({} referenced, {} bundled)", instance_id,
               path_to_utf8 (output), report.referenced, report.bundled);
