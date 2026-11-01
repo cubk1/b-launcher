@@ -1058,6 +1058,7 @@ struct download_client::impl
        cancellation_token token)
   {
     std::lock_guard run_lock (run_mutex);
+    known_dirs.clear ();
     auto started = std::chrono::steady_clock::now ();
     progress = tracker;
     download_report report;
