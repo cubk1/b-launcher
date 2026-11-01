@@ -267,8 +267,9 @@ namespace Catalog {
         if (listed(added, executable)) {
             unlist(added, executable);
             savePathList("javaPaths", added);
-        } else {
-            std::vector<std::string> hiddenList = pathList("javaHidden");
+        }
+        std::vector<std::string> hiddenList = pathList("javaHidden");
+        if (!listed(hiddenList, executable)) {
             hiddenList.push_back(blb::path_to_utf8(executable));
             savePathList("javaHidden", hiddenList);
         }
