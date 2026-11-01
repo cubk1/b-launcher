@@ -57,6 +57,24 @@ collect_native_archives (const meta::version &resolved,
 namespace
 {
 
+std::optional<std::filesystem::path>
+entry_target (const native_archive &archive, const zip_entry &entry,
+              const std::filesystem::path &directory)
+{
+  if (entry.directory || entry.name == stamp_name
+      || entry.name.starts_with ("META-INF/")
+      || !fs::safe_relative (entry.name)
+      || entry.name.find ('\0') != std::string::npos)
+    return std::nullopt;
+  for (const auto &prefix : archive.exclude)
+    if (entry.name.starts_with (prefix))
+      return std::nullopt;
+  auto target = directory / path_from_utf8 (entry.name);
+  return fs::is_inside (directory, target)
+             ? std::optional<std::filesystem::path> (std::move (target))
+             : std::nullopt;
+}
+
 result<std::size_t>
 extract_into (const std::vector<native_archive> &archives,
               const std::filesystem::path &directory, thread_pool *pool)
@@ -79,22 +97,15 @@ extract_into (const std::vector<native_archive> &archives,
           }
         auto r
             = reader->for_each ([&] (const zip_entry &entry, zip_reader &zip) {
-                if (entry.directory || entry.name.starts_with ("META-INF/"))
-                  return true;
-                for (const auto &prefix : archive.exclude)
-                  if (entry.name.starts_with (prefix))
-                    return true;
-                if (!fs::safe_relative (entry.name))
-                  return true;
-                auto target = directory / path_from_utf8 (entry.name);
-                if (!fs::is_inside (directory, target))
+                auto target = entry_target (archive, entry, directory);
+                if (!target)
                   return true;
                 {
                   std::lock_guard lock (error_mutex);
                   if (!claimed.insert (to_lower (entry.name)).second)
                     return true;
                 }
-                if (auto w = zip.extract_current (target); !w)
+                if (auto w = zip.extract_current (*target); !w)
                   {
                     std::lock_guard lock (error_mutex);
                     failure = w.err ();
@@ -119,6 +130,37 @@ stamped (const std::filesystem::path &directory, const std::string &stamp)
 {
   auto existing = fs::read_file (directory / stamp_name);
   return existing && *existing == stamp;
+}
+
+bool
+cache_complete (const std::filesystem::path &directory,
+                const std::string &stamp,
+                const std::vector<native_archive> &archives)
+{
+  if (!stamped (directory, stamp))
+    return false;
+  std::unordered_set<std::string> required;
+  std::unordered_set<std::string> present;
+  for (const auto &archive : archives)
+    {
+      auto zip = zip_reader::open (archive.jar);
+      if (!zip)
+        return false;
+      auto result = zip->for_each ([&] (const zip_entry &entry, zip_reader &) {
+        auto target = entry_target (archive, entry, directory);
+        if (!target)
+          return true;
+        auto key = to_lower (entry.name);
+        required.insert (key);
+        auto st = fs::stat (*target);
+        if (st.exists && !st.is_directory && st.size == entry.size)
+          present.insert (std::move (key));
+        return true;
+      });
+      if (!result)
+        return false;
+    }
+  return required.size () == present.size ();
 }
 
 bool
@@ -242,7 +284,7 @@ prepare_natives (const meta::version &resolved,
   auto target = directory;
   target += "-" + stamp.substr (0, 12);
   report.directory = target;
-  if (stamped (target, stamp))
+  if (cache_complete (target, stamp, archives))
     {
       (void)fs::write_file_atomic (target / stamp_name, stamp);
       report.reused = true;
@@ -250,8 +292,6 @@ prepare_natives (const meta::version &resolved,
       return report;
     }
 
-  if (fs::stat (target).exists)
-    BLB_TRY (fs::remove_all (target));
   auto temp = target;
   temp += ".part-" + random_bytes_hex (4);
   BLB_TRY (fs::create_directories (temp));
@@ -266,14 +306,26 @@ prepare_natives (const meta::version &resolved,
       (void)fs::remove_all (temp);
       return std::move (extracted).err ();
     }
+  if (fs::stat (target).exists && !cache_complete (target, stamp, archives))
+    {
+      auto retired = target;
+      retired += "-gone-" + random_bytes_hex (4);
+      auto moved = fs::rename_file (target, retired);
+      if (!moved)
+        {
+          (void)fs::remove_all (temp);
+          return std::move (moved).err ();
+        }
+    }
   std::error_code error;
   std::filesystem::rename (temp, target, error);
   if (error)
     {
       (void)fs::remove_all (temp);
-      if (!stamped (target, stamp))
+      if (!cache_complete (target, stamp, archives))
         return make_error (errc::io, sformat ("cannot place natives in {}",
                                               path_to_utf8 (target)));
+      report.reused = true;
     }
   report.extracted = *extracted;
   s_log.debug ("extracted {} native files from {} archives", report.extracted,
