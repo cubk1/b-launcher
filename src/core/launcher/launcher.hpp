@@ -57,7 +57,8 @@ public:
   void set_authenticator (
       std::shared_ptr<auth::microsoft_authenticator> authenticator);
   void set_java_candidates (std::vector<java::java_installation> candidates);
-  std::vector<java::java_installation> java_candidates (bool rescan = false);
+  std::vector<java::java_installation>
+  java_candidates (bool rescan = false, cancellation_token token = {});
   install::game_installer &installer () noexcept;
 
   result<java::java_installation>

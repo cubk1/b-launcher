@@ -131,15 +131,22 @@ game_launcher::set_java_candidates (
 }
 
 std::vector<java::java_installation>
-game_launcher::java_candidates (bool rescan)
+game_launcher::java_candidates (bool rescan, cancellation_token token)
 {
+  if (token.is_cancelled ())
+    return {};
   std::lock_guard lock (m_impl->java_mutex);
+  if (token.is_cancelled ())
+    return {};
   if (!m_impl->java_cache || rescan)
     {
       auto options = m_impl->installer->options ().java_scan;
       options.runtime_roots.push_back (
           m_impl->installer->layout ().runtime ());
-      m_impl->java_cache = java::scan_java (options);
+      auto found = java::scan_java (options, token);
+      if (token.is_cancelled ())
+        return {};
+      m_impl->java_cache = std::move (found);
     }
   return *m_impl->java_cache;
 }
@@ -155,6 +162,7 @@ game_launcher::resolve_java (const meta::version &resolved,
                              const launch_settings &settings,
                              progress_sink *progress, cancellation_token token)
 {
+  BLB_TRY (token.check ());
   if (settings.java)
     {
       BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true, token));
@@ -162,7 +170,8 @@ game_launcher::resolve_java (const meta::version &resolved,
       return install;
     }
   auto requirement = java::requirement_for (resolved);
-  auto candidates = java_candidates ();
+  auto candidates = java_candidates (false, token);
+  BLB_TRY (token.check ());
   if (auto chosen = java::select_java (candidates, requirement))
     return *chosen;
   if (!settings.auto_download_java)
