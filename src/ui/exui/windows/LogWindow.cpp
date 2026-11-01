@@ -273,10 +273,10 @@ namespace ForgottenMelody {
             std::wstring text(uint64_t& lines) const {
                 uint64_t from, to;
                 lines = 0;
-                if (!range(from, to)) {
+                if (count() == 0) {
                     return {};
                 }
-                if (!selection) {
+                if (!selection || !range(from, to)) {
                     from = GameLog::first();
                     to = GameLog::end() - 1;
                 }

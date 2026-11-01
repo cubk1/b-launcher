@@ -129,6 +129,10 @@ namespace LogWindow {
                 following = true;
             }
             uint64_t first = GameLog::first();
+            if (selection && std::max(anchor, caret) < first) {
+                selection = false;
+                selecting = false;
+            }
             size_t removed = 0;
             while (!rows.empty() && rows.front() < first) {
                 rows.pop_front();
