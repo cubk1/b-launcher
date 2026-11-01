@@ -4,6 +4,7 @@
 
 #include "core/base/sha1_impl.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -12,6 +13,51 @@ namespace b_launcher_base
 
 namespace
 {
+
+template <std::size_t Size, typename Block>
+inline void
+fill_blocks (const void *data, std::size_t size,
+              std::uint8_t (&buffer)[Size], std::size_t &buffered,
+              Block block) noexcept
+{
+  auto *bytes = static_cast<const std::uint8_t *> (data);
+  while (size)
+    {
+      auto take = std::min (size, Size - buffered);
+      std::memcpy (buffer + buffered, bytes, take);
+      buffered += take;
+      bytes += take;
+      size -= take;
+      if (buffered == Size)
+        {
+          block (buffer);
+          buffered = 0;
+        }
+    }
+}
+
+// Both file digest entry points share one buffer per calling thread.
+result<std::uint64_t>
+read_for_hashes (const std::filesystem::path &path, sha1 &h1, sha512 *h512)
+{
+  constexpr std::size_t buffer_size = 1 << 20;
+  thread_local std::unique_ptr<std::uint8_t[]> buffer (
+      new std::uint8_t[buffer_size]);
+  BLB_TRY_ASSIGN (auto file,
+                  fs::native_file::open (path, fs::native_file::mode::read));
+  std::uint64_t size = 0;
+  for (;;)
+    {
+      BLB_TRY_ASSIGN (auto n, file.read (buffer.get (), buffer_size));
+      if (n == 0)
+        break;
+      h1.update (buffer.get (), n);
+      if (h512)
+        h512->update (buffer.get (), n);
+      size += n;
+    }
+  return size;
+}
 
 constexpr std::uint32_t
 rotl (std::uint32_t value, int bits) noexcept
@@ -263,21 +309,9 @@ sha256::block (const std::uint8_t *data) noexcept
 void
 sha256::update (const void *data, std::size_t size) noexcept
 {
-  auto *bytes = static_cast<const std::uint8_t *> (data);
   m_length += size;
-  while (size)
-    {
-      auto take = std::min (size, 64 - m_buffered);
-      std::memcpy (m_buffer + m_buffered, bytes, take);
-      m_buffered += take;
-      bytes += take;
-      size -= take;
-      if (m_buffered == 64)
-        {
-          block (m_buffer);
-          m_buffered = 0;
-        }
-    }
+  fill_blocks (data, size, m_buffer, m_buffered,
+                [this] (const std::uint8_t *chunk) { block (chunk); });
 }
 
 sha256_digest
@@ -385,21 +419,9 @@ sha512::block (const std::uint8_t *data) noexcept
 void
 sha512::update (const void *data, std::size_t size) noexcept
 {
-  auto *bytes = static_cast<const std::uint8_t *> (data);
   m_length += size;
-  while (size)
-    {
-      auto take = std::min (size, 128 - m_buffered);
-      std::memcpy (m_buffer + m_buffered, bytes, take);
-      m_buffered += take;
-      bytes += take;
-      size -= take;
-      if (m_buffered == 128)
-        {
-          block (m_buffer);
-          m_buffered = 0;
-        }
-    }
+  fill_blocks (data, size, m_buffer, m_buffered,
+                [this] (const std::uint8_t *chunk) { block (chunk); });
 }
 
 sha512_digest
@@ -503,21 +525,9 @@ md5::block (const std::uint8_t *data) noexcept
 void
 md5::update (const void *data, std::size_t size) noexcept
 {
-  auto *bytes = static_cast<const std::uint8_t *> (data);
   m_length += size;
-  while (size)
-    {
-      auto take = std::min (size, 64 - m_buffered);
-      std::memcpy (m_buffer + m_buffered, bytes, take);
-      m_buffered += take;
-      bytes += take;
-      size -= take;
-      if (m_buffered == 64)
-        {
-          block (m_buffer);
-          m_buffered = 0;
-        }
-    }
+  fill_blocks (data, size, m_buffer, m_buffered,
+                [this] (const std::uint8_t *chunk) { block (chunk); });
 }
 
 md5_digest
@@ -562,23 +572,10 @@ parse_sha1 (std::string_view hex) noexcept
 result<file_digests>
 digest_file (const std::filesystem::path &path)
 {
-  constexpr std::size_t buffer_size = 1 << 20;
-  thread_local std::unique_ptr<std::uint8_t[]> buffer (
-      new std::uint8_t[buffer_size]);
-  BLB_TRY_ASSIGN (auto file,
-                  fs::native_file::open (path, fs::native_file::mode::read));
   sha1 h1;
   sha512 h512;
   file_digests out;
-  for (;;)
-    {
-      BLB_TRY_ASSIGN (auto n, file.read (buffer.get (), buffer_size));
-      if (n == 0)
-        break;
-      h1.update (buffer.get (), n);
-      h512.update (buffer.get (), n);
-      out.size += n;
-    }
+  BLB_TRY_ASSIGN (out.size, read_for_hashes (path, h1, &h512));
   out.sha1 = h1.finish ();
   out.sha512 = h512.finish ();
   return out;
@@ -587,19 +584,8 @@ digest_file (const std::filesystem::path &path)
 result<sha1_digest>
 sha1_file (const std::filesystem::path &path)
 {
-  constexpr std::size_t buffer_size = 1 << 20;
-  thread_local std::unique_ptr<std::uint8_t[]> buffer (
-      new std::uint8_t[buffer_size]);
-  BLB_TRY_ASSIGN (auto file,
-                  fs::native_file::open (path, fs::native_file::mode::read));
   sha1 h;
-  for (;;)
-    {
-      BLB_TRY_ASSIGN (auto n, file.read (buffer.get (), buffer_size));
-      if (n == 0)
-        break;
-      h.update (buffer.get (), n);
-    }
+  BLB_TRY (read_for_hashes (path, h, nullptr));
   return h.finish ();
 }
 
