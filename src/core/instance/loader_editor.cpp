@@ -6,6 +6,7 @@
 #include <core/modpack/mods.hpp>
 
 #include <algorithm>
+#include <exception>
 
 namespace b_launcher_base::instance
 {
@@ -98,6 +99,69 @@ optifine_version_from_file (std::string_view file_name)
   auto pos = name.find ("HD_U");
   return pos == std::string::npos ? name : name.substr (pos);
 }
+
+// Version metadata may be replaced by the installer before its final check.
+// Keep copies until the new mods and settings have also been committed.
+class file_changes
+{
+public:
+  explicit file_changes (std::filesystem::path directory)
+      : directory (std::move (directory)) {}
+
+  ~file_changes ()
+  {
+    try
+      {
+        if (active)
+          (void)rollback ();
+        if (!active)
+          (void)fs::remove_all (directory);
+      }
+    catch (...) {}
+  }
+
+  result<void> remember (const std::filesystem::path &file)
+  {
+    for (const auto &entry : entries)
+      if (entry.file == file)
+        return ok ();
+    auto backup = directory / (std::to_string (entries.size ()) + ".bak");
+    auto st = fs::stat (file);
+    if (st.is_directory)
+      return make_error (errc::io, "expected a file: " + path_to_utf8 (file));
+    if (st.exists)
+      BLB_TRY (fs::copy_file (file, backup));
+    entries.push_back ({ file, backup, st.exists });
+    return ok ();
+  }
+
+  result<void> rollback ()
+  {
+    std::string failures;
+    for (auto it = entries.rbegin (); it != entries.rend (); ++it)
+      {
+        auto restored = it->existed ? fs::copy_file (it->backup, it->file)
+                                    : fs::remove_file (it->file);
+        if (!restored)
+          failures += restored.err ().message + "\n";
+      }
+    if (!failures.empty ())
+      return make_error (errc::io, failures + "backups: " + path_to_utf8 (directory));
+    active = false;
+    return ok ();
+  }
+
+  std::filesystem::path directory;
+  bool active = false;
+
+private:
+  struct entry
+  {
+    std::filesystem::path file, backup;
+    bool existed;
+  };
+  std::vector<entry> entries;
+};
 
 }
 
@@ -265,6 +329,7 @@ modify_loaders (install::game_installer &installer,
                 std::span<const install::loader_request> desired,
                 progress_sink *sink, cancellation_token token)
 {
+  BLB_TRY (token.check ());
   BLB_TRY_ASSIGN (auto inst, manager.get (id));
   if (inst.minecraft_version.empty ())
     return make_error (
@@ -296,6 +361,8 @@ modify_loaders (install::game_installer &installer,
         continue;
       request.push_back (d);
     }
+  std::vector<std::filesystem::path> removed;
+  std::erase_if (mods, [] (const auto &mod) { return !mod.enabled; });
   for (const auto &l : current)
     {
       auto *target = wanted (l.type);
@@ -310,26 +377,59 @@ modify_loaders (install::game_installer &installer,
       else if (l.type == loader_type::optifine)
         file = find_optifine_mod (mods);
       if (file)
-        {
-          s_log.info ("removing {} from {}", file->file_name, id);
-          BLB_TRY (fs::remove_file (file->file));
-        }
+        removed.push_back (file->file);
     }
 
-  auto json_file = manager.layout ().version_json (id);
-  auto original = fs::read_file (json_file);
-
+  file_changes changes (manager.layout ().cache () / "loader-edit" / random_bytes_hex (8));
+  BLB_TRY (fs::create_directories (changes.directory));
+  BLB_TRY (changes.remember (manager.layout ().version_json (id)));
+  BLB_TRY (changes.remember (manager.layout ().version_jar (id)));
+  BLB_TRY (changes.remember (manager.layout ().version_dir (id) / settings_file));
+  auto staged_mods = changes.directory / "mods";
   install::loader_installer loaders (installer);
   install::install_request install_request;
   install_request.minecraft = inst.minecraft_version;
   install_request.loaders = request;
   install_request.id = std::string (id);
-  install_request.mods_directory = mods_dir;
-  auto installed = loaders.install (install_request, sink, token);
+  install_request.mods_directory = staged_mods;
+  changes.active = true;
+  auto install_and_commit = [&] () -> result<std::string> {
+    BLB_TRY_ASSIGN (auto installed, loaders.install (install_request, sink, token));
+    BLB_TRY (token.check ());
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> added;
+    for (const auto &[name, st] : fs::list_directory (staged_mods))
+      {
+        if (st.is_directory || st.is_link || !fs::safe_relative (name))
+          return make_error (errc::io, "invalid staged mod: " + name);
+        auto target = mods_dir / path_from_utf8 (name);
+        BLB_TRY (changes.remember (target));
+        added.emplace_back (staged_mods / path_from_utf8 (name), target);
+      }
+    for (const auto &file : removed)
+      BLB_TRY (changes.remember (file));
+    for (const auto &file : removed)
+      BLB_TRY (fs::remove_file (file));
+    for (const auto &[from, to] : added)
+      BLB_TRY (fs::copy_file (from, to));
+    // Adding/removing a loader must not switch the instance's game directory.
+    inst.settings.isolated = manager.is_isolated (inst);
+    BLB_TRY (manager.save_settings (id, inst.settings));
+    changes.active = false;
+    return installed;
+  };
+  result<std::string> installed;
+  try
+    {
+      installed = install_and_commit ();
+    }
+  catch (const std::exception &e)
+    {
+      installed = make_error (errc::unknown, e.what ());
+    }
   if (!installed)
     {
-      if (original)
-        (void)fs::write_file_atomic (json_file, *original);
+      if (auto restored = changes.rollback (); !restored)
+        return make_error (errc::io, installed.err ().message + "\n" + restored.err ().message);
       return std::move (installed).err ();
     }
   s_log.info ("modified loaders of {}", *installed);
