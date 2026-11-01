@@ -344,6 +344,7 @@ serialize_export_options (const export_options &o)
 
 result<export_options>
 parse_export_options (std::string_view text)
+try
 {
   auto doc = json::parse (text, nullptr, false, true);
   if (doc.is_discarded () || !doc.is_object ())
@@ -376,6 +377,10 @@ parse_export_options (std::string_view text)
           path_from_utf8 (e.value ("source", std::string ())),
           e.value ("path", std::string ()));
   return o;
+}
+catch (const json::exception &)
+{
+  return make_error (errc::parse, "invalid export option field type");
 }
 
 }
