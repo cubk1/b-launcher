@@ -19,6 +19,7 @@
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiImages.h"
 #include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiState.h"
@@ -485,6 +486,7 @@ namespace ImGuiApp {
 
         LogWindow::shutdown();
         icons.release();
+        UiImages::shutdown();
         Homepage::shutdown();
         Background::shutdown();
         Services::stop();

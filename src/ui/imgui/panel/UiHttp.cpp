@@ -44,9 +44,10 @@ namespace UiHttp {
 #endif
 
     bool get(const std::string& url, const std::vector<std::pair<std::string, std::string>>& headers, int timeoutMs,
-             size_t maxBytes, std::vector<unsigned char>& out, int& status) {
+             size_t maxBytes, std::vector<unsigned char>& out, int& status, std::stop_token stop) {
         out.clear();
         status = 0;
+        if (stop.stop_requested()) return false;
 #if defined(_WIN32)
         std::wstring wide = utf8_to_wide(url);
         URL_COMPONENTS parts;
@@ -89,10 +90,10 @@ namespace UiHttp {
                 for (const auto& header : headers) {
                     headerBlock += utf8_to_wide(header.first) + L": " + utf8_to_wide(header.second) + L"\r\n";
                 }
-                BOOL sent = WinHttpSendRequest(
+                BOOL sent = !stop.stop_requested() && WinHttpSendRequest(
                         request, headerBlock.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headerBlock.c_str(),
                         headerBlock.empty() ? 0 : (DWORD) -1L, WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
-                if (sent && WinHttpReceiveResponse(request, nullptr)) {
+                if (sent && !stop.stop_requested() && WinHttpReceiveResponse(request, nullptr)) {
                     DWORD code = 0;
                     DWORD codeSize = sizeof(code);
                     WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
@@ -102,7 +103,7 @@ namespace UiHttp {
                     ok = responseLength(request, status, expected) &&
                             (maxBytes == 0 || !expected || *expected <= maxBytes);
                     unsigned char buffer[8192];
-                    while (ok) {
+                    while (ok && !stop.stop_requested()) {
                         DWORD read = 0;
                         if (!WinHttpReadData(request, buffer, sizeof(buffer), &read)) {
                             ok = false;
@@ -126,7 +127,7 @@ namespace UiHttp {
             WinHttpCloseHandle(connection);
         }
         WinHttpCloseHandle(session);
-        return ok;
+        return ok && !stop.stop_requested();
 #else
         (void) url;
         (void) headers;

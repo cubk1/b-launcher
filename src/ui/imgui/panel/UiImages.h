@@ -24,12 +24,12 @@ namespace UiImages {
     extern std::function<bool(const std::string& source, Resolved& out)> textureResolver;
     extern std::function<bool(const std::string& source, Resolved& out)> silhouetteResolver;
 
+    // Resolution, promotion and shutdown belong to the UI thread.
     int resolve(const std::string& source);
     int resolveItem(const std::string& source, const std::string& name);
     int resolveTexture(const std::string& source, const std::string& path);
     void startFetch(const std::string& source);
-    void drainQueue();
-    void fetchOne(const std::string& source);
+    void shutdown();
     void promote(const std::string& source);
     bool isGif(const std::vector<unsigned char>& data);
     bool promoteGif(const std::string& source, const std::vector<unsigned char>& data);

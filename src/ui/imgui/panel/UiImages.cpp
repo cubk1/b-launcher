@@ -38,6 +38,12 @@ namespace UiImages {
     static std::unordered_map<std::string, Image> images;
     static std::deque<std::string> queue;
     static bool working = false;
+    static bool stopping = false;
+    // Declared last so its destructor joins before the queue and mutex are destroyed.
+    static std::jthread worker;
+
+    static void drainQueue(std::stop_token stop);
+    static void fetchOne(const std::string& source, std::stop_token stop);
 
     static int kindOf(const std::string& source, bool& known) {
         std::lock_guard<std::mutex> guard(lock);
@@ -106,36 +112,54 @@ namespace UiImages {
     void startFetch(const std::string& source) {
         {
             std::lock_guard<std::mutex> guard(lock);
+            if (stopping) {
+                kinds[source] = KIND_FAILED;
+                return;
+            }
             queue.push_back(source);
             if (working) {
                 return;
             }
             working = true;
         }
-        std::thread worker(drainQueue);
-        worker.detach();
+        if (worker.joinable()) worker.join();
+        worker = std::jthread(drainQueue);
     }
 
-    void drainQueue() {
+    static void drainQueue(std::stop_token stop) {
         while (true) {
             std::string source;
             {
                 std::lock_guard<std::mutex> guard(lock);
-                if (queue.empty()) {
+                if (stop.stop_requested() || queue.empty()) {
                     working = false;
                     return;
                 }
                 source = std::move(queue.front());
                 queue.pop_front();
             }
-            fetchOne(source);
+            fetchOne(source, stop);
         }
     }
 
-    void fetchOne(const std::string& source) {
+    void shutdown() {
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            stopping = true;
+            for (const std::string& source : queue) kinds[source] = KIND_FAILED;
+            queue.clear();
+        }
+        worker.request_stop();
+        if (worker.joinable()) worker.join();
+        std::lock_guard<std::mutex> guard(lock);
+        for (const auto& [source, data] : pending) kinds[source] = KIND_FAILED;
+        pending.clear();
+    }
+
+    static void fetchOne(const std::string& source, std::stop_token stop) {
         std::vector<unsigned char> data;
         int status = 0;
-        bool ok = UiHttp::get(source, {}, 15000, 4194304, data, status);
+        bool ok = UiHttp::get(source, {}, 15000, 4194304, data, status, stop);
         if (!ok || status != 200) {
             setKind(source, KIND_FAILED);
             return;
