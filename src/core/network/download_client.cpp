@@ -145,6 +145,7 @@ struct download_client::impl
     fs::native_file file;
     fs::path temp;
     sha1 hasher;
+    std::optional<sha1_digest> digest;
     std::uint64_t received = 0;
     std::optional<error> write_error;
     char error_buffer[CURL_ERROR_SIZE] = {};
@@ -496,6 +497,28 @@ struct download_client::impl
         { t.index, t.attempt, t.url, std::move (reason), retryable, 0 });
   }
 
+  std::optional<error>
+  content_error (transfer &t)
+  {
+    const auto &task = *t.task;
+    if (task.size >= 0
+        && t.received != static_cast<std::uint64_t> (task.size))
+      return make_error (errc::size_mismatch,
+                         sformat ("expected {} bytes, got {}", task.size,
+                                  t.received));
+    if (task.sha1)
+      {
+        if (!t.digest)
+          t.digest
+              = t.buffered ? sha1::digest (t.buffer.data (), t.buffer.size ())
+                           : t.hasher.finish ();
+        if (*t.digest != *task.sha1)
+          return make_error (errc::checksum_mismatch,
+                             sformat ("sha1 mismatch for {}", t.url));
+      }
+    return std::nullopt;
+  }
+
   void
   finish_buffered (std::unique_ptr<transfer> t)
   {
@@ -508,17 +531,8 @@ struct download_client::impl
       const auto &task = *t->task;
       completion done { t->index,     t->attempt, t->url,
                         std::nullopt, true,       t->received };
-      if (task.size >= 0
-          && t->buffer.size () != static_cast<std::size_t> (task.size))
-        done.failure = make_error (errc::size_mismatch,
-                                   sformat ("expected {} bytes, got {}",
-                                            task.size, t->buffer.size ()));
-      else if (task.sha1
-               && sha1::digest (t->buffer.data (), t->buffer.size ())
-                      != *task.sha1)
-        done.failure = make_error (errc::checksum_mismatch,
-                                   sformat ("sha1 mismatch for {}", t->url));
-      else
+      done.failure = content_error (*t);
+      if (!done.failure)
         {
           auto r = ensure_dir (task.target.parent_path ());
           if (r)
@@ -565,19 +579,8 @@ struct download_client::impl
       }
     if (auto r = t->file.close (); !r)
       return fail (*t, std::move (r).err (), false);
-    const auto &task = *t->task;
-    if (task.size >= 0
-        && t->received != static_cast<std::uint64_t> (task.size))
-      return fail (*t,
-                   make_error (errc::size_mismatch,
-                               sformat ("expected {} bytes, got {}", task.size,
-                                        t->received)),
-                   true);
-    if (task.sha1 && t->hasher.finish () != *task.sha1)
-      return fail (*t,
-                   make_error (errc::checksum_mismatch,
-                               sformat ("sha1 mismatch for {}", t->url)),
-                   true);
+    if (auto reason = content_error (*t))
+      return fail (*t, std::move (*reason), true);
     ++io_outstanding;
     auto *raw = t.release ();
     thread_pool::io ().post ([this, raw] {
@@ -1315,8 +1318,10 @@ struct download_client::impl
             for (auto &[easy, other] : active)
               if (other->index == t->index)
                 siblings.push_back (easy);
-            if (!siblings.empty () && code != CURLE_OK)
+            if (!siblings.empty ()
+                && (code != CURLE_OK || content_error (*t)))
               {
+                record (*t, false);
                 curl_multi_remove_handle (multi, t->easy);
                 release_easy (t->easy);
                 t->easy = nullptr;
