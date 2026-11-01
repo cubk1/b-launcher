@@ -154,14 +154,17 @@ namespace exui {
         SetFocusedWidget(order[index], true);
     }
 
-    // Reports a completed activation of a button or link to the window's callbacks.
+    // Shared final step for mouse, keyboard and form activations.
     void Window::ActivateWidget(Widget* widget) {
         const auto keep = Hold(widget);
         if (!keep || !CanReceiveInput(widget)) return;
+        const HWND hwnd = m_hwnd;
+        keep->Activate();
+        if (m_hwnd != hwnd || !CanReceiveInput(widget)) return;
         if (widget->GetActivationKind() == ActivationKind::Hyperlink) {
-            if (OnHyperlinkClicked) OnHyperlinkClicked(widget);
+            if (const auto clicked = OnHyperlinkClicked) clicked(widget);
         } else if (widget->GetActivationKind() == ActivationKind::Button) {
-            if (OnButtonClicked) OnButtonClicked(widget);
+            if (const auto clicked = OnButtonClicked) clicked(widget);
         }
     }
 
@@ -253,7 +256,6 @@ namespace exui {
         // A click needs the press and the release on the same widget.
         const auto target = Hold(HitTestWidget(x, y));
         if (target == pressed && Available(pressed.get())) {
-            pressed->Activate();
             ActivateWidget(pressed.get());
         }
         if (m_hwnd == hwnd) UpdateHover(Available(target.get()) ? target.get() : nullptr);
@@ -291,7 +293,6 @@ namespace exui {
                         Widget::CaptionMnemonic(widget->GetCaption()) != key)
                         continue;
                     const auto target = Hold(widget);
-                    target->Activate();
                     ActivateWidget(target.get());
                     return true;
                 }
@@ -312,7 +313,6 @@ namespace exui {
                 }
                 const auto current = Hold(m_focused); // the handler may have moved the focus
                 if ((wp == VK_RETURN || wp == VK_SPACE) && Available(current.get()) && Clickable(current.get())) {
-                    current->Activate();
                     ActivateWidget(current.get());
                     return true;
                 }

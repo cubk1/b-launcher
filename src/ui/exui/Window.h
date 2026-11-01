@@ -205,6 +205,9 @@ namespace exui {
         // the widgets: Background before the frame lines, Foreground after the title.
         virtual void PaintClientBackground(Gdiplus::Graphics&) {}
         virtual void PaintClientForeground(Gdiplus::Graphics&) {}
+        bool CanReceiveInput(const Widget* widget) const;
+        // Activates the widget, then notifies the window if it remains available here.
+        void ActivateWidget(Widget* widget);
 
     private:
         friend class Widget;
@@ -238,7 +241,6 @@ namespace exui {
         void PresentSurface(const Surface& surface);
 
         // WindowInput.cpp
-        bool CanReceiveInput(const Widget* widget) const;
         LRESULT HandleMouseMove(WPARAM wp, LPARAM lp);
         LRESULT HandleButtonDown(UINT msg, LPARAM lp);
         LRESULT HandleButtonUp(UINT msg, LPARAM lp);
@@ -246,7 +248,6 @@ namespace exui {
         bool HandleKey(UINT msg, WPARAM wp, LPARAM lp);
         void UpdateHover(Widget* widget);
         void CancelCapture();
-        void ActivateWidget(Widget* widget);
         void MoveTabFocus(bool backward);
         void RefreshTooltip(Widget* widget);
         void HideTooltip();

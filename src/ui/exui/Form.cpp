@@ -66,15 +66,12 @@ namespace exui {
 
     void Form::Click(uint32_t id) {
         auto* widget = FindControl(id);
-        if (!IsWindow(GetHwnd()) || !widget || !widget->IsEffectivelyEnabled() || !widget->IsEffectivelyVisible())
-            return;
-        widget->OnMouseDown(1, 1, VK_LBUTTON);
-        widget->OnMouseUp(1, 1, VK_LBUTTON);
-        widget->Activate();
-        // The window notifies after the widget's own action, as for a mouse click.
-        if (widget->GetActivationKind() == ActivationKind::Button ||
-            widget->GetActivationKind() == ActivationKind::Hyperlink)
-            Dispatch(widget);
+        const auto keep = widget ? widget->weak_from_this().lock() : nullptr;
+        if (!keep || !CanReceiveInput(widget)) return;
+        keep->OnMouseDown(1, 1, VK_LBUTTON);
+        if (!CanReceiveInput(widget)) return;
+        keep->OnMouseUp(1, 1, VK_LBUTTON);
+        ActivateWidget(widget);
     }
 
     Widget* Form::AddControl(const ControlSpec& spec) {
