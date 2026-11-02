@@ -69,20 +69,12 @@ namespace Drops {
             return blb::to_lower(blb::path_to_utf8(file.filename()));
         }
 
-        bool endsWith(const std::string& text, const std::string& tail) {
-            return text.size() >= tail.size() && text.compare(text.size() - tail.size(), tail.size(), tail) == 0;
-        }
-
-        bool looksLikeMod(const std::string& name) {
-            return endsWith(name, ".jar") || endsWith(name, ".jar.disabled") || endsWith(name, ".litemod");
-        }
-
         bool looksLikePack(const std::string& name) {
-            return endsWith(name, ".mrpack");
+            return name.ends_with(".mrpack");
         }
 
         bool looksLikeZip(const std::string& name) {
-            return endsWith(name, ".zip");
+            return name.ends_with(".zip");
         }
 
         std::string targetInstance() {
@@ -118,7 +110,7 @@ namespace Drops {
         bool acceptable(const std::vector<std::filesystem::path>& files) {
             return std::any_of(files.begin(), files.end(), [](const std::filesystem::path& file) {
                 std::string name = nameOf(file);
-                return looksLikeMod(name) || looksLikePack(name) || looksLikeZip(name);
+                return Mods::acceptsDrop(name) || looksLikePack(name) || looksLikeZip(name);
             });
         }
 
@@ -130,7 +122,7 @@ namespace Drops {
             if (std::filesystem::is_directory(file, error)) {
                 return item;
             }
-            if (looksLikeMod(name)) {
+            if (Mods::acceptsDrop(name)) {
                 item.kind = Kind::Mod;
                 return item;
             }
@@ -162,7 +154,7 @@ namespace Drops {
                     shaders = true;
                 }
                 if (path == "modrinth.index.json" || path == "manifest.json" || path == "mcbbs.packmeta" ||
-                    path == "instance.cfg" || endsWith(path, "mmc-pack.json")) {
+                    path == "instance.cfg" || path.ends_with("mmc-pack.json")) {
                     modpack = true;
                 }
             }
@@ -373,7 +365,7 @@ namespace Drops {
         int zips = 0;
         for (const std::filesystem::path& file : dragged) {
             std::string name = nameOf(file);
-            mods += looksLikeMod(name) ? 1 : 0;
+            mods += Mods::acceptsDrop(name) ? 1 : 0;
             packs += looksLikePack(name) ? 1 : 0;
             zips += looksLikeZip(name) ? 1 : 0;
         }

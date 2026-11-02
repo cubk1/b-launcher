@@ -18,17 +18,13 @@
 #include <cwctype>
 #include <filesystem>
 #include <string>
+#include <core/base/strings.hpp>
 #include <vector>
 
 namespace ForgottenMelody {
 
     namespace {
         using exui::ControlKind;
-
-        bool endsWith(const std::wstring& text, const std::wstring& suffix) {
-            return text.size() >= suffix.size() &&
-                    text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
-        }
 
         std::wstring lowered(std::wstring text) {
             for (wchar_t& c : text) {
@@ -47,7 +43,7 @@ namespace ForgottenMelody {
         // What the default interface takes as a mod when files are dropped on it.
         bool looksLikeMod(const std::filesystem::path& file) {
             std::wstring name = lowered(file.filename().wstring());
-            return endsWith(name, L".jar") || endsWith(name, L".jar.disabled") || endsWith(name, L".litemod");
+            return Mods::acceptsDrop(Platform::narrow(name));
         }
 
         // The default interface's tags, in words.
@@ -58,11 +54,7 @@ namespace ForgottenMelody {
                 add(L"无法读取：" + Platform::widen(mod.info.problem));
             }
             if (!mod.missing.empty()) {
-                std::string missing;
-                for (const std::string& item : mod.missing) {
-                    missing += (missing.empty() ? "" : "、") + item;
-                }
-                add(L"缺少前置：" + Platform::widen(missing));
+                add(L"缺少前置：" + Platform::widen(b_launcher_base::join(mod.missing, "、")));
             }
             if (!mod.info.enabled) {
                 add(L"已禁用");

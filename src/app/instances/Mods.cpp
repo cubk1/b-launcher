@@ -134,6 +134,15 @@ namespace Mods {
         }
     }
 
+    bool acceptsDrop(std::string_view filename) {
+        for (std::string_view suffix : {".jar", ".jar.disabled", ".litemod"}) {
+            if (filename.size() >= suffix.size() && blb::iequals(filename.substr(filename.size() - suffix.size()), suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool matches(const Mod& mod, std::string_view query) {
         return blb::icontains(mod.info.name, query) || blb::icontains(mod.info.id, query) ||
                 blb::icontains(mod.info.file_name, query);
