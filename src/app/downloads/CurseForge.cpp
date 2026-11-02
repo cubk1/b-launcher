@@ -101,6 +101,7 @@ namespace CurseForge {
                 case Kind::ResourcePack: return 12;
                 case Kind::Shader: return 6552;
                 case Kind::Datapack: return 6945;
+                case Kind::World: return 17;
                 default: return 6;
             }
         }
@@ -302,8 +303,8 @@ namespace CurseForge {
                                       [](const Category& a, const Category& b) { return a.name < b.name; });
                         }
                         return [byClass = std::move(byClass)] {
-                            for (Kind kind :
-                                 {Kind::Mod, Kind::Modpack, Kind::ResourcePack, Kind::Shader, Kind::Datapack}) {
+                            for (Kind kind : {Kind::Mod, Kind::Modpack, Kind::ResourcePack, Kind::Shader,
+                                              Kind::Datapack, Kind::World}) {
                                 auto found = byClass.find(classOf(kind));
                                 if (found != byClass.end()) {
                                     categoryLists[(int) kind] = found->second;

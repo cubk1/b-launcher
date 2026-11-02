@@ -90,6 +90,7 @@ namespace DownloadsScreen {
                 {Kind::ResourcePack, "资源包", 0xf5fd},
                 {Kind::Shader, "光影", 0xf185},
                 {Kind::Datapack, "数据包", 0xf1c0},
+                {Kind::World, "地图", 0xf279},
         };
 
         constexpr int VIEW_RESULTS = 0;
@@ -859,7 +860,7 @@ namespace DownloadsScreen {
             out.folded = folded;
             out.allLoaders = allLoaders;
             out.view = views.page;
-            Kind kind = query.kind;
+            Kind kind = query.kind == Kind::World && next != Source::CurseForge ? Kind::Mod : query.kind;
             source = next;
             Tab& in = tabs[(int) next];
             if (in.ready) {
@@ -926,6 +927,9 @@ namespace DownloadsScreen {
             UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
             y += 9.0f;
             for (const KindInfo& info : KINDS) {
+                if (info.kind == Kind::World && source != Source::CurseForge) {
+                    continue;
+                }
                 NavItemWidget item(std::string("downloads#kind#") + info.label, Ui::glyph(info.glyph), info.label);
                 item.selected(query.kind == info.kind).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
                 item.paint();
@@ -1182,9 +1186,9 @@ namespace DownloadsScreen {
                 return;
             }
             Kind kind = query.kind;
-            bool intoInstance = !ProjectInstaller::folder(kind).empty();
+            bool intoInstance = !ProjectInstaller::folder(kind).empty() || kind == Kind::World;
             if ((intoInstance && ProjectInstaller::installed(version, kind, target)) ||
-                (kind == Kind::Modpack && state == ProjectInstaller::State::Done)) {
+                ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done)) {
                 std::string done = "已安装";
                 float doneW = UiFont::width(done, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY(done, right - doneW, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -1220,6 +1224,7 @@ namespace DownloadsScreen {
                     }
                     break;
                 }
+                case Kind::World: ProjectInstaller::installWorld(version, project.title, target); break;
                 default: ProjectInstaller::install(version, kind, project.title, target); break;
             }
         }

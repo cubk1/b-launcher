@@ -10,6 +10,7 @@
 #include <core/base/hash.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
+#include <core/base/zip.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/meta/game_layout.hpp>
 #include <core/modpack/modpack.hpp>
@@ -24,7 +25,9 @@
 #endif
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
 #include <map>
 #include <memory>
@@ -176,6 +179,174 @@ namespace ProjectInstaller {
                 return {};
             }
             return report.failures.front().reason.message;
+        }
+
+        std::string slashes(std::string text) {
+            std::replace(text.begin(), text.end(), '\\', '/');
+            return text;
+        }
+
+        bool junk(const std::string& name) {
+            return name.starts_with("__MACOSX/");
+        }
+
+        bool validUtf8(std::string_view text) {
+            size_t i = 0;
+            while (i < text.size()) {
+                unsigned char c = (unsigned char) text[i];
+                size_t more = c < 0x80 ? 0 : (c >> 5) == 0x6 ? 1 : (c >> 4) == 0xE ? 2 : (c >> 3) == 0x1E ? 3 : 4;
+                if (more == 4) {
+                    return false;
+                }
+                for (size_t k = 1; k <= more; k++) {
+                    if (i + k >= text.size() || ((unsigned char) text[i + k] >> 6) != 0x2) {
+                        return false;
+                    }
+                }
+                i += more + 1;
+            }
+            return true;
+        }
+
+        bool formatCode(char c) {
+            char lower = (char) std::tolower((unsigned char) c);
+            return (lower >= '0' && lower <= '9') || (lower >= 'a' && lower <= 'f') || (lower >= 'k' && lower <= 'o') ||
+                    lower == 'r' || lower == 'x';
+        }
+
+        UINT legacyPage(const std::string& name) {
+            for (size_t i = 0; i + 1 < name.size(); i++) {
+                if (!formatCode(name[i + 1])) {
+                    continue;
+                }
+                switch ((unsigned char) name[i]) {
+                    case 0x15: return 437;
+                    case 0xF5: return 850;
+                    case 0xA7: return 1252;
+                    default: break;
+                }
+            }
+            return GetOEMCP();
+        }
+
+        std::string fromCodePage(const std::string& bytes, UINT page) {
+            if (bytes.empty()) {
+                return {};
+            }
+            DWORD flags = page == 437 ? MB_USEGLYPHCHARS : 0;
+            int wide = MultiByteToWideChar(page, flags, bytes.data(), (int) bytes.size(), nullptr, 0);
+            if (wide <= 0) {
+                return bytes;
+            }
+            std::wstring buffer((size_t) wide, L'\0');
+            MultiByteToWideChar(page, flags, bytes.data(), (int) bytes.size(), buffer.data(), wide);
+            int size = WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, nullptr, 0, nullptr, nullptr);
+            std::string out((size_t) std::max(size, 0), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, out.data(), size, nullptr, nullptr);
+            return out;
+        }
+
+        std::string entryName(const std::string& raw) {
+            std::string name = slashes(raw);
+            if (validUtf8(name)) {
+                return name;
+            }
+            return fromCodePage(name, legacyPage(name));
+        }
+
+        std::vector<std::string> worldRoots(const std::vector<blb::zip_entry>& entries) {
+            std::vector<std::string> found;
+            for (const blb::zip_entry& entry : entries) {
+                std::string name = entryName(entry.name);
+                if (entry.directory || junk(name)) {
+                    continue;
+                }
+                size_t slash = name.rfind('/');
+                if ((slash == std::string::npos ? name : name.substr(slash + 1)) == "level.dat") {
+                    found.push_back(slash == std::string::npos ? std::string() : name.substr(0, slash + 1));
+                }
+            }
+            std::sort(found.begin(), found.end(),
+                      [](const std::string& a, const std::string& b) { return a.size() < b.size(); });
+            std::vector<std::string> roots;
+            for (const std::string& root : found) {
+                if (std::none_of(roots.begin(), roots.end(),
+                                 [&](const std::string& outer) { return root.starts_with(outer); })) {
+                    roots.push_back(root);
+                }
+            }
+            return roots;
+        }
+
+        std::string worldName(const std::string& root, const std::string& fallback) {
+            std::string name = root.empty() ? fallback : root.substr(0, root.size() - 1);
+            size_t slash = name.rfind('/');
+            if (slash != std::string::npos) {
+                name = name.substr(slash + 1);
+            }
+            name = std::string(blb::trim(blb::fs::filter_filename(blb::strip_formatting(name))));
+            while (!name.empty() && (name.back() == '.' || name.back() == ' ')) {
+                name.pop_back();
+            }
+            return blb::fs::safe_filename(name) ? name : std::string("World");
+        }
+
+        std::filesystem::path freePath(const std::filesystem::path& folder, const std::string& stem,
+                                       const std::string& extension) {
+            std::filesystem::path target = folder / blb::path_from_utf8(stem + extension);
+            for (int i = 2; blb::fs::exists(target); i++) {
+                target = folder / blb::path_from_utf8(stem + " (" + std::to_string(i) + ")" + extension);
+            }
+            return target;
+        }
+
+        std::vector<std::string> extractWorlds(blb::zip_reader& zip, const std::filesystem::path& saves,
+                                               const std::string& title, blb::cancellation_token token) {
+            auto entries = zip.entries();
+            if (!entries) {
+                throw std::runtime_error(entries.err().message);
+            }
+            std::vector<std::string> roots = worldRoots(*entries);
+            if (roots.empty()) {
+                throw std::runtime_error("压缩包里没有找到存档（缺少 level.dat）");
+            }
+            std::vector<std::string> names;
+            for (const std::string& root : roots) {
+                std::filesystem::path folder = freePath(saves, worldName(root, title), std::string());
+                std::optional<blb::error> failure;
+                auto visited = zip.for_each([&](const blb::zip_entry& entry, blb::zip_reader& reader) {
+                    if (token.is_cancelled()) {
+                        failure = blb::make_error(blb::errc::cancelled, "cancelled");
+                        return false;
+                    }
+                    std::string name = entryName(entry.name);
+                    if (entry.directory || name.ends_with('/') || junk(name) || !name.starts_with(root)) {
+                        return true;
+                    }
+                    std::string relative = name.substr(root.size());
+                    std::filesystem::path target = folder / blb::path_from_utf8(relative);
+                    if (relative.empty() || !blb::fs::safe_relative(relative) || !blb::fs::is_inside(folder, target)) {
+                        return true;
+                    }
+                    if (auto done = reader.extract_current(target); !done) {
+                        failure = done.err();
+                        return false;
+                    }
+                    return true;
+                });
+                if (!visited && !failure) {
+                    failure = visited.err();
+                }
+                if (failure) {
+                    (void) blb::fs::remove_all(folder);
+                    if (failure->code == blb::errc::cancelled) {
+                        return {};
+                    }
+                    throw std::runtime_error(failure->message);
+                }
+                names.push_back(blb::path_to_utf8(folder.filename()));
+            }
+            return names;
         }
 
         void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text) {
@@ -450,6 +621,75 @@ namespace ProjectInstaller {
             return [task, problem, title, where] {
                 finish(task, problem.empty(),
                        problem.empty() ? "已将 " + title + " 保存到 " + where : "无法下载 " + title + "：" + problem);
+            };
+        });
+    }
+
+    void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey) {
+        const Instances::Entry* entry = Instances::find(instanceKey);
+        const Addons::File* file = version.file();
+        if (entry == nullptr || file == nullptr || state(version.id) == State::Running) {
+            return;
+        }
+        std::shared_ptr<Task> task = begin(version.id);
+        std::filesystem::path saves = entry->gameDirectory / "saves";
+        std::error_code error;
+        std::filesystem::path scratch =
+                std::filesystem::temp_directory_path(error) / "b-launcher" / ("world-" + version.id);
+        std::string instanceName = entry->info.id;
+        Addons::File chosen = *file;
+        run(task, [task, chosen, saves, scratch, title, instanceName](blb::cancellation_token token) -> Continuation {
+            (void) blb::fs::remove_all(scratch);
+            if (auto made = blb::fs::create_directories(scratch); !made) {
+                throw std::runtime_error(made.err().message);
+            }
+            std::vector<blb::net::download_task> files = {taskFor(chosen, scratch)};
+            std::filesystem::path archive = files.front().target;
+            std::string problem = download(files, task, token);
+            if (token.is_cancelled()) {
+                (void) blb::fs::remove_all(scratch);
+                return nullptr;
+            }
+            if (!problem.empty()) {
+                (void) blb::fs::remove_all(scratch);
+                return [task, title, problem] { finish(task, false, "无法下载 " + title + "：" + problem); };
+            }
+            std::vector<std::string> names;
+            std::string failure;
+            std::string kept;
+            if (auto made = blb::fs::create_directories(saves); !made) {
+                failure = made.err().message;
+            } else if (auto opened = blb::zip_reader::open(archive); opened) {
+                try {
+                    names = extractWorlds(*opened, saves, title, token);
+                } catch (const std::exception& exception) {
+                    failure = exception.what();
+                }
+            } else {
+                std::string stem = blb::path_to_utf8(archive.stem());
+                std::string extension = blb::path_to_utf8(archive.extension());
+                std::filesystem::path copy = freePath(saves, stem, extension);
+                if (auto copied = blb::fs::copy_file(archive, copy); copied) {
+                    kept = blb::path_to_utf8(copy.filename());
+                } else {
+                    failure = copied.err().message;
+                }
+            }
+            (void) blb::fs::remove_all(scratch);
+            if (token.is_cancelled()) {
+                return nullptr;
+            }
+            return [task, title, instanceName, names, failure, kept] {
+                if (!failure.empty()) {
+                    finish(task, false, "无法安装 " + title + "：" + failure);
+                } else if (!kept.empty()) {
+                    finish(task, true,
+                           title + " 不是 zip 压缩包，已把 " + kept + " 放进 " + instanceName +
+                                   " 的 saves 文件夹，请手动解压");
+                } else {
+                    finish(task, true,
+                           "已将 " + title + " 安装到 " + instanceName + "，存档：" + blb::join(names, "、"));
+                }
             };
         });
     }

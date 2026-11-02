@@ -132,6 +132,30 @@ replace_all (std::string_view text, std::string_view from, std::string_view to)
     }
 }
 
+std::string
+strip_formatting (std::string_view text)
+{
+  std::string out;
+  out.reserve (text.size ());
+  std::size_t i = 0;
+  while (i < text.size ())
+    {
+      if (text.compare (i, 2, "\xC2\xA7") == 0)
+        {
+          i += 2;
+          if (i < text.size ())
+            {
+              auto lead = static_cast<unsigned char> (text[i]);
+              i += lead < 0x80 ? 1 : lead < 0xE0 ? 2 : lead < 0xF0 ? 3 : 4;
+            }
+          continue;
+        }
+      out += text[i];
+      ++i;
+    }
+  return out;
+}
+
 std::optional<std::int64_t>
 parse_int (std::string_view text) noexcept
 {

@@ -11,7 +11,7 @@
 namespace Addons {
 
     enum class Source { Modrinth, CurseForge };
-    enum class Kind { Mod, Modpack, ResourcePack, Shader, Datapack };
+    enum class Kind { Mod, Modpack, ResourcePack, Shader, Datapack, World };
     enum class Sort { Relevance, Popularity, Downloads, Follows, Newest, Updated, Name };
     enum class Status { Loading, Ready, Failed };
 

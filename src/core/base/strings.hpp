@@ -23,6 +23,7 @@ std::string join (std::span<const std::string> parts,
                   std::string_view separator);
 std::string replace_all (std::string_view text, std::string_view from,
                          std::string_view to);
+std::string strip_formatting (std::string_view text);
 std::optional<std::int64_t> parse_int (std::string_view text) noexcept;
 // Editable arguments use double quotes; double a quote inside a quoted value.
 // Backslashes are literal, so Windows paths retain their original spelling.
