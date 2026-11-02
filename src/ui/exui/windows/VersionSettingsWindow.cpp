@@ -163,85 +163,80 @@ namespace ForgottenMelody {
         // The frame of the settings without the list of sections: one page, as the default interface has it.
         const SectionedForm::Frame FRAME = {
                 .width = 620, .height = 480, .top = 60, .bottom = 425, .listWidth = 0, .done = L"完成"};
-        // The page's height, and the rows from the one after the server on, which move up a row while there is none.
-        constexpr int PAGE_HEIGHT = 1241, ROW = 33, BELOW_SERVER = 666;
-
-        // The groups of the default interface down the page, the advanced ones after the others; the bounds count
-        // from the top left of the scrolled page. The groups keep 12 pixels from both sides of the backing, the
-        // scroll bar running in the right margin, and their fields 20 from both sides of the groups.
+        // Controls declare their roles here; the grouped layout supplies their bounds.
         const exui::ControlSpec CONTROLS[] = {
                 // 管理
-                {MANAGE_GROUP, ControlKind::Group, {12, 10, 566, 72}, L"管理"},
-                {MODS, ControlKind::Button, {32, 36, 100, 30}, L"模组管理"},
-                {LOADERS, ControlKind::Button, {140, 36, 100, 30}, L"修改加载器"},
-                {EXPORT, ControlKind::Button, {248, 36, 100, 30}, L"导出整合包"},
-                {SHORTCUT, ControlKind::Button, {356, 36, 100, 30}, L"生成快捷方式"},
-                {SCREENSHOTS, ControlKind::Button, {464, 36, 100, 30}, L"截图管理"},
+                {MANAGE_GROUP, ControlKind::Group, {}, L"管理"},
+                {MODS, ControlKind::Button, {}, L"模组管理"},
+                {LOADERS, ControlKind::Button, {}, L"修改加载器"},
+                {EXPORT, ControlKind::Button, {}, L"导出整合包"},
+                {SHORTCUT, ControlKind::Button, {}, L"生成快捷方式"},
+                {SCREENSHOTS, ControlKind::Button, {}, L"截图管理"},
                 // 游戏
-                {GAME_GROUP, ControlKind::Group, {12, 92, 566, 261}, L"游戏"},
-                {DIR_LABEL, ControlKind::Label, {32, 117, 95, 26}, L"游戏目录"},
-                {DIR, ControlKind::Combo, {132, 117, 250, 26}},
-                {JAVA_LABEL, ControlKind::Label, {32, 150, 95, 26}, L"Java"},
-                {JAVA, ControlKind::Combo, {132, 150, 350, 26}},
-                {VISIBILITY_LABEL, ControlKind::Label, {32, 183, 95, 26}, L"启动器可见性"},
-                {VISIBILITY, ControlKind::Combo, {132, 183, 250, 26}},
-                {PRIORITY_LABEL, ControlKind::Label, {32, 216, 95, 26}, L"进程优先级"},
-                {PRIORITY, ControlKind::Combo, {132, 216, 250, 26}},
-                {LOGS_LABEL, ControlKind::Label, {32, 249, 95, 26}, L"显示游戏日志"},
-                {LOGS, ControlKind::Combo, {132, 249, 250, 26}},
-                {PATCH_LABEL, ControlKind::Label, {32, 282, 95, 26}, L"启动器补丁"},
-                {PATCH, ControlKind::Combo, {132, 282, 250, 26}},
-                {OPTIONS_LABEL, ControlKind::Label, {32, 315, 95, 26}, L"游戏设置文件"},
-                {OPTIONS, ControlKind::Edit, {132, 315, 250, 26}},
+                {GAME_GROUP, ControlKind::Group, {}, L"游戏"},
+                {DIR_LABEL, ControlKind::Label, {}, L"游戏目录"},
+                {DIR, ControlKind::Combo, {}},
+                {JAVA_LABEL, ControlKind::Label, {}, L"Java"},
+                {JAVA, ControlKind::Combo, {}},
+                {VISIBILITY_LABEL, ControlKind::Label, {}, L"启动器可见性"},
+                {VISIBILITY, ControlKind::Combo, {}},
+                {PRIORITY_LABEL, ControlKind::Label, {}, L"进程优先级"},
+                {PRIORITY, ControlKind::Combo, {}},
+                {LOGS_LABEL, ControlKind::Label, {}, L"显示游戏日志"},
+                {LOGS, ControlKind::Combo, {}},
+                {PATCH_LABEL, ControlKind::Label, {}, L"启动器补丁"},
+                {PATCH, ControlKind::Combo, {}},
+                {OPTIONS_LABEL, ControlKind::Label, {}, L"游戏设置文件"},
+                {OPTIONS, ControlKind::Edit, {}},
                 // 内存
-                {MEMORY_GROUP, ControlKind::Group, {12, 363, 566, 96}, L"内存"},
-                {AUTO_MEMORY, ControlKind::Check, {32, 388, 200, 26}, L"自动分配"},
-                {MAX_LABEL, ControlKind::Label, {32, 421, 95, 26}, L"最大内存"},
-                {MAX, ControlKind::Edit, {132, 421, 80, 26}},
-                {MAX_UNIT, ControlKind::Label, {217, 421, 30, 26}, L"MB"},
-                {MAX_HINT, ControlKind::Label, {256, 421, 290, 26}},
+                {MEMORY_GROUP, ControlKind::Group, {}, L"内存"},
+                {AUTO_MEMORY, ControlKind::Check, {}, L"自动分配"},
+                {MAX_LABEL, ControlKind::Label, {}, L"最大内存"},
+                {MAX, ControlKind::Edit, {}},
+                {MAX_UNIT, ControlKind::Label, {}, L"MB"},
+                {MAX_HINT, ControlKind::Label, {}},
                 // 窗口
-                {WINDOW_GROUP, ControlKind::Group, {12, 469, 566, 96}, L"窗口"},
-                {SIZE_LABEL, ControlKind::Label, {32, 494, 95, 26}, L"窗口大小"},
-                {WIDTH, ControlKind::Edit, {132, 494, 70, 26}},
-                {TIMES, ControlKind::Label, {207, 494, 15, 26}, L"×"},
-                {HEIGHT, ControlKind::Edit, {227, 494, 70, 26}},
-                {SIZE_HINT, ControlKind::Label, {307, 494, 240, 26}, L"留空则使用游戏默认的大小"},
-                {FULLSCREEN, ControlKind::Check, {32, 527, 200, 26}, L"全屏启动"},
+                {WINDOW_GROUP, ControlKind::Group, {}, L"窗口"},
+                {SIZE_LABEL, ControlKind::Label, {}, L"窗口大小"},
+                {WIDTH, ControlKind::Edit, {}},
+                {TIMES, ControlKind::Label, {}, L"×"},
+                {HEIGHT, ControlKind::Edit, {}},
+                {SIZE_HINT, ControlKind::Label, {}, L"留空则使用游戏默认的大小"},
+                {FULLSCREEN, ControlKind::Check, {}, L"全屏启动"},
                 // 服务器
-                {SERVER_GROUP, ControlKind::Group, {12, 575, 566, 129}, L"服务器"},
-                {LOGIN_LABEL, ControlKind::Label, {32, 600, 95, 26}, L"登录方式"},
-                {LOGIN, ControlKind::Combo, {132, 600, 250, 26}},
-                {AUTH_LABEL, ControlKind::Label, {32, 633, 95, 26}},
-                {AUTH, ControlKind::Edit, {132, 633, 260, 26}},
-                {AUTH_PRESET, ControlKind::Button, {397, 631, 134, 30}},
-                {JOIN_LABEL, ControlKind::Label, {32, 666, 95, 26}, L"自动加入服务器"},
-                {JOIN, ControlKind::Edit, {132, 666, 300, 26}},
+                {SERVER_GROUP, ControlKind::Group, {}, L"服务器"},
+                {LOGIN_LABEL, ControlKind::Label, {}, L"登录方式"},
+                {LOGIN, ControlKind::Combo, {}},
+                {AUTH_LABEL, ControlKind::Label, {}},
+                {AUTH, ControlKind::Edit, {}},
+                {AUTH_PRESET, ControlKind::Button, {}},
+                {JOIN_LABEL, ControlKind::Label, {}, L"自动加入服务器"},
+                {JOIN, ControlKind::Edit, {}},
                 // 其他
-                {OTHER_GROUP, ControlKind::Group, {12, 714, 566, 105}, L"其他"},
-                {NOTES_LABEL, ControlKind::Label, {32, 739, 95, 26}, L"备注"},
-                {NOTES, ControlKind::Edit, {132, 739, 426, 70}},
+                {OTHER_GROUP, ControlKind::Group, {}, L"其他"},
+                {NOTES_LABEL, ControlKind::Label, {}, L"备注"},
+                {NOTES, ControlKind::Edit, {}},
                 // 高级设置
-                {COMMANDS_GROUP, ControlKind::Group, {12, 829, 566, 160}, L"自定义命令"},
-                {GAME_ARGS_LABEL, ControlKind::Label, {32, 854, 95, 26}, L"游戏参数"},
-                {GAME_ARGS, ControlKind::Edit, {132, 854, 426, 26}},
-                {PRE_LAUNCH_LABEL, ControlKind::Label, {32, 887, 95, 26}, L"启动前命令"},
-                {PRE_LAUNCH, ControlKind::Edit, {132, 887, 426, 26}},
-                {WRAPPER_LABEL, ControlKind::Label, {32, 920, 95, 26}, L"包装命令"},
-                {WRAPPER, ControlKind::Edit, {132, 920, 426, 26}},
-                {POST_EXIT_LABEL, ControlKind::Label, {32, 953, 95, 26}, L"退出后命令"},
-                {POST_EXIT, ControlKind::Edit, {132, 953, 426, 26}},
-                {JVM_GROUP, ControlKind::Group, {12, 999, 566, 127}, L"Java 虚拟机"},
-                {JVM_LABEL, ControlKind::Label, {32, 1024, 95, 26}, L"JVM 参数"},
-                {JVM, ControlKind::Edit, {132, 1024, 426, 26}},
-                {MIN_LABEL, ControlKind::Label, {32, 1057, 95, 26}, L"最小内存"},
-                {MIN, ControlKind::Edit, {132, 1057, 80, 26}},
-                {MIN_UNIT, ControlKind::Label, {217, 1057, 30, 26}, L"MB"},
-                {ENVIRONMENT_LABEL, ControlKind::Label, {32, 1090, 95, 26}, L"环境变量"},
-                {ENVIRONMENT, ControlKind::Edit, {132, 1090, 426, 26}},
-                {COMPATIBILITY_GROUP, ControlKind::Group, {12, 1136, 566, 95}, L"兼容性"},
-                {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {32, 1161, 250, 26}, L"不添加默认 JVM 参数"},
-                {NO_INTEGRITY_CHECK, ControlKind::Check, {32, 1194, 250, 26}, L"不检查游戏完整性"},
+                {COMMANDS_GROUP, ControlKind::Group, {}, L"自定义命令"},
+                {GAME_ARGS_LABEL, ControlKind::Label, {}, L"游戏参数"},
+                {GAME_ARGS, ControlKind::Edit, {}},
+                {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
+                {PRE_LAUNCH, ControlKind::Edit, {}},
+                {WRAPPER_LABEL, ControlKind::Label, {}, L"包装命令"},
+                {WRAPPER, ControlKind::Edit, {}},
+                {POST_EXIT_LABEL, ControlKind::Label, {}, L"退出后命令"},
+                {POST_EXIT, ControlKind::Edit, {}},
+                {JVM_GROUP, ControlKind::Group, {}, L"Java 虚拟机"},
+                {JVM_LABEL, ControlKind::Label, {}, L"JVM 参数"},
+                {JVM, ControlKind::Edit, {}},
+                {MIN_LABEL, ControlKind::Label, {}, L"最小内存"},
+                {MIN, ControlKind::Edit, {}},
+                {MIN_UNIT, ControlKind::Label, {}, L"MB"},
+                {ENVIRONMENT_LABEL, ControlKind::Label, {}, L"环境变量"},
+                {ENVIRONMENT, ControlKind::Edit, {}},
+                {COMPATIBILITY_GROUP, ControlKind::Group, {}, L"兼容性"},
+                {NO_DEFAULT_JVM_ARGS, ControlKind::Check, {}, L"不添加默认 JVM 参数"},
+                {NO_INTEGRITY_CHECK, ControlKind::Check, {}, L"不检查游戏完整性"},
         };
 
         // The version settings of the default interface on one page that scrolls, in the frame of the settings.
@@ -287,9 +282,6 @@ namespace ForgottenMelody {
                 UpdateText(MAX_HINT, hint);
                 bool server = settings.login == "yggdrasil" || settings.login == "nide8";
                 bool nide8 = settings.login == "nide8";
-                for (uint32_t id : {AUTH_LABEL, AUTH, AUTH_PRESET}) {
-                    FindControl(id)->SetVisible(server);
-                }
                 if (!laidOut || server != withServer) {
                     layout(server);
                 }
@@ -376,18 +368,70 @@ namespace ForgottenMelody {
             // The control that had the focus at the last refresh.
             exui::Widget* focused = nullptr;
 
-            // Puts every control where the table has it, those below the server row a row higher while there is
-            // none, as the default interface does.
+            exui::Layout cell(uint32_t id, int width = 0, int height = 0) {
+                return {*FindControl(id), width, height};
+            }
+
+            exui::Layout row(uint32_t label, std::vector<exui::Layout> fields, int height = 26) {
+                fields.insert(fields.begin(), {*FindControl(label), 95, 26, exui::Layout::Align::Start});
+                return exui::Layout::Row(std::move(fields), 5, height);
+            }
+
+            exui::Layout group(uint32_t id, std::vector<exui::Layout> rows, RECT padding = {20, 25, 20, 12}) {
+                return exui::Layout::Frame(*FindControl(id), exui::Layout::Column(std::move(rows), 7), padding);
+            }
+
             void layout(bool server) {
+                using exui::Layout;
                 laidOut = true;
                 withServer = server;
-                const int shift = server ? 0 : ROW;
-                for (const exui::ControlSpec& spec : CONTROLS) {
-                    const Gdiplus::Rect& at = spec.bounds;
-                    int height = spec.id == SERVER_GROUP ? at.Height - shift : at.Height;
-                    FindControl(spec.id)->SetBounds(at.X, at.Y >= BELOW_SERVER ? at.Y - shift : at.Y, at.Width, height);
+                std::vector<Layout> serverRows{row(LOGIN_LABEL, {cell(LOGIN, 250)})};
+                for (uint32_t id : {AUTH_LABEL, AUTH, AUTH_PRESET}) FindControl(id)->SetVisible(server);
+                if (server) {
+                    serverRows.push_back(row(AUTH_LABEL, {cell(AUTH, 260), cell(AUTH_PRESET, 134, 30)}));
                 }
-                page->SetContentHeight(PAGE_HEIGHT - shift);
+                serverRows.push_back(row(JOIN_LABEL, {cell(JOIN, 300)}));
+                page->SetContentLayout(Layout::Column({
+                        group(MANAGE_GROUP, {Layout::Row({cell(MODS, 100), cell(LOADERS, 100), cell(EXPORT, 100),
+                                                        cell(SHORTCUT, 100), cell(SCREENSHOTS, 100)}, 8, 30)},
+                              {20, 26, 14, 16}),
+                        group(GAME_GROUP, {
+                                row(DIR_LABEL, {cell(DIR, 250)}),
+                                row(JAVA_LABEL, {cell(JAVA, 350)}),
+                                row(VISIBILITY_LABEL, {cell(VISIBILITY, 250)}),
+                                row(PRIORITY_LABEL, {cell(PRIORITY, 250)}),
+                                row(LOGS_LABEL, {cell(LOGS, 250)}),
+                                row(PATCH_LABEL, {cell(PATCH, 250)}),
+                                row(OPTIONS_LABEL, {cell(OPTIONS, 250)}),
+                        }),
+                        group(MEMORY_GROUP, {
+                                Layout::Row({cell(AUTO_MEMORY, 200)}, 0, 26),
+                                row(MAX_LABEL, {Layout::Row({cell(MAX, 80), cell(MAX_UNIT, 30)}, 5, 119),
+                                                cell(MAX_HINT, 290)}),
+                        }),
+                        group(WINDOW_GROUP, {
+                                row(SIZE_LABEL, {Layout::Row({cell(WIDTH, 70), cell(TIMES, 15), cell(HEIGHT, 70)}, 5, 170),
+                                                 cell(SIZE_HINT, 240)}),
+                                Layout::Row({cell(FULLSCREEN, 200)}, 0, 26),
+                        }),
+                        group(SERVER_GROUP, std::move(serverRows)),
+                        group(OTHER_GROUP, {row(NOTES_LABEL, {cell(NOTES)}, 70)}, {20, 25, 20, 10}),
+                        group(COMMANDS_GROUP, {
+                                row(GAME_ARGS_LABEL, {cell(GAME_ARGS)}),
+                                row(PRE_LAUNCH_LABEL, {cell(PRE_LAUNCH)}),
+                                row(WRAPPER_LABEL, {cell(WRAPPER)}),
+                                row(POST_EXIT_LABEL, {cell(POST_EXIT)}),
+                        }, {20, 25, 20, 10}),
+                        group(JVM_GROUP, {
+                                row(JVM_LABEL, {cell(JVM)}),
+                                row(MIN_LABEL, {cell(MIN, 80), cell(MIN_UNIT, 30)}),
+                                row(ENVIRONMENT_LABEL, {cell(ENVIRONMENT)}),
+                        }, {20, 25, 20, 10}),
+                        group(COMPATIBILITY_GROUP, {
+                                Layout::Row({cell(NO_DEFAULT_JVM_ARGS, 250)}, 0, 26),
+                                Layout::Row({cell(NO_INTEGRITY_CHECK, 250)}, 0, 26),
+                        }, {20, 25, 20, 11}),
+                }, 10), {12, 10, 0, 10});
             }
 
             // Tab may move the focus to a control scrolled out of sight; the page then scrolls to it.

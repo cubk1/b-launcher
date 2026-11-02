@@ -18,7 +18,14 @@ namespace exui {
         m_contentHeight = height;
     }
     void ScrollPanel::SetContentHeight(int height) {
+        m_layout.reset();
         m_contentHeight = std::max(0, height);
+        Layout();
+    }
+    void ScrollPanel::SetContentLayout(exui::Layout layout, RECT margins) {
+        m_layout = std::move(layout);
+        m_margins = {std::max(0L, margins.left), std::max(0L, margins.top),
+                     std::max(0L, margins.right), std::max(0L, margins.bottom)};
         Layout();
     }
     void ScrollPanel::ScrollTo(int position) {
@@ -30,10 +37,17 @@ namespace exui {
         ScrollTo(m_scroll - delta * WHEEL_STEP / WHEEL_DELTA);
         return true;
     }
+    void ScrollPanel::OnPaint(Gdiplus::Graphics&) { Layout(); }
     void ScrollPanel::Layout() {
+        if (m_layout) m_contentHeight = m_layout->Measure().Height + m_margins.top + m_margins.bottom;
         const int most = std::max(0, m_contentHeight - GetHeight());
         m_scroll = std::clamp(m_scroll, 0, most);
         m_content->SetBounds(0, -m_scroll, std::max(0, GetWidth() - BAR - GAP), m_contentHeight);
+        if (m_layout) {
+            m_layout->Apply({m_margins.left, m_margins.top,
+                            m_content->GetWidth() - int(m_margins.left + m_margins.right),
+                            m_contentHeight - int(m_margins.top + m_margins.bottom)});
+        }
         m_bar->SetVisible(most > 0);
         m_bar->SetBounds(GetWidth() - BAR, 0, BAR, GetHeight());
         m_bar->SetRange(0, most, GetHeight());
