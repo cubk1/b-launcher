@@ -13,6 +13,7 @@
 #endif
 #include <windows.h>
 
+#include <algorithm>
 #include <cwctype>
 #include <map>
 #include <string_view>
@@ -36,7 +37,7 @@ namespace GameOptions {
         std::unordered_map<std::wstring, Cached> cache;
 
         std::wstring keyOf(const std::filesystem::path& file) {
-            std::wstring text = file.lexically_normal().wstring();
+            std::wstring text = blb::fs::absolute(file).lexically_normal().wstring();
             for (wchar_t& c : text) {
                 c = (wchar_t) std::towlower(c);
             }
@@ -108,13 +109,10 @@ namespace GameOptions {
 
     bool inUse(const std::filesystem::path& file) {
         std::wstring wanted = keyOf(file);
-        for (const Game::Session& session : Game::sessions()) {
-            const Instances::Entry* entry = Instances::find(session.instance);
-            if (entry != nullptr && keyOf(fileOf(*entry)) == wanted) {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(Game::sessions(), [&](const Game::Session& session) {
+            return !session.optionsFile.empty() &&
+                    (keyOf(session.optionsFile) == wanted || blb::fs::same_file(file, session.optionsFile));
+        });
     }
 
     std::optional<std::string> get(const std::filesystem::path& file, const std::string& key) {
@@ -127,6 +125,7 @@ namespace GameOptions {
     }
 
     std::string set(const std::filesystem::path& file, const std::string& key, const std::string& value) {
+        if (inUse(file)) return "游戏正在使用这些设置，退出游戏后才能修改";
         auto existing = blb::fs::read_file(file);
         if (!existing && existing.err().code != blb::errc::not_found) {
             return existing.err().message;
@@ -164,10 +163,7 @@ namespace GameOptions {
         if (auto written = blb::fs::write_file_atomic(file, content); !written) {
             return written.err().message;
         }
-        Cached& entry = cache[keyOf(file)];
-        entry.checked = 0;
-        entry.exists = false;
-        entry.values.clear();
+        cache.erase(keyOf(file));
         return {};
     }
 }

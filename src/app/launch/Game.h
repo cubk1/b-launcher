@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,8 @@ namespace Game {
         State state = State::Idle;
         int log = 0;
         double uptime = 0.0;
+        // The path captured for this launch, unaffected by later instance edits.
+        std::filesystem::path optionsFile;
     };
 
     State state(const std::string& key);
