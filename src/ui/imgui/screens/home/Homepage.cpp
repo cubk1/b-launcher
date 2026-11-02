@@ -96,6 +96,9 @@ namespace Homepage {
         constexpr float LOGO_MIN = 96.0f;
         constexpr double URL_SETTLE = 0.8;
 
+        float columnTop = -1.0f;
+        float columnBottom = -1.0f;
+
         float logoFaint() {
             return Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
                                                  : (UiTheme::isLight() ? 0.12f : 0.09f);
@@ -766,7 +769,17 @@ namespace Homepage {
         return source() == SOURCE_NONE && views.size() <= 1 && HomeWidgets::enabled(HomeWidgets::LAUNCH);
     }
 
+    bool column(float& top, float& bottom) {
+        if (columnTop < 0.0f) {
+            return false;
+        }
+        top = columnTop;
+        bottom = columnBottom;
+        return true;
+    }
+
     void draw(float left, float top, float right, float bottom, float reserve, bool blocked) {
+        columnTop = -1.0f;
         if (!started) {
             started = true;
             loadVariables();
@@ -813,6 +826,8 @@ namespace Homepage {
                         Logo::draw(cx - size * 0.5f, top + (space - size) * 0.5f, size, logoFaint());
                     }
                     HomeWidgets::draw(columnX, y, columnW, covered);
+                    columnTop = y;
+                    columnBottom = y + listH;
                 }
                 if (modal.open) {
                     drawModal(blocked);

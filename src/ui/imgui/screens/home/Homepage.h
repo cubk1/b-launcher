@@ -21,6 +21,7 @@ namespace Homepage {
     void setFile(const std::string& value);
     void reload();
     bool launchShown();
+    bool column(float& top, float& bottom);
 
     void draw(float left, float top, float right, float bottom, float reserve, bool blocked);
     void poll();

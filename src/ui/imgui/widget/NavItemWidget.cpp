@@ -19,7 +19,8 @@ NavItemWidget::NavItemWidget(const std::string& id, const std::string& glyph, co
       child(false),
       pressed(false),
       fold(0.0f),
-      openWidth(0.0f) {}
+      openWidth(0.0f),
+      trail(0.0f) {}
 
 NavItemWidget& NavItemWidget::selected(bool value) {
     active = value;
@@ -39,6 +40,11 @@ NavItemWidget& NavItemWidget::note(const std::string& text) {
 NavItemWidget& NavItemWidget::folded(float amount, float fullWidth) {
     fold = amount;
     openWidth = fullWidth;
+    return *this;
+}
+
+NavItemWidget& NavItemWidget::reserve(float right) {
+    trail = right;
     return *this;
 }
 
@@ -68,7 +74,7 @@ void NavItemWidget::paint() {
                               UiRender::mix(UiTheme::textMuted(), UiTheme::accent(), r), UiWidgets::TEXT_ICON);
     }
     float labelW = fold > 0.0f ? std::max(w, openWidth) : w;
-    float room = labelW - indent - 31 - 10;
+    float room = labelW - indent - 31 - 10 - trail;
     std::string shown = NewUi::fit(label, room);
     float savedAlpha = UiRender::alphaMul;
     UiRender::alphaMul = savedAlpha * std::max(0.0f, 1.0f - fold * 2.0f);
@@ -78,7 +84,7 @@ void NavItemWidget::paint() {
     if (!aside.empty() && !cut) {
         float noteX = x + indent + 31 + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         float parens = UiFont::width("\xEF\xBC\x88\xEF\xBC\x89", UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-        float left = x + labelW - 10 - noteX - parens;
+        float left = x + labelW - 10 - trail - noteX - parens;
         if (left > 12.0f) {
             std::string inner = NewUi::fit(aside, left);
             cut = inner != aside;

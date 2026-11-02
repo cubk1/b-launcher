@@ -343,6 +343,14 @@ namespace Notifications {
         UiRender::alphaMul = savedAlphaMul;
     }
 
+    float clearance() {
+        return (BOTTOM + STEP) * SCALE;
+    }
+
+    float insetAbove(float layoutH, float top) {
+        return std::max(0.0f, layoutH - (BOTTOM + STEP - HEIGHT) * SCALE - top + 8.0f);
+    }
+
     bool active() {
         return !items.empty();
     }

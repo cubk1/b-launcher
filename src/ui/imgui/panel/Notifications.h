@@ -22,5 +22,7 @@ namespace Notifications {
     void finish(const std::string& id, const Style& style, const std::string& text, long long durationMs);
 
     void render(float layoutW, float layoutH, float bottomInset = 0.0f);
+    float clearance();
+    float insetAbove(float layoutH, float top);
     bool active();
 }

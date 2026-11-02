@@ -16,6 +16,7 @@ public:
     bool pressed;
     float fold;
     float openWidth;
+    float trail;
 
     NavItemWidget(const std::string& id, const std::string& glyph, const std::string& label);
     NavItemWidget& selected(bool value);
@@ -23,5 +24,6 @@ public:
     NavItemWidget& image(uint32_t texture, float size = 16.0f);
     NavItemWidget& note(const std::string& text);
     NavItemWidget& folded(float amount, float fullWidth);
+    NavItemWidget& reserve(float right);
     void paint() override;
 };

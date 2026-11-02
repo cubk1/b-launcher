@@ -651,6 +651,20 @@ namespace MainWindow {
                 NewUi::mouseX, NewUi::mouseY, 180.0f);
     }
 
+    static float playingWidth(const std::string& key) {
+        float shown = UiState::getOrDefault("nav#playing#" + key, 0.0f);
+        if (shown < 0.01f) {
+            return 0.0f;
+        }
+        size_t count = 0;
+        for (const Game::Session& session : Game::sessionsOf(key)) {
+            count += session.state == Game::State::Running ? 1 : 0;
+        }
+        float width =
+                count > 1 ? 17.0f + UiFont::width(std::to_string(count), UiFont::MEDIUM, UiWidgets::TEXT_SMALL) : 13.0f;
+        return width * shown;
+    }
+
     static void playing(const std::string& key, float y) {
         Game::State state = Game::state(key);
         float shown = UiState::motion("nav#playing#" + key, state != Game::State::Idle ? 1.0f : 0.0f, 14.0f);
@@ -732,7 +746,7 @@ namespace MainWindow {
         NavItemWidget item("nav#instance#" + key, Ui::glyph(0xf071), entry.info.id);
         bool current = Instances::selected() == key &&
                 (pages.page == PAGE_HOME || pages.page == PAGE_EDIT_LOADERS || pages.page == pageOf(key));
-        item.selected(current).folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H);
+        item.selected(current).folded(fold, fullListW).reserve(playingWidth(key)).bounds(ITEM_X, y, listW, ITEM_H);
         uint32_t image = InstancePage::icon(entry);
         if (image != 0) {
             item.image(image, 16.0f);
@@ -1174,7 +1188,14 @@ namespace MainWindow {
         }
         Drop::draw(width(), height());
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();
-        Notifications::render(width(), height(), floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f);
+        float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
+        float columnTop = 0.0f;
+        float columnBottom = 0.0f;
+        if (pages.page == PAGE_HOME && !floating && Homepage::column(columnTop, columnBottom) &&
+            columnBottom + 8.0f > height() - Notifications::clearance()) {
+            inset = Notifications::insetAbove(height(), columnTop);
+        }
+        Notifications::render(width(), height(), inset);
     }
 
     bool isDragArea(float x, float y) {
