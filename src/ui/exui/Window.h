@@ -10,7 +10,7 @@
 namespace exui {
     class CaptionButton;
 
-    enum class SkinBackgroundMode : int { EdgeFade = 0, Stretch = 1, Tile = 2, NineGrid = 3, BaseColorOnly = 100 };
+    enum class SkinBackgroundMode : int { EdgeFade = 0, Stretch = 1, Tile = 2, NineGrid = 3, Cover = 4, BaseColorOnly = 100 };
 
     struct WindowBackground {
         std::vector<uint8_t> skinBytes;
