@@ -291,6 +291,11 @@ namespace Page {
         offset = UiRender::snapLayout(state.shown);
     }
 
+    float scrollOffset(const std::string& id) {
+        auto found = scrolls.find(id);
+        return found != scrolls.end() ? UiRender::snapLayout(found->second.shown) : 0.0f;
+    }
+
     bool Scroll::begin() {
         UiRender::scissor(left - 4.0f, top, width + 8.0f, bottom - top);
         clipping = true;

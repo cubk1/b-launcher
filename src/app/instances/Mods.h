@@ -22,6 +22,7 @@ namespace Mods {
 
     struct List {
         bool loading = true;
+        int serial = 0;
         std::vector<Mod> mods;
     };
 

@@ -45,6 +45,9 @@ struct mod_info
   std::string description;
   std::vector<std::string> authors;
   std::string homepage;
+  std::string sources;
+  std::string issues;
+  std::string license;
   std::string icon;
   std::vector<mod_dependency> dependencies;
   std::vector<std::string> provides;
@@ -71,5 +74,5 @@ std::vector<mod_issue>
 check_dependencies (std::span<const mod_info> mods,
                     std::span<const std::string> builtin_ids);
 const mod_info *find_mod (std::span<const mod_info> mods, std::string_view id);
-
+bool version_in_range (std::string_view version, std::string_view range);
 }

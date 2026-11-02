@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace Drops {
 
@@ -18,6 +19,8 @@ namespace Drops {
         std::function<void(const std::filesystem::path& file, const blb::modpack::pack_manifest& manifest)> openModpack;
         // Whether files are taken now; always when unset.
         std::function<bool()> accepting;
+        std::function<void(const std::string& target, const std::vector<std::filesystem::path>& mods, int x, int y)>
+                placed;
     };
 
     // Takes the files dropped on window: a modpack is set up as a new instance, mods, resource packs and shader packs
@@ -28,6 +31,8 @@ namespace Drops {
     // be taken.
     bool hovering();
     std::string promise();
+    bool point(int& x, int& y);
+    int modCount();
     // A modpack file picked by hand, set up as if it had been dropped.
     void importPack(const std::filesystem::path& file);
     // Acts on the dropped files once they are read; one of the services.

@@ -32,4 +32,5 @@ namespace MainWindow {
     std::string shownInstance();
     void renamed(const std::string& from, const std::string& to);
     bool isDragArea(float x, float y);
+    void claimSearch();
 }
