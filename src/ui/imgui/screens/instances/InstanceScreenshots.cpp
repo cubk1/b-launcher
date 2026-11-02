@@ -66,12 +66,8 @@ namespace InstanceScreenshots {
             if (ticks <= 0) {
                 return {};
             }
-            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            auto seconds = (std::time_t) (mtime / ticks);
-            double diff = std::difftime(now, seconds);
+            double diff = (double) (blb::fs::mtime_now() - mtime) / ticks;
             char text[48];
-            std::tm local{};
-            localtime_s(&local, &seconds);
             if (diff < 60) {
                 return "刚刚";
             }
@@ -86,6 +82,13 @@ namespace InstanceScreenshots {
             if (diff < 7 * 86400) {
                 std::snprintf(text, sizeof(text), "%d 天前", (int) (diff / 86400));
                 return text;
+            }
+            auto changed = std::chrono::system_clock::now() -
+                    std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::duration<double>(diff));
+            auto seconds = std::chrono::system_clock::to_time_t(changed);
+            std::tm local{};
+            if (localtime_s(&local, &seconds) != 0) {
+                return {};
             }
             std::snprintf(text, sizeof(text), "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
             return text;
