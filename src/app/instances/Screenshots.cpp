@@ -9,8 +9,7 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
-#include <cctype>
-#include <cstring>
+#include <cmath>
 #include <map>
 #include <memory>
 
@@ -48,11 +47,8 @@ namespace Screenshots {
         Full fullOne;
 
         bool isImage(const std::filesystem::path& path) {
-            std::string ext = blb::path_to_utf8(path.extension());
-            for (char& c : ext) {
-                c = (char) std::tolower((unsigned char) c);
-            }
-            return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".webp" || ext == ".tga";
+            std::string ext = blb::to_lower(blb::path_to_utf8(path.extension()));
+            return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga";
         }
 
         std::string thumbKey(const std::filesystem::path& path, std::int64_t modified) {
