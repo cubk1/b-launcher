@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <functional>
 #include <map>
@@ -35,12 +36,14 @@ namespace Profiles {
 
         AsyncTasks tasks;
         std::map<std::string, Profile> profiles;
+        std::map<std::string, uint64_t> loadVersions;
         std::map<std::string, NameCheck> checks;
         const NameCheck noCheck;
 
         struct Image {
             bool requested = false;
             std::shared_ptr<const Pixels> pixels;
+            bool failed = false;
         };
         std::map<std::string, Image> images;
 
@@ -207,9 +210,6 @@ namespace Profiles {
             if (account == nullptr) {
                 return;
             }
-            if (session.expired) {
-                Accounts::markExpired(key);
-            }
             blb::auth::account updated = session.renewed ? session.account : *account;
             if (profile != nullptr) {
                 updated.name = profile->name;
@@ -218,11 +218,22 @@ namespace Profiles {
             if (session.renewed || updated.name != account->name || updated.skin_url != account->skin_url) {
                 Accounts::refreshed(updated);
             }
+            // Saving refreshed credentials clears the old expiry marker. Apply
+            // the final response's authentication state after that write.
+            if (session.expired) {
+                Accounts::markExpired(key);
+            }
         }
 
         void lookOptiFine(const std::string& key, const std::string& name);
 
+        bool currentLoad(const std::string& key, uint64_t version) {
+            auto found = loadVersions.find(key);
+            return found != loadVersions.end() && found->second == version && Accounts::find(key) != nullptr;
+        }
+
         void load(const std::string& key) {
+            uint64_t version = ++loadVersions[key];
             Profile& entry = profiles[key];
             std::optional<Session> found = sessionOf(key);
             if (!found) {
@@ -233,7 +244,7 @@ namespace Profiles {
             entry.status = Status::Loading;
             entry.error.clear();
             tasks.run(
-                    [key, session = *found](blb::cancellation_token token) mutable -> Continuation {
+                    [key, version, session = *found](blb::cancellation_token token) mutable -> Continuation {
                         Profile out;
                         std::string problem;
                         auto response = call(session, "GET", std::string(), std::string(), std::string(), token);
@@ -256,7 +267,8 @@ namespace Profiles {
                                 }
                             }
                         }
-                        return [key, session, out, problem] {
+                        return [key, version, session, out, problem] {
+                            if (!currentLoad(key, version)) return;
                             Profile& entry = profiles[key];
                             if (!problem.empty()) {
                                 entry.status = Status::Failed;
@@ -272,8 +284,9 @@ namespace Profiles {
                             lookOptiFine(key, entry.name);
                         };
                     },
-                    [key](const std::string& error) -> Continuation {
-                        return [key, error] {
+                    [key, version](const std::string& error) -> Continuation {
+                        return [key, version, error] {
+                            if (!currentLoad(key, version)) return;
                             profiles[key].status = Status::Failed;
                             profiles[key].error = error;
                         };
@@ -299,6 +312,8 @@ namespace Profiles {
                 return;
             }
             entry.working = request.working;
+            // A read started before this mutation must not restore old profile data.
+            ++loadVersions[key];
             tasks.run(
                     [key, request, session = *found](blb::cancellation_token token) mutable -> Continuation {
                         auto response = call(session, request.method, request.path, request.body, request.type, token);
@@ -442,14 +457,14 @@ namespace Profiles {
                 tasks.run(
                         [id, url, make](blb::cancellation_token token) -> Continuation {
                             auto data = blb::net::http_get(url, token);
-                            if (!data) {
-                                return nullptr;
-                            }
-                            std::shared_ptr<const Pixels> source = Pixels::decode(data->data(), data->size());
+                            std::shared_ptr<const Pixels> source =
+                                    data ? Pixels::decode(data->data(), data->size()) : nullptr;
                             std::shared_ptr<const Pixels> made = source != nullptr ? make(*source) : nullptr;
-                            return [id, made] { images[id].pixels = made; };
+                            return [id, made] { images[id] = Image{true, made, made == nullptr}; };
                         },
-                        nullptr);
+                        [id](const std::string&) -> Continuation {
+                            return [id] { images[id].failed = true; };
+                        });
             }
             return entry.pixels;
         }
@@ -473,6 +488,8 @@ namespace Profiles {
 
     void reload(const std::string& key) {
         if (profiles[key].working.empty()) {
+            // Retry failures on an explicit reload; keep successful and in-flight images.
+            std::erase_if(images, [](const auto& item) { return item.second.failed; });
             load(key);
         }
     }
