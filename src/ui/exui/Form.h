@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/exui/Window.h"
+#include "ui/exui/Layout.h"
 #include <initializer_list>
 #include <map>
 #include <span>
@@ -64,6 +65,9 @@ namespace exui {
         void Click(uint32_t id);
 
     protected:
+        // Arranges controls automatically after window size/DPI changes. The
+        // margins are left, top, right and bottom in logical pixels.
+        void SetLayout(Layout layout, RECT margins = {});
         // Creates the widget for spec, or returns null for ControlKind::None.
         Widget* AddControl(const ControlSpec& spec);
         void AddControls(std::span<const ControlSpec> specs);
@@ -80,9 +84,12 @@ namespace exui {
         LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override;
 
     private:
+        void ArrangeControls();
         void Dispatch(Widget* widget);
         void MoveInto(Widget& parent, Widget* child);
         std::map<uint32_t, std::shared_ptr<Widget>> m_controls;
+        std::optional<Layout> m_layout;
+        RECT m_layoutMargins{};
         bool m_destroyed = false;
     };
 
