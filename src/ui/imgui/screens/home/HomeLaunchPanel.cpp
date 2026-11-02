@@ -186,7 +186,7 @@ namespace HomeLaunchPanel {
             const Instances::Entry* entry = Instances::find(key);
             Game::State state = Game::state(key);
             bool signedOut = state == Game::State::Idle && Accounts::current() == nullptr;
-            bool usable = state != Game::State::Idle || (!signedOut && entry != nullptr && entry->info.valid);
+            bool usable = state != Game::State::Idle || signedOut || (entry != nullptr && entry->info.valid);
 
             bool hovered = usable && !blocked && NewUi::hit(x, y, w, LAUNCH_H);
             float hover = UiState::motion("home#launch#hover", hovered ? 1.0f : 0.0f, 18.0f);
