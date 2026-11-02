@@ -4,6 +4,8 @@
 
 轻量 Minecraft 启动器，使用纯C++开发
 
+QQ交流群：858714745
+
 ## 优势
 
 - 使用纯C++开发，原生UI，没有Java、Electron、Tauri、.NET
