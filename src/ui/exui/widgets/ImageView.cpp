@@ -7,6 +7,10 @@
 namespace exui {
 
     void ImageView::SetImage(std::unique_ptr<Gdiplus::Bitmap> value, bool resetView) {
+        // Convert once when loading; GDI+ otherwise repeats this work on every pan.
+        if (value && value->GetPixelFormat() != PixelFormat32bppPARGB) {
+            if (auto prepared = CopyBitmap(*value)) value = std::move(prepared);
+        }
         image = std::move(value);
         SetTabStop(image != nullptr);
         if (resetView) ResetView();
@@ -41,11 +45,12 @@ namespace exui {
         if (!image) return false;
         SetCursor(LoadCursorW(nullptr, zoom > 1 ? IDC_SIZEALL : IDC_ARROW));
         if (dragging) {
+            float previousX = panX, previousY = panY;
             panX += x - dragPoint.x;
             panY += y - dragPoint.y;
             dragPoint = {x, y};
             ClampPan();
-            Invalidate();
+            if (panX != previousX || panY != previousY) Invalidate();
         }
         return true;
     }
@@ -53,14 +58,20 @@ namespace exui {
     bool ImageView::OnMouseUp(int, int, UINT button) {
         if (button != VK_LBUTTON || !dragging) return false;
         dragging = false;
+        Invalidate();
         return true;
     }
 
-    void ImageView::OnMouseCancel() { dragging = false; }
+    void ImageView::OnMouseCancel() {
+        if (!dragging) return;
+        dragging = false;
+        Invalidate();
+    }
 
     bool ImageView::OnMouseWheel(int delta, int x, int y) {
         if (!image) return false;
         float next = std::clamp(zoom * std::pow(1.2f, (float) delta / WHEEL_DELTA), 1.0f, 32.0f);
+        if (next == zoom) return true;
         float ratio = next / zoom;
         panX = panX * ratio + (x - GetWidth() * 0.5f) * (1 - ratio);
         panY = panY * ratio + (y - GetHeight() * 0.5f) * (1 - ratio);
@@ -84,18 +95,30 @@ namespace exui {
         g.FillRectangle(&background, Rect(0, 0, GetWidth(), GetHeight()));
         g.DrawRectangle(&border, Rect(0, 0, GetWidth() - 1, GetHeight() - 1));
         RectF content(10, 10, (REAL) std::max(0, GetWidth() - 20), (REAL) std::max(0, GetHeight() - 20));
+        if (content.Width == 0 || content.Height == 0) return;
         if (image && image->GetWidth() > 0 && image->GetHeight() > 0) {
             ClampPan();
             float scale = std::min(content.Width / image->GetWidth(), content.Height / image->GetHeight()) * zoom;
             RectF target(content.X + (content.Width - image->GetWidth() * scale) * 0.5f + panX,
                          content.Y + (content.Height - image->GetHeight() * scale) * 0.5f + panY,
                          image->GetWidth() * scale, image->GetHeight() * scale);
+            bool interactive = dragging && zoom > 1;
+            RectF visible = target;
+            RectF source(0, 0, (REAL) image->GetWidth(), (REAL) image->GetHeight());
+            if (interactive) {
+                // Crop before resampling; a clip alone still processes off-screen pixels.
+                visible.Intersect(content);
+                if (visible.IsEmptyArea()) return;
+                source = {(visible.X - target.X) / scale, (visible.Y - target.Y) / scale,
+                          visible.Width / scale, visible.Height / scale};
+            }
             auto state = g.Save();
             g.SetClip(content, CombineModeIntersect);
-            g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+            // Keep pointer movement cheap; release/cancel redraws the settled view finely.
+            g.SetInterpolationMode(interactive ? InterpolationModeNearestNeighbor : InterpolationModeHighQualityBicubic);
             ImageAttributes attributes;
             attributes.SetWrapMode(WrapModeTileFlipXY);
-            g.DrawImage(image.get(), target, 0, 0, (REAL) image->GetWidth(), (REAL) image->GetHeight(), UnitPixel,
+            g.DrawImage(image.get(), visible, source.X, source.Y, source.Width, source.Height, UnitPixel,
                         &attributes);
             g.Restore(state);
         } else {
