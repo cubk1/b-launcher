@@ -3,6 +3,7 @@
 #include "app/accounts/Accounts.h"
 #include "app/launch/GameLog.h"
 #include "app/instances/Instances.h"
+#include "app/instances/ModManager.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
 #include "app/multiplayer/Multiplayer.h"
@@ -473,6 +474,10 @@ namespace Game {
     }
 
     int launch(const std::string& target, bool test, const std::string& who, const std::string& server) {
+        if (ModManager::busy(target)) {
+            Instances::notify("模组正在更新，请稍后再启动游戏", true);
+            return 0;
+        }
         const Instances::Entry* entry = Instances::find(target);
         const Instances::Source* source = entry != nullptr ? Instances::source(entry->source) : nullptr;
         if (source == nullptr || preparingOf(target) != nullptr) {

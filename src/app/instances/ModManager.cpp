@@ -1054,6 +1054,10 @@ namespace ModManager {
         return found != instances.end() ? found->second.progress : IDLE;
     }
 
+    bool busy() {
+        return std::any_of(instances.begin(), instances.end(), [](const auto& item) { return item.second.busy; });
+    }
+
     void dismiss(const std::string& key) {
         auto found = instances.find(key);
         if (found != instances.end() && found->second.progress.phase == Phase::Failed) {

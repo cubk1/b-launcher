@@ -73,6 +73,7 @@ namespace ModManager {
     bool apply(const std::string& key);
     void cancel(const std::string& key);
     bool busy(const std::string& key);
+    bool busy();
     const Progress& progress(const std::string& key);
     void dismiss(const std::string& key);
 

@@ -79,7 +79,7 @@ namespace Services {
 
     bool busy() {
         return Game::active() || Multiplayer::active() || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || Exports::running() || CustomDownload::busy() ||
+                ProjectInstaller::busy() || Exports::running() || CustomDownload::busy() || ModManager::busy() ||
                 !Instances::activity().empty();
     }
 }
