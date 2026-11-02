@@ -48,6 +48,7 @@ namespace KeyBinds {
     std::string keyLabel(const std::string& key);
     std::string modifierLabel(const std::string& modifier);
     bool bound(const std::string& key);
+    bool conflicts(const Binding& first, const Binding& second);
     bool legacyVersion(const std::string& minecraft);
 
     std::string assign(const std::filesystem::path& file, const std::string& id, const std::string& key,

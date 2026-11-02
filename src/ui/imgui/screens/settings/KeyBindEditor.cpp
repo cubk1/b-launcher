@@ -348,6 +348,48 @@ namespace KeyBindEditor {
         }
 
         using Index = std::unordered_map<std::string, std::vector<const KeyBinds::Binding*>>;
+        using Conflicts = std::unordered_set<const KeyBinds::Binding*>;
+
+        Index indexOf(const KeyBinds::Table& table) {
+            Index index;
+            for (const KeyBinds::Binding& binding : table.bindings) {
+                if (KeyBinds::bound(binding.key)) {
+                    index[binding.key].push_back(&binding);
+                }
+            }
+            return index;
+        }
+
+        Conflicts findConflicts(const Index& index) {
+            Conflicts out;
+            auto compare = [&out](const KeyBinds::Binding* first, const KeyBinds::Binding* second) {
+                if (first != second && KeyBinds::conflicts(*first, *second)) {
+                    out.insert(first);
+                    out.insert(second);
+                }
+            };
+            for (const auto& [key, bindings] : index) {
+                for (size_t i = 0; i < bindings.size(); ++i) {
+                    for (size_t j = i + 1; j < bindings.size(); ++j) {
+                        compare(bindings[i], bindings[j]);
+                    }
+                    if (bindings[i]->modifier.empty() || bindings[i]->modifier == "NONE") {
+                        continue;
+                    }
+                    for (const char* modifier : {"key.keyboard.left.shift", "key.keyboard.right.shift",
+                                                  "key.keyboard.left.control", "key.keyboard.right.control",
+                                                  "key.keyboard.left.alt", "key.keyboard.right.alt"}) {
+                        auto found = index.find(modifier);
+                        if (found != index.end()) {
+                            for (const KeyBinds::Binding* other : found->second) {
+                                compare(bindings[i], other);
+                            }
+                        }
+                    }
+                }
+            }
+            return out;
+        }
 
         float keyDepth(float unit) {
             return std::clamp(unit * 0.1f, 2.0f, 3.5f);
@@ -370,34 +412,17 @@ namespace KeyBindEditor {
                                  UiTheme::isLight() ? 0.32f : 0.42f);
         }
 
-        bool clashes(const std::vector<const KeyBinds::Binding*>& list) {
-            int debug = 0;
-            int normal = 0;
-            for (const KeyBinds::Binding* binding : list) {
-                (binding->group == KeyBinds::DEBUG_GROUP ? debug : normal)++;
-            }
-            return debug > 1 || normal > 1;
+        bool clashes(const std::vector<const KeyBinds::Binding*>& list, const Conflicts& conflicts) {
+            return std::any_of(list.begin(), list.end(),
+                               [&](const auto* binding) { return conflicts.contains(binding); });
         }
 
-        int levelOf(const Index& index, const std::string& key) {
+        int levelOf(const Index& index, const Conflicts& conflicts, const std::string& key) {
             auto found = index.find(key);
             if (found == index.end() || found->second.empty()) {
                 return 0;
             }
-            return clashes(found->second) ? 2 : 1;
-        }
-
-        bool clashFor(const Index& index, const KeyBinds::Binding& binding) {
-            auto found = index.find(binding.key);
-            if (found == index.end()) {
-                return false;
-            }
-            bool debug = binding.group == KeyBinds::DEBUG_GROUP;
-            int same = 0;
-            for (const KeyBinds::Binding* other : found->second) {
-                same += (other->group == KeyBinds::DEBUG_GROUP) == debug ? 1 : 0;
-            }
-            return same > 1;
+            return clashes(found->second, conflicts) ? 2 : 1;
         }
 
         void centredLabel(const std::string& text, float x, float y, float w, float h, uint32_t color, float size) {
@@ -439,7 +464,7 @@ namespace KeyBindEditor {
             UiRender::alphaMul = saved;
         }
 
-        void mouseShape(const std::string& id, const State& state, const Index& index,
+        void mouseShape(const std::string& id, const State& state, const Index& index, const Conflicts& conflicts,
                         const std::unordered_set<std::string>& matched, bool searching, float x, float y, float unit,
                         std::vector<Spot>& spots) {
             float w = MOUSE_W * unit;
@@ -466,14 +491,14 @@ namespace KeyBindEditor {
 
             for (const Spot* side : {&forward, &back, &six, &seven, &eight}) {
                 keycap(id + "#key#" + side->name, {}, side->x, side->y, side->w, side->h, side->w * 0.5f, unit,
-                       levelOf(index, side->name), state.selected == side->name, false, dim(side->name), false);
+                       levelOf(index, conflicts, side->name), state.selected == side->name, false, dim(side->name), false);
             }
             uint32_t face = UiTheme::surfaceRaised();
             UiRender::roundRect(x, y + depth, w, bodyH, radius, shade(face));
             UiRender::roundRect(x, y, w, bodyH, radius, face);
             UiRender::outline(x, y, w, bodyH, radius, UiTheme::outlineSoft());
             for (const Spot* zone : {&left, &right}) {
-                int count = levelOf(index, zone->name);
+                int count = levelOf(index, conflicts, zone->name);
                 bool selected = state.selected == zone->name;
                 float press = UiState::motion(id + "#key#" + zone->name, selected ? 1.0f : 0.0f, 26.0f);
                 float saved = UiRender::alphaMul;
@@ -498,7 +523,7 @@ namespace KeyBindEditor {
             UiRender::rect(x + w * 0.5f - split * 0.5f, y, split, buttonsH, seam);
             UiRender::rect(x, y + buttonsH, w, split, seam);
             keycap(id + "#key#" + wheel.name, {}, wheel.x, wheel.y, wheel.w, wheel.h, wheel.w * 0.5f, unit,
-                   levelOf(index, wheel.name), state.selected == wheel.name, false, dim(wheel.name), false);
+                   levelOf(index, conflicts, wheel.name), state.selected == wheel.name, false, dim(wheel.name), false);
             for (const Spot* spot : {&wheel, &forward, &back, &six, &seven, &eight, &left, &right}) {
                 spots.push_back(*spot);
             }
@@ -817,8 +842,8 @@ namespace KeyBindEditor {
                 UiRender::alphaMul = savedNote * noteShown;
                 float noteW = UiFont::width(popover.note, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 UiRender::textY(popover.note, innerR - noteW, y, POP_HEAD,
-                                clashes(here) ? warningInk() : UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
+                                clashes(here, findConflicts(indexOf(table))) ? warningInk() : UiTheme::textMuted(),
+                                UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 UiRender::alphaMul = savedNote;
             }
             float listTop = y + POP_HEAD;
@@ -1175,15 +1200,11 @@ namespace KeyBindEditor {
             }
         }
 
-        Index byKey;
-        for (const KeyBinds::Binding& binding : table.bindings) {
-            if (KeyBinds::bound(binding.key)) {
-                byKey[binding.key].push_back(&binding);
-            }
-        }
+        Index byKey = indexOf(table);
+        Conflicts clashing = findConflicts(byKey);
         int conflicts = 0;
         for (const auto& item : byKey) {
-            conflicts += clashes(item.second) ? 1 : 0;
+            conflicts += clashes(item.second, clashing) ? 1 : 0;
         }
         Search& search = searchOf(id + "#search", "搜索按键绑定");
         std::string query = liveText(search);
@@ -1281,7 +1302,7 @@ namespace KeyBindEditor {
             }
             bool physical = !typing && cap.key != ImGuiKey_None && ImGui::IsKeyDown(cap.key);
             keycap(id + "#key#" + cap.name, cap.label, spot.x, spot.y, spot.w, spot.h, radius, unit,
-                   levelOf(byKey, cap.name), state.selected == cap.name, physical,
+                   levelOf(byKey, clashing, cap.name), state.selected == cap.name, physical,
                    searching && matched.count(cap.name) == 0, true);
             if (state.page == 0) {
                 spots.push_back(std::move(spot));
@@ -1290,7 +1311,7 @@ namespace KeyBindEditor {
         UiRender::alphaMul = saved * UiRender::lerp(0.3f, 1.0f, eased);
         std::vector<Spot> mouse;
         if (originX + mouseWorld - mouseUnit < left + width) {
-            mouseShape(id, state, byKey, matched, searching, originX + mouseWorld, keysY, mouseUnit, mouse);
+            mouseShape(id, state, byKey, clashing, matched, searching, originX + mouseWorld, keysY, mouseUnit, mouse);
         }
         if (state.page == 1) {
             spots.insert(spots.end(), mouse.begin(), mouse.end());
@@ -1396,7 +1417,7 @@ namespace KeyBindEditor {
                 }
                 bool capturing = state.capturing == binding.id;
                 bool isBound = KeyBinds::bound(binding.key);
-                bool clash = isBound && clashFor(byKey, binding);
+                bool clash = isBound && clashing.contains(&binding);
                 std::string cap = capturing ? std::string("按下按键，Esc 解除绑定") : keyText(binding);
                 float capW = std::max(64.0f, UiFont::width(cap, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f);
                 float capX = listX + rowW - 12.0f - capW;

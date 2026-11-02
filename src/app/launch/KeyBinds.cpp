@@ -15,6 +15,7 @@
 #include <cwctype>
 #include <map>
 #include <set>
+#include <string_view>
 #include <unordered_map>
 
 namespace KeyBinds {
@@ -362,6 +363,19 @@ namespace KeyBinds {
             return true;
         }
 
+        std::string_view modifierKey(std::string_view key) {
+            if (key == "key.keyboard.left.shift" || key == "key.keyboard.right.shift") {
+                return "SHIFT";
+            }
+            if (key == "key.keyboard.left.control" || key == "key.keyboard.right.control") {
+                return "CONTROL";
+            }
+            if (key == "key.keyboard.left.alt" || key == "key.keyboard.right.alt") {
+                return "ALT";
+            }
+            return {};
+        }
+
         void absorb(const std::string& content, bool json, const std::set<std::string>& wanted,
                     std::unordered_map<std::string, std::string>& into) {
             if (json) {
@@ -650,6 +664,21 @@ namespace KeyBinds {
 
     bool bound(const std::string& key) {
         return !key.empty() && key != UNBOUND;
+    }
+
+    bool conflicts(const Binding& first, const Binding& second) {
+        if (!bound(first.key) || !bound(second.key) ||
+            (first.group == DEBUG_GROUP) != (second.group == DEBUG_GROUP)) {
+            return false;
+        }
+        std::string_view firstModifier = first.modifier == "NONE" ? std::string_view() : first.modifier;
+        std::string_view secondModifier = second.modifier == "NONE" ? std::string_view() : second.modifier;
+        if ((!firstModifier.empty() && firstModifier == modifierKey(second.key)) ||
+            (!secondModifier.empty() && secondModifier == modifierKey(first.key))) {
+            return true;
+        }
+        return first.key == second.key &&
+                (firstModifier.empty() || secondModifier.empty() || firstModifier == secondModifier);
     }
 
     bool legacyVersion(const std::string& minecraft) {
