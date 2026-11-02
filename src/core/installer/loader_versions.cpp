@@ -28,6 +28,33 @@ unstable_name (std::string_view version)
          || lower.find ("rc") != std::string::npos;
 }
 
+std::string
+neoforge_argument_version (const meta::version &resolved)
+{
+  constexpr std::string_view option = "--fml.neoForgeVersion";
+  constexpr std::string_view prefix = "--fml.neoForgeVersion=";
+  bool next_is_version = false;
+  auto scan = [&] (const std::vector<std::string> &tokens) -> std::string {
+    for (std::string_view token : tokens)
+      {
+        std::string_view value = next_is_version ? token : std::string_view ();
+        next_is_version = token == option;
+        if (token.starts_with (prefix))
+          value = token.substr (prefix.size ());
+        if (!value.empty () && !value.starts_with ('-')
+            && !value.starts_with ("${"))
+          return std::string (value);
+      }
+    return {};
+  };
+  for (const auto &arg : resolved.game_arguments)
+    if (auto found = scan (arg.values); !found.empty ())
+      return found;
+  // A dangling option must not consume a value from the other argument format.
+  next_is_version = false;
+  return scan (meta::split_legacy_arguments (resolved.minecraft_arguments));
+}
+
 result<std::vector<loader_version>>
 list_fabric_like (loader_type type, std::string_view mc,
                   const net::mirror_provider &mirror, cancellation_token token)
@@ -673,6 +700,13 @@ detect_loaders (const meta::version &resolved)
                                           : a.version.substr (underscore + 1));
         }
     }
+  // Modern NeoForge profiles carry their version in game arguments, with only
+  // independently versioned FancyModLoader libraries on the classpath.
+  if (std::none_of (out.begin (), out.end (), [] (const loader_info &loader) {
+        return loader.type == loader_type::neoforge;
+      }))
+    if (auto version = neoforge_argument_version (resolved); !version.empty ())
+      add (loader_type::neoforge, std::move (version));
   return out;
 }
 
