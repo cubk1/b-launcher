@@ -11,6 +11,7 @@ namespace HomeWidgets {
     constexpr const char* SERVER = "server";
     constexpr const char* ACCOUNT = "account";
     constexpr const char* LAUNCH = "launch";
+    constexpr const char* SHOTS = "recentShots";
 
     std::shared_ptr<Choice> choice();
     bool enabled(const std::string& id);
@@ -25,6 +26,6 @@ namespace HomeWidgets {
 
     void panel(float x, float y, float w, float h);
     float width(float left, float right);
-    float height();
+    float height(float w);
     void draw(float x, float y, float w, bool blocked);
 }

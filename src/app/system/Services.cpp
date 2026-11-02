@@ -8,6 +8,7 @@
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/Mods.h"
+#include "app/instances/Screenshots.h"
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/ShortcutLaunch.h"
@@ -39,6 +40,7 @@ namespace Services {
         ProjectInstaller::poll();
         Installer::poll();
         Mods::poll();
+        Screenshots::poll();
         Exports::poll();
         Drops::poll();
         Updates::poll();
@@ -57,6 +59,7 @@ namespace Services {
         Drops::shutdown();
         JavaDownloads::shutdown();
         Exports::shutdown();
+        Screenshots::shutdown();
         Mods::shutdown();
         Installer::shutdown();
         ProjectInstaller::shutdown();

@@ -6,6 +6,8 @@
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/instances/InstanceExport.h"
 #include "ui/imgui/screens/instances/InstanceMods.h"
+#include "ui/imgui/screens/instances/InstanceScreenshots.h"
+#include "app/instances/Screenshots.h"
 #include "ui/imgui/screens/instances/InstanceShortcut.h"
 #include "app/instances/InstanceSettings.h"
 #include "app/instances/Installer.h"
@@ -78,6 +80,7 @@ namespace InstancePage {
         constexpr int SECTION_MODS = 2;
         constexpr int SECTION_EXPORT = 3;
         constexpr int SECTION_SHORTCUT = 4;
+        constexpr int SECTION_SCREENSHOTS = 5;
         PageTransition sections(SECTION_MAIN);
         std::string sectionKey;
 
@@ -333,8 +336,8 @@ namespace InstancePage {
         }
 
         std::shared_ptr<ModeBinding> optionalSetting(const std::string& id, const char* field,
-                                                       std::optional<bool> Settings::* member,
-                                                       const std::string& follow, const char* on, const char* off) {
+                                                     std::optional<bool> Settings::* member, const std::string& follow,
+                                                     const char* on, const char* off) {
             return std::make_shared<ModeBinding>(
                     owner(id, field),
                     [id, member, follow, on, off] {
@@ -345,8 +348,10 @@ namespace InstancePage {
                     [id, member, follow, on](const std::string& option) {
                         edit(id, [&](Settings& settings) {
                             auto& value = settings.*member;
-                            if (option == follow) value.reset();
-                            else value = option == on;
+                            if (option == follow)
+                                value.reset();
+                            else
+                                value = option == on;
                         });
                     },
                     [follow, on, off] { return std::vector<std::string>{follow, on, off}; });
@@ -432,8 +437,8 @@ namespace InstancePage {
             }
             if (!blocked && !widget.showing() && NewUi::hit(selectX, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H)) {
                 Page::tooltip(settings.java ? Platform::display(*settings.java)
-                                  : std::string("按游戏版本选择合适的 Java，没有时自动下载"),
-                    selectX, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H);
+                                            : std::string("按游戏版本选择合适的 Java，没有时自动下载"),
+                              selectX, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H);
             }
         }
 
@@ -543,8 +548,8 @@ namespace InstancePage {
                 UiRender::alphaMul = savedAlpha;
             }
             if (hovered && !dragging) {
-                Page::tooltip("其他程序已用 " + gigabytes(used) + "，现在可用 " + gigabytes(memory.availableMb), x, rowY + 6.0f,
-                    w, Page::ROW_H - 12.0f);
+                Page::tooltip("其他程序已用 " + gigabytes(used) + "，现在可用 " + gigabytes(memory.availableMb), x,
+                              rowY + 6.0f, w, Page::ROW_H - 12.0f);
             }
         }
 
@@ -755,17 +760,14 @@ namespace InstancePage {
         const char* const FOLLOW_ACCOUNT = "跟随当前账号";
 
         std::string accountLabel(const blb::auth::account& account) {
-            auto base = [](const blb::auth::account& item) {
-                return item.name + "（" + Accounts::kindOf(item) + "）";
-            };
+            auto base = [](const blb::auth::account& item) { return item.name + "（" + Accounts::kindOf(item) + "）"; };
             std::string label = base(account);
             const auto& accounts = Accounts::list();
-            if (std::count_if(accounts.begin(), accounts.end(), [&](const auto& item) {
-                    return base(item) == label;
-                }) > 1) {
+            if (std::count_if(accounts.begin(), accounts.end(), [&](const auto& item) { return base(item) == label; }) >
+                1) {
                 bool sameServer = std::count_if(accounts.begin(), accounts.end(), [&](const auto& item) {
-                    return base(item) == label && item.server == account.server;
-                }) > 1;
+                                      return base(item) == label && item.server == account.server;
+                                  }) > 1;
                 if (!account.server.empty()) {
                     label += " · " + account.server;
                 }
@@ -797,7 +799,8 @@ namespace InstancePage {
                         const Settings* settings = settingsOf(id);
                         for (const blb::auth::account& account : Accounts::list()) {
                             if (accountLabel(account) == label &&
-                                (settings == nullptr || Accounts::matches(account, settings->login, settings->auth_server))) {
+                                (settings == nullptr ||
+                                 Accounts::matches(account, settings->login, settings->auth_server))) {
                                 Game::setAccount(id, Accounts::keyOf(account));
                                 return;
                             }
@@ -931,7 +934,7 @@ namespace InstancePage {
         }
 
         int manageCount(const Instances::Entry& entry) {
-            return (Instances::hasModLoader(entry) ? 1 : 0) + 2;
+            return (Instances::hasModLoader(entry) ? 1 : 0) + 3;
         }
 
         void manageRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -941,27 +944,39 @@ namespace InstancePage {
                 const Mods::List& mods = Mods::of(entry.key);
                 std::string value =
                         mods.loading && mods.mods.empty() ? std::string() : std::to_string(mods.mods.size()) + " 个";
-                if (Page::navRow("instance#mods", "模组管理", value, y, blocked, Page::rowCorners(index, count), 0xf12e)) {
+                if (Page::navRow("instance#mods", "模组管理", value, y, blocked, Page::rowCorners(index, count),
+                                 0xf12e)) {
                     Mods::scan(entry.key);
                     sections.go(SECTION_MODS);
                 }
                 y += Page::ROW_H;
                 index++;
             }
+            const Screenshots::List& shots = Screenshots::of(entry.key);
+            std::string shotsValue = shots.loading && shots.entries.empty()
+                    ? std::string()
+                    : std::to_string(shots.entries.size()) + " 张";
+            if (Page::navRow("instance#screenshots", "截图管理", shotsValue, y, blocked, Page::rowCorners(index, count),
+                             0xf030)) {
+                Screenshots::scan(entry.key);
+                sections.go(SECTION_SCREENSHOTS);
+            }
+            y += Page::ROW_H;
+            index++;
             std::string loaders;
             for (const blb::install::loader_info& loader : entry.info.loaders) {
                 loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
             }
             if (Page::navRow("instance#loaders", "修改加载器", loaders.empty() ? std::string("未安装") : loaders, y,
-                             blocked || entry.info.minecraft_version.empty() || Installer::running(), Page::rowCorners(index, count),
-                             0xf0ad)) {
+                             blocked || entry.info.minecraft_version.empty() || Installer::running(),
+                             Page::rowCorners(index, count), 0xf0ad)) {
                 NewInstanceScreen::openLoaderEdit(entry.key);
                 MainWindow::showLoaderEdit();
             }
             y += Page::ROW_H;
             index++;
-            if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid, Page::rowCorners(index, count),
-                             0xf56e)) {
+            if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid,
+                             Page::rowCorners(index, count), 0xf56e)) {
                 sections.go(SECTION_EXPORT);
             }
         }
@@ -1063,7 +1078,8 @@ namespace InstancePage {
             wideTextRow(
                     id, "gameArgs", "游戏参数", "无", "加在游戏参数的最后，空格分隔；含空格的参数用双引号括起来。",
                     [](const Settings& s) { return blb::join_arguments(s.game_args); },
-                    [](Settings& s, const std::string& value) { s.game_args = blb::split_arguments(value); }, rowY, blocked);
+                    [](Settings& s, const std::string& value) { s.game_args = blb::split_arguments(value); }, rowY,
+                    blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
@@ -1093,7 +1109,8 @@ namespace InstancePage {
                     id, "jvmArgs", "JVM 参数", "无",
                     "加在启动器默认的 JVM 参数之后，空格分隔；含空格的参数用双引号括起来。",
                     [](const Settings& s) { return blb::join_arguments(s.jvm_args); },
-                    [](Settings& s, const std::string& value) { s.jvm_args = blb::split_arguments(value); }, rowY, blocked);
+                    [](Settings& s, const std::string& value) { s.jvm_args = blb::split_arguments(value); }, rowY,
+                    blocked);
             rowY += Page::ROW_H;
 
             Page::label("最小内存", rowY);
@@ -1232,6 +1249,10 @@ namespace InstancePage {
             if (InstanceShortcut::draw(entry)) {
                 sections.go(SECTION_MAIN);
             }
+        } else if (sections.page == SECTION_SCREENSHOTS) {
+            if (InstanceScreenshots::draw(entry)) {
+                sections.go(SECTION_MAIN);
+            }
         } else {
             mainSection(entry);
         }
@@ -1269,6 +1290,15 @@ namespace InstancePage {
                     return items;
                 },
                 x, y, 170.0f);
+    }
+
+    void showScreenshots(const std::string& key) {
+        MainWindow::openVersionSettings(key);
+        sectionKey = key;
+        Screenshots::scan(key);
+        if (sections.page != SECTION_SCREENSHOTS) {
+            sections.go(SECTION_SCREENSHOTS);
+        }
     }
 
     void beginRename(const std::string& key) {

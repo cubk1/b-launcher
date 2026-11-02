@@ -1,9 +1,13 @@
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeOptions.h"
+#include "app/instances/Instances.h"
+#include "app/instances/Screenshots.h"
 #include "app/system/Config.h"
 #include "app/system/ServerStatus.h"
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "ui/imgui/screens/instances/InstancePage.h"
+#include "ui/imgui/screens/instances/InstanceScreenshots.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -50,13 +54,104 @@ namespace HomeWidgets {
         using Kind = HomeOptions::Item;
 
         const Kind KINDS[] = {
-                {ACCOUNT, "当前账号", 0xf007},
-                {LAUNCH, "启动游戏", 0xf04b},
-                {QUICK, "快捷操作", 0xf0e7},
-                {SERVER, "服务器状态", 0xf233},
+                {ACCOUNT, "当前账号", 0xf007},  {LAUNCH, "启动游戏", 0xf04b}, {QUICK, "快捷操作", 0xf0e7},
+                {SERVER, "服务器状态", 0xf233}, {SHOTS, "最近截图", 0xf030},
         };
 
-        HomeOptions options(SECTION, KINDS, {ACCOUNT, LAUNCH, QUICK}, "只显示标志");
+        HomeOptions options(SECTION, KINDS, {}, "只显示标志");
+
+        constexpr float SHOTS_PAD = 12.0f;
+        constexpr float SHOTS_GAP = 8.0f;
+        constexpr float SHOTS_HEADER = 38.0f;
+        constexpr float SHOTS_RADIUS = 8.0f;
+        constexpr size_t SHOTS_COUNT = 3;
+
+        std::string shotsInstance;
+
+        float shotsTileW(float w) {
+            return (w - 2.0f * SHOTS_PAD - SHOTS_GAP * (float) (SHOTS_COUNT - 1)) / (float) SHOTS_COUNT;
+        }
+
+        float shotsHeight(float w) {
+            return SHOTS_HEADER + shotsTileW(w) * 9.0f / 16.0f + SHOTS_PAD;
+        }
+
+        bool shotsAvailable() {
+            const std::string& key = Instances::selected();
+            if (key.empty() || Instances::find(key) == nullptr) {
+                return false;
+            }
+            if (shotsInstance != key) {
+                shotsInstance = key;
+                Screenshots::scan(key);
+            }
+            return !Screenshots::of(key).entries.empty();
+        }
+
+        void shotsTile(const std::string& key, const Screenshots::Entry& entry, int index, float x, float y, float w,
+                       float h, bool blocked) {
+            bool hovered = !blocked && NewUi::hit(x, y, w, h);
+            float lit = UiState::motion("home#shots#" + std::to_string(index), hovered ? 1.0f : 0.0f, 20.0f);
+            std::shared_ptr<const Pixels> thumb = Screenshots::thumbnail(entry.path, entry.modified);
+            uint32_t texture = Textures::of(thumb);
+            if (texture != 0 && thumb->width > 0 && thumb->height > 0) {
+                float imageAspect = (float) thumb->width / (float) thumb->height;
+                float tileAspect = w / h;
+                float zoom = 1.0f - 0.06f * lit;
+                float spanU = (imageAspect > tileAspect ? tileAspect / imageAspect : 1.0f) * zoom;
+                float spanV = (imageAspect > tileAspect ? 1.0f : imageAspect / tileAspect) * zoom;
+                float u0 = (1.0f - spanU) * 0.5f;
+                float v0 = (1.0f - spanV) * 0.5f;
+                ShaderUtil::roundTex(UiRender::transformX(x), UiRender::transformY(y), UiRender::transformW(w),
+                                     UiRender::transformW(h), UiRender::transformW(SHOTS_RADIUS), texture, u0, v0,
+                                     u0 + spanU, v0 + spanV, UiRender::applyAlpha(0xFFFFFFFFu));
+            } else {
+                UiRender::roundRect(x, y, w, h, SHOTS_RADIUS, UiTheme::surfaceRaised());
+                Page::spinner(x + w * 0.5f, y + h * 0.5f, 6.0f, UiTheme::accent());
+            }
+            UiRender::outline(x, y, w, h, SHOTS_RADIUS, UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), lit));
+            if (!blocked && NewUi::click(x, y, w, h)) {
+                UiSound::request(UiSound::PAGE);
+                InstancePage::showScreenshots(key);
+                InstanceScreenshots::openAt(key, index);
+            }
+        }
+
+        void shotsCard(float x, float y, float w, bool blocked) {
+            const std::string& key = Instances::selected();
+            const Screenshots::List& list = Screenshots::of(key);
+            if (list.entries.empty()) {
+                return;
+            }
+            panel(x, y, w, shotsHeight(w));
+            float left = x + SHOTS_PAD;
+            float right = x + w - SHOTS_PAD;
+            UiRender::textY("最近截图", left, y + 9.0f, 22.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+
+            std::string more = "查看全部";
+            float moreW = UiFont::width(more, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float linkX = right - 14.0f - moreW;
+            float linkW = x + w - linkX + 6.0f;
+            bool linkHovered = !blocked && NewUi::hit(linkX - 6.0f, y, linkW, SHOTS_HEADER - 4.0f);
+            float linkLit = UiState::motion("home#shots#more", linkHovered ? 1.0f : 0.0f, 20.0f);
+            uint32_t linkColor = UiRender::mix(UiTheme::textMuted(), UiTheme::accentText(), linkLit);
+            UiRender::textY(more, linkX, y + 9.0f, 22.0f, linkColor, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiWidgets::icon(Ui::glyph(0xf054), right - 4.0f, y + 20.0f, linkColor, 9.0f);
+            if (!blocked && NewUi::click(linkX - 6.0f, y, linkW, SHOTS_HEADER - 4.0f)) {
+                UiSound::request(UiSound::PAGE);
+                InstancePage::showScreenshots(key);
+            }
+
+            float tileW = shotsTileW(w);
+            float tileH = tileW * 9.0f / 16.0f;
+            float tileY = y + SHOTS_HEADER;
+            size_t count = std::min(SHOTS_COUNT, list.entries.size());
+            for (size_t i = 0; i < count; i++) {
+                shotsTile(key, list.entries[i], (int) i, left + (float) i * (tileW + SHOTS_GAP), tileY, tileW, tileH,
+                          blocked);
+            }
+        }
 
         std::string serverField(const char* key) {
             const nlohmann::json& doc = Config::data();
@@ -248,7 +343,7 @@ namespace HomeWidgets {
             }
         }
 
-        float heightOf(const std::string& id) {
+        float heightOf(const std::string& id, float w) {
             if (id == ACCOUNT) {
                 return HomeLaunchPanel::ACCOUNT_H;
             }
@@ -261,13 +356,16 @@ namespace HomeWidgets {
             if (id == SERVER) {
                 return SERVER_H;
             }
+            if (id == SHOTS) {
+                return shotsAvailable() ? shotsHeight(w) : 0.0f;
+            }
             return 0.0f;
         }
 
-        std::vector<std::string> visible() {
+        std::vector<std::string> visible(float w) {
             std::vector<std::string> out;
             for (const auto* item : options.shown()) {
-                if (heightOf(item->id) > 0.0f) {
+                if (heightOf(item->id, w) > 0.0f) {
                     out.push_back(item->id);
                 }
             }
@@ -328,18 +426,18 @@ namespace HomeWidgets {
         return std::clamp(right - left - 80.0f, COLUMN_MIN, COLUMN_MAX);
     }
 
-    float height() {
-        std::vector<std::string> list = visible();
+    float height(float w) {
+        std::vector<std::string> list = visible(w);
         float total = 0.0f;
         for (const std::string& id : list) {
-            total += heightOf(id);
+            total += heightOf(id, w);
         }
         return list.empty() ? 0.0f : total + GAP * (float) (list.size() - 1);
     }
 
     void draw(float x, float y, float w, bool blocked) {
-        for (const std::string& id : visible()) {
-            float h = heightOf(id);
+        for (const std::string& id : visible(w)) {
+            float h = heightOf(id, w);
             if (id == ACCOUNT) {
                 HomeLaunchPanel::account(x, y, w, blocked);
             } else if (id == LAUNCH) {
@@ -348,6 +446,8 @@ namespace HomeWidgets {
                 QuickActions::draw(x, y, w, blocked);
             } else if (id == SERVER) {
                 serverCard(x, y, w, blocked);
+            } else if (id == SHOTS) {
+                shotsCard(x, y, w, blocked);
             }
             y += h + GAP;
         }

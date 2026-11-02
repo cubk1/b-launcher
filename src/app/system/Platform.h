@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/system/Pixels.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -53,6 +55,7 @@ namespace Platform {
     std::string narrow(const std::wstring& text);
     void reveal(const std::filesystem::path& path);
     bool recycle(const std::filesystem::path& path);
+    bool setClipboardImage(const Pixels& pixels);
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickJava(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickImage(const std::filesystem::path& initial);

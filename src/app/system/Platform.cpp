@@ -1,4 +1,5 @@
 #include "app/system/Platform.h"
+#include "app/system/Pixels.h"
 
 #include <core/base/strings.hpp>
 #include <core/base/win_util.hpp>
@@ -133,8 +134,8 @@ namespace Platform {
             startup.cb = sizeof(startup);
             PROCESS_INFORMATION info = {};
             if (!CreateProcessW(nullptr, buffer.data(), nullptr, nullptr, FALSE,
-                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | (job ? CREATE_SUSPENDED : 0), block.data(),
-                                folder.empty() ? nullptr : folder.c_str(), &startup, &info)) {
+                                CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT | (job ? CREATE_SUSPENDED : 0),
+                                block.data(), folder.empty() ? nullptr : folder.c_str(), &startup, &info)) {
                 error = "无法运行命令（错误 " + std::to_string(GetLastError()) + "）";
                 return nullptr;
             }
@@ -478,11 +479,14 @@ namespace Platform {
         size_t scheme = url.find("://");
         if (scheme == std::string::npos ||
             (!b_launcher_base::iequals(url.substr(0, scheme), "http") &&
-             !b_launcher_base::iequals(url.substr(0, scheme), "https"))) return false;
+             !b_launcher_base::iequals(url.substr(0, scheme), "https")))
+            return false;
         size_t host = scheme + 3;
         if (host == url.size() || url.find_first_of("/\\?#", host) == host ||
-            std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; })) return false;
-        HINSTANCE result = ShellExecuteW((HWND) window, L"open", utf8_to_wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            std::any_of(url.begin(), url.end(), [](unsigned char c) { return c < 32 || c == 127; }))
+            return false;
+        HINSTANCE result =
+                ShellExecuteW((HWND) window, L"open", utf8_to_wide(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         return (INT_PTR) result > 32;
     }
 
@@ -495,6 +499,67 @@ namespace Platform {
         } else {
             open(path.parent_path());
         }
+    }
+
+    bool setClipboardImage(const Pixels& pixels) {
+        if (pixels.width <= 0 || pixels.height <= 0 || pixels.rgba.empty()) {
+            return false;
+        }
+        int w = pixels.width;
+        int h = pixels.height;
+        size_t stride = (size_t) w * 4;
+        size_t imageSize = stride * h;
+        size_t total = sizeof(BITMAPV5HEADER) + imageSize;
+        HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, total);
+        if (hGlobal == nullptr) {
+            return false;
+        }
+        auto* mem = (BYTE*) GlobalLock(hGlobal);
+        if (mem == nullptr) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        auto* bih = (BITMAPV5HEADER*) mem;
+        ZeroMemory(bih, sizeof(BITMAPV5HEADER));
+        bih->bV5Size = sizeof(BITMAPV5HEADER);
+        bih->bV5Width = w;
+        bih->bV5Height = h;
+        bih->bV5Planes = 1;
+        bih->bV5BitCount = 32;
+        bih->bV5Compression = BI_BITFIELDS;
+        bih->bV5SizeImage = (DWORD) imageSize;
+        bih->bV5RedMask = 0x00FF0000;
+        bih->bV5GreenMask = 0x0000FF00;
+        bih->bV5BlueMask = 0x000000FF;
+        bih->bV5AlphaMask = 0xFF000000;
+        bih->bV5CSType = LCS_WINDOWS_COLOR_SPACE;
+        bih->bV5Intent = LCS_GM_IMAGES;
+        BYTE* dst = mem + sizeof(BITMAPV5HEADER);
+        for (int y = 0; y < h; y++) {
+            const unsigned char* src = pixels.rgba.data() + (size_t) (h - 1 - y) * stride;
+            BYTE* row = dst + (size_t) y * stride;
+            for (int x = 0; x < w; x++) {
+                row[0] = src[2];
+                row[1] = src[1];
+                row[2] = src[0];
+                row[3] = src[3];
+                src += 4;
+                row += 4;
+            }
+        }
+        GlobalUnlock(hGlobal);
+        if (!OpenClipboard((HWND) window)) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        EmptyClipboard();
+        HANDLE result = SetClipboardData(CF_DIBV5, hGlobal);
+        CloseClipboard();
+        if (result == nullptr) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        return true;
     }
 
     bool recycle(const std::filesystem::path& path) {
