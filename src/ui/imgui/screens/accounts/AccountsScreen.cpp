@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "app/accounts/Accounts.h"
+#include "ui/imgui/screens/accounts/ProfilePage.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -50,6 +51,7 @@ namespace AccountsScreen {
 
         constexpr int VIEW_LIST = 0;
         constexpr int VIEW_SERVER = 1;
+        constexpr int VIEW_PROFILE = 2;
         PageTransition views(VIEW_LIST);
 
         const char* const ADDRESS_OWNER = "accounts#server#address";
@@ -123,6 +125,10 @@ namespace AccountsScreen {
                                 items.push_back(ActionMenuItem::make("刷新", 0xf2f1, [key] {
                                                     Accounts::refresh(key);
                                                 })->enabledIf([key] { return !Accounts::busy(key); }));
+                                items.push_back(ActionMenuItem::make("用户资料", 0xf553, [key] {
+                                    ProfilePage::open(key);
+                                    views.go(VIEW_PROFILE);
+                                }));
                             }
                         }
                         items.push_back(ActionMenuItem::make("复制 UUID", 0xf0c5, [key] {
@@ -989,6 +995,10 @@ namespace AccountsScreen {
         views.begin();
         if (views.page == VIEW_SERVER) {
             serverView(covered);
+        } else if (views.page == VIEW_PROFILE) {
+            if (!ProfilePage::draw(covered)) {
+                views.go(VIEW_LIST);
+            }
         } else {
             listView();
         }

@@ -1,5 +1,6 @@
 #include "app/system/Services.h"
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Profiles.h"
 #include "app/downloads/Addons.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Drops.h"
@@ -30,6 +31,7 @@ namespace Services {
     void poll() {
         Instances::poll();
         Accounts::poll();
+        Profiles::poll();
         Game::poll();
         Catalog::poll();
         Addons::poll();
@@ -58,6 +60,7 @@ namespace Services {
         Addons::shutdown();
         Catalog::shutdown();
         Game::shutdown();
+        Profiles::shutdown();
         Accounts::shutdown();
         Instances::shutdown();
     }

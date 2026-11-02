@@ -6,6 +6,8 @@
 #include <thread>
 #include <utility>
 
+bool threadExited(std::thread& thread);
+
 // The owner thread starts tasks, reaps completed threads and joins at shutdown.
 // Tasks retain their own completion callbacks and cancellation handling.
 class TaskThreads {
@@ -38,7 +40,7 @@ public:
 
     void reap() {
         for (auto it = workers.begin(); it != workers.end();) {
-            if (it->done->load(std::memory_order_acquire)) {
+            if (it->done->load(std::memory_order_acquire) && threadExited(it->thread)) {
                 it->thread.join();
                 it = workers.erase(it);
             } else {
