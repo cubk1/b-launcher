@@ -38,7 +38,7 @@ namespace InstanceScreenshots {
         constexpr float ASPECT = 9.0f / 16.0f;
         constexpr float VIEWER_TOOLBAR_H = 56.0f;
 
-        int viewing = -1;
+        std::filesystem::path viewingPath;
         std::string viewingKey;
 
         float imageHeight() {
@@ -91,24 +91,18 @@ namespace InstanceScreenshots {
             return text;
         }
 
-        void openViewer(const std::string& key, int index) {
-            viewingKey = key;
-            viewing = index;
-            Screenshots::forgetFullImage();
-        }
-
         void closeViewer() {
-            viewing = -1;
+            viewingPath.clear();
             Screenshots::forgetFullImage();
         }
 
-        void rowMenu(const std::string& key, const Screenshots::Entry& entry, int index, float x, float y) {
+        void rowMenu(const std::string& key, const Screenshots::Entry& entry, float x, float y) {
             std::filesystem::path path = entry.path;
             NewUi::openMenu(
                     "screenshots#menu",
-                    [key, path, index] {
+                    [key, path] {
                         MenuItems items;
-                        items.push_back(ActionMenuItem::make("查看", 0xf06e, [key, index] { openViewer(key, index); }));
+                        items.push_back(ActionMenuItem::make("查看", 0xf06e, [key, path] { open(key, path); }));
                         items.push_back(ActionMenuItem::make("复制", 0xf0c5, [path] { Screenshots::copy(path); }));
                         items.push_back(
                                 ActionMenuItem::make("在文件夹中显示", 0xf07c, [path] { Platform::reveal(path); }));
@@ -163,11 +157,11 @@ namespace InstanceScreenshots {
             }
             if (!blocked && hovered && NewUi::rightClick) {
                 NewUi::rightClick = false;
-                rowMenu(key, entry, index, NewUi::mouseX, NewUi::mouseY);
+                rowMenu(key, entry, NewUi::mouseX, NewUi::mouseY);
             }
             if (!blocked && NewUi::click(x, y, w, cellHeight())) {
                 UiSound::request(UiSound::TICK);
-                openViewer(key, index);
+                open(key, entry.path);
             }
         }
 
@@ -183,11 +177,14 @@ namespace InstanceScreenshots {
         }
 
         bool drawViewer(const Instances::Entry& entry, const Screenshots::List& list) {
-            if (viewing < 0 || viewing >= (int) list.entries.size()) {
+            auto found = std::find_if(list.entries.begin(), list.entries.end(),
+                                      [](const Screenshots::Entry& item) { return item.path == viewingPath; });
+            if (found == list.entries.end()) {
                 closeViewer();
                 return false;
             }
-            const Screenshots::Entry& current = list.entries[viewing];
+            int viewing = (int) std::distance(list.entries.begin(), found);
+            const Screenshots::Entry& current = *found;
             bool covered = NewUi::overlayCoversMouse();
             bool back = Page::iconButton("viewer#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
             if (back) {
@@ -230,12 +227,14 @@ namespace InstanceScreenshots {
             float arrowY = top + imageArea * 0.5f - 24.0f;
             if (viewing > 0) {
                 if (Page::iconButton("viewer#prev", 0xf053, "上一张", Page::left() + 2.0f, arrowY, covered)) {
-                    openViewer(viewingKey, viewing - 1);
+                    open(viewingKey, list.entries[viewing - 1].path);
+                    return false;
                 }
             }
             if (viewing + 1 < (int) list.entries.size()) {
                 if (Page::iconButton("viewer#next", 0xf054, "下一张", Page::right() - 30.0f, arrowY, covered)) {
-                    openViewer(viewingKey, viewing + 1);
+                    open(viewingKey, list.entries[viewing + 1].path);
+                    return false;
                 }
             }
 
@@ -261,8 +260,9 @@ namespace InstanceScreenshots {
                 if (updated.entries.empty()) {
                     closeViewer();
                 } else {
-                    openViewer(key, std::min(at, (int) updated.entries.size() - 1));
+                    open(key, updated.entries[std::min(at, (int) updated.entries.size() - 1)].path);
                 }
+                return false;
             }
             x -= 10.0f + revealW;
             if (Page::button("viewer#reveal", revealLabel, x, buttonY, revealW, false, covered, 0xf07c)) {
@@ -279,10 +279,9 @@ namespace InstanceScreenshots {
                     return false;
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true) && viewing > 0) {
-                    openViewer(viewingKey, viewing - 1);
-                }
-                if (ImGui::IsKeyPressed(ImGuiKey_RightArrow, true) && viewing + 1 < (int) list.entries.size()) {
-                    openViewer(viewingKey, viewing + 1);
+                    open(viewingKey, list.entries[viewing - 1].path);
+                } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow, true) && viewing + 1 < (int) list.entries.size()) {
+                    open(viewingKey, list.entries[viewing + 1].path);
                 }
             }
             (void) entry;
@@ -293,11 +292,11 @@ namespace InstanceScreenshots {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         if (viewingKey != key) {
-            viewing = -1;
+            closeViewer();
             viewingKey = key;
         }
         const Screenshots::List& list = Screenshots::of(key);
-        if (viewing >= 0) {
+        if (!viewingPath.empty()) {
             return drawViewer(entry, list);
         }
 
@@ -367,7 +366,9 @@ namespace InstanceScreenshots {
         return back;
     }
 
-    void openAt(const std::string& key, int index) {
-        openViewer(key, index);
+    void open(const std::string& key, const std::filesystem::path& path) {
+        viewingKey = key;
+        viewingPath = path;
+        Screenshots::forgetFullImage();
     }
 }

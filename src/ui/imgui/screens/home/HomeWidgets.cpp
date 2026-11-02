@@ -113,7 +113,7 @@ namespace HomeWidgets {
             if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::PAGE);
                 InstancePage::showScreenshots(key);
-                InstanceScreenshots::openAt(key, index);
+                InstanceScreenshots::open(key, entry.path);
             }
         }
 

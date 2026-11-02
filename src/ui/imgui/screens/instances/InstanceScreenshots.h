@@ -5,5 +5,5 @@
 namespace InstanceScreenshots {
 
     bool draw(const Instances::Entry& entry);
-    void openAt(const std::string& key, int index);
+    void open(const std::string& key, const std::filesystem::path& path);
 }
