@@ -77,6 +77,13 @@ namespace ModManager {
             std::vector<std::string> problems;
         };
 
+        struct HashRequest {
+            std::string id;
+            std::filesystem::path file;
+            std::uint64_t size = 0;
+            std::int64_t modified = 0;
+        };
+
         AsyncTasks tasks;
         AsyncTasks applying;
         std::map<std::string, Instance> instances;
@@ -102,7 +109,7 @@ namespace ModManager {
         }
 
         std::string fileKey(const blb::modpack::mod_info& info) {
-            return stem(info.file) + "#" + std::to_string(info.size);
+            return stem(info.file) + "#" + std::to_string(info.size) + "#" + std::to_string(info.modified);
         }
 
         const Mods::Mod* modAt(const Mods::List& list, const std::filesystem::path& file) {
@@ -245,13 +252,13 @@ namespace ModManager {
 
         void identify(const std::string& key, Instance& state, const Mods::List& list) {
             state.serial = list.serial;
-            std::vector<std::pair<std::string, std::filesystem::path>> needHash;
+            std::vector<HashRequest> needHash;
             std::vector<std::string> needLookup;
             for (const Mods::Mod& mod : list.mods) {
                 std::string id = fileKey(mod.info);
                 auto known = hashes.find(id);
                 if (known == hashes.end()) {
-                    needHash.push_back({id, mod.info.file});
+                    needHash.push_back({id, mod.info.file, mod.info.size, mod.info.modified});
                 } else if (remotes.count(known->second) == 0 && unmatched.count(known->second) == 0) {
                     needLookup.push_back(known->second);
                 }
@@ -264,13 +271,18 @@ namespace ModManager {
             tasks.run(
                     [key, needHash, needLookup](blb::cancellation_token token) -> Continuation {
                         std::map<std::string, std::string> hashed;
-                        for (const auto& [id, path] : needHash) {
+                        for (const HashRequest& file : needHash) {
                             if (token.is_cancelled()) {
                                 return nullptr;
                             }
-                            auto digest = blb::sha1_file(path, token);
-                            if (digest) {
-                                hashed[id] = blb::to_hex(*digest);
+                            auto before = blb::fs::stat(file.file);
+                            if (!before.exists || before.size != file.size || before.mtime != file.modified) {
+                                continue;
+                            }
+                            auto digest = blb::sha1_file(file.file, token);
+                            auto after = blb::fs::stat(file.file);
+                            if (digest && after.exists && after.size == file.size && after.mtime == file.modified) {
+                                hashed[file.id] = blb::to_hex(*digest);
                             }
                         }
                         std::vector<std::string> lookup = needLookup;

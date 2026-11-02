@@ -647,6 +647,7 @@ read_mod (const std::filesystem::path &file)
     return make_error (errc::not_found,
                        sformat ("mod '{}' does not exist", mod.file_name));
   mod.size = st.size;
+  mod.modified = st.mtime;
   BLB_TRY_ASSIGN (auto zip, zip_reader::open (file));
   std::unordered_set<std::string> names;
   BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &) {

@@ -38,6 +38,7 @@ struct mod_info
   std::string file_name;
   bool enabled = true;
   std::uint64_t size = 0;
+  std::int64_t modified = 0;
   std::vector<mod_platform> platforms;
   std::string id;
   std::string name;
