@@ -9,12 +9,14 @@
 #include "app/system/Updates.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Instances.h"
+#include "app/launch/GameOptions.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/launch/Patches.h"
 #include "ui/imgui/screens/home/QuickActions.h"
+#include "ui/imgui/screens/settings/GameOptionRows.h"
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
@@ -397,10 +399,28 @@ namespace SettingsScreen {
             }
         }
 
+        std::string optionsSource() {
+            if (const Instances::Entry* entry = Instances::find(Instances::selected())) {
+                return entry->source;
+            }
+            for (const Instances::Source& source : Instances::sources()) {
+                if (source.exists) {
+                    return source.key;
+                }
+            }
+            return std::string();
+        }
+
         void gameTab(bool covered) {
             const int instanceCount = 2;
             const int launchCount = 6;
+            std::string source = optionsSource();
+            std::filesystem::path shared = GameOptions::sharedFile(source);
+            const int optionCount = shared.empty() ? 0 : GameOptionRows::COUNT;
             float contentH = 2 * Page::CAPTION_H + (instanceCount + launchCount) * Page::ROW_H + Page::GAP;
+            if (optionCount > 0) {
+                contentH += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
+            }
             Page::Scroll body("settings#game", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -417,6 +437,16 @@ namespace SettingsScreen {
                 Page::caption("启动", y);
                 Page::card(y + Page::CAPTION_H, launchCount);
                 launchRows(y + Page::CAPTION_H, blocked);
+            }
+            y += Page::CAPTION_H + launchCount * Page::ROW_H + Page::GAP;
+
+            if (optionCount > 0 && Page::shown(y, Page::CAPTION_H + optionCount * Page::ROW_H)) {
+                const Instances::Source* found = Instances::source(source);
+                std::string note = (found != nullptr ? found->label : std::string("游戏目录")) +
+                        " 里共用的设置，版本独立的实例在版本设置里修改";
+                GameOptionRows::caption("游戏选项", shared, note, y);
+                Page::card(y + Page::CAPTION_H, optionCount);
+                GameOptionRows::draw("settings#options", shared, y + Page::CAPTION_H, blocked);
             }
             body.end();
         }

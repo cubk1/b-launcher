@@ -2,6 +2,7 @@
 #include "app/accounts/Accounts.h"
 #include "app/system/Catalog.h"
 #include "app/launch/Game.h"
+#include "app/launch/GameOptions.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/instances/InstanceExport.h"
 #include "ui/imgui/screens/instances/InstanceMods.h"
@@ -12,6 +13,7 @@
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "app/instances/Mods.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
+#include "ui/imgui/screens/settings/GameOptionRows.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/launch/Patches.h"
@@ -973,9 +975,13 @@ namespace InstancePage {
             const int windowCount = 2;
             const int serverRowCount = serverCount(entry);
             const int otherCount = 2;
+            const int optionCount = GameOptions::ownFile(entry) ? GameOptionRows::COUNT : 0;
             float contentH = 6 * Page::CAPTION_H +
                     (manage + gameCount + memoryCount + windowCount + serverRowCount + otherCount) * Page::ROW_H +
                     5 * Page::GAP;
+            if (optionCount > 0) {
+                contentH += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
+            }
             Page::Scroll body("instance#body", Page::TOP + 54.0f, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || NewUi::overlayCoversMouse();
@@ -1008,6 +1014,16 @@ namespace InstancePage {
                 windowRows(entry, y + Page::CAPTION_H, blocked);
             }
             y += Page::CAPTION_H + windowCount * Page::ROW_H + Page::GAP;
+
+            if (optionCount > 0) {
+                if (Page::shown(y, Page::CAPTION_H + optionCount * Page::ROW_H)) {
+                    std::filesystem::path file = GameOptions::fileOf(entry);
+                    GameOptionRows::caption("游戏选项", file, blb::path_to_utf8(file.filename()), y);
+                    Page::card(y + Page::CAPTION_H, optionCount);
+                    GameOptionRows::draw(owner(entry.key, "options"), file, y + Page::CAPTION_H, blocked);
+                }
+                y += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
+            }
 
             if (Page::shown(y, Page::CAPTION_H + serverRowCount * Page::ROW_H)) {
                 Page::caption("服务器", y);
