@@ -16,6 +16,7 @@
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/DownloadsWindow.h"
 #include "ui/exui/windows/LogWindow.h"
+#include "ui/exui/windows/NoticesWindow.h"
 #include "ui/exui/windows/SettingsWindow.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
@@ -68,31 +69,55 @@ namespace ForgottenMelody {
         constexpr UINT ASK_FOR_ACCOUNT = WM_APP + 2;
         constexpr UINT OPEN_LOG = WM_APP + 3;
         constexpr UINT OPEN_MODPACK = WM_APP + 4;
+        constexpr UINT OPEN_NOTICES = WM_APP + 5;
 
-        // One centered notice at a time, white with a dark glow to stand out from any background, hidden once its
-        // duration is over.
-        class NoticeLine : public exui::Label {
+        // Keeps the original white line; hovering and Tab reveal that it opens
+        // the history. Long messages leave room for the count at the end.
+        class NoticeLine : public exui::Hyperlink {
         public:
-            NoticeLine(int x, int y, int width, int height) : Label(x, y, width, height, std::wstring(), 0xFEFFFFFF) {
+            NoticeLine(int x, int y, int width, int height)
+                : Hyperlink(x, y, width, height, {}, {}, 0xFEFFFFFF) {
+                SetColors(0xFEFFFFFF, 0xFEFFFFFF, 0xFEFFFFFF);
                 SetAlignment(Gdiplus::StringAlignmentCenter, Gdiplus::StringAlignmentCenter);
                 SetAutoGlowColor();
+                SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
                 SetVisible(false);
             }
 
-            void show(const std::wstring& text, long long durationMs) {
-                StopTimer();
-                SetCaption(text);
-                SetVisible(true);
-                if (durationMs > 0) {
-                    StartTimer((UINT) durationMs);
+            void show(const std::wstring& text, const std::wstring& suffix = {}) {
+                if (text == fullText && suffix == tail) return;
+                fullText = text;
+                tail = suffix;
+                SetTooltipText(text.empty() ? std::wstring() : text + L"\n点击查看全部消息");
+                std::wstring caption = text.substr(0, 256);
+                for (wchar_t& ch : caption) if (ch == L'\r' || ch == L'\n' || ch == L'\t') ch = L' ';
+                Gdiplus::Bitmap scratch(1, 1, PixelFormat32bppPARGB);
+                Gdiplus::Graphics g(&scratch);
+                if (auto font = exui::widget_detail::MakeFont(*this, GetFontStyle())) {
+                    Gdiplus::StringFormat format(Gdiplus::StringFormatFlagsNoWrap);
+                    auto fits = [&](const std::wstring& candidate) {
+                        return exui::widget_detail::MeasureText(g, candidate, *font,
+                                Gdiplus::RectF(0, 0, 10000, (float) GetHeight()), format).Width <= GetWidth() - 4;
+                    };
+                    if (caption.size() < text.size() || !fits(caption + suffix)) {
+                        size_t left = 0, right = caption.size();
+                        while (left < right) {
+                            size_t middle = left + (right - left + 1) / 2;
+                            if (fits(caption.substr(0, middle) + L"…" + suffix)) left = middle;
+                            else right = middle - 1;
+                        }
+                        // Keep a UTF-16 surrogate pair together at the ellipsis.
+                        if (left > 0 && caption[left - 1] >= 0xD800 && caption[left - 1] <= 0xDBFF) --left;
+                        caption.resize(left);
+                        caption += L"…";
+                    }
                 }
+                SetCaption(caption + suffix);
+                SetVisible(!text.empty());
             }
 
-            void OnTimer() override {
-                StopTimer();
-                SetCaption(std::wstring());
-                SetVisible(false);
-            }
+        private:
+            std::wstring fullText, tail;
         };
     }
 
@@ -181,6 +206,7 @@ namespace ForgottenMelody {
         if (drop.IsVisible() != dragging) {
             drop.SetVisible(dragging);
         }
+        refreshNotice();
 
         // A message box runs a loop of its own, so failures wait for the end of this poll and for a shown window.
         if (!failures.empty() && !showingFailures && IsWindowVisible(GetHwnd())) {
@@ -202,6 +228,19 @@ namespace ForgottenMelody {
         }
         if (msg == OPEN_LOG) {
             showLog();
+            return 0;
+        }
+        if (msg == OPEN_NOTICES) {
+            if (!showingNotices && !showingFailures && modalWindow(nullptr) == nullptr &&
+                !noticeHistory.entries().empty()) {
+                showingNotices = true;
+                const auto* current = noticeHistory.current();
+                if (showNotices(GetHwnd(), noticeHistory, current != nullptr ? current->id : std::string())) {
+                    failures.clear();
+                }
+                showingNotices = false;
+                clearReadNotices();
+            }
             return 0;
         }
         if (msg == OPEN_MODPACK) {
@@ -238,10 +277,16 @@ namespace ForgottenMelody {
         }
         showingFailures = true;
         while (!failures.empty() && GetHwnd() != nullptr) {
-            std::wstring text = std::move(failures.front());
+            Failure failure = std::move(failures.front());
             failures.erase(failures.begin());
+            const auto* entry = noticeHistory.find(failure.id);
+            if (entry != nullptr && entry->read) continue;
             // Over the dialog that is open, if any: one under it would hide behind it and still take its input.
-            message(modalWindow(GetHwnd()), text, L"提示：");
+            if (message(modalWindow(GetHwnd()), failure.text, L"提示：") == 0) {
+                noticeHistory.markRead(failure.id);
+                if (!showingNotices) clearReadNotices();
+                else refreshNotice();
+            }
         }
         showingFailures = false;
     }
@@ -265,6 +310,7 @@ namespace ForgottenMelody {
             case ACCOUNT: showAccounts(GetHwnd()); break;
             case DOWNLOADS: showDownloads(GetHwnd()); break;
             case SETTINGS: showSettings(GetHwnd()); break;
+            case NOTICE: PostMessageW(GetHwnd(), OPEN_NOTICES, 0, 0); break;
         }
     }
 
@@ -275,10 +321,48 @@ namespace ForgottenMelody {
     }
 
     void MainWindow::showNotice(Notices::Kind kind, const std::wstring& text, long long durationMs) {
+        std::string id = noticeHistory.add(kind, text, durationMs);
         if (kind == Notices::Kind::Failed) {
-            failures.push_back(text);
-        } else {
-            Control<NoticeLine>(NOTICE).show(text, durationMs);
+            failures.push_back({std::move(id), text});
         }
+        refreshNotice();
+    }
+
+    std::string MainWindow::startNotice(Notices::Kind kind, const std::wstring& text) {
+        std::string id = noticeHistory.live(kind, text);
+        refreshNotice();
+        return id;
+    }
+
+    void MainWindow::finishNotice(const std::string& id, Notices::Kind kind, const std::wstring& text,
+                                  long long durationMs) {
+        if (!noticeHistory.finish(id, kind, text, durationMs)) return;
+        if (kind == Notices::Kind::Failed) failures.push_back({id, text});
+        refreshNotice();
+    }
+
+    void MainWindow::refreshNotice() {
+        if (showingNotices) {
+            noticeHistory.markAllRead();
+            // These errors were seen in the open history, including any older
+            // entries evicted by its size limit.
+            failures.clear();
+        }
+        auto& line = Control<NoticeLine>(NOTICE);
+        size_t count = noticeHistory.runningCount() + noticeHistory.unreadCount();
+        if (const auto* current = noticeHistory.current(); current != nullptr && !current->text.empty()) {
+            line.show(current->text, count > 1 ? L"（另有 " + std::to_wstring(count - 1) + L" 条）" : std::wstring());
+        } else {
+            line.show(count > 0 ? L"消息记录（" + std::to_wstring(count) + L" 条）" : std::wstring());
+        }
+    }
+
+    void MainWindow::clearReadNotices() {
+        std::erase_if(failures, [&](const Failure& failure) {
+            const auto* entry = noticeHistory.find(failure.id);
+            return entry != nullptr && entry->read;
+        });
+        noticeHistory.clearRead();
+        if (GetHwnd() != nullptr) refreshNotice();
     }
 }

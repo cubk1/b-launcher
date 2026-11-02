@@ -2,6 +2,7 @@
 
 #include "app/system/Notices.h"
 #include "ui/exui/Form.h"
+#include "ui/exui/windows/NoticeHistory.h"
 
 #include <core/modpack/modpack.hpp>
 
@@ -19,9 +20,11 @@ namespace ForgottenMelody {
         bool create();
         // Follows the instances, the current account and the game.
         void refresh();
-        // Failures get a message box; other notices show above the credit line, a duration of 0 keeping them
-        // until the next one.
+        // The single-line hint opens the session's message history. Failures
+        // also keep the original message-box presentation.
         void showNotice(Notices::Kind kind, const std::wstring& text, long long durationMs);
+        std::string startNotice(Notices::Kind kind, const std::wstring& text);
+        void finishNotice(const std::string& id, Notices::Kind kind, const std::wstring& text, long long durationMs);
         // Opens the account manager for a game that has no account to log in with, after the failures that say so.
         void askForAccount(const std::string& login, const std::string& authServer);
         // Opens the game log once the current message is done, as a game asks for it from a poll.
@@ -41,13 +44,21 @@ namespace ForgottenMelody {
         // The keys of the instance list, in its order, and whether it says the instances are still being read.
         std::vector<std::string> instanceKeys;
         bool listLoading = false;
-        std::vector<std::wstring> failures;
+        struct Failure {
+            std::string id;
+            std::wstring text;
+        };
+        std::vector<Failure> failures;
         bool showingFailures = false;
+        NoticeHistory noticeHistory;
+        bool showingNotices = false;
         // How the game wants to log in while the account manager is due to open.
         std::optional<std::pair<std::string, std::string>> accountWanted;
         // A dropped modpack while 下载中心 is due to open for it.
         std::optional<std::pair<std::filesystem::path, b_launcher_base::modpack::pack_manifest>> droppedPack;
 
         void showFailures();
+        void refreshNotice();
+        void clearReadNotices();
     };
 }

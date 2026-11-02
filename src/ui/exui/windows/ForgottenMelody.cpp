@@ -36,11 +36,10 @@ namespace ForgottenMelody {
                         window.showNotice(kind, Platform::widen(text), durationMs);
                     },
                     [&window](Notices::Kind kind, const std::string& text) {
-                        window.showNotice(kind, Platform::widen(text), 0);
-                        return std::string("notice");
+                        return window.startNotice(kind, Platform::widen(text));
                     },
-                    [&window](const std::string&, Notices::Kind kind, const std::string& text, long long durationMs) {
-                        window.showNotice(kind, Platform::widen(text), durationMs);
+                    [&window](const std::string& id, Notices::Kind kind, const std::string& text, long long durationMs) {
+                        window.finishNotice(id, kind, Platform::widen(text), durationMs);
                     },
             });
             Interface::connect({
