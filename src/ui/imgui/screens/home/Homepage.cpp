@@ -785,7 +785,7 @@ namespace Homepage {
                 float listH = HomeWidgets::height();
                 float columnW = HomeWidgets::width(left, right);
                 float columnX = cx - columnW * 0.5f;
-                float floor = bottom - reserve;
+                float floor = listH > 0.0f ? bottom - reserve : bottom;
                 float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
                 bool logo =
                         !HomeWidgets::enabled(HomeWidgets::LAUNCH) && floor - top - listH - gap >= LOGO_MIN + TOP_PAD;
