@@ -60,6 +60,7 @@ namespace Page {
 
     bool shown(float y, float h = ROW_H);
     float scrollOffset(const std::string& id);
+    void scrollTo(const std::string& id, float target);
 
     class Scroll {
     public:
