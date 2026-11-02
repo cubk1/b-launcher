@@ -255,6 +255,17 @@ namespace Catalog {
         return versions;
     }
 
+    Kind kindOf(const blb::meta::manifest_version& version) {
+        if (version.type == "release") {
+            return Kind::Release;
+        }
+        if (version.type.rfind("old_", 0) == 0) {
+            return Kind::Old;
+        }
+        bool aprilFirst = version.release_time.size() >= 10 && version.release_time.compare(4, 6, "-04-01") == 0;
+        return aprilFirst || version.id == "1.RV-Pre1" ? Kind::AprilFools : Kind::Snapshot;
+    }
+
     void preload() {
         minecraft();
     }

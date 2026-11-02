@@ -89,6 +89,7 @@ namespace ForgottenMelody {
             GAME_SEARCH,
             RELEASES,
             SNAPSHOTS,
+            APRIL_FOOLS,
             OLD_VERSIONS,
             GAME_REFRESH,
             IMPORT,
@@ -455,14 +456,24 @@ namespace ForgottenMelody {
         }
 
         // The kinds of game versions listed, for the rest of the run; at first only 正式版.
-        bool showReleases = true, showSnapshots = false, showOld = false;
+        bool showReleases = true, showSnapshots = false, showAprilFools = false, showOld = false;
 
-        const wchar_t* gameTypeLabel(const std::string& type) {
-            return type == "release" ? L"正式版" : type.rfind("old_", 0) == 0 ? L"远古版" : L"快照版";
+        const wchar_t* gameTypeLabel(const blb::meta::manifest_version& version) {
+            switch (Catalog::kindOf(version)) {
+                case Catalog::Kind::Release: return L"正式版";
+                case Catalog::Kind::AprilFools: return L"愚人节版";
+                case Catalog::Kind::Old: return L"远古版";
+                default: return L"快照版";
+            }
         }
 
-        bool listedType(const std::string& type) {
-            return type == "release" ? showReleases : type.rfind("old_", 0) == 0 ? showOld : showSnapshots;
+        bool listedType(const blb::meta::manifest_version& version) {
+            switch (Catalog::kindOf(version)) {
+                case Catalog::Kind::Release: return showReleases;
+                case Catalog::Kind::AprilFools: return showAprilFools;
+                case Catalog::Kind::Old: return showOld;
+                default: return showSnapshots;
+            }
         }
 
         // 下载中心 in the frame of the 2014 window, its sections those of the default interface: 新建实例, then a
@@ -473,10 +484,11 @@ namespace ForgottenMelody {
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
                         // A game version
-                        {GAME_SEARCH, ControlKind::Edit, {225, 86, 200, 26}},
-                        {RELEASES, ControlKind::Check, {437, 86, 70, 26}, L"正式版"},
-                        {SNAPSHOTS, ControlKind::Check, {513, 86, 70, 26}, L"快照版"},
-                        {OLD_VERSIONS, ControlKind::Check, {589, 86, 70, 26}, L"远古版"},
+                        {GAME_SEARCH, ControlKind::Edit, {225, 86, 130, 26}},
+                        {RELEASES, ControlKind::Check, {365, 86, 70, 26}, L"正式版"},
+                        {SNAPSHOTS, ControlKind::Check, {439, 86, 70, 26}, L"快照版"},
+                        {APRIL_FOOLS, ControlKind::Check, {513, 86, 84, 26}, L"愚人节版"},
+                        {OLD_VERSIONS, ControlKind::Check, {601, 86, 70, 26}, L"远古版"},
                         {GAME_REFRESH, ControlKind::Button, {683, 85, 80, 28}, L"刷新"},
                         {IMPORT, ControlKind::Button, {769, 85, 100, 28}, L"导入整合包"},
                         {GAMES, ControlKind::List, {225, 119, 645, 380}},
@@ -565,8 +577,8 @@ namespace ForgottenMelody {
                 AddControls(LoaderRows::controls(LOADER_ROWS, 225, 237, 645));
                 AddControls(InstallProgress::controls(PROGRESS, 225, 85, 645, 414));
                 MoveInto(PICK_VIEW,
-                         {GAME_SEARCH, RELEASES, SNAPSHOTS, OLD_VERSIONS, GAME_REFRESH, IMPORT, GAMES, GAMES_RETRY,
-                          PICK_STATUS, NEXT_STEP});
+                         {GAME_SEARCH, RELEASES, SNAPSHOTS, APRIL_FOOLS, OLD_VERSIONS, GAME_REFRESH, IMPORT, GAMES,
+                          GAMES_RETRY, PICK_STATUS, NEXT_STEP});
                 MoveInto(SETUP_VIEW,
                          {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE, SETUP_STATUS,
                           INSTALL});
@@ -588,6 +600,7 @@ namespace ForgottenMelody {
                 games.InsertColumn(L"发布日期", 200);
                 SetChecked(RELEASES, showReleases);
                 SetChecked(SNAPSHOTS, showSnapshots);
+                SetChecked(APRIL_FOOLS, showAprilFools);
                 SetChecked(OLD_VERSIONS, showOld);
                 Control<exui::EditBox>(GAME_SEARCH).OnTextChanged = [this](const std::wstring&) { refresh(); };
                 FindControl(GAME_SEARCH)->SetTooltipText(L"按版本号搜索");
@@ -736,6 +749,7 @@ namespace ForgottenMelody {
                     case ACTION: act(); break;
                     case RELEASES: showReleases = Checked(RELEASES); break;
                     case SNAPSHOTS: showSnapshots = Checked(SNAPSHOTS); break;
+                    case APRIL_FOOLS: showAprilFools = Checked(APRIL_FOOLS); break;
                     case OLD_VERSIONS: showOld = Checked(OLD_VERSIONS); break;
                     case GAME_REFRESH:
                     case GAMES_RETRY: Catalog::refreshMinecraft(); break;
@@ -1154,8 +1168,8 @@ namespace ForgottenMelody {
                 Rows rows;
                 std::vector<std::string> keys;
                 for (const auto& version : all.list) {
-                    if (listedType(version.type) && !version.id.empty() && blb::icontains(version.id, text)) {
-                        rows.push_back({Platform::widen(version.id), gameTypeLabel(version.type),
+                    if (listedType(version) && !version.id.empty() && blb::icontains(version.id, text)) {
+                        rows.push_back({Platform::widen(version.id), gameTypeLabel(version),
                                         Platform::widen(version.release_time.substr(0, 10))});
                         keys.push_back(version.id);
                     }

@@ -26,8 +26,11 @@ namespace Catalog {
         std::string error;
     };
 
+    enum class Kind { Release, Snapshot, AprilFools, Old };
+
     const Versions& minecraft();
     void refreshMinecraft();
+    Kind kindOf(const blb::meta::manifest_version& version);
     void preload();
     const LoaderVersions& loader(blb::install::loader_type type, const std::string& minecraft);
     void refreshLoader(blb::install::loader_type type, const std::string& minecraft);

@@ -59,6 +59,7 @@ namespace NewInstanceScreen {
 
         const char* const RELEASE = "正式版";
         const char* const SNAPSHOT = "快照版";
+        const char* const APRIL_FOOLS = "愚人节版";
         const char* const OLD = "远古版";
 
         PageTransition steps(STEP_VERSIONS);
@@ -76,14 +77,13 @@ namespace NewInstanceScreen {
         std::string loaderReadError;
         unsigned loaderReadGeneration = 0;
 
-        std::string kindOf(const std::string& type) {
-            if (type == "release") {
-                return RELEASE;
+        std::string kindOf(const blb::meta::manifest_version& version) {
+            switch (Catalog::kindOf(version)) {
+                case Catalog::Kind::Release: return RELEASE;
+                case Catalog::Kind::AprilFools: return APRIL_FOOLS;
+                case Catalog::Kind::Old: return OLD;
+                default: return SNAPSHOT;
             }
-            if (type.rfind("old_", 0) == 0) {
-                return OLD;
-            }
-            return SNAPSHOT;
         }
 
         class KindChoice final : public Choice {
@@ -91,7 +91,7 @@ namespace NewInstanceScreen {
             KindChoice() : Choice("new#kinds") {}
 
             std::vector<std::string> options() override {
-                return {RELEASE, SNAPSHOT, OLD};
+                return {RELEASE, SNAPSHOT, APRIL_FOOLS, OLD};
             }
 
             bool multi() override {
@@ -291,7 +291,7 @@ namespace NewInstanceScreen {
             }
             std::vector<const blb::meta::manifest_version*> shown;
             for (const blb::meta::manifest_version& version : all.list) {
-                if (std::find(kinds.begin(), kinds.end(), kindOf(version.type)) != kinds.end() &&
+                if (std::find(kinds.begin(), kinds.end(), kindOf(version)) != kinds.end() &&
                     blb::icontains(version.id, query)) {
                     shown.push_back(&version);
                 }
@@ -310,7 +310,7 @@ namespace NewInstanceScreen {
                                                    UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
                                    float tagX = Page::left() + 44.0f +
                                            UiFont::width(version.id, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
-                                   std::string kind = kindOf(version.type);
+                                   std::string kind = kindOf(version);
                                    bool release = kind == RELEASE;
                                    tag(kind, tagX, rowY, LIST_ROW,
                                        release ? UiTheme::accentSoft(255) : UiTheme::surfaceRaised(),
