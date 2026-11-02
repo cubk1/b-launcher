@@ -25,6 +25,7 @@
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/InstallControls.h"
 
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 #include <core/modpack/modpack.hpp>
 
@@ -619,9 +620,7 @@ namespace ForgottenMelody {
                 versions.InsertColumn(L"状态", 75);
                 UpdateOptions(SOURCE, {L"Modrinth", L"CurseForge"}, 0);
 
-                const nlohmann::json& doc = Config::data();
-                auto saved = doc.find("downloadInstance");
-                target = saved != doc.end() && saved->is_string() ? saved->get<std::string>() : Instances::selected();
+                target = b_launcher_base::json_text(Config::data(), "downloadInstance", Instances::selected());
                 showView(false);
                 showSection(lastSection);
                 startRefreshing();
