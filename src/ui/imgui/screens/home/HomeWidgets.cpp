@@ -38,6 +38,7 @@ namespace HomeWidgets {
         constexpr float PAD = 14.0f;
         constexpr float COLUMN_MIN = 320.0f;
         constexpr float COLUMN_MAX = 520.0f;
+        constexpr float COLUMN_NARROW = 360.0f;
         constexpr float SERVER_H = 80.0f;
         constexpr float SERVER_ICON = 44.0f;
         constexpr float TITLE_LINE = 20.0f;
@@ -321,6 +322,9 @@ namespace HomeWidgets {
     }
 
     float width(float left, float right) {
+        if (!enabled(LAUNCH)) {
+            return COLUMN_NARROW;
+        }
         return std::clamp(right - left - 80.0f, COLUMN_MIN, COLUMN_MAX);
     }
 

@@ -36,9 +36,10 @@ namespace QuickActions {
         using Action = HomeOptions::Item;
 
         const Action ACTIONS[] = {
-                {"newInstance", "下载游戏", 0xf019},     {"addAccount", "添加账号", 0xf234},
-                {"downloadMods", "下载模组", 0xf12e},    {"downloadModpacks", "下载整合包", 0xf187},
-                {"importModpack", "导入整合包", 0xf56f}, {"openFolder", "打开游戏目录", 0xf07c},
+                {"newInstance", "下载游戏", 0xf019},        {"switchVersion", "切换版本", 0xf362},
+                {"addAccount", "添加账号", 0xf234},         {"downloadMods", "下载模组", 0xf12e},
+                {"downloadModpacks", "下载整合包", 0xf187}, {"importModpack", "导入整合包", 0xf56f},
+                {"openFolder", "打开游戏目录", 0xf07c},
         };
 
         HomeOptions options(SECTION, ACTIONS, {"newInstance", "addAccount", "downloadMods"}, "关闭");
@@ -49,6 +50,8 @@ namespace QuickActions {
                     NewInstanceScreen::leaveModpack();
                 }
                 MainWindow::showNewInstance();
+            } else if (id == "switchVersion") {
+                MainWindow::showVersions();
             } else if (id == "addAccount") {
                 MainWindow::showAccounts();
                 AccountsScreen::openAdd();
