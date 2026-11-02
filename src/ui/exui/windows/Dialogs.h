@@ -49,13 +49,14 @@ namespace ForgottenMelody {
     public:
         using Rows = std::vector<std::vector<std::wstring>>;
 
+        // Shows rows in the list and returns whether they changed. As many rows as before are only rewritten, so
+        // that the list keeps its selection and scroll while, say, a progress goes on.
+        static bool fill(exui::ListView& list, Rows& shown, Rows rows);
+
     protected:
         virtual void refresh() = 0;
         void startRefreshing();
         LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override;
-        // Shows rows in the list and returns whether they changed. As many rows as before are only rewritten, so
-        // that the list keeps its selection and scroll while, say, a progress goes on.
-        static bool fill(exui::ListView& list, Rows& shown, Rows rows);
         // The same for rows with a key each: the keys selected before stay selected wherever their rows went, and
         // those that are gone are no longer.
         static void fill(exui::ListView& list, Rows& shown, std::vector<std::string>& shownKeys, Rows rows,

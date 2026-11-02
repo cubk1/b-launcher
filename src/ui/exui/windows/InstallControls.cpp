@@ -5,6 +5,7 @@
 #define NOMINMAX
 #endif
 #include "ui/exui/windows/InstallControls.h"
+#include "ui/exui/windows/Dialogs.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
 #include "ui/exui/widgets/ComboBox.h"
@@ -280,21 +281,6 @@ namespace ForgottenMelody {
             }
             rows.push_back({Platform::widen(part.label), amount, detail});
         }
-        auto& list = form.Control<exui::ListView>(first + 3);
-        if (rows.size() != shown.size() || list.GetRowCount() != (int) rows.size()) {
-            list.ClearRows();
-            for (const auto& row : rows) {
-                list.InsertRow(row);
-            }
-        } else {
-            for (size_t i = 0; i < rows.size(); i++) {
-                for (size_t j = 0; j < rows[i].size(); j++) {
-                    if (rows[i][j] != shown[i][j]) {
-                        list.SetCellText((int) i, (int) j, rows[i][j]);
-                    }
-                }
-            }
-        }
-        shown = std::move(rows);
+        LiveForm::fill(form.Control<exui::ListView>(first + 3), shown, std::move(rows));
     }
 }
