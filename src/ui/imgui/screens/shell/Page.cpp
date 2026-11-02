@@ -296,6 +296,10 @@ namespace Page {
         return found != scrolls.end() ? UiRender::snapLayout(found->second.shown) : 0.0f;
     }
 
+    void scrollTo(const std::string& id, float target) {
+        scrolls[id].target = target;
+    }
+
     bool Scroll::begin() {
         UiRender::scissor(left - 4.0f, top, width + 8.0f, bottom - top);
         clipping = true;

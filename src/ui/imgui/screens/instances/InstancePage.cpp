@@ -3,6 +3,7 @@
 #include "app/system/Catalog.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameOptions.h"
+#include "app/launch/KeyBinds.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/instances/InstanceExport.h"
 #include "ui/imgui/screens/instances/InstanceMods.h"
@@ -16,6 +17,7 @@
 #include "app/instances/Mods.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "ui/imgui/screens/settings/GameOptionRows.h"
+#include "ui/imgui/screens/settings/KeyBindEditor.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/launch/Patches.h"
@@ -81,6 +83,7 @@ namespace InstancePage {
         constexpr int SECTION_EXPORT = 3;
         constexpr int SECTION_SHORTCUT = 4;
         constexpr int SECTION_SCREENSHOTS = 5;
+        constexpr int SECTION_KEYS = 6;
         PageTransition sections(SECTION_MAIN);
         std::string sectionKey;
         bool screenshotsFromHome = false;
@@ -935,7 +938,7 @@ namespace InstancePage {
         }
 
         int manageCount(const Instances::Entry& entry) {
-            return (Instances::hasModLoader(entry) ? 1 : 0) + 3;
+            return (Instances::hasModLoader(entry) ? 1 : 0) + (GameOptions::ownFile(entry) ? 1 : 0) + 3;
         }
 
         void manageRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -965,6 +968,15 @@ namespace InstancePage {
             }
             y += Page::ROW_H;
             index++;
+            if (GameOptions::ownFile(entry)) {
+                int bound = KeyBindEditor::count(GameOptions::fileOf(entry));
+                if (Page::navRow("instance#keys", "按键绑定", bound > 0 ? std::to_string(bound) + " 个" : std::string(),
+                                 y, blocked, Page::rowCorners(index, count), 0xf11c)) {
+                    sections.go(SECTION_KEYS);
+                }
+                y += Page::ROW_H;
+                index++;
+            }
             std::string loaders;
             for (const blb::install::loader_info& loader : entry.info.loaders) {
                 loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
@@ -1250,6 +1262,13 @@ namespace InstancePage {
             }
         } else if (sections.page == SECTION_SHORTCUT) {
             if (InstanceShortcut::draw(entry)) {
+                sections.go(SECTION_MAIN);
+            }
+        } else if (sections.page == SECTION_KEYS) {
+            std::filesystem::path file = GameOptions::fileOf(entry);
+            if (KeyBindEditor::page(owner(entry.key, "keys"), file,
+                                    KeyBinds::legacyVersion(entry.info.minecraft_version),
+                                    blb::path_to_utf8(file.filename()), NewUi::overlayCoversMouse())) {
                 sections.go(SECTION_MAIN);
             }
         } else if (sections.page == SECTION_SCREENSHOTS) {

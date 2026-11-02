@@ -17,6 +17,7 @@
 #include <cwctype>
 #include <map>
 #include <string_view>
+#include <vector>
 #include <system_error>
 #include <unordered_map>
 
@@ -31,10 +32,12 @@ namespace GameOptions {
             ULONGLONG checked = 0;
             std::filesystem::file_time_type stamp{};
             bool exists = false;
+            unsigned revision = 0;
             std::map<std::string, std::string> values;
         };
 
         std::unordered_map<std::wstring, Cached> cache;
+        unsigned revisions = 0;
 
         std::wstring keyOf(const std::filesystem::path& file) {
             std::wstring text = blb::fs::absolute(file).lexically_normal().wstring();
@@ -80,6 +83,7 @@ namespace GameOptions {
             }
             entry.exists = exists;
             entry.stamp = stamp;
+            entry.revision = ++revisions;
             entry.values.clear();
             if (exists) {
                 if (auto content = blb::fs::read_file(file)) {
@@ -125,42 +129,66 @@ namespace GameOptions {
     }
 
     std::string set(const std::filesystem::path& file, const std::string& key, const std::string& value) {
+        return setAll(file, {{key, value}});
+    }
+
+    const std::map<std::string, std::string>& all(const std::filesystem::path& file) {
+        return load(file).values;
+    }
+
+    unsigned revision(const std::filesystem::path& file) {
+        return load(file).revision;
+    }
+
+    std::string setAll(const std::filesystem::path& file,
+                       const std::vector<std::pair<std::string, std::string>>& values) {
+        if (values.empty()) return {};
         if (inUse(file)) return "游戏正在使用这些设置，退出游戏后才能修改";
         auto existing = blb::fs::read_file(file);
         if (!existing && existing.err().code != blb::errc::not_found) {
             return existing.err().message;
         }
         std::string content = existing ? std::move(*existing) : std::string();
-        std::string prefix = key + ":";
-        std::string line = prefix + value;
-        bool replaced = false;
+        std::string newline = content.find("\r\n") != std::string::npos ? "\r\n" : "\n";
+        std::vector<std::string> lines;
         size_t from = 0;
         while (from < content.size()) {
             size_t end = content.find('\n', from);
             size_t stop = end == std::string::npos ? content.size() : end;
-            if (content.compare(from, prefix.size(), prefix) == 0) {
-                if (stop > from && content[stop - 1] == '\r') {
-                    stop--;
-                }
-                content.replace(from, stop - from, line);
-                replaced = true;
-                break;
+            std::string line = content.substr(from, stop - from);
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
             }
+            lines.push_back(std::move(line));
             if (end == std::string::npos) {
                 break;
             }
             from = end + 1;
         }
-        if (!replaced) {
-            if (!content.empty() && content.back() != '\n') {
-                content += '\n';
+        std::unordered_map<std::string, size_t> at;
+        for (size_t i = 0; i < lines.size(); i++) {
+            size_t colon = lines[i].find(':');
+            if (colon != std::string::npos) {
+                at.emplace(lines[i].substr(0, colon), i);
             }
-            content += line + "\n";
+        }
+        for (const auto& [key, value] : values) {
+            auto found = at.find(key);
+            if (found != at.end()) {
+                lines[found->second] = key + ":" + value;
+            } else {
+                at.emplace(key, lines.size());
+                lines.push_back(key + ":" + value);
+            }
+        }
+        std::string out;
+        for (const std::string& line : lines) {
+            out += line + newline;
         }
         if (auto made = blb::fs::create_directories(file.parent_path()); !made) {
             return made.err().message;
         }
-        if (auto written = blb::fs::write_file_atomic(file, content); !written) {
+        if (auto written = blb::fs::write_file_atomic(file, out); !written) {
             return written.err().message;
         }
         cache.erase(keyOf(file));
