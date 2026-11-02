@@ -333,6 +333,9 @@ namespace KeyBinds {
         }
 
         bool encode(const std::string& key, const std::string& modifier, bool suffixed, bool legacy, std::string& out) {
+            if (bound(key) && !suffixed && !modifier.empty() && modifier != "NONE") {
+                return false;
+            }
             std::string head;
             bool raw = key.rfind("legacy.", 0) == 0;
             if (legacy) {
@@ -715,26 +718,51 @@ namespace KeyBinds {
         if (source.empty()) {
             return "没有可以复制的按键";
         }
+        struct Pending {
+            std::filesystem::path file;
+            std::vector<std::pair<std::string, std::string>> values;
+        };
+        std::vector<Pending> pending;
         for (const Target& target : targets) {
+            if (GameOptions::inUse(target.file)) {
+                return blb::path_to_utf8(target.file) + "：游戏正在使用这些设置，退出游戏后才能修改";
+            }
             const Table& destination = table(target.file);
             bool legacy = destination.bindings.empty() ? target.legacy : destination.legacy;
+            bool modifiers = std::any_of(destination.bindings.begin(), destination.bindings.end(),
+                                         [](const Binding& binding) { return binding.suffixed; });
             std::unordered_map<std::string, bool> suffixes;
             for (const Binding& binding : destination.bindings) {
                 suffixes.emplace(binding.id, binding.suffixed);
             }
-            std::vector<std::pair<std::string, std::string>> values;
+            Pending write{target.file, {}};
             for (const Binding& binding : source) {
                 auto suffix = suffixes.find(binding.id);
-                bool suffixed = suffix != suffixes.end() ? suffix->second : binding.suffixed;
-                std::string value;
-                if (encode(binding.key, binding.modifier, suffixed, legacy, value)) {
-                    values.push_back({"key_" + binding.id, value});
+                bool suffixed = suffix != suffixes.end() ? suffix->second : modifiers;
+                if (modifiers && !binding.modifier.empty() && binding.modifier != "NONE") {
+                    suffixed = true;
                 }
+                std::string value;
+                if (!encode(binding.key, binding.modifier, suffixed, legacy, value)) {
+                    std::string combination = keyLabel(binding.key);
+                    if (bound(binding.key) && !binding.modifier.empty() && binding.modifier != "NONE") {
+                        std::string label = modifierLabel(binding.modifier);
+                        combination = (label.empty() ? binding.modifier : label) + " + " + combination;
+                    }
+                    return blb::path_to_utf8(target.file) + "：无法完整复制 " + binding.name + "（" + combination + "）";
+                }
+                write.values.push_back({"key_" + binding.id, value});
             }
-            std::string error = GameOptions::setAll(target.file, values);
+            pending.push_back(std::move(write));
+        }
+        size_t copied = 0;
+        for (const Pending& write : pending) {
+            std::string error = GameOptions::setAll(write.file, write.values);
             if (!error.empty()) {
-                return blb::path_to_utf8(target.file.parent_path().filename()) + "：" + error;
+                std::string prefix = copied > 0 ? "已复制到 " + std::to_string(copied) + " 处；" : std::string();
+                return prefix + blb::path_to_utf8(write.file) + "：" + error;
             }
+            ++copied;
         }
         return {};
     }
