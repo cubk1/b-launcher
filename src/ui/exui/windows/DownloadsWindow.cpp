@@ -134,31 +134,6 @@ namespace ForgottenMelody {
         // The section shown last, for the rest of the run; 模组 at first.
         int lastSection = 1;
 
-        std::unique_ptr<Gdiplus::Bitmap> bitmapOf(const Pixels& pixels) {
-            if (pixels.width <= 0 || pixels.height <= 0 ||
-                pixels.rgba.size() < (size_t) pixels.width * pixels.height * 4) {
-                return nullptr;
-            }
-            auto bitmap = std::make_unique<Gdiplus::Bitmap>(pixels.width, pixels.height, PixelFormat32bppARGB);
-            Gdiplus::Rect all(0, 0, pixels.width, pixels.height);
-            Gdiplus::BitmapData data;
-            if (bitmap->LockBits(&all, Gdiplus::ImageLockModeWrite, PixelFormat32bppARGB, &data) != Gdiplus::Ok) {
-                return nullptr;
-            }
-            for (int y = 0; y < pixels.height; y++) {
-                auto* row = (uint8_t*) data.Scan0 + (ptrdiff_t) y * data.Stride;
-                for (int x = 0; x < pixels.width; x++) {
-                    const unsigned char* p = &pixels.rgba[((size_t) y * pixels.width + x) * 4];
-                    row[x * 4] = p[2];
-                    row[x * 4 + 1] = p[1];
-                    row[x * 4 + 2] = p[0];
-                    row[x * 4 + 3] = p[3];
-                }
-            }
-            bitmap->UnlockBits(&data);
-            return bitmap;
-        }
-
         // The results of a search, a project a row in the manner of the default interface: its icon, its title with
         // the author and the tags, the description below and the downloads at the right.
         class ProjectList : public exui::Widget {
@@ -221,7 +196,7 @@ namespace ForgottenMelody {
                     auto& icon = icons[row.icon];
                     if (icon == nullptr) {
                         if (std::shared_ptr<const Pixels> pixels = Addons::icon(row.icon)) {
-                            icon = bitmapOf(*pixels);
+                            icon = exui::BitmapFromRgba(pixels->width, pixels->height, pixels->rgba);
                             arrived = arrived || icon != nullptr;
                         }
                     }
@@ -414,7 +389,7 @@ namespace ForgottenMelody {
             void updateIcon() {
                 if (icon == nullptr && !iconUrl.empty()) {
                     if (std::shared_ptr<const Pixels> pixels = Addons::icon(iconUrl)) {
-                        icon = bitmapOf(*pixels);
+                        icon = exui::BitmapFromRgba(pixels->width, pixels->height, pixels->rgba);
                         Invalidate();
                     }
                 }

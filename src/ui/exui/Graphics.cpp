@@ -125,6 +125,26 @@ namespace exui {
         return copy;
     }
 
+    std::unique_ptr<Bitmap> BitmapFromRgba(int width, int height, std::span<const uint8_t> rgba) {
+        if (width <= 0 || height <= 0 || rgba.size() < (size_t) width * height * 4) return nullptr;
+        auto bitmap = std::make_unique<Bitmap>(width, height, PixelFormat32bppARGB);
+        Rect all(0, 0, width, height);
+        BitmapData data{};
+        if (bitmap->LockBits(&all, ImageLockModeWrite, PixelFormat32bppARGB, &data) != Ok) return nullptr;
+        for (int y = 0; y < height; y++) {
+            auto* row = (uint8_t*) data.Scan0 + (ptrdiff_t) y * data.Stride;
+            for (int x = 0; x < width; x++) {
+                const uint8_t* p = &rgba[((size_t) y * width + x) * 4];
+                row[x * 4] = p[2];
+                row[x * 4 + 1] = p[1];
+                row[x * 4 + 2] = p[0];
+                row[x * 4 + 3] = p[3];
+            }
+        }
+        bitmap->UnlockBits(&data);
+        return bitmap;
+    }
+
     RectF Adjust(RectF r, float dx, float dy, float dw, float dh) {
         return {r.X + dx, r.Y + dy, r.Width + dw, r.Height + dh};
     }

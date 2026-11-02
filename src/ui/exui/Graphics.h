@@ -69,6 +69,8 @@ namespace exui {
     std::unique_ptr<Gdiplus::Bitmap> DecodeImage(std::span<const uint8_t> bytes);
     // GDI+ Clone can keep referring to the source pixels; this copy owns them.
     std::unique_ptr<Gdiplus::Bitmap> CopyBitmap(Gdiplus::Bitmap& bitmap);
+    // Converts straight RGBA pixels to an owning GDI+ bitmap.
+    std::unique_ptr<Gdiplus::Bitmap> BitmapFromRgba(int width, int height, std::span<const uint8_t> rgba);
     void DrawWithOpacity(Gdiplus::Graphics& g, Gdiplus::Bitmap& bitmap, const Gdiplus::Rect& destination,
                          uint8_t opacity);
 
