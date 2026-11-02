@@ -806,7 +806,7 @@ namespace Homepage {
                     float size = std::clamp(std::min(panelRight - panelLeft, floor - top - listH - gap) * 0.46f,
                                             LOGO_MIN, 360.0f);
                     float logoY = (top + floor - size - gap - listH) * 0.5f - 8.0f;
-                    Logo::draw(cx - size * 0.5f, logoY, size, logoFaint());
+                    Logo::brand(cx - size * 0.5f, logoY, size, logoFaint());
                     if (listH > 0.0f) {
                         HomeWidgets::draw(columnX, logoY + size + gap, columnW, covered);
                     }
@@ -823,7 +823,7 @@ namespace Homepage {
                     float space = y - top;
                     if (low && space >= LOGO_MIN + 2.0f * TOP_PAD) {
                         float size = std::clamp(std::min(panelRight - panelLeft, space) * 0.46f, LOGO_MIN, 360.0f);
-                        Logo::draw(cx - size * 0.5f, top + (space - size) * 0.5f, size, logoFaint());
+                        Logo::brand(cx - size * 0.5f, top + (space - size) * 0.5f, size, logoFaint());
                     }
                     HomeWidgets::draw(columnX, y, columnW, covered);
                     columnTop = y;
@@ -836,7 +836,7 @@ namespace Homepage {
             }
             float size = std::clamp(std::min(panelRight - panelLeft, bottom - top) * 0.46f, LOGO_MIN, 360.0f);
             float logoY = (top + bottom - size) * 0.5f - 8.0f;
-            Logo::draw(cx - size * 0.5f, logoY, size, logoFaint());
+            Logo::brand(cx - size * 0.5f, logoY, size, logoFaint());
         }
         if (views.empty()) {
             return;

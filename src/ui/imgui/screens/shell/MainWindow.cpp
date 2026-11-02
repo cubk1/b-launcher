@@ -403,7 +403,7 @@ namespace MainWindow {
             UiSound::request(UiSound::TICK);
             setFolded(!folded);
         }
-        Logo::draw(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
+        Logo::brand(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
         fadeGlyph(folded ? 0xf101 : 0xf100, cx, cy, UiTheme::textPrimary(), wake, 11.0f);
         float savedAlpha = UiRender::alphaMul;
         UiRender::alphaMul = savedAlpha * fading();
@@ -1186,13 +1186,15 @@ namespace MainWindow {
             }
         }
 
-        float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
-        if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
-            minimizeRequested = true;
-        }
-        maximizeButton(width() - 14 - 56, buttonY);
-        if (windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true)) {
-            closeRequested = true;
+        if (!Appearance::systemFrameRunning()) {
+            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
+            if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
+                minimizeRequested = true;
+            }
+            maximizeButton(width() - 14 - 56, buttonY);
+            if (windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true)) {
+                closeRequested = true;
+            }
         }
         Drop::draw(width(), height());
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();

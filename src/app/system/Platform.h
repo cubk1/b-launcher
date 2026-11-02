@@ -59,6 +59,7 @@ namespace Platform {
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickJava(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickImage(const std::filesystem::path& initial);
+    std::optional<std::filesystem::path> pickLogo(const std::filesystem::path& initial);
     std::vector<std::filesystem::path> pickFiles(const std::filesystem::path& initial, const wchar_t* title,
                                                  const wchar_t* typeName, const wchar_t* pattern);
     std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path& suggested);

@@ -228,8 +228,9 @@ namespace {
             return false;
         }
         const RECT& normal = placement.rcNormalPosition;
-        float w = std::round(std::max(MainWindow::MIN_WIDTH, (normal.right - normal.left) / scale));
-        float h = std::round(std::max(MainWindow::MIN_HEIGHT, (normal.bottom - normal.top) / scale));
+        SIZE extra = window.frameSize();
+        float w = std::round(std::max(MainWindow::MIN_WIDTH, (normal.right - normal.left - extra.cx) / scale));
+        float h = std::round(std::max(MainWindow::MIN_HEIGHT, (normal.bottom - normal.top - extra.cy) / scale));
         bool maximized =
                 IsZoomed(window.hwnd) || (IsIconic(window.hwnd) && (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
         nlohmann::json& doc = Config::data();
@@ -260,6 +261,7 @@ namespace ImGuiApp {
         float scale = dpiScale * Appearance::zoom() / 100.0f;
         BorderlessWindow window;
         window.resizable = true;
+        window.framed = Appearance::systemFrameRunning();
         window.isDragArea = [&scale](int x, int y) { return MainWindow::isDragArea(x / scale, y / scale); };
         bool remember = Appearance::rememberWindow();
         float startW = std::min(remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH,
@@ -329,6 +331,7 @@ namespace ImGuiApp {
             }
             Services::poll();
             Background::poll();
+            Logo::poll();
             Homepage::poll();
             if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
                 launchSent = outcome->launched;
@@ -488,6 +491,7 @@ namespace ImGuiApp {
         UiImages::shutdown();
         Homepage::shutdown();
         Background::shutdown();
+        Logo::shutdown();
         Services::stop();
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplWin32_Shutdown();

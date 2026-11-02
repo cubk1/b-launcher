@@ -716,6 +716,12 @@ namespace Platform {
         return pickFile(initial, L"选择背景图片", filters, 2);
     }
 
+    std::optional<std::filesystem::path> pickLogo(const std::filesystem::path& initial) {
+        const COMDLG_FILTERSPEC filters[] = {{L"图片", L"*.png;*.svg;*.ico;*.jpg;*.jpeg;*.bmp;*.gif;*.webp"},
+                                             {L"所有文件", L"*.*"}};
+        return pickFile(initial, L"选择启动器标志", filters, 2);
+    }
+
     std::optional<std::string> loadValue(const std::string& name) {
         HKEY key = nullptr;
         if (RegOpenKeyExW(HKEY_CURRENT_USER, STORE_KEY, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
