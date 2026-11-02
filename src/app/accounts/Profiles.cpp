@@ -210,9 +210,6 @@ namespace Profiles {
             if (account == nullptr) {
                 return;
             }
-            if (session.expired) {
-                Accounts::markExpired(key);
-            }
             blb::auth::account updated = session.renewed ? session.account : *account;
             if (profile != nullptr) {
                 updated.name = profile->name;
@@ -220,6 +217,11 @@ namespace Profiles {
             }
             if (session.renewed || updated.name != account->name || updated.skin_url != account->skin_url) {
                 Accounts::refreshed(updated);
+            }
+            // Saving refreshed credentials clears the old expiry marker. Apply
+            // the final response's authentication state after that write.
+            if (session.expired) {
+                Accounts::markExpired(key);
             }
         }
 
