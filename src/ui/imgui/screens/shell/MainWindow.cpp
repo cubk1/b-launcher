@@ -70,6 +70,7 @@ namespace MainWindow {
     static float fullListW = ITEM_W;
     static float fold = 0.0f;
     static bool folded = false;
+    static int searchClaimed = -10;
     static bool foldLoaded = false;
     static const float ITEM_H = 30.0f;
     static const float ITEM_STEP = 32.0f;
@@ -1103,7 +1104,14 @@ namespace MainWindow {
         pages.end();
     }
 
+    void claimSearch() {
+        searchClaimed = ImGui::GetFrameCount();
+    }
+
     static void searchShortcut() {
+        if (ImGui::GetFrameCount() - searchClaimed <= 1) {
+            return;
+        }
         ImGuiIO& io = ImGui::GetIO();
         if (!io.KeyCtrl || io.KeyAlt || io.KeyShift || !ImGui::IsKeyPressed(ImGuiKey_F, false)) {
             return;

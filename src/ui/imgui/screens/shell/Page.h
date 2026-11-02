@@ -59,6 +59,7 @@ namespace Page {
                 int corners, int glyph = 0);
 
     bool shown(float y, float h = ROW_H);
+    float scrollOffset(const std::string& id);
 
     class Scroll {
     public:

@@ -76,6 +76,7 @@ namespace Addons {
         std::string projectId;
         std::string versionId;
         bool required = false;
+        bool incompatible = false;
     };
 
     struct Version {

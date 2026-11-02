@@ -151,6 +151,7 @@ namespace Mods {
                 });
                 checkDependencies(list);
                 list.loading = false;
+                list.serial++;
                 if (again.erase(key) != 0) {
                     scan(key);
                 }
@@ -172,6 +173,7 @@ namespace Mods {
         mod->info.file = *renamed;
         mod->info.file_name = blb::path_to_utf8(renamed->filename());
         mod->info.enabled = enabled;
+        lists[instanceKey].serial++;
         checkDependencies(lists[instanceKey]);
     }
 
@@ -189,6 +191,7 @@ namespace Mods {
         list.mods.erase(
                 std::remove_if(list.mods.begin(), list.mods.end(), [&](const Mod& m) { return m.info.file == file; }),
                 list.mods.end());
+        list.serial++;
         checkDependencies(list);
         Notices::add(Notices::Kind::Done, "已将 " + name + " 移到回收站", 2500);
     }

@@ -47,6 +47,7 @@ namespace Drops {
 
         bool over = false;
         std::vector<std::filesystem::path> dragged;
+        POINT hoverPoint{-1, -1};
 
         std::thread worker;
         std::mutex lock;
@@ -56,11 +57,13 @@ namespace Drops {
             std::vector<std::filesystem::path> files;
             std::string target;
             bool importing = false;
+            POINT point{-1, -1};
         };
         struct Batch {
             std::vector<Item> items;
             std::string target;
             bool importing = false;
+            POINT point{-1, -1};
         };
         std::deque<Request> requests;
         std::deque<Batch> completed;
@@ -178,7 +181,7 @@ namespace Drops {
                     request = std::move(requests.front());
                     requests.pop_front();
                 }
-                Batch result{{}, std::move(request.target), request.importing};
+                Batch result{{}, std::move(request.target), request.importing, request.point};
                 for (const std::filesystem::path& file : request.files) {
                     try {
                         result.items.push_back(classify(file));
@@ -191,8 +194,8 @@ namespace Drops {
             }
         }
 
-        void classifyLater(std::vector<std::filesystem::path> files, bool importing = false) {
-            Request request{std::move(files), targetInstance(), importing};
+        void classifyLater(std::vector<std::filesystem::path> files, bool importing = false, POINT point = {-1, -1}) {
+            Request request{std::move(files), targetInstance(), importing, point};
             {
                 std::lock_guard<std::mutex> guard(lock);
                 requests.push_back(std::move(request));
@@ -223,14 +226,23 @@ namespace Drops {
                 return 1;
             }
 
-            HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL, DWORD* effect) override {
+            static void remember(POINTL screen) {
+                POINT point{screen.x, screen.y};
+                if (target != nullptr && ScreenToClient(target, &point)) {
+                    hoverPoint = point;
+                }
+            }
+
+            HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL screen, DWORD* effect) override {
+                remember(screen);
                 dragged = filesOf(data);
                 over = !dragged.empty() && accepting();
                 *effect = over && acceptable(dragged) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
                 return S_OK;
             }
 
-            HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL, DWORD* effect) override {
+            HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL screen, DWORD* effect) override {
+                remember(screen);
                 *effect = over && acceptable(dragged) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
                 return S_OK;
             }
@@ -241,7 +253,8 @@ namespace Drops {
                 return S_OK;
             }
 
-            HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD, POINTL, DWORD* effect) override {
+            HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD, POINTL screen, DWORD* effect) override {
+                remember(screen);
                 over = false;
                 std::vector<std::filesystem::path> files = filesOf(data);
                 dragged.clear();
@@ -251,7 +264,7 @@ namespace Drops {
                 }
                 *effect = DROPEFFECT_COPY;
                 SetForegroundWindow(target);
-                classifyLater(std::move(files));
+                classifyLater(std::move(files), false, hoverPoint);
                 return S_OK;
             }
         };
@@ -286,7 +299,7 @@ namespace Drops {
             }
         }
 
-        void act(const std::vector<Item>& found, const std::string& key) {
+        void act(const std::vector<Item>& found, const std::string& key, POINT point) {
             for (const Item& item : found) {
                 if (item.kind == Kind::Modpack) {
                     openModpack(item);
@@ -306,6 +319,15 @@ namespace Drops {
             if (count(Kind::Mod) > 0) {
                 if (Instances::hasModLoader(*entry)) {
                     addAll(key, found, Kind::Mod, "mods", "模组");
+                    if (handlers.placed && point.x >= 0) {
+                        std::vector<std::filesystem::path> mods;
+                        for (const Item& item : found) {
+                            if (item.kind == Kind::Mod) {
+                                mods.push_back(item.file);
+                            }
+                        }
+                        handlers.placed(key, mods, (int) point.x, (int) point.y);
+                    }
                 } else {
                     Notices::add(Notices::Kind::Failed, entry->info.id + " 没有安装模组加载器，不能添加模组", 5000);
                 }
@@ -351,6 +373,23 @@ namespace Drops {
         return over;
     }
 
+    int modCount() {
+        int mods = 0;
+        for (const std::filesystem::path& file : dragged) {
+            mods += Mods::acceptsDrop(nameOf(file)) ? 1 : 0;
+        }
+        return mods;
+    }
+
+    bool point(int& x, int& y) {
+        if (!over || hoverPoint.x < 0) {
+            return false;
+        }
+        x = (int) hoverPoint.x;
+        y = (int) hoverPoint.y;
+        return true;
+    }
+
     std::string promise() {
         int mods = 0;
         int packs = 0;
@@ -393,7 +432,7 @@ namespace Drops {
                     Notices::add(Notices::Kind::Failed, "这个文件不是支持的整合包", 4000);
                 }
             } else {
-                act(batch.items, batch.target);
+                act(batch.items, batch.target, batch.point);
             }
         }
     }

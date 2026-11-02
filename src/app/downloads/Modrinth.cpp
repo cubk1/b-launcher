@@ -243,11 +243,12 @@ namespace Modrinth {
             if (dependencies != item.end() && dependencies->is_array()) {
                 for (const json& dependency : *dependencies) {
                     std::string type = blb::json_text(dependency, "dependency_type");
-                    if (type != "required" && type != "optional") {
+                    if (type != "required" && type != "optional" && type != "incompatible") {
                         continue;
                     }
                     version.dependencies.push_back(Dependency{blb::json_text(dependency, "project_id"),
-                                                              blb::json_text(dependency, "version_id"), type == "required"});
+                                                              blb::json_text(dependency, "version_id"),
+                                                              type == "required", type == "incompatible"});
                 }
             }
             return version;
@@ -463,6 +464,10 @@ namespace Modrinth {
 
     void shutdown() {
         tasks.stop();
+    }
+
+    Addons::Version versionFrom(const json& item) {
+        return parseVersion(item);
     }
 
     Fetched fetchVersion(const std::string& versionId, blb::cancellation_token token) {

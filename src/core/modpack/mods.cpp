@@ -23,6 +23,266 @@ constexpr log::logger s_log ("mods");
 
 using detail::text_of;
 
+bool
+digit (char c)
+{
+  return c >= '0' && c <= '9';
+}
+
+std::string_view
+trimmed (std::string_view text)
+{
+  while (!text.empty () && (text.front () == ' ' || text.front () == '\t'))
+    text.remove_prefix (1);
+  while (!text.empty () && (text.back () == ' ' || text.back () == '\t'))
+    text.remove_suffix (1);
+  return text;
+}
+
+std::string_view
+bare_version (std::string_view version)
+{
+  version = trimmed (version);
+  if (!version.empty ()
+      && (version.front () == 'v' || version.front () == 'V'))
+    version.remove_prefix (1);
+  if (auto plus = version.find ('+'); plus != std::string_view::npos)
+    version = version.substr (0, plus);
+  return version;
+}
+
+std::vector<std::string_view>
+version_parts (std::string_view version)
+{
+  std::vector<std::string_view> parts;
+  std::size_t start = 0;
+  while (start <= version.size ())
+    {
+      auto dot = version.find ('.', start);
+      parts.push_back (version.substr (start, dot == std::string_view::npos
+                                                  ? std::string_view::npos
+                                                  : dot - start));
+      if (dot == std::string_view::npos)
+        break;
+      start = dot + 1;
+    }
+  return parts;
+}
+
+bool
+wildcard_part (std::string_view part)
+{
+  return part == "x" || part == "X" || part == "*";
+}
+
+std::string
+padded (std::string_view version)
+{
+  auto dash = version.find ('-');
+  std::string head (version.substr (0, dash));
+  std::string tail (dash == std::string_view::npos ? std::string_view ()
+                                                   : version.substr (dash));
+  while (head.size () > 2 && head.ends_with (".0"))
+    head.resize (head.size () - 2);
+  return head + tail;
+}
+
+int
+compare_padded (std::string_view a, std::string_view b)
+{
+  return compare_versions (padded (a), padded (b));
+}
+
+long long
+leading_number (std::string_view part)
+{
+  long long value = 0;
+  for (char c : part)
+    {
+      if (!digit (c) || value > 100000000)
+        break;
+      value = value * 10 + (c - '0');
+    }
+  return value;
+}
+
+std::string
+raised (std::string_view version, std::size_t index)
+{
+  auto parts = version_parts (version.substr (0, version.find ('-')));
+  std::string out;
+  for (std::size_t i = 0; i <= index; ++i)
+    {
+      long long value = i < parts.size () ? leading_number (parts[i]) : 0;
+      if (i == index)
+        ++value;
+      out += (i == 0 ? "" : ".") + std::to_string (value);
+    }
+  return out;
+}
+
+bool
+wildcard_holds (std::string_view version, std::string_view pattern)
+{
+  auto wanted = version_parts (pattern);
+  auto have = version_parts (version.substr (0, version.find ('-')));
+  for (std::size_t i = 0; i < wanted.size (); ++i)
+    {
+      if (wildcard_part (wanted[i]))
+        return true;
+      if (i >= have.size () || compare_versions (have[i], wanted[i]) != 0)
+        return false;
+    }
+  return true;
+}
+
+bool
+predicate_holds (std::string_view version, std::string_view predicate)
+{
+  predicate = trimmed (predicate);
+  if (predicate.empty () || wildcard_part (predicate))
+    return true;
+  std::string_view op;
+  for (std::string_view candidate : { ">=", "<=", ">", "<", "=", "~", "^" })
+    if (predicate.starts_with (candidate))
+      {
+        op = candidate;
+        break;
+      }
+  auto target = bare_version (predicate.substr (op.size ()));
+  if (target.empty () || !digit (target.front ()))
+    return true;
+  auto parts = version_parts (target);
+  for (auto part : parts)
+    if (wildcard_part (part))
+      return op.empty () || op == "=" ? wildcard_holds (version, target)
+                                      : true;
+  int c = compare_padded (version, target);
+  if (op == ">=")
+    return c >= 0;
+  if (op == "<=")
+    return c <= 0;
+  if (op == ">")
+    return c > 0;
+  if (op == "<")
+    return c < 0;
+  if (op == "=")
+    return c == 0;
+  if (op == "~")
+    return c >= 0
+           && compare_padded (version,
+                              raised (target, parts.size () > 1 ? 1 : 0))
+                  < 0;
+  if (op == "^")
+    {
+      std::size_t index = 0;
+      while (index + 1 < parts.size () && leading_number (parts[index]) == 0)
+        ++index;
+      return c >= 0 && compare_padded (version, raised (target, index)) < 0;
+    }
+  return c >= 0;
+}
+
+bool
+alternative_holds (std::string_view version, std::string_view alternative)
+{
+  std::vector<std::string> predicates;
+  std::size_t i = 0;
+  while (i < alternative.size ())
+    {
+      while (i < alternative.size () && alternative[i] == ' ')
+        ++i;
+      auto end = alternative.find (' ', i);
+      auto token = alternative.substr (
+          i, end == std::string_view::npos ? std::string_view::npos : end - i);
+      if (!token.empty ())
+        {
+          if (!predicates.empty ()
+              && predicates.back ().find_first_not_of ("<>=~^")
+                     == std::string::npos)
+            predicates.back () += std::string (token);
+          else
+            predicates.emplace_back (token);
+        }
+      if (end == std::string_view::npos)
+        break;
+      i = end + 1;
+    }
+  for (const auto &predicate : predicates)
+    if (!predicate_holds (version, predicate))
+      return false;
+  return true;
+}
+
+bool
+maven_holds (std::string_view version, std::string_view range)
+{
+  bool any = false;
+  std::size_t i = 0;
+  while (i < range.size ())
+    {
+      while (i < range.size () && (range[i] == ',' || range[i] == ' '))
+        ++i;
+      if (i >= range.size ())
+        break;
+      char open = range[i];
+      if (open != '[' && open != '(')
+        return true;
+      auto close = range.find_first_of ("])", i + 1);
+      if (close == std::string_view::npos)
+        return true;
+      auto body = range.substr (i + 1, close - i - 1);
+      bool held = true;
+      auto comma = body.find (',');
+      if (comma == std::string_view::npos)
+        {
+          auto exact = bare_version (body);
+          held = exact.empty () || compare_padded (version, exact) == 0;
+        }
+      else
+        {
+          auto low = bare_version (body.substr (0, comma));
+          auto high = bare_version (body.substr (comma + 1));
+          if (!low.empty () && digit (low.front ()))
+            {
+              int c = compare_padded (version, low);
+              held = open == '[' ? c >= 0 : c > 0;
+            }
+          if (held && !high.empty () && digit (high.front ()))
+            {
+              int c = compare_padded (version, high);
+              held = range[close] == ']' ? c <= 0 : c < 0;
+            }
+        }
+      if (held)
+        return true;
+      any = true;
+      i = close + 1;
+    }
+  return !any;
+}
+
+std::string
+license_text (const json &node)
+{
+  if (node.is_string ())
+    return node.get<std::string> ();
+  if (node.is_object ())
+    {
+      auto name = text_of (node, "name");
+      return name.empty () ? text_of (node, "id") : name;
+    }
+  std::string out;
+  if (node.is_array ())
+    for (const auto &item : node)
+      {
+        auto part = license_text (item);
+        if (!part.empty ())
+          out += (out.empty () ? "" : ", ") + part;
+      }
+  return out;
+}
+
 std::string
 manifest_value (zip_reader &zip, std::string_view key)
 {
@@ -55,7 +315,13 @@ read_fabric (mod_info &mod, const json &doc)
           mod.authors.push_back (text_of (author, "name"));
       }
   if (auto it = doc.find ("contact"); it != doc.end ())
-    mod.homepage = text_of (*it, "homepage");
+    {
+      mod.homepage = text_of (*it, "homepage");
+      mod.sources = text_of (*it, "sources");
+      mod.issues = text_of (*it, "issues");
+    }
+  if (auto it = doc.find ("license"); it != doc.end ())
+    mod.license = license_text (*it);
   if (auto it = doc.find ("icon"); it != doc.end ())
     {
       if (it->is_string ())
@@ -102,7 +368,13 @@ read_quilt (mod_info &mod, const json &doc)
       mod.description = text_of (*meta, "description");
       mod.icon = text_of (*meta, "icon");
       if (auto contact = meta->find ("contact"); contact != meta->end ())
-        mod.homepage = text_of (*contact, "homepage");
+        {
+          mod.homepage = text_of (*contact, "homepage");
+          mod.sources = text_of (*contact, "sources");
+          mod.issues = text_of (*contact, "issues");
+        }
+      if (auto license = meta->find ("license"); license != meta->end ())
+        mod.license = license_text (*license);
       if (auto people = meta->find ("contributors");
           people != meta->end () && people->is_object ())
         for (auto p = people->begin (); p != people->end (); ++p)
@@ -143,6 +415,8 @@ read_forge_toml (mod_info &mod, const json &doc, zip_reader &zip)
   mod.name = text_of (first, "displayName");
   mod.description = std::string (trim (text_of (first, "description")));
   mod.homepage = text_of (first, "displayURL");
+  mod.issues = text_of (doc, "issueTrackerURL");
+  mod.license = text_of (doc, "license");
   mod.icon = text_of (first, "logoFile");
   if (mod.icon.empty ())
     mod.icon = text_of (doc, "logoFile");
@@ -547,4 +821,29 @@ check_dependencies (std::span<const mod_info> mods,
   return issues;
 }
 
+bool
+version_in_range (std::string_view version, std::string_view range)
+{
+  range = trimmed (range);
+  auto current = bare_version (version);
+  if (range.empty () || current.empty () || !digit (current.front ())
+      || range.find ("${") != std::string_view::npos
+      || current.find ("${") != std::string_view::npos)
+    return true;
+  if (range.front () == '[' || range.front () == '(')
+    return maven_holds (current, range);
+  std::size_t start = 0;
+  while (true)
+    {
+      auto bar = range.find ("||", start);
+      auto alternative = range.substr (start, bar == std::string_view::npos
+                                                  ? std::string_view::npos
+                                                  : bar - start);
+      if (alternative_holds (current, alternative))
+        return true;
+      if (bar == std::string_view::npos)
+        return false;
+      start = bar + 2;
+    }
+}
 }

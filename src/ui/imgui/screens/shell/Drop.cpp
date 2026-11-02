@@ -2,6 +2,8 @@
 #include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/instances/InstanceMods.h"
+#include "ui/imgui/screens/instances/ModGraph.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 
 #include "ui/imgui/panel/UiCommon.h"
@@ -11,8 +13,11 @@
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
 
+#include "imgui.h"
+
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace Drop {
 
@@ -24,6 +29,24 @@ namespace Drop {
             return shown.empty() ? Instances::selected() : shown;
         }
 
+        bool toInterface(int x, int y, float& outX, float& outY) {
+            ImVec2 display = ImGui::GetIO().DisplaySize;
+            if (display.x <= 0.0f || display.y <= 0.0f) {
+                return false;
+            }
+            outX = (float) x * MainWindow::width() / display.x;
+            outY = (float) y * MainWindow::height() / display.y;
+            return true;
+        }
+
+        void placed(const std::string& key, const std::vector<std::filesystem::path>& mods, int x, int y) {
+            float ux = 0.0f;
+            float uy = 0.0f;
+            if (!mods.empty() && InstanceMods::graphShown(key) && toInterface(x, y, ux, uy)) {
+                ModGraph::pin(key, mods, ux, uy);
+            }
+        }
+
         void openModpack(const std::filesystem::path& file, const blb::modpack::pack_manifest& manifest) {
             NewInstanceScreen::openModpack(ModpackSetup::fromFile(file, manifest));
             MainWindow::showNewInstance();
@@ -31,10 +54,27 @@ namespace Drop {
     }
 
     void attach(void* window) {
-        Drops::attach(window, {targetInstance, openModpack, nullptr});
+        Drops::attach(window, {targetInstance, openModpack, nullptr, placed});
     }
 
     void draw(float width, float height) {
+        int px = 0;
+        int py = 0;
+        float ux = 0.0f;
+        float uy = 0.0f;
+        std::string key = targetInstance();
+        int mods = Drops::modCount();
+        bool placing = Drops::hovering() && mods > 0 && InstanceMods::graphShown(key) && Drops::point(px, py) &&
+                toInterface(px, py, ux, uy) && Drops::promise().rfind("松开", 0) == 0;
+        float pinned = UiState::motion("drop#pinned", placing ? 1.0f : 0.0f, 18.0f);
+        if (placing) {
+            UiState::keepAnimating();
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * pinned;
+            ModGraph::preview(key, "添加 " + std::to_string(mods) + " 个模组", ux, uy);
+            UiRender::alphaMul = savedAlpha;
+            return;
+        }
         float shown = UiState::motion("drop#shown", Drops::hovering() ? 1.0f : 0.0f, 16.0f);
         if (shown < 0.01f) {
             return;
