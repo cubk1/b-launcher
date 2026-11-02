@@ -3,6 +3,7 @@
 #include "app/system/Notices.h"
 #include "app/system/PclThemes.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 
@@ -159,6 +160,37 @@ namespace ToolboxTab {
                 return;
             }
             std::filesystem::path target = blb::path_from_utf8(folder) / blb::path_from_utf8(name);
+            std::error_code error;
+            bool exists = std::filesystem::exists(target, error);
+            if (error) {
+                Notices::add(Notices::Kind::Failed, "无法检查目标文件：" + error.message(), 4000);
+                return;
+            }
+            if (exists) {
+                Dialog::open("settings#tools#overwrite", 480.0f, 164.0f,
+                             [url, target](float x, float y, float w, float h) {
+                                 UiRender::textY("覆盖已有文件？", x + 20.0f, y + 20.0f, 24.0f,
+                                                 UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
+                                 std::string path = UiFont::fitStart(Platform::display(target), UiFont::MEDIUM,
+                                                                     UiWidgets::TEXT_CONTROL, w - 40.0f);
+                                 UiRender::textY(path, x + 20.0f, y + 52.0f, 22.0f, UiTheme::textMuted(),
+                                                 UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                                 UiRender::textY("原文件将被替换。", x + 20.0f, y + 78.0f, 22.0f,
+                                                 UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                                 float buttonY = y + h - 20.0f - Page::FIELD_H;
+                                 if (Page::button("settings#tools#overwrite#cancel", "取消", x + w - 204.0f,
+                                                  buttonY, 72.0f, false, false)) {
+                                     Dialog::close();
+                                     return;
+                                 }
+                                 if (Page::button("settings#tools#overwrite#confirm", "覆盖下载", x + w - 120.0f,
+                                                  buttonY, 100.0f, true, false)) {
+                                     Dialog::close();
+                                     CustomDownload::start(url, target);
+                                 }
+                             });
+                return;
+            }
             CustomDownload::start(url, target);
         }
 

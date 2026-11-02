@@ -45,12 +45,8 @@ namespace InstanceScreenshots {
         if (ticks <= 0) {
             return {};
         }
-        auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        auto seconds = (std::time_t) (mtime / ticks);
-        double diff = std::difftime(now, seconds);
+        double diff = (double) (blb::fs::mtime_now() - mtime) / ticks;
         char text[48];
-        std::tm local{};
-        localtime_s(&local, &seconds);
         if (diff < 60) {
             return "刚刚";
         }
@@ -65,6 +61,13 @@ namespace InstanceScreenshots {
         if (diff < 7 * 86400) {
             std::snprintf(text, sizeof(text), "%d 天前", (int) (diff / 86400));
             return text;
+        }
+        auto changed = std::chrono::system_clock::now() -
+                std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::duration<double>(diff));
+        auto seconds = std::chrono::system_clock::to_time_t(changed);
+        std::tm local{};
+        if (localtime_s(&local, &seconds) != 0) {
+            return {};
         }
         std::snprintf(text, sizeof(text), "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);
         return text;
@@ -93,14 +96,14 @@ namespace InstanceScreenshots {
             return grid;
         }
 
-        void rowMenu(const std::string& key, const Screenshots::Entry& entry, int index, float x, float y) {
+        void rowMenu(const std::string& key, const Screenshots::Entry& entry, float x, float y) {
             std::filesystem::path path = entry.path;
             NewUi::openMenu(
                     "screenshots#menu",
-                    [key, path, index] {
+                    [key, path] {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make("查看", 0xf06e,
-                                                             [key, index] { ScreenshotViewer::open(key, index); }));
+                                                             [key, path] { ScreenshotViewer::open(key, path); }));
                         items.push_back(ActionMenuItem::make("复制", 0xf0c5, [path] { Screenshots::copy(path); }));
                         items.push_back(
                                 ActionMenuItem::make("在文件夹中显示", 0xf07c, [path] { Platform::reveal(path); }));
@@ -157,11 +160,11 @@ namespace InstanceScreenshots {
             }
             if (!blocked && hovered && NewUi::rightClick) {
                 NewUi::rightClick = false;
-                rowMenu(key, entry, index, NewUi::mouseX, NewUi::mouseY);
+                rowMenu(key, entry, NewUi::mouseX, NewUi::mouseY);
             }
             if (!blocked && NewUi::click(x, y, w, grid.cellH)) {
                 UiSound::request(UiSound::TICK);
-                ScreenshotViewer::open(key, index);
+                ScreenshotViewer::open(key, entry.path);
             }
         }
 

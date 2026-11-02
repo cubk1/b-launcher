@@ -40,6 +40,7 @@ namespace ScreenshotViewer {
 
         std::string key;
         int index = -1;
+        std::filesystem::path current;
         bool closing = false;
         float zoom = 1.0f;
         float zoomTarget = 1.0f;
@@ -78,6 +79,7 @@ namespace ScreenshotViewer {
                 pressing = false;
                 key.clear();
                 index = -1;
+                current.clear();
                 Screenshots::forgetFullImage();
             }
 
@@ -102,6 +104,7 @@ namespace ScreenshotViewer {
 
         void go(int at) {
             index = at;
+            current = Screenshots::of(key).entries[at].path;
             zoom = zoomTarget = 1.0f;
             panX = panY = panTargetX = panTargetY = 0.0f;
             pressing = false;
@@ -239,7 +242,11 @@ namespace ScreenshotViewer {
                 finish();
                 return;
             }
-            if (index < 0 || index >= total) {
+            auto found = std::find_if(list.entries.begin(), list.entries.end(),
+                                      [](const Screenshots::Entry& item) { return item.path == current; });
+            if (found != list.entries.end()) {
+                index = (int) std::distance(list.entries.begin(), found);
+            } else {
                 go(std::clamp(index, 0, total - 1));
             }
             float open = UiState::motionFrom(OPEN, closing ? 0.0f : 1.0f, closing ? 22.0f : 14.0f, 0.0f);
@@ -463,11 +470,14 @@ namespace ScreenshotViewer {
         }
     }
 
-    void open(const std::string& instanceKey, int at) {
+    void open(const std::string& instanceKey, const std::filesystem::path& path) {
         const Screenshots::List& list = Screenshots::of(instanceKey);
-        if (at < 0 || at >= (int) list.entries.size()) {
+        auto found = std::find_if(list.entries.begin(), list.entries.end(),
+                                  [&path](const Screenshots::Entry& item) { return item.path == path; });
+        if (found == list.entries.end()) {
             return;
         }
+        int at = (int) std::distance(list.entries.begin(), found);
         UiOverlays::addLayerBefore(&layer, UiOverlays::sub);
         NewUi::closeAllOverlays();
         UiInput::blur();
