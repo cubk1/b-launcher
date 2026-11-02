@@ -1,7 +1,6 @@
 #include "app/system/CustomDownload.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Notices.h"
-#include "app/system/Platform.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
@@ -127,7 +126,6 @@ namespace CustomDownload {
                     head.method = "HEAD";
                     head.url = url;
                     head.timeout = std::chrono::milliseconds(15000);
-                    head.headers.push_back({"User-Agent", Platform::USER_AGENT});
                     head.headers.push_back({"Accept-Encoding", "identity"});
                     std::int64_t size = -1;
                     if (auto response = blb::net::http_send(head, token); response && response->ok()) {
