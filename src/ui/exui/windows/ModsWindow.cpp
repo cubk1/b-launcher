@@ -153,12 +153,12 @@ namespace ForgottenMelody {
                         status += L"，" + std::to_wstring(lacking) + L" 个缺少前置";
                     }
                 }
-                setText(STATUS, status);
+                UpdateText(STATUS, status);
 
                 std::vector<const Mods::Mod*> chosen = selected();
                 bool anyOn = std::any_of(chosen.begin(), chosen.end(),
                                          [](const Mods::Mod* mod) { return mod->info.enabled; });
-                setText(TOGGLE, anyOn || chosen.empty() ? L"禁用" : L"启用");
+                UpdateText(TOGGLE, anyOn || chosen.empty() ? L"禁用" : L"启用");
                 FindControl(TOGGLE)->SetEnabled(!chosen.empty());
                 FindControl(REMOVE)->SetEnabled(!chosen.empty());
                 FindControl(HOMEPAGE)->SetEnabled(chosen.size() == 1 && chosen[0]->info.homepage.rfind("http", 0) == 0);
@@ -209,12 +209,6 @@ namespace ForgottenMelody {
             Rows shown;
             // The mod of each row; empty for the row that says there is none.
             std::vector<std::string> shownKeys;
-
-            void setText(uint32_t id, const std::wstring& text) {
-                if (Text(id) != text) {
-                    SetText(id, text);
-                }
-            }
 
             std::vector<const Mods::Mod*> selected() const {
                 std::vector<std::string> keys = selectedKeys(Control<exui::ListView>(LIST), shownKeys);

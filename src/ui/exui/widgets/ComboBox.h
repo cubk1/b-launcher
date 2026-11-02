@@ -14,6 +14,8 @@ namespace exui {
         ~ComboBox() override;
         // Also clears the selection.
         void ClearItems();
+        // Keeps an open list when unchanged; changed items cancel any pending selection.
+        void SetItems(const std::vector<std::wstring>& items);
         void AddItem(std::wstring text);
         int GetItemCount() const noexcept {
             return int(m_items.size());

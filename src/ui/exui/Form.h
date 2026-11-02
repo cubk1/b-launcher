@@ -55,6 +55,9 @@ namespace exui {
         // Caption of any control; SetText edits an EditBox's text.
         std::wstring Text(uint32_t id) const;
         void SetText(uint32_t id, std::wstring text);
+        // A no-op for unchanged text, preserving an edit box's caret and history.
+        void UpdateText(uint32_t id, const std::wstring& text);
+        void UpdateOptions(uint32_t id, const std::vector<std::wstring>& options, int selected);
         bool Checked(uint32_t id) const;
         void SetChecked(uint32_t id, bool checked);
         // Clicks an enabled, visible control through the same path as the mouse.

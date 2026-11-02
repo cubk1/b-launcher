@@ -189,6 +189,14 @@ namespace exui {
         SetCaption(L"");
     }
 
+    void ComboBox::SetItems(const std::vector<std::wstring>& items) {
+        if (m_items == items) return;
+        auto next = items;
+        const auto keep = weak_from_this().lock();
+        ClearItems();
+        m_items = std::move(next);
+    }
+
     void ComboBox::AddItem(std::wstring text) {
         m_items.push_back(std::move(text));
         Invalidate();

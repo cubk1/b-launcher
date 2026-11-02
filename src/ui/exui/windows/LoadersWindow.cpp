@@ -114,8 +114,8 @@ namespace ForgottenMelody {
                 FindControl(PROGRESS_VIEW)->SetVisible(changing);
                 FindControl(REFRESH)->SetVisible(!changing);
                 if (changing) {
-                    setText(STATUS, L"");
-                    setText(APPLY, progress.hasEnded() ? L"返回" : L"取消");
+                    UpdateText(STATUS, L"");
+                    UpdateText(APPLY, progress.hasEnded() ? L"返回" : L"取消");
                     FindControl(APPLY)->SetEnabled(true);
                     return;
                 }
@@ -134,8 +134,8 @@ namespace ForgottenMelody {
                         : busy                                          ? L"正在安装，等它完成后再修改加载器"
                         : rows.chosen() == original && entry->info.valid ? L"没有改动"
                                                                          : L"";
-                setText(STATUS, problem);
-                setText(APPLY, L"应用");
+                UpdateText(STATUS, problem);
+                UpdateText(APPLY, L"应用");
                 FindControl(APPLY)->SetEnabled(problem.empty());
                 FindControl(REFRESH)->SetEnabled(!Installer::running() && !readingLoaders);
             }
@@ -197,11 +197,6 @@ namespace ForgottenMelody {
                 });
             }
 
-            void setText(uint32_t id, const std::wstring& text) {
-                if (Text(id) != text) {
-                    SetText(id, text);
-                }
-            }
         };
     }
 

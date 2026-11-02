@@ -83,20 +83,6 @@ namespace ForgottenMelody {
         return selection.infos();
     }
 
-    void LoaderRows::setOptions(uint32_t id, const std::vector<std::wstring>& options, int selected) {
-        auto& combo = form.Control<exui::ComboBox>(id);
-        if (offered[id] != options) {
-            offered[id] = options;
-            combo.ClearItems();
-            for (const std::wstring& option : options) {
-                combo.AddItem(option);
-            }
-        }
-        if (combo.GetSelectedIndex() != selected) {
-            combo.SetSelectedIndex(selected);
-        }
-    }
-
     void LoaderRows::refresh(bool enabled) {
         const auto& minecraft = selection.minecraft();
         const auto& picked = selection.chosen();
@@ -121,9 +107,7 @@ namespace ForgottenMelody {
             bool isPicked = chosen != picked.end();
             bool available = choice.state == blb::instance::choice_state::available;
             std::wstring name = Platform::widen(Installer::loaderName(choice.type));
-            if (form.Text(id) != name) {
-                form.SetText(id, name);
-            }
+            form.UpdateText(id, name);
 
             std::vector<std::wstring> options = {L"未选择"};
             std::wstring note;
@@ -155,11 +139,9 @@ namespace ForgottenMelody {
             } else if (choice.state == blb::instance::choice_state::requires_loader) {
                 note = L"需要先选择 " + labelOf(choice.related);
             }
-            setOptions(id + 1, options, selected);
+            form.UpdateOptions(id + 1, options, selected);
             form.FindControl(id + 1)->SetEnabled(enabled && options.size() > 1);
-            if (form.Text(id + 2) != note) {
-                form.SetText(id + 2, note);
-            }
+            form.UpdateText(id + 2, note);
         }
     }
 
@@ -261,13 +243,9 @@ namespace ForgottenMelody {
                 : !ended           ? Platform::widen(activity)
                 : !error.empty()   ? what + L"失败：" + Platform::widen(error)
                                    : L"已取消" + what;
-        if (form.Text(first) != status) {
-            form.SetText(first, status);
-        }
+        form.UpdateText(first, status);
         std::wstring taken = L"已用 " + clock(elapsed);
-        if (form.Text(first + 1) != taken) {
-            form.SetText(first + 1, taken);
-        }
+        form.UpdateText(first + 1, taken);
         float fraction = done ? 1.0f : Installer::running() ? Installer::progress() : -1.0f;
         auto& bar = form.Control<exui::ProgressBar>(first + 2);
         if (fraction >= 0.0f || !ended) {

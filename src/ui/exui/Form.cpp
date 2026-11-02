@@ -51,6 +51,17 @@ namespace exui {
             widget->SetCaption(std::move(text));
     }
 
+    void Form::UpdateText(uint32_t id, const std::wstring& text) {
+        if (auto* widget = FindControl(id); widget && widget->GetCaption() != text) SetText(id, text);
+    }
+
+    void Form::UpdateOptions(uint32_t id, const std::vector<std::wstring>& options, int selected) {
+        auto& combo = Control<ComboBox>(id);
+        const auto keep = combo.weak_from_this().lock();
+        combo.SetItems(options);
+        if (combo.GetSelectedIndex() != selected) combo.SetSelectedIndex(selected);
+    }
+
     bool Form::Checked(uint32_t id) const {
         if (auto* radio = dynamic_cast<RadioButton*>(FindControl(id))) return radio->IsChecked();
         if (auto* check = dynamic_cast<CheckBox*>(FindControl(id))) return check->IsChecked();

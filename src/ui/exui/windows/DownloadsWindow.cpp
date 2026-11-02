@@ -617,7 +617,7 @@ namespace ForgottenMelody {
                 versions.InsertColumn(L"加载器", 100);
                 versions.InsertColumn(L"发布日期", 80);
                 versions.InsertColumn(L"状态", 75);
-                setOptions(SOURCE, {L"Modrinth", L"CurseForge"}, 0);
+                UpdateOptions(SOURCE, {L"Modrinth", L"CurseForge"}, 0);
 
                 const nlohmann::json& doc = Config::data();
                 auto saved = doc.find("downloadInstance");
@@ -777,7 +777,6 @@ namespace ForgottenMelody {
             std::vector<std::string> versionKeys;
             // What the combo boxes offer, behind their labels.
             std::vector<std::string> instanceKeys, versionChoices, categoryKeys;
-            std::map<uint32_t, std::vector<std::wstring>> offered;
             // 新建实例: the game version chosen or the modpack to install, and the section a modpack came from.
             bool settingUp = false;
             std::string minecraft;
@@ -801,27 +800,6 @@ namespace ForgottenMelody {
 
             const std::vector<ProjectBrowser::SortOption>& sorts() const {
                 return ProjectBrowser::sorts(source);
-            }
-
-            // Fills a combo box only when its choices change, so that an open one stays as it is.
-            void setOptions(uint32_t id, const std::vector<std::wstring>& options, int selected) {
-                auto& combo = Control<exui::ComboBox>(id);
-                if (offered[id] != options) {
-                    offered[id] = options;
-                    combo.ClearItems();
-                    for (const std::wstring& option : options) {
-                        combo.AddItem(option);
-                    }
-                }
-                if (combo.GetSelectedIndex() != selected) {
-                    combo.SetSelectedIndex(selected);
-                }
-            }
-
-            void setText(uint32_t id, const std::wstring& text) {
-                if (Text(id) != text) {
-                    SetText(id, text);
-                }
             }
 
             // The search and a project take turns in the same place.
@@ -918,7 +896,7 @@ namespace ForgottenMelody {
                     instanceKeys.push_back(entry.key);
                     selected = entry.key == target ? (int) instanceKeys.size() : selected;
                 }
-                setOptions(id, options, selected);
+                UpdateOptions(id, options, selected);
             }
 
             // The released game versions after 全部版本, with chosen among them even when it is not one.
@@ -937,7 +915,7 @@ namespace ForgottenMelody {
                 for (size_t i = 1; i < versionChoices.size(); i++) {
                     options.push_back(Platform::widen(versionChoices[i]));
                 }
-                setOptions(id, options,
+                UpdateOptions(id, options,
                            (int) (std::find(versionChoices.begin(), versionChoices.end(), chosen) -
                                   versionChoices.begin()));
             }
@@ -950,7 +928,7 @@ namespace ForgottenMelody {
                     options.push_back(Platform::widen(Modrinth::label(tags[i])));
                     selected = chosen == tags[i] ? (int) i + 1 : selected;
                 }
-                setOptions(id, options, selected);
+                UpdateOptions(id, options, selected);
             }
 
             // The filters of the kind and the source, laid out in a row without the ones that do not apply.
@@ -986,7 +964,7 @@ namespace ForgottenMelody {
                         selected = (int) categoryKeys.size();
                     }
                 }
-                setOptions(CATEGORY, options, selected);
+                UpdateOptions(CATEGORY, options, selected);
                 FindControl(CATEGORY)->SetBounds(x, 44, 150, 28);
                 x += 156;
 
@@ -996,7 +974,7 @@ namespace ForgottenMelody {
                     options.push_back(Platform::widen(sorts()[i].label));
                     selected = sorts()[i].sort == query.sort ? (int) i : selected;
                 }
-                setOptions(SORT, options, selected);
+                UpdateOptions(SORT, options, selected);
                 FindControl(SORT)->SetBounds(x, 44, 110, 28);
             }
 
@@ -1032,9 +1010,9 @@ namespace ForgottenMelody {
                 FindControl(RETRY)->SetVisible(failed);
 
                 bool counted = !shown.hits.empty() || found.status == Addons::Status::Ready;
-                setText(COUNT, counted ? L"共 " + std::to_wstring(shown.total) + L" 个" : L"");
+                UpdateText(COUNT, counted ? L"共 " + std::to_wstring(shown.total) + L" 个" : L"");
                 int pages = std::max(1, (shown.total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
-                setText(PAGE,
+                UpdateText(PAGE,
                         L"第 " + std::to_wstring(std::min(query.page, pages - 1) + 1) + L" / " +
                                 std::to_wstring(pages) + L" 页");
                 FindControl(PREVIOUS)->SetEnabled(!loading && query.page > 0);
@@ -1149,8 +1127,8 @@ namespace ForgottenMelody {
                 } else if (!usable) {
                     status = L"先在上方选择要安装到的实例";
                 }
-                setText(STATUS, status);
-                setText(ACTION, query.kind == Kind::Datapack ? L"下载" : L"安装");
+                UpdateText(STATUS, status);
+                UpdateText(ACTION, query.kind == Kind::Datapack ? L"下载" : L"安装");
                 FindControl(ACTION)->SetEnabled(version != nullptr && usable && !installed &&
                                                 state != ProjectInstaller::State::Running);
             }
@@ -1163,7 +1141,7 @@ namespace ForgottenMelody {
                 FindControl(SETUP_VIEW)->SetVisible(!installing && settingUp);
                 FindControl(PROGRESS_VIEW)->SetVisible(installing);
                 if (installing) {
-                    setText(FINISH, !progress.hasEnded() ? L"取消" : progress.succeeded() ? L"完成" : L"返回");
+                    UpdateText(FINISH, !progress.hasEnded() ? L"取消" : progress.succeeded() ? L"完成" : L"返回");
                 } else if (settingUp) {
                     showSetup();
                 } else {
@@ -1195,7 +1173,7 @@ namespace ForgottenMelody {
                 }
                 fill(Control<exui::ListView>(GAMES), shownGames, gameKeys, std::move(rows), std::move(keys));
                 FindControl(GAMES_RETRY)->SetVisible(failed);
-                setText(PICK_STATUS, count > 0 ? L"共 " + std::to_wstring(count) + L" 个版本" : L"");
+                UpdateText(PICK_STATUS, count > 0 ? L"共 " + std::to_wstring(count) + L" 个版本" : L"");
                 FindControl(NEXT_STEP)->SetEnabled(!selectedKey(Control<exui::ListView>(GAMES), gameKeys).empty());
             }
 
@@ -1267,7 +1245,7 @@ namespace ForgottenMelody {
 
             void showSetup() {
                 bool pack = modpack.has_value();
-                setText(SETUP_TITLE, pack ? L"安装整合包" : L"新建实例");
+                UpdateText(SETUP_TITLE, pack ? L"安装整合包" : L"新建实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
 
                 std::vector<std::wstring> places;
@@ -1279,7 +1257,7 @@ namespace ForgottenMelody {
                     placeKeys.push_back(source.key);
                     selected = target != nullptr && source.key == target->key ? (int) placeKeys.size() - 1 : selected;
                 }
-                setOptions(PLACE, places, selected);
+                UpdateOptions(PLACE, places, selected);
 
                 std::vector<std::pair<std::wstring, std::wstring>> info;
                 if (pack) {
@@ -1301,8 +1279,8 @@ namespace ForgottenMelody {
                     FindControl(INFO + 2 * i)->SetVisible(shown);
                     FindControl(INFO + 2 * i + 1)->SetVisible(shown);
                     if (shown) {
-                        setText(INFO + 2 * i, info[i].first);
-                        setText(INFO + 2 * i + 1, info[i].second);
+                        UpdateText(INFO + 2 * i, info[i].first);
+                        UpdateText(INFO + 2 * i + 1, info[i].second);
                     }
                 }
 
@@ -1313,7 +1291,7 @@ namespace ForgottenMelody {
                 nameShown = generated;
                 std::string problem = target == nullptr ? std::string("没有可用的游戏目录")
                                                         : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
-                setText(SETUP_STATUS, Platform::widen(problem));
+                UpdateText(SETUP_STATUS, Platform::widen(problem));
                 FindControl(INSTALL)->SetEnabled(problem.empty());
             }
 

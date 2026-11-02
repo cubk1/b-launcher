@@ -144,13 +144,9 @@ namespace ForgottenMelody {
                 std::wstring status = mine ? Platform::widen(Exports::status())
                         : running          ? std::wstring(L"另一个实例正在导出")
                                            : std::wstring();
-                if (Text(STATUS) != status) {
-                    SetText(STATUS, status);
-                }
+                UpdateText(STATUS, status);
                 std::wstring action = mine ? L"取消" : L"导出";
-                if (Text(EXPORT) != action) {
-                    SetText(EXPORT, action);
-                }
+                UpdateText(EXPORT, action);
                 FindControl(EXPORT)->SetEnabled(!running || mine);
                 // The options stay as they are while the pack is written from them.
                 for (const Field& field : FIELDS) {

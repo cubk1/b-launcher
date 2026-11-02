@@ -59,9 +59,6 @@ namespace ForgottenMelody {
         // The loader of each row shown, and the versions behind the options of its combo box after 未选择.
         std::vector<blb::install::loader_type> types;
         std::vector<std::vector<std::string>> versions;
-        std::map<uint32_t, std::vector<std::wstring>> offered;
-
-        void setOptions(uint32_t id, const std::vector<std::wstring>& options, int selected);
     };
 
     // An install of the installer as it goes: what it does and for how long, and how far each of its parts is.

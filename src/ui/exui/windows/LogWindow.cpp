@@ -561,9 +561,9 @@ namespace ForgottenMelody {
                 if (GetTickCount64() < flashUntil) {
                     status = flash;
                 }
-                setText(STATUS, status);
+                UpdateText(STATUS, status);
                 FindControl(BOTTOM)->SetVisible(!view->isFollowing() && count > 0);
-                setText(PAUSE, GameLog::paused() ? L"继续" : L"暂停");
+                UpdateText(PAUSE, GameLog::paused() ? L"继续" : L"暂停");
                 FindControl(COPY)->SetTooltipText(view->selected() > 0 ? L"复制选中的行（Ctrl+C）" : L"复制全部");
                 FindControl(COPY)->SetEnabled(count > 0);
                 FindControl(EXPORT)->SetEnabled(count > 0);
@@ -622,12 +622,6 @@ namespace ForgottenMelody {
             // What was just done, shown instead of the counts for a moment.
             std::wstring flash;
             ULONGLONG flashUntil = 0;
-
-            void setText(uint32_t id, const std::wstring& text) {
-                if (Text(id) != text) {
-                    SetText(id, text);
-                }
-            }
 
             void say(const std::wstring& text) {
                 flash = text;
