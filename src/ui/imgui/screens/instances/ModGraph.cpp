@@ -559,15 +559,19 @@ namespace ModGraph {
                     continue;
                 }
                 for (const Addons::Dependency& dependency : change.target.dependencies) {
-                    if (!dependency.required || dependency.incompatible || dependency.projectId.empty()) {
+                    if (!dependency.required || dependency.incompatible) {
                         continue;
                     }
-                    auto found = byProject.find(dependency.projectId);
+                    std::string projectId = ModManager::dependencyProject(dependency);
+                    if (projectId.empty()) {
+                        continue;
+                    }
+                    auto found = byProject.find(projectId);
                     if (found != byProject.end()) {
                         link(found->second, target, true);
                         continue;
                     }
-                    const ModManager::Project* project = ModManager::project(dependency.projectId);
+                    const ModManager::Project* project = ModManager::project(projectId);
                     if (project == nullptr) {
                         continue;
                     }
@@ -580,7 +584,7 @@ namespace ModGraph {
                     if (!project->slug.empty() && bySlug != byModId.end()) {
                         link(bySlug->second, target, true);
                     } else {
-                        link(absent("project:" + dependency.projectId, {}, dependency.projectId), target, true);
+                        link(absent("project:" + projectId, {}, projectId), target, true);
                     }
                 }
             }

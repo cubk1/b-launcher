@@ -55,6 +55,7 @@ namespace ModManager {
     const Remote* remote(const Mods::Mod& mod);
     const Project* project(const std::string& projectId);
     int metadataRevision();
+    std::string dependencyProject(const Addons::Dependency& dependency);
     std::string title(const std::string& projectId);
     std::string gameVersion(const std::string& key);
 

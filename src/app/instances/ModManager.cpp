@@ -24,6 +24,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -53,6 +54,7 @@ namespace ModManager {
             int serial = -1;
             int revision = 0;
             std::tuple<int, int, int> requested{-1, -1, -1};
+            Clock::time_point nextMetadataCheck;
             bool running = false;
             std::string error;
             std::vector<Change> changes;
@@ -85,6 +87,11 @@ namespace ModManager {
             std::int64_t modified = 0;
         };
 
+        struct Requirement {
+            std::string name;
+            Addons::Dependency dependency;
+        };
+
         AsyncTasks tasks;
         AsyncTasks applying;
         std::map<std::string, Instance> instances;
@@ -95,6 +102,8 @@ namespace ModManager {
         std::set<std::string> fetchingProjects;
         std::map<std::string, Clock::time_point> projectRetry;
         std::map<std::string, Addons::Versions> versionLists;
+        std::map<std::string, Addons::Versions> dependencyVersions;
+        std::map<std::string, Clock::time_point> dependencyRetry;
         int metadataVersion = 0;
         const std::vector<Change> NO_CHANGES;
         const Progress IDLE;
@@ -253,6 +262,127 @@ namespace ModManager {
                     });
         }
 
+        const Addons::Version* dependencyVersion(const std::string& id) {
+            auto found = dependencyVersions.find(id);
+            return found != dependencyVersions.end() && found->second.status == Addons::Status::Ready &&
+                            !found->second.list.empty()
+                    ? &found->second.list.front()
+                    : nullptr;
+        }
+
+        void ensureVersions(const std::set<std::string>& ids) {
+            std::vector<std::string> wanted;
+            auto now = Clock::now();
+            for (const std::string& id : ids) {
+                auto found = dependencyVersions.find(id);
+                if (found != dependencyVersions.end() && found->second.status != Addons::Status::Failed) {
+                    continue;
+                }
+                auto retry = dependencyRetry.find(id);
+                if (retry != dependencyRetry.end() && retry->second > now) {
+                    continue;
+                }
+                dependencyVersions[id] = Addons::Versions{};
+                wanted.push_back(id);
+            }
+            if (wanted.empty()) {
+                return;
+            }
+            tasks.run(
+                    [wanted](blb::cancellation_token token) -> Continuation {
+                        std::map<std::string, Addons::Versions> found;
+                        for (const std::string& id : wanted) {
+                            if (token.is_cancelled()) {
+                                return nullptr;
+                            }
+                            Addons::Fetched fetched = Modrinth::fetchVersion(id, token);
+                            Addons::Versions entry;
+                            bool valid = fetched.ok && fetched.versions.size() == 1 &&
+                                    fetched.versions.front().id == id && !fetched.versions.front().projectId.empty();
+                            entry.status = valid ? Addons::Status::Ready : Addons::Status::Failed;
+                            entry.error = valid ? std::string()
+                                                : fetched.error.empty() ? "版本信息无效" : fetched.error;
+                            if (valid) {
+                                entry.list = std::move(fetched.versions);
+                            }
+                            found.emplace(id, std::move(entry));
+                        }
+                        return [found = std::move(found)]() mutable {
+                            for (auto& [id, entry] : found) {
+                                if (entry.status == Addons::Status::Failed) {
+                                    dependencyRetry[id] = Clock::now() + std::chrono::seconds(30);
+                                } else {
+                                    dependencyRetry.erase(id);
+                                }
+                                dependencyVersions[id] = std::move(entry);
+                            }
+                            ++metadataVersion;
+                        };
+                    },
+                    [wanted](const std::string& error) -> Continuation {
+                        return [wanted, error] {
+                            for (const std::string& id : wanted) {
+                                dependencyVersions[id].status = Addons::Status::Failed;
+                                dependencyVersions[id].error = error;
+                                dependencyRetry[id] = Clock::now() + std::chrono::seconds(30);
+                            }
+                            ++metadataVersion;
+                        };
+                    });
+        }
+
+        std::vector<Requirement> requirements(const std::string& key, const Instance& state) {
+            std::vector<Requirement> out;
+            std::set<std::string> affected;
+            const Mods::List& list = Mods::of(key);
+            for (const Change& change : state.changes) {
+                if (change.disabled) {
+                    continue;
+                }
+                affected.insert(change.projectId);
+                if (const Mods::Mod* old = modAt(list, change.file)) {
+                    if (const Remote* found = remote(*old)) {
+                        affected.insert(found->projectId);
+                    }
+                }
+                for (const Addons::Dependency& dependency : change.target.dependencies) {
+                    if (dependency.required || dependency.incompatible) {
+                        out.push_back({change.name, dependency});
+                    }
+                }
+            }
+            for (const Mods::Mod& mod : list.mods) {
+                if (affected.empty() || !mod.info.enabled || changeFor(key, mod.info.file) != nullptr) {
+                    continue;
+                }
+                const Remote* found = remote(mod);
+                if (found == nullptr) {
+                    continue;
+                }
+                for (const Addons::Dependency& dependency : found->dependencies) {
+                    std::string projectId = dependencyProject(dependency);
+                    if ((dependency.required || dependency.incompatible) &&
+                        (projectId.empty() || affected.count(projectId) != 0)) {
+                        out.push_back({mod.info.name, dependency});
+                    }
+                }
+            }
+            return out;
+        }
+
+        std::set<std::string> requiredVersions(const std::string& key, const Instance& state,
+                                              const std::string& projectId) {
+            std::set<std::string> pins;
+            for (const Requirement& item : requirements(key, state)) {
+                const Addons::Dependency& dependency = item.dependency;
+                if (dependency.required && !dependency.incompatible && !dependency.versionId.empty() &&
+                    dependencyProject(dependency) == projectId) {
+                    pins.insert(dependency.versionId);
+                }
+            }
+            return pins;
+        }
+
         void identify(const std::string& key, Instance& state, const Mods::List& list) {
             state.serial = list.serial;
             std::vector<HashRequest> needHash;
@@ -379,11 +509,14 @@ namespace ModManager {
                 identify(key, state, list);
             }
             std::tuple<int, int, int> stamp{list.serial, state.revision, metadataVersion};
-            if (stamp == state.requested) {
+            auto now = Clock::now();
+            if (stamp == state.requested && now < state.nextMetadataCheck) {
                 return state;
             }
             state.requested = stamp;
+            state.nextMetadataCheck = now + std::chrono::seconds(1);
             std::set<std::string> wanted;
+            std::set<std::string> pinned;
             for (const Mods::Mod& mod : list.mods) {
                 if (const Remote* found = remote(mod)) {
                     wanted.insert(found->projectId);
@@ -394,10 +527,14 @@ namespace ModManager {
             }
             for (const Change& change : state.changes) {
                 wanted.insert(change.projectId);
-                for (const Addons::Dependency& dependency : change.target.dependencies) {
-                    wanted.insert(dependency.projectId);
+            }
+            for (const Requirement& item : requirements(key, state)) {
+                wanted.insert(dependencyProject(item.dependency));
+                if (!item.dependency.versionId.empty()) {
+                    pinned.insert(item.dependency.versionId);
                 }
             }
+            ensureVersions(pinned);
             ensureProjects(wanted);
             return state;
         }
@@ -432,18 +569,6 @@ namespace ModManager {
                             entry.error = error;
                         };
                     });
-        }
-
-        std::set<std::string> presentIds(const Mods::List& list) {
-            std::set<std::string> ids(std::begin(BUILTIN), std::end(BUILTIN));
-            for (const Mods::Mod& mod : list.mods) {
-                if (!mod.info.enabled) {
-                    continue;
-                }
-                ids.insert(mod.info.id);
-                ids.insert(mod.info.provides.begin(), mod.info.provides.end());
-            }
-            return ids;
         }
 
         class Sink final : public blb::progress_sink {
@@ -696,6 +821,14 @@ namespace ModManager {
         return metadataVersion;
     }
 
+    std::string dependencyProject(const Addons::Dependency& dependency) {
+        if (!dependency.projectId.empty()) {
+            return dependency.projectId;
+        }
+        const Addons::Version* version = dependencyVersion(dependency.versionId);
+        return version != nullptr ? version->projectId : std::string();
+    }
+
     std::string title(const std::string& projectId) {
         const Project* found = project(projectId);
         if (found != nullptr && !found->title.empty()) {
@@ -779,10 +912,20 @@ namespace ModManager {
         if (state.busy || projectId.empty() || state.adding.count(projectId) != 0) {
             return;
         }
+        std::set<std::string> pins = requiredVersions(key, state, projectId);
+        if (pins.size() > 1) {
+            Notices::add(Notices::Kind::Failed, title(projectId) + " 的前置版本要求冲突，请调整待应用的版本", 4000);
+            return;
+        }
+        std::string pin = pins.empty() ? std::string() : *pins.begin();
         for (const Change& change : state.changes) {
-            if (change.file.empty() && change.projectId == projectId) {
+            if (change.file.empty() && change.projectId == projectId && (pin.empty() || change.target.id == pin)) {
                 return;
             }
+        }
+        std::optional<Addons::Version> pinned;
+        if (const Addons::Version* version = dependencyVersion(pin)) {
+            pinned = *version;
         }
         state.adding.insert(projectId);
         int generation = state.addingGeneration;
@@ -790,28 +933,48 @@ namespace ModManager {
         std::string loader = loaderOf(key);
         std::string id = key + "|" + projectId;
         tasks.run(
-                [key, projectId, game, loader, id, generation](blb::cancellation_token token) -> Continuation {
-                    Addons::Fetched fetched = Modrinth::fetchProjectVersions(projectId, game, "", token);
+                [key, projectId, game, loader, id, generation, pins, pin, pinned](blb::cancellation_token token)
+                        -> Continuation {
+                    Addons::Fetched fetched;
+                    if (pinned) {
+                        fetched.ok = true;
+                        fetched.versions.push_back(*pinned);
+                    } else if (!pin.empty()) {
+                        fetched = Modrinth::fetchVersion(pin, token);
+                    } else {
+                        fetched = Modrinth::fetchProjectVersions(projectId, game, "", token);
+                    }
                     std::vector<Addons::Version> kept;
                     for (const Addons::Version& version : fetched.versions) {
-                        if (fits(version, loader)) {
+                        bool supportsGame = game.empty() || version.gameVersions.empty() ||
+                                std::find(version.gameVersions.begin(), version.gameVersions.end(), game) !=
+                                        version.gameVersions.end();
+                        if (version.projectId == projectId && (pin.empty() || version.id == pin) &&
+                            supportsGame && fits(version, loader)) {
                             kept.push_back(version);
                         }
                     }
-                    return [key, projectId, game, id, generation, ok = fetched.ok, error = fetched.error, kept] {
+                    return [key, projectId, game, id, generation, pins, pin, ok = fetched.ok, error = fetched.error,
+                            kept] {
                         Instance& state = instances[key];
                         if (state.addingGeneration != generation) {
                             return;
                         }
                         state.adding.erase(projectId);
+                        if (requiredVersions(key, state, projectId) != pins || gameVersion(key) != game) {
+                            Notices::add(Notices::Kind::Info, "前置要求已改变，请重新添加 " + title(projectId), 4000);
+                            return;
+                        }
                         if (!ok) {
                             Notices::add(Notices::Kind::Failed, "无法获取 " + title(projectId) + " 的版本：" + error,
                                          4000);
                             return;
                         }
-                        Addons::Versions& entry = versionLists[id];
-                        entry.status = Addons::Status::Ready;
-                        entry.list = kept;
+                        if (pin.empty()) {
+                            Addons::Versions& entry = versionLists[id];
+                            entry.status = Addons::Status::Ready;
+                            entry.list = kept;
+                        }
                         if (kept.empty()) {
                             Notices::add(Notices::Kind::Failed, "没有适用于 " + game + " 的 " + title(projectId), 4000);
                             return;
@@ -823,10 +986,25 @@ namespace ModManager {
                                 break;
                             }
                         }
+                        for (const Mods::Mod& mod : Mods::of(key).mods) {
+                            const Remote* installed = remote(mod);
+                            if (installed == nullptr || installed->projectId != projectId) {
+                                continue;
+                            }
+                            if (!mod.info.enabled) {
+                                Notices::add(Notices::Kind::Failed, "请先启用前置 " + mod.info.name, 4000);
+                                return;
+                            }
+                            stage(key, mod.info.file, *chosen);
+                            return;
+                        }
                         Change change;
                         change.name = title(projectId);
                         change.projectId = projectId;
                         change.target = *chosen;
+                        std::erase_if(state.changes, [&projectId](const Change& item) {
+                            return item.file.empty() && item.projectId == projectId;
+                        });
                         state.changes.push_back(std::move(change));
                         state.revision++;
                     };
@@ -886,28 +1064,30 @@ namespace ModManager {
         const Mods::List& list = Mods::of(key);
         std::string game = gameVersion(key);
         std::string loader = loaderOf(key);
-        std::set<std::string> present;
+        std::map<std::string, std::set<std::string>> present;
+        std::set<std::string> ids(std::begin(BUILTIN), std::end(BUILTIN));
         for (const Mods::Mod& mod : list.mods) {
-            if (!mod.info.enabled) {
+            if (!mod.info.enabled || changeFor(key, mod.info.file) != nullptr) {
                 continue;
             }
+            ids.insert(mod.info.id);
+            ids.insert(mod.info.provides.begin(), mod.info.provides.end());
             if (const Remote* found = remote(mod)) {
-                present.insert(found->projectId);
+                present[found->projectId].insert(found->versionId);
             }
         }
         for (const Change& change : state.changes) {
-            if (change.file.empty()) {
-                present.insert(change.projectId);
+            if (!change.disabled) {
+                present[change.projectId].insert(change.target.id);
             }
         }
-        std::set<std::string> ids = presentIds(list);
         auto satisfied = [&](const std::string& projectId) {
             if (present.count(projectId) != 0) {
                 return true;
             }
             const Project* info = project(projectId);
             if (info == nullptr) {
-                return true;
+                return false;
             }
             std::string slug = info->slug;
             std::string underscored = slug;
@@ -922,22 +1102,33 @@ namespace ModManager {
             }
             issues.push_back(Issue{severity, text, missing});
         };
+        for (const Requirement& item : requirements(key, state)) {
+            const Addons::Dependency& dependency = item.dependency;
+            std::string projectId = dependencyProject(dependency);
+            const Addons::Version* pinned = dependencyVersion(dependency.versionId);
+            if (!dependency.versionId.empty() &&
+                (pinned == nullptr || (!projectId.empty() && pinned->projectId != projectId))) {
+                push(Severity::Error, "无法确认 " + item.name + " 的前置版本 " + dependency.versionId, {});
+                continue;
+            }
+            if (projectId.empty()) {
+                push(Severity::Error, item.name + " 的前置信息无效", {});
+                continue;
+            }
+            auto installed = present.find(projectId);
+            bool exact = installed != present.end() && installed->second.count(dependency.versionId) != 0;
+            if (dependency.incompatible) {
+                if (dependency.versionId.empty() ? installed != present.end() : exact) {
+                    push(Severity::Error, item.name + " 与 " + title(projectId) + " 不兼容", {});
+                }
+            } else if (dependency.versionId.empty() ? !satisfied(projectId) : !exact) {
+                std::string version = pinned != nullptr ? " " + pinned->number : std::string();
+                push(Severity::Error, item.name + " 需要前置 " + title(projectId) + version, projectId);
+            }
+        }
         for (const Change& change : state.changes) {
             if (change.disabled) {
                 continue;
-            }
-            for (const Addons::Dependency& dependency : change.target.dependencies) {
-                if (dependency.projectId.empty()) {
-                    continue;
-                }
-                if (dependency.incompatible) {
-                    if (present.count(dependency.projectId) != 0) {
-                        push(Severity::Error, change.name + " 与 " + title(dependency.projectId) + " 不兼容", {});
-                    }
-                } else if (dependency.required && !satisfied(dependency.projectId)) {
-                    push(Severity::Error, change.name + " 需要前置 " + title(dependency.projectId),
-                         dependency.projectId);
-                }
             }
             const Addons::Version& target = change.target;
             if (!game.empty() && !target.gameVersions.empty() &&
@@ -975,14 +1166,19 @@ namespace ModManager {
 
     bool checking(const std::string& key) {
         Instance& state = sync(key);
-        if (state.running) {
+        if (state.running || Mods::of(key).loading) {
             return true;
         }
-        for (const Change& change : state.changes) {
-            for (const Addons::Dependency& dependency : change.target.dependencies) {
-                if (fetchingProjects.count(dependency.projectId) != 0) {
+        for (const Requirement& item : requirements(key, state)) {
+            const Addons::Dependency& dependency = item.dependency;
+            if (!dependency.versionId.empty()) {
+                auto found = dependencyVersions.find(dependency.versionId);
+                if (found == dependencyVersions.end() || found->second.status == Addons::Status::Loading) {
                     return true;
                 }
+            }
+            if (fetchingProjects.count(dependencyProject(dependency)) != 0) {
+                return true;
             }
         }
         return !state.adding.empty();
@@ -990,7 +1186,7 @@ namespace ModManager {
 
     bool apply(const std::string& key) {
         Instance& state = sync(key);
-        if (state.busy || state.changes.empty()) {
+        if (state.busy || state.changes.empty() || checking(key)) {
             return false;
         }
         const Instances::Entry* entry = Instances::find(key);
