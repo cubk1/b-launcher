@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,7 @@ namespace HomeWidgets {
         constexpr size_t SHOTS_COUNT = 3;
 
         std::string shotsInstance;
+        std::chrono::steady_clock::time_point nextShotsScan;
 
         float shotsTileW(float w) {
             return (w - 2.0f * SHOTS_PAD - SHOTS_GAP * (float) (SHOTS_COUNT - 1)) / (float) SHOTS_COUNT;
@@ -79,10 +81,16 @@ namespace HomeWidgets {
         bool shotsAvailable() {
             const std::string& key = Instances::selected();
             if (key.empty() || Instances::find(key) == nullptr) {
+                shotsInstance.clear();
                 return false;
             }
             if (shotsInstance != key) {
                 shotsInstance = key;
+                nextShotsScan = {};
+            }
+            auto now = std::chrono::steady_clock::now();
+            if (now >= nextShotsScan && !Screenshots::of(key).loading) {
+                nextShotsScan = now + std::chrono::seconds(5);
                 Screenshots::scan(key);
             }
             return !Screenshots::of(key).entries.empty();
