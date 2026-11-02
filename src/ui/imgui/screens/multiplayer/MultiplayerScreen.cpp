@@ -60,10 +60,9 @@ namespace MultiplayerScreen {
         const char* const PORT_INPUT = "multiplayer#portInput";
         const char* const JOIN_DIALOG = "multiplayer#join";
         const char* const PORT_DIALOG = "multiplayer#port";
-        const char* const ADDRESS_DOC = "在游戏的「多人游戏」里选「直接连接」，输入这个地址就能进入房主的世界。";
-        const char* const PLAY_DOC = "启动当前选中的实例，进入游戏后自动连接房主的世界。";
-        const char* const WAIT_TEXT = "进入要分享的世界，按 Esc 打开游戏菜单，选择「对局域网开放」，"
-                                      "再点「创建局域网世界」。启动器检测到之后会自动创建房间。";
+        const char* const ADDRESS_DOC = "在游戏的多人游戏里选直接连接输入这个地址";
+        const char* const PLAY_DOC = "启动当前选中的实例";
+        const char* const WAIT_TEXT = "请在单人世界里对局域网开放";
 
         PageTransition views(VIEW_HOME);
         bool waiting = false;
