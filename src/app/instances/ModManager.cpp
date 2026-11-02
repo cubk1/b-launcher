@@ -57,6 +57,7 @@ namespace ModManager {
             std::string error;
             std::vector<Change> changes;
             std::set<std::string> adding;
+            int addingGeneration = 0;
             bool busy = false;
             Progress progress;
             std::shared_ptr<Shared> shared;
@@ -778,11 +779,12 @@ namespace ModManager {
             }
         }
         state.adding.insert(projectId);
+        int generation = state.addingGeneration;
         std::string game = gameVersion(key);
         std::string loader = loaderOf(key);
         std::string id = key + "|" + projectId;
         tasks.run(
-                [key, projectId, game, loader, id](blb::cancellation_token token) -> Continuation {
+                [key, projectId, game, loader, id, generation](blb::cancellation_token token) -> Continuation {
                     Addons::Fetched fetched = Modrinth::fetchProjectVersions(projectId, game, "", token);
                     std::vector<Addons::Version> kept;
                     for (const Addons::Version& version : fetched.versions) {
@@ -790,8 +792,11 @@ namespace ModManager {
                             kept.push_back(version);
                         }
                     }
-                    return [key, projectId, game, id, ok = fetched.ok, error = fetched.error, kept] {
+                    return [key, projectId, game, id, generation, ok = fetched.ok, error = fetched.error, kept] {
                         Instance& state = instances[key];
+                        if (state.addingGeneration != generation) {
+                            return;
+                        }
                         state.adding.erase(projectId);
                         if (!ok) {
                             Notices::add(Notices::Kind::Failed, "无法获取 " + title(projectId) + " 的版本：" + error,
@@ -820,9 +825,13 @@ namespace ModManager {
                         state.revision++;
                     };
                 },
-                [key, projectId](const std::string& error) -> Continuation {
-                    return [key, projectId, error] {
-                        instances[key].adding.erase(projectId);
+                [key, projectId, generation](const std::string& error) -> Continuation {
+                    return [key, projectId, generation, error] {
+                        Instance& state = instances[key];
+                        if (state.addingGeneration != generation) {
+                            return;
+                        }
+                        state.adding.erase(projectId);
                         Notices::add(Notices::Kind::Failed, "无法获取 " + title(projectId) + " 的版本：" + error, 4000);
                     };
                 });
@@ -859,6 +868,8 @@ namespace ModManager {
             return;
         }
         state.changes.clear();
+        state.adding.clear();
+        ++state.addingGeneration;
         state.revision++;
         state.progress = Progress{};
     }
