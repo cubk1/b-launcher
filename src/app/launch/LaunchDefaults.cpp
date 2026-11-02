@@ -110,10 +110,6 @@ namespace LaunchDefaults {
         Config::save();
     }
 
-    std::vector<std::string> split(const std::string& input) {
-        return blb::split_arguments(input);
-    }
-
     bool mergeLogRepeats() {
         return blb::json_bool(Config::data(), "logMergeRepeats", true);
     }

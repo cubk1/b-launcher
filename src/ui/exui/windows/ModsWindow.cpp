@@ -101,7 +101,7 @@ namespace ForgottenMelody {
                 FindControl(REMOVE)->SetTooltipText(L"移到回收站");
                 DragAcceptFiles(GetHwnd(), TRUE);
                 // Like the default interface, the folder is read again on the way in.
-                Mods::rescan(key);
+                Mods::scan(key);
                 startRefreshing();
                 return true;
             }
@@ -178,7 +178,7 @@ namespace ForgottenMelody {
                             Platform::open(folder);
                         }
                         break;
-                    case RESCAN: Mods::rescan(key); break;
+                    case RESCAN: Mods::scan(key); break;
                     case HOMEPAGE:
                         if (std::vector<const Mods::Mod*> chosen = selected(); chosen.size() == 1) {
                             Platform::openUrl(chosen[0]->info.homepage);

@@ -1,15 +1,11 @@
 #include "UiCommon.h"
 
-#include <core/base/hash.hpp>
-#include <core/base/strings.hpp>
-
 #include <algorithm>
 #include <charconv>
 #include <chrono>
-#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <string_view>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -145,13 +141,6 @@ namespace Ui {
         return text.substr(byteOffset(text, from));
     }
 
-    char32_t charAt(const std::string& text, int index) {
-        size_t a = byteOffset(text, index);
-        size_t b = byteOffset(text, index + 1);
-        std::u32string one = decode(text.substr(a, b - a));
-        return one.empty() ? 0 : one[0];
-    }
-
     int indexOf(const std::string& text, const std::string& needle, int from) {
         size_t start = byteOffset(text, std::max(0, from));
         size_t at = text.find(needle, start);
@@ -161,13 +150,6 @@ namespace Ui {
         return length(text.substr(0, at));
     }
 
-    bool startsWith(const std::string& text, const std::string& prefix) {
-        return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
-    }
-
-    bool endsWith(const std::string& text, const std::string& suffix) {
-        return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
-    }
 
     std::string trim(const std::string& text) {
         size_t a = 0;
@@ -181,48 +163,7 @@ namespace Ui {
         return text.substr(a, b - a);
     }
 
-    std::string toLower(const std::string& text) {
-        return b_launcher_base::to_lower(text);
-    }
-
-    std::string toUpper(const std::string& text) {
-        std::string out = text;
-        for (char& c : out) {
-            if (c >= 'a' && c <= 'z') {
-                c = (char) (c - 'a' + 'A');
-            }
-        }
-        return out;
-    }
-
-    std::string replaceAll(const std::string& text, const std::string& from, const std::string& to) {
-        return b_launcher_base::replace_all(text, from, to);
-    }
-
-    std::vector<std::string> split(const std::string& text, const std::string& separator) {
-        std::vector<std::string> parts;
-        if (separator.empty()) {
-            parts.push_back(text);
-            return parts;
-        }
-        size_t at = 0;
-        while (true) {
-            size_t next = text.find(separator, at);
-            if (next == std::string::npos) {
-                parts.push_back(text.substr(at));
-                break;
-            }
-            parts.push_back(text.substr(at, next - at));
-            at = next + separator.size();
-        }
-        return parts;
-    }
-
-    std::string join(const std::vector<std::string>& parts, const std::string& separator) {
-        return b_launcher_base::join(parts, separator);
-    }
-
-    bool isDigit(char32_t c) {
+    static bool isDigit(char32_t c) {
         if (c < 0x80) {
             return c >= '0' && c <= '9';
         }
@@ -238,7 +179,7 @@ namespace Ui {
         return false;
     }
 
-    bool isLetter(char32_t c) {
+    static bool isLetter(char32_t c) {
         if (c < 0x80) {
             return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
         }
@@ -254,47 +195,7 @@ namespace Ui {
         return isLetter(c) || isDigit(c);
     }
 
-    bool contains(const std::vector<std::string>& list, const std::string& value) {
-        return std::find(list.begin(), list.end(), value) != list.end();
-    }
 
-    int indexOf(const std::vector<std::string>& list, const std::string& value) {
-        auto it = std::find(list.begin(), list.end(), value);
-        return it == list.end() ? -1 : (int) (it - list.begin());
-    }
-
-    bool remove(std::vector<std::string>& list, const std::string& value) {
-        auto it = std::find(list.begin(), list.end(), value);
-        if (it == list.end()) {
-            return false;
-        }
-        list.erase(it);
-        return true;
-    }
-
-    std::string format(const char* fmt, ...) {
-        char buffer[512];
-        va_list args;
-        va_start(args, fmt);
-        int written = vsnprintf(buffer, sizeof(buffer), fmt, args);
-        va_end(args);
-        if (written < 0) {
-            return std::string();
-        }
-        if (written < (int) sizeof(buffer)) {
-            return std::string(buffer, written);
-        }
-        std::string out((size_t) written + 1, '\0');
-        va_start(args, fmt);
-        vsnprintf(&out[0], out.size(), fmt, args);
-        va_end(args);
-        out.resize((size_t) written);
-        return out;
-    }
-
-    std::string hex8(uint32_t value) {
-        return format("%08X", value);
-    }
 
     long long millis() {
         using namespace std::chrono;
@@ -405,64 +306,31 @@ namespace Ui {
         return true;
     }
 
-    bool parseInt(const std::string& text, int& out) {
-        if (text.empty()) {
-            return false;
+    template <typename T>
+    static bool parseInteger(std::string_view text, T& out, int base) {
+        // UI input accepts a leading '+', which from_chars does not consume.
+        if (text.starts_with('+')) {
+            text.remove_prefix(1);
+            if (text.starts_with('-')) return false;
         }
-        size_t i = 0;
-        if (text[0] == '-' || text[0] == '+') {
-            i = 1;
-            if (text.size() == 1) {
-                return false;
-            }
-        }
-        for (size_t k = i; k < text.size(); k++) {
-            if (text[k] < '0' || text[k] > '9') {
-                return false;
-            }
-        }
-        long long parsed = std::strtoll(text.c_str(), nullptr, 10);
-        if (parsed > 2147483647LL || parsed < -2147483648LL) {
-            return false;
-        }
-        out = (int) parsed;
+        T parsed = 0;
+        auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, base);
+        if (result.ec != std::errc() || result.ptr != text.data() + text.size()) return false;
+        out = parsed;
         return true;
+    }
+
+    bool parseInt(const std::string& text, int& out) {
+        return parseInteger(text, out, 10);
     }
 
     bool parseHex(const std::string& text, long long& out) {
-        if (text.empty()) {
-            return false;
-        }
-        size_t i = 0;
-        if (text[0] == '-' || text[0] == '+') {
-            i = 1;
-            if (text.size() == 1) {
-                return false;
-            }
-        }
-        for (size_t k = i; k < text.size(); k++) {
-            char c = text[k];
-            bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-            if (!hex) {
-                return false;
-            }
-        }
-        if (text.size() - i > 15) {
-            return false;
-        }
-        out = std::strtoll(text.c_str(), nullptr, 16);
-        return true;
+        if (text.empty()) return false;
+        size_t sign = text[0] == '-' || text[0] == '+' ? 1 : 0;
+        return text.size() - sign <= 15 && parseInteger(text, out, 16);
     }
 
-    std::string valueOf(long long value) {
-        return std::to_string(value);
-    }
-
-    std::string sha256Hex(const std::string& data) {
-        return b_launcher_base::to_hex(b_launcher_base::sha256::digest(data.data(), data.size()));
-    }
-
-    std::string shortestDouble(double value) {
+    static std::string shortestDouble(double value) {
         char buffer[400];
         for (int decimals = 0; decimals <= 17; decimals++) {
             std::snprintf(buffer, sizeof(buffer), "%.*f", decimals, value);
@@ -470,7 +338,7 @@ namespace Ui {
                 return buffer;
             }
         }
-        return format("%.17f", value);
+        return buffer;
     }
 
     int decimalScale(double value) {
@@ -533,15 +401,7 @@ namespace Ui {
         if (decimals > 0) {
             out += "." + digits.substr(integerLength);
         }
-        bool allZero = true;
-        for (char c : out) {
-            if (c != '0' && c != '.') {
-                allZero = false;
-            }
-        }
-        if (negative && !allZero) {
-            out = "-" + out;
-        } else if (negative && allZero) {
+        if (negative) {
             out = "-" + out;
         }
         return out;

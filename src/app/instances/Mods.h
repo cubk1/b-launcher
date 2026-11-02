@@ -29,7 +29,7 @@ namespace Mods {
     bool matches(const Mod& mod, std::string_view query);
     // Dropped mods exclude ZIP packs and old backups, which the directory scanner may accept.
     bool acceptsDrop(std::string_view filename);
-    void rescan(const std::string& instanceKey);
+    void scan(const std::string& instanceKey);
     void setEnabled(const std::string& instanceKey, const std::filesystem::path& file, bool enabled);
     void remove(const std::string& instanceKey, const std::filesystem::path& file);
 

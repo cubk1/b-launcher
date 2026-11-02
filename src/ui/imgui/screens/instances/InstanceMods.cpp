@@ -197,7 +197,7 @@ namespace InstanceMods {
 
         float refreshX = Page::right() - 28.0f;
         if (Page::iconButton("mods#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, covered)) {
-            Mods::rescan(key);
+            Mods::scan(key);
         }
         float folderX = refreshX - 32.0f;
         std::filesystem::path folder = entry.gameDirectory / "mods";

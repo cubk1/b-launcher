@@ -15,8 +15,6 @@
 namespace InstanceSettings {
 
     // Editable arguments: quote empty/whitespace values and double literal quotes inside quoted values.
-    std::string joinArgs(const std::vector<std::string>& args);
-    std::vector<std::string> splitArgs(const std::string& text);
     // NAME=value items in one line, quoted like arguments; items without a name are dropped.
     std::string joinEnvironment(const std::vector<std::pair<std::string, std::string>>& variables);
     std::vector<std::pair<std::string, std::string>> splitEnvironment(const std::string& text);

@@ -36,10 +36,6 @@ namespace UiState {
         return value;
     }
 
-    float motion(const std::string& id, float target) {
-        return motion(id, target, 16.0f);
-    }
-
     float motionFrom(const std::string& id, float target, float speed, float initial) {
         if (motionMap.find(id) == motionMap.end()) {
             motionMap[id] = initial;

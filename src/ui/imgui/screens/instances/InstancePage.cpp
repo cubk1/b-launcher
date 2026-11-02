@@ -60,11 +60,9 @@ namespace InstancePage {
         using InstanceSettings::isolatedByDefault;
         using InstanceSettings::JavaOption;
         using InstanceSettings::javaOptions;
-        using InstanceSettings::joinArgs;
         using InstanceSettings::joinEnvironment;
         using InstanceSettings::parseMegabytes;
         using InstanceSettings::parseSize;
-        using InstanceSettings::splitArgs;
         using InstanceSettings::splitEnvironment;
 
         const char* const RENAME_OWNER = "instance#rename";
@@ -784,7 +782,7 @@ namespace InstancePage {
                         const blb::auth::account* bound = settings != nullptr && !settings->account.empty()
                                 ? Accounts::find(settings->account)
                                 : nullptr;
-                        if (bound == nullptr || !Accounts::suits(*bound, settings->login, settings->auth_server)) {
+                        if (bound == nullptr || !Accounts::matches(*bound, settings->login, settings->auth_server)) {
                             return std::string(FOLLOW_ACCOUNT);
                         }
                         return accountLabel(*bound);
@@ -797,7 +795,7 @@ namespace InstancePage {
                         const Settings* settings = settingsOf(id);
                         for (const blb::auth::account& account : Accounts::list()) {
                             if (accountLabel(account) == label &&
-                                (settings == nullptr || Accounts::suits(account, settings->login, settings->auth_server))) {
+                                (settings == nullptr || Accounts::matches(account, settings->login, settings->auth_server))) {
                                 Game::setAccount(id, Accounts::keyOf(account));
                                 return;
                             }
@@ -808,7 +806,7 @@ namespace InstancePage {
                         const Settings* settings = settingsOf(id);
                         for (const blb::auth::account& account : Accounts::list()) {
                             if (settings == nullptr ||
-                                Accounts::suits(account, settings->login, settings->auth_server)) {
+                                Accounts::matches(account, settings->login, settings->auth_server)) {
                                 labels.push_back(accountLabel(account));
                             }
                         }
@@ -942,7 +940,7 @@ namespace InstancePage {
                 std::string value =
                         mods.loading && mods.mods.empty() ? std::string() : std::to_string(mods.mods.size()) + " 个";
                 if (Page::navRow("instance#mods", "模组管理", value, y, blocked, Page::rowCorners(index, count), 0xf12e)) {
-                    Mods::rescan(entry.key);
+                    Mods::scan(entry.key);
                     sections.go(SECTION_MODS);
                 }
                 y += Page::ROW_H;
@@ -1048,8 +1046,8 @@ namespace InstancePage {
 
             wideTextRow(
                     id, "gameArgs", "游戏参数", "无", "加在游戏参数的最后，空格分隔；含空格的参数用双引号括起来。",
-                    [](const Settings& s) { return joinArgs(s.game_args); },
-                    [](Settings& s, const std::string& value) { s.game_args = splitArgs(value); }, rowY, blocked);
+                    [](const Settings& s) { return blb::join_arguments(s.game_args); },
+                    [](Settings& s, const std::string& value) { s.game_args = blb::split_arguments(value); }, rowY, blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
@@ -1078,8 +1076,8 @@ namespace InstancePage {
             wideTextRow(
                     id, "jvmArgs", "JVM 参数", "无",
                     "加在启动器默认的 JVM 参数之后，空格分隔；含空格的参数用双引号括起来。",
-                    [](const Settings& s) { return joinArgs(s.jvm_args); },
-                    [](Settings& s, const std::string& value) { s.jvm_args = splitArgs(value); }, rowY, blocked);
+                    [](const Settings& s) { return blb::join_arguments(s.jvm_args); },
+                    [](Settings& s, const std::string& value) { s.jvm_args = blb::split_arguments(value); }, rowY, blocked);
             rowY += Page::ROW_H;
 
             Page::label("最小内存", rowY);

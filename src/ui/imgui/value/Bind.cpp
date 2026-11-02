@@ -2,6 +2,8 @@
 #include "../panel/UiCommon.h"
 #include "../panel/UiTheme.h"
 
+#include <core/base/strings.hpp>
+
 #include <algorithm>
 #include <cstdio>
 #include <unordered_map>
@@ -22,7 +24,7 @@ std::string Choice::label() {
             picked.push_back(option);
         }
     }
-    return picked.empty() ? std::string("无") : Ui::join(picked, "、");
+    return picked.empty() ? std::string("无") : b_launcher_base::join(picked, "、");
 }
 
 uint32_t Choice::optionColor(const std::string& option, bool selected) {
@@ -132,19 +134,20 @@ bool MultiBinding::multi() {
 }
 
 bool MultiBinding::selected(const std::string& option) {
-    return Ui::contains(*selection, option);
+    return std::find(selection->begin(), selection->end(), option) != selection->end();
 }
 
 void MultiBinding::choose(const std::string& option) {
-    if (Ui::contains(*selection, option)) {
-        Ui::remove(*selection, option);
+    auto at = std::find(selection->begin(), selection->end(), option);
+    if (at != selection->end()) {
+        selection->erase(at);
     } else {
         selection->push_back(option);
     }
 }
 
 std::string MultiBinding::label() {
-    return selection->empty() ? std::string("无") : Ui::join(*selection, "、");
+    return selection->empty() ? std::string("无") : b_launcher_base::join(*selection, "、");
 }
 
 bool MultiBinding::reorderable() {
@@ -165,7 +168,7 @@ void MultiBinding::reorder(int from, int to) {
     list.insert(list.begin() + to, moved);
     std::vector<std::string> sorted;
     for (const std::string& option : list) {
-        if (Ui::contains(*selection, option)) {
+        if (std::find(selection->begin(), selection->end(), option) != selection->end()) {
             sorted.push_back(option);
         }
     }

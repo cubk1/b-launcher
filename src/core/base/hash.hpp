@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <optional>
 #include <span>
-#include <string>
 #include <string_view>
 
 namespace b_launcher_base
@@ -105,7 +104,6 @@ private:
   std::size_t m_buffered;
 };
 
-std::string to_hex (const sha1_digest &digest);
 std::optional<sha1_digest> parse_sha1 (std::string_view hex) noexcept;
 result<sha1_digest> sha1_file (const std::filesystem::path &path);
 result<sha1_digest> sha1_file (const std::filesystem::path &path,

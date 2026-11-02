@@ -196,11 +196,11 @@ namespace NewUi {
     std::vector<Window> windows;
 
     float limitX() {
-        return UiRender::screenWidth() / UiRender::uiScale;
+        return UiRender::guiWidth() / UiRender::uiScale;
     }
 
     float limitY() {
-        return UiRender::screenHeight() / UiRender::uiScale;
+        return UiRender::guiHeight() / UiRender::uiScale;
     }
 
     void pollInput() {
@@ -954,7 +954,7 @@ namespace NewUi {
             }
         }
 
-        UiRender::disableScissor();
+        UiRender::unscissor();
         if (scrollable) {
             float trackX = px + sizeX - 10;
             float trackY = py + 6;
@@ -1418,7 +1418,7 @@ namespace NewUi {
         }
         uint32_t argb = color->get();
         if (cell == 0) {
-            std::string hex = Ui::startsWith(text, "#") ? text.substr(1) : text;
+            std::string hex = text.starts_with("#") ? text.substr(1) : text;
             long long parsed = 0;
             if (Ui::parseHex(hex, parsed)) {
                 color->set(hex.size() <= 6 ? (uint32_t) (0xFF000000LL | parsed) : (uint32_t) parsed);
@@ -1769,7 +1769,7 @@ namespace NewUi {
     }
 
     void openLink(const std::string& url) {
-        if (url.empty() || !(Ui::startsWith(url, "http://") || Ui::startsWith(url, "https://"))) {
+        if (url.empty() || !(url.starts_with("http://") || url.starts_with("https://"))) {
             return;
         }
 #if defined(_WIN32)
@@ -1853,7 +1853,7 @@ namespace NewUi {
             UiRender::textY(lines[i], px + contentPad, py + contentPad - 2.0f + i * lineH, lineH,
                             UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         }
-        UiRender::disableScissor();
+        UiRender::unscissor();
 
         UiRender::alphaMul = savedAlpha;
         UiRender::scaleFactor = savedScale;

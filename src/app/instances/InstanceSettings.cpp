@@ -34,25 +34,17 @@ namespace InstanceSettings {
         }
     }
 
-    std::string joinArgs(const std::vector<std::string>& args) {
-        return blb::join_arguments(args);
-    }
-
-    std::vector<std::string> splitArgs(const std::string& text) {
-        return blb::split_arguments(text);
-    }
-
     std::string joinEnvironment(const std::vector<std::pair<std::string, std::string>>& variables) {
         std::vector<std::string> items;
         for (const auto& [name, value] : variables) {
             items.push_back(name + "=" + value);
         }
-        return joinArgs(items);
+        return blb::join_arguments(items);
     }
 
     std::vector<std::pair<std::string, std::string>> splitEnvironment(const std::string& text) {
         std::vector<std::pair<std::string, std::string>> out;
-        for (const std::string& item : splitArgs(text)) {
+        for (const std::string& item : blb::split_arguments(text)) {
             size_t equals = item.find('=');
             if (equals == std::string::npos || equals == 0) {
                 continue;

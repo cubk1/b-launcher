@@ -564,12 +564,6 @@ md5::digest (const void *data, std::size_t size) noexcept
   return h.finish ();
 }
 
-std::string
-to_hex (const sha1_digest &digest)
-{
-  return to_hex (std::span<const std::uint8_t> (digest));
-}
-
 std::optional<sha1_digest>
 parse_sha1 (std::string_view hex) noexcept
 {

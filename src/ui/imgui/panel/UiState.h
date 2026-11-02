@@ -7,8 +7,8 @@ namespace UiState {
 
     extern std::unordered_map<std::string, float> motionMap;
 
-    float motion(const std::string& id, float target, float speed);
-    float motion(const std::string& id, float target);
+    float motion(const std::string& id, float target, float speed = 16.0f);
+
     float motionFrom(const std::string& id, float target, float speed, float initial);
 
     float getOrDefault(const std::string& id, float fallback);

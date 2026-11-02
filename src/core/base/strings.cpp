@@ -53,12 +53,9 @@ to_lower (std::string_view text)
 bool
 iequals (std::string_view a, std::string_view b) noexcept
 {
-  if (a.size () != b.size ())
-    return false;
-  for (std::size_t i = 0; i < a.size (); ++i)
-    if (lower_ascii (a[i]) != lower_ascii (b[i]))
-      return false;
-  return true;
+  return std::equal (a.begin (), a.end (), b.begin (), b.end (),
+                     [] (char left, char right)
+                       { return lower_ascii (left) == lower_ascii (right); });
 }
 
 bool
@@ -77,14 +74,10 @@ icontains (std::string_view text, std::string_view needle) noexcept
 std::string_view
 trim (std::string_view text) noexcept
 {
-  auto space = [] (char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-  };
-  while (!text.empty () && space (text.front ()))
-    text.remove_prefix (1);
-  while (!text.empty () && space (text.back ()))
-    text.remove_suffix (1);
-  return text;
+  auto first = text.find_first_not_of (" \t\r\n");
+  if (first == std::string_view::npos)
+    return text.substr (text.size ());
+  return text.substr (first, text.find_last_not_of (" \t\r\n") - first + 1);
 }
 
 std::vector<std::string_view>

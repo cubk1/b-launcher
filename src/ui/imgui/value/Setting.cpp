@@ -131,13 +131,6 @@ SettingsPage::SettingsPage(const std::string& id, const std::string& title, std:
       title(title),
       items(std::move(items)) {}
 
-SettingsPagePtr SettingsPage::of(const std::string& id, const std::string& title, SettingList items) {
-    return std::make_shared<SettingsPage>(id, title, [items = std::move(items)] { return items; });
-}
-
-SettingsPagePtr SettingsPage::of(const std::string& id, const std::string& title, std::function<SettingList()> items) {
-    return std::make_shared<SettingsPage>(id, title, std::move(items));
-}
 
 SettingList SettingsPage::visibleItems() const {
     return visibleSettings(items);

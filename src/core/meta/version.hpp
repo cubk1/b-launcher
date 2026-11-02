@@ -117,6 +117,5 @@ result<version> load_version (const game_layout &layout, std::string_view id);
 result<version> resolve_version (const game_layout &layout,
                                  std::string_view id);
 result<void> save_version (const game_layout &layout, const version &value);
-std::vector<std::string> split_legacy_arguments (std::string_view text);
 
 }

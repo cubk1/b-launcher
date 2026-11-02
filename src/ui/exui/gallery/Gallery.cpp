@@ -214,9 +214,6 @@ namespace {
     }
 
     // A hidden host window rendered offscreen.
-    std::unique_ptr<Bitmap> RenderHost(Window& window) {
-        return window.RenderToBitmap();
-    }
 
     void Windows() {
         struct Spec {
@@ -262,7 +259,7 @@ namespace {
                              MAKELPARAM(window.ToPhysical((r.left + r.right) / 2.f),
                                         window.ToPhysical((r.top + r.bottom) / 2.f)));
             }
-            Keep(spec.name, RenderHost(window));
+            Keep(spec.name, window.RenderToBitmap());
             window.CloseWindow(false);
         }
     }

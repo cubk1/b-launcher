@@ -481,7 +481,7 @@ namespace Game {
         const std::string& login = entry->info.settings.login;
         const std::string& authServer = entry->info.settings.auth_server;
         const blb::auth::account* account = who.empty() ? nullptr : Accounts::find(who);
-        if (account == nullptr || !Accounts::suits(*account, login, authServer)) {
+        if (account == nullptr || !Accounts::matches(*account, login, authServer)) {
             account = Accounts::pick(login, authServer, entry->info.settings.account);
         }
         if (account == nullptr) {
@@ -506,7 +506,7 @@ namespace Game {
                 preLaunch.push_back(command);
             }
         }
-        std::vector<std::string> jvm = LaunchDefaults::split(LaunchDefaults::jvmArgs());
+        std::vector<std::string> jvm = blb::split_arguments(LaunchDefaults::jvmArgs());
         std::filesystem::path patchJar;
         Patches::Plan patchPlan;
         std::string optionsFile;
@@ -520,7 +520,7 @@ namespace Game {
         }
         jvm.insert(jvm.end(), settings.jvm_args.begin(), settings.jvm_args.end());
         settings.jvm_args = jvm;
-        std::vector<std::string> game = LaunchDefaults::split(LaunchDefaults::gameArgs());
+        std::vector<std::string> game = blb::split_arguments(LaunchDefaults::gameArgs());
         game.insert(game.end(), settings.game_args.begin(), settings.game_args.end());
         settings.game_args = game;
         settings.gc = LaunchDefaults::gc();

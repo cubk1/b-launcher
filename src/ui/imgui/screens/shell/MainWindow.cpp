@@ -470,10 +470,6 @@ namespace MainWindow {
         return Ui::trim(UiInput::get(SEARCH_ID));
     }
 
-    static bool matches(const std::string& id, const std::string& query) {
-        return b_launcher_base::icontains(id, query);
-    }
-
     static void focusSearch() {
         UiInput::focus(SEARCH_ID, 64);
         UiInput::selectAll(SEARCH_ID);
@@ -765,7 +761,7 @@ namespace MainWindow {
         const std::vector<Instances::Source>& sources = Instances::sources();
         std::vector<std::vector<const Instances::Entry*>> grouped(sources.size());
         for (const Instances::Entry& entry : Instances::list()) {
-            if (!matches(entry.info.id, query)) {
+            if (!b_launcher_base::icontains(entry.info.id, query)) {
                 continue;
             }
             for (size_t i = 0; i < sources.size(); i++) {

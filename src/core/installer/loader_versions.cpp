@@ -52,7 +52,7 @@ neoforge_argument_version (const meta::version &resolved)
       return found;
   // A dangling option must not consume a value from the other argument format.
   next_is_version = false;
-  return scan (meta::split_legacy_arguments (resolved.minecraft_arguments));
+  return scan (split_arguments (resolved.minecraft_arguments));
 }
 
 result<std::vector<loader_version>>

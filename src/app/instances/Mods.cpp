@@ -56,70 +56,6 @@ namespace Mods {
             }
         }
 
-        void scan(const std::string& key) {
-            const Instances::Entry* entry = Instances::find(key);
-            if (entry == nullptr) {
-                lists[key].loading = false;
-                return;
-            }
-            if (scanning.count(key) != 0) {
-                again.insert(key);
-                return;
-            }
-            scanning.insert(key);
-            lists[key].loading = true;
-            std::filesystem::path directory = entry->gameDirectory / "mods";
-            std::set<std::string> known;
-            for (const auto& icon : icons) {
-                known.insert(icon.first);
-            }
-            run([key, directory, known = std::move(known)]() -> Continuation {
-                std::vector<blb::modpack::mod_info> found;
-                std::error_code error;
-                if (std::filesystem::is_directory(directory, error)) {
-                    found = blb::modpack::scan_mods(directory);
-                }
-                std::map<std::string, std::shared_ptr<const Pixels>> pictures;
-                for (const blb::modpack::mod_info& mod : found) {
-                    std::string keyOfIcon = iconKey(mod);
-                    if (!mod.icon.empty() && known.count(keyOfIcon) == 0) {
-                        auto bytes = blb::modpack::read_mod_icon(mod);
-                        if (bytes) {
-                            pictures[keyOfIcon] = Pixels::decode(bytes->data(), bytes->size());
-                        }
-                    }
-                }
-                return [key, found = std::move(found), pictures = std::move(pictures)]() {
-                    scanning.erase(key);
-                    for (const auto& picture : pictures) {
-                        if (icons.count(picture.first) == 0) {
-                            icons[picture.first] = picture.second;
-                        }
-                    }
-                    List& list = lists[key];
-                    list.mods.clear();
-                    for (const blb::modpack::mod_info& info : found) {
-                        Mod mod;
-                        mod.info = info;
-                        if (mod.info.name.empty()) {
-                            mod.info.name = mod.info.id.empty() ? mod.info.file_name : mod.info.id;
-                        }
-                        auto icon = icons.find(iconKey(info));
-                        mod.icon = icon != icons.end() ? icon->second : nullptr;
-                        list.mods.push_back(std::move(mod));
-                    }
-                    std::stable_sort(list.mods.begin(), list.mods.end(), [](const Mod& a, const Mod& b) {
-                        return blb::to_lower(a.info.name) < blb::to_lower(b.info.name);
-                    });
-                    checkDependencies(list);
-                    list.loading = false;
-                    if (again.erase(key) != 0) {
-                        scan(key);
-                    }
-                };
-            });
-        }
-
         Mod* findMod(const std::string& key, const std::filesystem::path& file) {
             auto found = lists.find(key);
             if (found == lists.end()) {
@@ -158,8 +94,68 @@ namespace Mods {
         return lists[instanceKey];
     }
 
-    void rescan(const std::string& instanceKey) {
-        scan(instanceKey);
+    void scan(const std::string& key) {
+        const Instances::Entry* entry = Instances::find(key);
+        if (entry == nullptr) {
+            lists[key].loading = false;
+            return;
+        }
+        if (scanning.count(key) != 0) {
+            again.insert(key);
+            return;
+        }
+        scanning.insert(key);
+        lists[key].loading = true;
+        std::filesystem::path directory = entry->gameDirectory / "mods";
+        std::set<std::string> known;
+        for (const auto& icon : icons) {
+            known.insert(icon.first);
+        }
+        run([key, directory, known = std::move(known)]() -> Continuation {
+            std::vector<blb::modpack::mod_info> found;
+            std::error_code error;
+            if (std::filesystem::is_directory(directory, error)) {
+                found = blb::modpack::scan_mods(directory);
+            }
+            std::map<std::string, std::shared_ptr<const Pixels>> pictures;
+            for (const blb::modpack::mod_info& mod : found) {
+                std::string keyOfIcon = iconKey(mod);
+                if (!mod.icon.empty() && known.count(keyOfIcon) == 0) {
+                    auto bytes = blb::modpack::read_mod_icon(mod);
+                    if (bytes) {
+                        pictures[keyOfIcon] = Pixels::decode(bytes->data(), bytes->size());
+                    }
+                }
+            }
+            return [key, found = std::move(found), pictures = std::move(pictures)]() {
+                scanning.erase(key);
+                for (const auto& picture : pictures) {
+                    if (icons.count(picture.first) == 0) {
+                        icons[picture.first] = picture.second;
+                    }
+                }
+                List& list = lists[key];
+                list.mods.clear();
+                for (const blb::modpack::mod_info& info : found) {
+                    Mod mod;
+                    mod.info = info;
+                    if (mod.info.name.empty()) {
+                        mod.info.name = mod.info.id.empty() ? mod.info.file_name : mod.info.id;
+                    }
+                    auto icon = icons.find(iconKey(info));
+                    mod.icon = icon != icons.end() ? icon->second : nullptr;
+                    list.mods.push_back(std::move(mod));
+                }
+                std::stable_sort(list.mods.begin(), list.mods.end(), [](const Mod& a, const Mod& b) {
+                    return blb::to_lower(a.info.name) < blb::to_lower(b.info.name);
+                });
+                checkDependencies(list);
+                list.loading = false;
+                if (again.erase(key) != 0) {
+                    scan(key);
+                }
+            };
+        });
     }
 
     void setEnabled(const std::string& instanceKey, const std::filesystem::path& file, bool enabled) {

@@ -18,8 +18,8 @@ namespace UiWidgets {
     void iconBeside(const std::string& glyph, float cx, const std::string& label, int family, float labelSize, float y,
                     float h, uint32_t color, float size);
     void chevron(float x, float y, uint32_t color);
-    void check(float cx, float cy, uint32_t color);
-    void check(float cx, float cy, uint32_t color, float size);
+
+    void check(float cx, float cy, uint32_t color, float size = 11.0f);
     void knobShadow(float cx, float cy, float radius);
     void card(float x, float y, float w, float h, const std::string& title);
     void toggle(const std::string& id, float x, float y, bool value, bool enabled, bool hovered);

@@ -358,7 +358,7 @@ build_launch_command (const launch_context &ctx)
     append_arguments (game, version.game_arguments, rules, values);
   else
     for (const auto &arg :
-         meta::split_legacy_arguments (version.minecraft_arguments))
+         split_arguments (version.minecraft_arguments))
       game.push_back (substitute (arg, values));
 
   if (rules.feature ("has_custom_resolution") && !contains (game, "--width"))

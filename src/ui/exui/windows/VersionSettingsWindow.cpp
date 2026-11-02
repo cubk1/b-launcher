@@ -20,6 +20,7 @@
 #include "ui/exui/windows/ModsWindow.h"
 #include "ui/exui/windows/ShortcutWindow.h"
 
+#include <core/base/strings.hpp>
 #include <core/auth/yggdrasil.hpp>
 
 #include <functional>
@@ -551,9 +552,9 @@ namespace ForgottenMelody {
                      [](Settings& s, const std::wstring& typed) { s.notes = Platform::narrow(typed); });
 
                 text(
-                        GAME_ARGS_LABEL, GAME_ARGS, InstanceSettings::joinArgs(settings.game_args),
+                        GAME_ARGS_LABEL, GAME_ARGS, blb::join_arguments(settings.game_args),
                         [](Settings& s, const std::wstring& typed) {
-                            s.game_args = InstanceSettings::splitArgs(Platform::narrow(typed));
+                            s.game_args = blb::split_arguments(Platform::narrow(typed));
                         },
                         L"加在游戏参数的最后，空格分隔；含空格的参数用双引号括起来。");
                 text(
@@ -571,9 +572,9 @@ namespace ForgottenMelody {
                         [](Settings& s, const std::wstring& typed) { s.post_exit = trimmed(typed); },
                         std::wstring(L"游戏退出后通过 cmd 运行，不等它结束；工作目录是游戏目录。") + COMMAND_VARIABLES);
                 text(
-                        JVM_LABEL, JVM, InstanceSettings::joinArgs(settings.jvm_args),
+                        JVM_LABEL, JVM, blb::join_arguments(settings.jvm_args),
                         [](Settings& s, const std::wstring& typed) {
-                            s.jvm_args = InstanceSettings::splitArgs(Platform::narrow(typed));
+                            s.jvm_args = blb::split_arguments(Platform::narrow(typed));
                         },
                         L"加在启动器默认的 JVM 参数之后，空格分隔；含空格的参数用双引号括起来。");
                 text(

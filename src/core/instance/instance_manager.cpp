@@ -161,12 +161,6 @@ settings_from_json (const json &doc)
   return s;
 }
 
-std::vector<std::string>
-split_command (std::string_view text)
-{
-  return split_arguments (text);
-}
-
 }
 
 std::string_view
@@ -471,7 +465,7 @@ instance_manager::launch_settings_for (const instance &value) const
   out.height = value.settings.height;
   out.fullscreen = value.settings.fullscreen;
   out.server = value.settings.server;
-  out.wrapper = split_command (value.settings.wrapper);
+  out.wrapper = split_arguments (value.settings.wrapper);
   out.environment = value.settings.environment;
   out.default_jvm_tuning = value.settings.default_jvm_args;
   out.check_integrity = value.settings.check_integrity;

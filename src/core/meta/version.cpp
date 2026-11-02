@@ -775,10 +775,4 @@ save_version (const game_layout &layout, const version &value)
                                 serialize_version (value));
 }
 
-std::vector<std::string>
-split_legacy_arguments (std::string_view text)
-{
-  return split_arguments (text);
-}
-
 }

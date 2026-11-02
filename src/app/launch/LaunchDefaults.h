@@ -4,7 +4,6 @@
 
 #include <filesystem>
 #include <string>
-#include <vector>
 
 namespace LaunchDefaults {
 
@@ -26,7 +25,6 @@ namespace LaunchDefaults {
     bool showLogs();
     void setShowLogs(bool on);
 
-    std::vector<std::string> split(const std::string& text);
     bool mergeLogRepeats();
     void setMergeLogRepeats(bool on);
 

@@ -32,10 +32,6 @@ namespace UiWidgets {
         icon(Ui::glyph(0xF054), x + 1.5f, y + 3.0f, color, 10.0f);
     }
 
-    void check(float cx, float cy, uint32_t color) {
-        check(cx, cy, color, 11.0f);
-    }
-
     void check(float cx, float cy, uint32_t color, float size) {
         UiRender::checkMark(cx, cy, size * 0.8f, std::max(1.1f, size * 0.12f), color);
     }
@@ -148,10 +144,10 @@ namespace UiWidgets {
             UiRender::rect(x + 2.75f, y, t, 6.5f, color);
             return;
         }
-        bool bottom = Ui::endsWith(anchor, "Bottom");
+        bool bottom = anchor.ends_with("Bottom");
         float barY = bottom ? y + 5.0f : y;
         float stemY = bottom ? y : y + 1.5f;
-        float stemX = Ui::startsWith(anchor, "Left") ? x : x + w - t;
+        float stemX = anchor.starts_with("Left") ? x : x + w - t;
         UiRender::rect(x, barY, w, t, color);
         UiRender::rect(stemX, stemY, t, 5.0f, color);
     }

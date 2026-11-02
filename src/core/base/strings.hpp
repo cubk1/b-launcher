@@ -11,10 +11,12 @@
 namespace b_launcher_base
 {
 
+// ASCII case folding, independent of the process locale.
 std::string to_lower (std::string_view text);
 bool iequals (std::string_view a, std::string_view b) noexcept;
 // ASCII case-insensitive substring search; an empty needle matches any text.
 bool icontains (std::string_view text, std::string_view needle) noexcept;
+// Removes space, tab, CR and LF; the returned view borrows the input.
 std::string_view trim (std::string_view text) noexcept;
 std::vector<std::string_view> split (std::string_view text, char separator);
 std::string join (std::span<const std::string> parts,

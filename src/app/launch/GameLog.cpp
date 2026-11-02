@@ -106,10 +106,6 @@ namespace GameLog {
             return out;
         }
 
-        bool startsWith(std::string_view text, std::string_view prefix) {
-            return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
-        }
-
         bool levelIn(std::string_view text, Level& level) {
             std::string_view head = text.substr(0, std::min<size_t>(text.size(), 160));
             struct Name {
@@ -135,13 +131,13 @@ namespace GameLog {
             if (text.empty()) {
                 return false;
             }
-            if (text[0] == '\t' || startsWith(text, "    at ") || startsWith(text, "Caused by: ") ||
-                startsWith(text, "\tat ")) {
+            if (text[0] == '\t' || text.starts_with("    at ") || text.starts_with("Caused by: ") ||
+                text.starts_with("\tat ")) {
                 return true;
             }
             size_t i = text.find_first_not_of(' ');
             return i != std::string_view::npos && i > 0 &&
-                    (startsWith(text.substr(i), "at ") || startsWith(text.substr(i), "... "));
+                    (text.substr(i).starts_with("at ") || text.substr(i).starts_with("... "));
         }
 
         bool stackLine(std::string_view text) {
@@ -150,10 +146,10 @@ namespace GameLog {
                 return false;
             }
             std::string_view rest = text.substr(i);
-            if (startsWith(rest, "Caused by: ")) {
+            if (rest.starts_with("Caused by: ")) {
                 return true;
             }
-            return i > 0 && (startsWith(rest, "at ") || startsWith(rest, "... ") || startsWith(rest, "Suppressed: "));
+            return i > 0 && (rest.starts_with("at ") || rest.starts_with("... ") || rest.starts_with("Suppressed: "));
         }
 
         void push(Log& log, std::string text, Level level) {
@@ -334,7 +330,7 @@ namespace GameLog {
         Event& event = log->events[stream];
         size_t indent = line.find_first_not_of(" \t");
         std::string_view trimmed = indent == std::string_view::npos ? std::string_view() : line.substr(indent);
-        if (!event.open && startsWith(trimmed, "<log4j:Event")) {
+        if (!event.open && trimmed.starts_with("<log4j:Event")) {
             event.open = true;
             event.text.clear();
             log->xml[stream] = true;

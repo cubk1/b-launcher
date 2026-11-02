@@ -69,14 +69,6 @@ namespace Drops {
             return blb::to_lower(blb::path_to_utf8(file.filename()));
         }
 
-        bool looksLikePack(const std::string& name) {
-            return name.ends_with(".mrpack");
-        }
-
-        bool looksLikeZip(const std::string& name) {
-            return name.ends_with(".zip");
-        }
-
         std::string targetInstance() {
             return handlers.target ? handlers.target() : Instances::selected();
         }
@@ -110,7 +102,7 @@ namespace Drops {
         bool acceptable(const std::vector<std::filesystem::path>& files) {
             return std::any_of(files.begin(), files.end(), [](const std::filesystem::path& file) {
                 std::string name = nameOf(file);
-                return Mods::acceptsDrop(name) || looksLikePack(name) || looksLikeZip(name);
+                return Mods::acceptsDrop(name) || name.ends_with(".mrpack") || name.ends_with(".zip");
             });
         }
 
@@ -126,7 +118,7 @@ namespace Drops {
                 item.kind = Kind::Mod;
                 return item;
             }
-            if (!looksLikePack(name) && !looksLikeZip(name)) {
+            if (!name.ends_with(".mrpack") && !name.ends_with(".zip")) {
                 return item;
             }
             auto zip = blb::zip_reader::open(file);
@@ -141,7 +133,7 @@ namespace Drops {
             bool assets = false;
             bool data = false;
             bool shaders = false;
-            bool modpack = looksLikePack(name);
+            bool modpack = name.ends_with(".mrpack");
             for (const blb::zip_entry& entry : *entries) {
                 const std::string& path = entry.name;
                 if (path == "pack.mcmeta") {
@@ -366,8 +358,8 @@ namespace Drops {
         for (const std::filesystem::path& file : dragged) {
             std::string name = nameOf(file);
             mods += Mods::acceptsDrop(name) ? 1 : 0;
-            packs += looksLikePack(name) ? 1 : 0;
-            zips += looksLikeZip(name) ? 1 : 0;
+            packs += name.ends_with(".mrpack") ? 1 : 0;
+            zips += name.ends_with(".zip") ? 1 : 0;
         }
         if (mods + packs + zips == 0) {
             return "不能添加这些文件";

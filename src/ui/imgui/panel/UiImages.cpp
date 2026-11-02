@@ -70,13 +70,13 @@ namespace UiImages {
             }
             return kind;
         }
-        if (Ui::startsWith(source, "item:")) {
+        if (source.starts_with("item:")) {
             return resolveItem(source, source.substr(5));
         }
-        if (Ui::startsWith(source, "mc:")) {
+        if (source.starts_with("mc:")) {
             return resolveTexture(source, source.substr(3));
         }
-        if (Ui::startsWith(source, "http://") || Ui::startsWith(source, "https://")) {
+        if (source.starts_with("http://") || source.starts_with("https://")) {
             setKind(source, KIND_LOADING);
             startFetch(source);
             return KIND_LOADING;

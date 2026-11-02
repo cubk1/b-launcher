@@ -174,7 +174,7 @@ namespace LaunchButton {
         std::vector<const b_launcher_base::auth::account*> suitable(const Instances::Entry& entry) {
             std::vector<const b_launcher_base::auth::account*> out;
             for (const b_launcher_base::auth::account& account : Accounts::list()) {
-                if (Accounts::suits(account, entry.info.settings.login, entry.info.settings.auth_server)) {
+                if (Accounts::matches(account, entry.info.settings.login, entry.info.settings.auth_server)) {
                     out.push_back(&account);
                 }
             }

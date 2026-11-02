@@ -66,8 +66,5 @@ public:
 
     SettingsPage(const std::string& id, const std::string& title, std::function<SettingList()> items);
 
-    static SettingsPagePtr of(const std::string& id, const std::string& title, SettingList items);
-    static SettingsPagePtr of(const std::string& id, const std::string& title, std::function<SettingList()> items);
-
     SettingList visibleItems() const;
 };

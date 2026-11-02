@@ -152,9 +152,6 @@ namespace Addons {
             }
         }
 
-        bool startsWith(const std::string& text, const char* head) {
-            return text.compare(0, std::strlen(head), head) == 0;
-        }
     }
 
     const File* Version::file() const {
@@ -244,11 +241,11 @@ namespace Addons {
     std::vector<std::string> fileUrls(const std::string& url) {
         std::vector<std::string> out = {url};
         const char* const modrinth = "https://cdn.modrinth.com";
-        if (startsWith(url, modrinth)) {
+        if (url.starts_with(modrinth)) {
             out.push_back(std::string(MIRROR) + url.substr(std::strlen(modrinth)));
         }
         for (const char* host : {"https://edge.forgecdn.net", "https://mediafilez.forgecdn.net"}) {
-            if (!startsWith(url, host)) {
+            if (!url.starts_with(host)) {
                 continue;
             }
             std::string rest = url.substr(std::strlen(host));

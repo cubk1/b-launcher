@@ -198,25 +198,6 @@ namespace Accounts {
             };
         }
 
-        bool matches(const blb::auth::account& account, const std::string& login, const std::string& server) {
-            std::string wanted(blb::trim(server));
-            if (login == "microsoft") {
-                return account.type == blb::auth::account_type::microsoft;
-            }
-            if (login == "offline") {
-                return account.type == blb::auth::account_type::offline;
-            }
-            if (login == "yggdrasil") {
-                return account.type == blb::auth::account_type::yggdrasil &&
-                        (wanted.empty() || blb::auth::same_yggdrasil_server(account.server, wanted));
-            }
-            if (login == "nide8") {
-                return account.type == blb::auth::account_type::nide8 &&
-                        (wanted.empty() || blb::iequals(account.server, wanted));
-            }
-            return true;
-        }
-
         std::filesystem::path skinFile(const std::string& url) {
             std::filesystem::path cache = Platform::cacheDirectory();
             size_t slash = url.find_last_of('/');
@@ -638,8 +619,23 @@ namespace Accounts {
         return pick(login, server);
     }
 
-    bool suits(const blb::auth::account& account, const std::string& login, const std::string& server) {
-        return matches(account, login, server);
+    bool matches(const blb::auth::account& account, const std::string& login, const std::string& server) {
+        std::string wanted(blb::trim(server));
+        if (login == "microsoft") {
+            return account.type == blb::auth::account_type::microsoft;
+        }
+        if (login == "offline") {
+            return account.type == blb::auth::account_type::offline;
+        }
+        if (login == "yggdrasil") {
+            return account.type == blb::auth::account_type::yggdrasil &&
+                    (wanted.empty() || blb::auth::same_yggdrasil_server(account.server, wanted));
+        }
+        if (login == "nide8") {
+            return account.type == blb::auth::account_type::nide8 &&
+                    (wanted.empty() || blb::iequals(account.server, wanted));
+        }
+        return true;
     }
 
     std::string requirement(const std::string& login, const std::string& server) {

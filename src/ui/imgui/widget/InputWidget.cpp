@@ -78,7 +78,7 @@ void InputWidget::paint() {
             NewUi::drawCaret(id, originX, caretY, caretH, family, size);
         }
     }
-    UiRender::disableScissor();
+    UiRender::unscissor();
     if (!blocked) {
         NewUi::fieldMouse(id, hitX, hitY, hitW, hitH, originX, family, size, maxLength);
     }

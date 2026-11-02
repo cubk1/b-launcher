@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 ColorPickerWidget::ColorPickerWidget(std::shared_ptr<ColorValue> color, bool square, bool accepts)
     : Widget(color->owner),
@@ -146,7 +147,9 @@ void ColorPickerWidget::paintHex(uint32_t argb, float boxX, float footY, float b
                 .paint();
         return;
     }
-    std::string hexText = Ui::format("#%08X", argb);
+    char formatted[10];
+    std::snprintf(formatted, sizeof(formatted), "#%08X", argb);
+    std::string hexText(formatted);
     float hexW = UiFont::width(hexText, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
     UiRender::textClipped(hexText, boxX + 25 + std::max(0.0f, (hexRoom - hexW) * 0.5f), footY, 24, hexRoom,
                           UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, UiTheme::surfaceRaised());
@@ -154,7 +157,7 @@ void ColorPickerWidget::paintHex(uint32_t argb, float boxX, float footY, float b
         UiCursor::text();
     }
     if (accepts && !menuShown && NewUi::click(boxX, footY, boxW, 24)) {
-        NewUi::beginColorEdit(color, 0, Ui::format("%08X", argb));
+        NewUi::beginColorEdit(color, 0, hexText.substr(1));
     }
 }
 

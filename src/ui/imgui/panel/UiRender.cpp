@@ -94,7 +94,9 @@ namespace UiRender {
         float target = clamp(fit, 0.75f, 2.0f);
         if (!scaleMode.empty() && scaleMode != "Auto") {
             int percent = 100;
-            Ui::parseInt(Ui::replaceAll(scaleMode, "%", ""), percent);
+            std::string configuredScale = scaleMode;
+            std::erase(configuredScale, '%');
+            Ui::parseInt(configuredScale, percent);
             float configured = percent / 100.0f;
             float maxFit = std::min(physicalWidth / shellWidth, physicalHeight / shellHeight);
             target = std::min(configured, maxFit);
