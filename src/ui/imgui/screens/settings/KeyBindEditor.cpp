@@ -92,6 +92,8 @@ namespace KeyBindEditor {
         };
 
         struct State {
+            std::wstring file;
+            int lastFrame = -1;
             int page = 0;
             std::string group;
             std::string selected;
@@ -1109,6 +1111,28 @@ namespace KeyBindEditor {
         const KeyBinds::Table& table = KeyBinds::table(file);
         bool typing = !NewUi::textEditing.empty() || !UiInput::focused.empty();
         int frame = ImGui::GetFrameCount();
+        std::wstring target = normal(file);
+        if (state.file != target || state.lastFrame + 1 < frame) {
+            state.capturing.clear();
+            state.selected.clear();
+            state.adding = false;
+            state.addGroup.clear();
+            state.boardShown = false;
+            if (popover.active && popover.editor == id) {
+                closePopover();
+            }
+        }
+        state.file = std::move(target);
+        state.lastFrame = frame;
+        bool mousePressed = false;
+        for (int button = 0; button < 5; ++button) {
+            mousePressed = mousePressed || ImGui::IsMouseClicked(button);
+        }
+        bool clickedOutside = mousePressed &&
+                !NewUi::rawHit(Page::columnLeft(), top, Page::columnWidth(), MainWindow::height() - 14.0f - top);
+        if (blocked || typing || !UiOverlays::isEmpty() || NewUi::clickConsumed || clickedOutside) {
+            state.capturing.clear();
+        }
 
         if (!state.capturing.empty()) {
             UiState::keepAnimating();
