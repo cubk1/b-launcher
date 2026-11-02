@@ -131,6 +131,7 @@ namespace Screenshots {
     void scan(const std::string& instanceKey) {
         List& list = lists[instanceKey];
         if (list.loading) {
+            list.serial = nextSerial++;
             return;
         }
         std::filesystem::path folder = folderOf(instanceKey);
@@ -138,8 +139,9 @@ namespace Screenshots {
             return;
         }
         list.loading = true;
+        int serial = list.serial;
         tasks.run(
-                [folder, instanceKey](blb::cancellation_token token) -> Continuation {
+                [folder, instanceKey, serial](blb::cancellation_token token) -> Continuation {
                     std::vector<Entry> found;
                     auto map = blb::fs::list_directory(folder);
                     for (const auto& [name, stat] : map) {
@@ -162,16 +164,25 @@ namespace Screenshots {
                     }
                     std::sort(found.begin(), found.end(),
                               [](const Entry& a, const Entry& b) { return a.modified > b.modified; });
-                    return [instanceKey, found = std::move(found)]() mutable {
+                    return [instanceKey, serial, found = std::move(found)]() mutable {
                         List& list = lists[instanceKey];
-                        list.entries = std::move(found);
                         list.loading = false;
+                        if (list.serial != serial) {
+                            scan(instanceKey);
+                            return;
+                        }
+                        list.entries = std::move(found);
                         list.serial = nextSerial++;
                     };
                 },
-                [instanceKey](const std::string& error) -> Continuation {
-                    return [instanceKey, error] {
-                        lists[instanceKey].loading = false;
+                [instanceKey, serial](const std::string& error) -> Continuation {
+                    return [instanceKey, serial, error] {
+                        List& list = lists[instanceKey];
+                        list.loading = false;
+                        if (list.serial != serial) {
+                            scan(instanceKey);
+                            return;
+                        }
                         Notices::add(Notices::Kind::Failed, "无法读取截图：" + error, 5000);
                     };
                 });
