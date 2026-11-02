@@ -473,7 +473,7 @@ namespace ModManager {
                     continue;
                 }
                 for (const blb::modpack::mod_dependency& dependency : mod.dependencies) {
-                    if (!dependency.required || dependency.version.empty()) {
+                    if (!dependency.required || !dependency.client || dependency.version.empty()) {
                         continue;
                     }
                     const blb::modpack::mod_info* target = blb::modpack::find_mod(mods, dependency.id);
@@ -956,7 +956,7 @@ namespace ModManager {
                     bool names = dependency.id == mod->info.id ||
                             std::find(mod->info.provides.begin(), mod->info.provides.end(), dependency.id) !=
                                     mod->info.provides.end();
-                    if (names && dependency.required && !dependency.version.empty() &&
+                    if (names && dependency.required && dependency.client && !dependency.version.empty() &&
                         !blb::modpack::version_in_range(target.number, dependency.version)) {
                         push(Severity::Warning, other.info.name + " 要求 " + change.name + " " + dependency.version,
                              {});
