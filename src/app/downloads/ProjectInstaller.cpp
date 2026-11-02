@@ -10,6 +10,7 @@
 #include <core/base/hash.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
+#include <core/base/win_util.hpp>
 #include <core/base/zip.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/meta/game_layout.hpp>
@@ -201,31 +202,13 @@ namespace ProjectInstaller {
             return report.failures.front().reason.message;
         }
 
-        std::string slashes(std::string text) {
-            std::replace(text.begin(), text.end(), '\\', '/');
-            return text;
-        }
-
         bool junk(const std::string& name) {
             return name.starts_with("__MACOSX/");
         }
 
         bool validUtf8(std::string_view text) {
-            size_t i = 0;
-            while (i < text.size()) {
-                unsigned char c = (unsigned char) text[i];
-                size_t more = c < 0x80 ? 0 : (c >> 5) == 0x6 ? 1 : (c >> 4) == 0xE ? 2 : (c >> 3) == 0x1E ? 3 : 4;
-                if (more == 4) {
-                    return false;
-                }
-                for (size_t k = 1; k <= more; k++) {
-                    if (i + k >= text.size() || ((unsigned char) text[i + k] >> 6) != 0x2) {
-                        return false;
-                    }
-                }
-                i += more + 1;
-            }
-            return true;
+            return text.empty() ||
+                    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), (int) text.size(), nullptr, 0) > 0;
         }
 
         bool formatCode(char c) {
@@ -260,18 +243,13 @@ namespace ProjectInstaller {
             }
             std::wstring buffer((size_t) wide, L'\0');
             MultiByteToWideChar(page, flags, bytes.data(), (int) bytes.size(), buffer.data(), wide);
-            int size = WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, nullptr, 0, nullptr, nullptr);
-            std::string out((size_t) std::max(size, 0), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, out.data(), size, nullptr, nullptr);
-            return out;
+            return blb::detail::wide_to_utf8(buffer);
         }
 
         std::string entryName(const std::string& raw) {
-            std::string name = slashes(raw);
-            if (validUtf8(name)) {
-                return name;
-            }
-            return fromCodePage(name, legacyPage(name));
+            std::string name = validUtf8(raw) ? raw : fromCodePage(raw, legacyPage(raw));
+            std::replace(name.begin(), name.end(), '\\', '/');
+            return name;
         }
 
         std::vector<std::string> worldRoots(const std::vector<blb::zip_entry>& entries) {
@@ -305,9 +283,8 @@ namespace ProjectInstaller {
                 name = name.substr(slash + 1);
             }
             name = std::string(blb::trim(blb::fs::filter_filename(blb::strip_formatting(name))));
-            while (!name.empty() && (name.back() == '.' || name.back() == ' ')) {
-                name.pop_back();
-            }
+            size_t last = name.find_last_not_of(". ");
+            name.resize(last == std::string::npos ? 0 : last + 1);
             return blb::fs::safe_filename(name) ? name : std::string("World");
         }
 
