@@ -1117,7 +1117,7 @@ namespace ForgottenMelody {
                          (query.kind == Kind::Modpack && state == ProjectInstaller::State::Done));
                 std::wstring status;
                 if (version == nullptr) {
-                    status = rows.size() > 1 || !versionKeys.front().empty() ? L"选择一个版本" : L"";
+                    status = versionKeys.size() > 1 || !versionKeys.front().empty() ? L"选择一个版本" : L"";
                 } else if (state == ProjectInstaller::State::Running) {
                     status = L"正在安装 " + std::to_wstring((int) (ProjectInstaller::progress(version->id) * 100)) +
                             L"%";
