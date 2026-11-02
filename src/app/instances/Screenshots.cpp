@@ -273,10 +273,10 @@ namespace Screenshots {
         fullOne = {};
     }
 
-    void copy(const std::filesystem::path& path) {
+    void copy(const std::filesystem::path& path, std::function<void()> onCopied) {
         std::filesystem::path copied = path;
         tasks.run(
-                [copied](blb::cancellation_token token) -> Continuation {
+                [copied, onCopied](blb::cancellation_token token) -> Continuation {
                     auto data = blb::fs::read_file(copied);
                     if (!data) {
                         return [] { Notices::add(Notices::Kind::Failed, "无法读取截图", 4000); };
@@ -288,10 +288,13 @@ namespace Screenshots {
                     if (!pixels) {
                         return [] { Notices::add(Notices::Kind::Failed, "无法解码截图", 4000); };
                     }
-                    return [pixels] {
+                    return [pixels, onCopied] {
                         bool ok = Platform::setClipboardImage(*pixels);
                         if (ok) {
                             Notices::add(Notices::Kind::Done, "已复制到剪贴板", 2500);
+                            if (onCopied) {
+                                onCopied();
+                            }
                         } else {
                             Notices::add(Notices::Kind::Failed, "无法复制到剪贴板", 4000);
                         }

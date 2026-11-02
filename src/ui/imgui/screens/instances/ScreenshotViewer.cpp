@@ -58,6 +58,7 @@ namespace ScreenshotViewer {
         float lastY = 0.0f;
         double lastPress = -1.0;
         double copiedAt = -10.0;
+        uint64_t copyVersion = 0;
 
         void paint();
         bool wheelAt(double amount);
@@ -109,7 +110,19 @@ namespace ScreenshotViewer {
             panX = panY = panTargetX = panTargetY = 0.0f;
             pressing = false;
             lastPress = -1.0;
+            copiedAt = -10.0;
+            ++copyVersion;
             Screenshots::forgetFullImage();
+        }
+
+        void copy(const std::filesystem::path& path) {
+            copiedAt = -10.0;
+            uint64_t version = ++copyVersion;
+            Screenshots::copy(path, [version] {
+                if (layer.active && !closing && copyVersion == version) {
+                    copiedAt = ImGui::GetTime();
+                }
+            });
         }
 
         void finish() {
@@ -326,8 +339,7 @@ namespace ScreenshotViewer {
             }
             x -= TOOL_GAP + TOOL;
             if (tool("copy", 0xf0c5, "复制", x, toolY, true)) {
-                Screenshots::copy(entry.path);
-                copiedAt = now;
+                copy(entry.path);
             }
             x -= GROUP_GAP + TOOL;
             if (tool("zoomIn", 0xf00e, "放大", x, toolY, zoomTarget < ZOOM_MAX - 0.001f)) {
@@ -468,8 +480,7 @@ namespace ScreenshotViewer {
             } else if (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)) {
                 zoomAt(1.0f, windowW * 0.5f, windowH * 0.5f);
             } else if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
-                Screenshots::copy(entry.path);
-                copiedAt = now;
+                copy(entry.path);
             }
         }
     }
@@ -489,7 +500,6 @@ namespace ScreenshotViewer {
         layer.active = true;
         closing = false;
         key = instanceKey;
-        copiedAt = -10.0;
         go(at);
         UiState::remove(OPEN);
     }

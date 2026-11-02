@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,7 +31,7 @@ namespace Screenshots {
     std::shared_ptr<const Pixels> fullImage(const std::filesystem::path& path, std::int64_t modified);
     bool fullImageFailed(const std::filesystem::path& path, std::int64_t modified);
     void forgetFullImage();
-    void copy(const std::filesystem::path& path);
+    void copy(const std::filesystem::path& path, std::function<void()> onCopied = nullptr);
 
     void remove(const std::string& instanceKey, const std::filesystem::path& path);
     bool rename(const std::string& instanceKey, const std::filesystem::path& path, const std::string& newName);
