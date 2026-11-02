@@ -37,7 +37,6 @@ namespace ForgottenMelody {
                 const Instances::Entry* entry = Instances::find(key);
                 if (entry == nullptr || !createDialog(*this, parent, L"截图管理", 900, 570,
                         exui::CaptionButtonMask::Close | exui::CaptionButtonMask::Maximize)) return false;
-                SetBackgroundMode(exui::SkinBackgroundMode::Cover);
                 using exui::ControlKind;
                 const exui::ControlSpec controls[] = {
                         {TITLE, ControlKind::Label, {}, L"截图管理 - " + Platform::widen(entry->info.id), L"微软雅黑", 16},
