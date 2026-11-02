@@ -101,7 +101,6 @@ namespace exui {
     private:
         void Layout();
         int RowAt(int x, int y) const;
-        int ColumnAt(int x, int y) const;
         // Applies a click or key: plain selects one row, Ctrl toggles, Shift selects a range
         // from the anchor. keepSelected leaves an existing multi-selection (right click).
         bool SelectRows(int row, bool control, bool shift, bool keepSelected = false);
@@ -114,7 +113,7 @@ namespace exui {
         int m_anchorRow = -1; // start of a Shift range
         int m_headerHeight = 0, m_rowHeight = 0;
         bool m_headerVisible = true, m_vVisible = false, m_hVisible = false;
-        int m_selectedRow = -1, m_hoveredRow = -1, m_hoveredColumn = -1, m_pressedColumn = -1;
+        int m_selectedRow = -1, m_hoveredRow = -1;
         int m_scrollX = 0, m_scrollY = 0, m_totalWidth = 0, m_contentWidth = 0;
         Gdiplus::Rect m_viewport{};
         Gdiplus::ARGB m_background = 0xD2FFFFFF, m_border = 0x50000000;

@@ -6,12 +6,6 @@
 
 namespace exui {
     using namespace Gdiplus;
-    namespace {
-        bool Contains(const RectF& r, int x, int y) {
-            return r.Contains(static_cast<float>(x), static_cast<float>(y));
-        }
-    } // namespace
-
     ListView::ListView() {
         SetTabStop(true);
         m_vScrollBar = &Add<ScrollBar>();
@@ -287,22 +281,12 @@ namespace exui {
         const int row = (y - m_viewport.Y + m_scrollY) / GetRowHeight();
         return row < GetRowCount() ? row : -1;
     }
-    int ListView::ColumnAt(int x, int y) const {
-        if (!m_headerVisible || y < 2 || y >= 2 + GetHeaderHeight() || x < 2 || x >= GetWidth() - 2) return -1;
-        int at = 2 - m_scrollX;
-        for (int i = 0; i < static_cast<int>(m_columns.size()); ++i) {
-            at += m_columns[i].width;
-            if (x < at) return i;
-        }
-        return -1;
-    }
     void ListView::OnMouseLeave() {
         SetTooltipText(L"");
-        m_hoveredRow = m_hoveredColumn = -1;
+        m_hoveredRow = -1;
         Invalidate();
     }
     void ListView::OnMouseCancel() {
-        m_pressedColumn = -1;
         Widget::OnMouseCancel();
         Invalidate();
     }
@@ -310,7 +294,6 @@ namespace exui {
         Layout();
         {
             m_hoveredRow = RowAt(x, y);
-            m_hoveredColumn = ColumnAt(x, y);
             // The whole cell text as a tooltip, even when it fits.
             int column = -1, edge = 2 - m_scrollX;
             for (int i = 0; i < static_cast<int>(m_columns.size()); ++i) {
@@ -358,7 +341,6 @@ namespace exui {
     bool ListView::OnMouseDown(int x, int y, UINT button) {
         if ((button != VK_LBUTTON && button != VK_RBUTTON) || !IsEffectivelyEnabled()) return false;
         Layout();
-        m_pressedColumn = ColumnAt(x, y);
         const int row = RowAt(x, y);
         SelectRows(row, (GetKeyState(VK_CONTROL) & 0x8000) != 0, (GetKeyState(VK_SHIFT) & 0x8000) != 0,
                    button == VK_RBUTTON);
@@ -369,7 +351,6 @@ namespace exui {
     }
     bool ListView::OnMouseUp(int, int, UINT button) {
         if (button != VK_LBUTTON && button != VK_RBUTTON) return false;
-        m_pressedColumn = -1;
         Invalidate();
         return true;
     }
