@@ -171,6 +171,12 @@ namespace Screenshots {
                             scan(instanceKey);
                             return;
                         }
+                        for (const Entry& entry : found) {
+                            auto cached = thumbs.find(thumbKey(entry.path, entry.modified));
+                            if (cached != thumbs.end() && cached->second.failed) {
+                                thumbs.erase(cached);
+                            }
+                        }
                         list.entries = std::move(found);
                         list.serial = nextSerial++;
                     };
