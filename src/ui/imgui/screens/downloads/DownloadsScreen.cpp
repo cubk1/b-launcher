@@ -1180,12 +1180,13 @@ namespace DownloadsScreen {
         void versionAction(const Addons::Version& version, float rowY, bool blocked) {
             float centreY = rowY + Page::ROW_H * 0.5f;
             float right = Page::right() - 12.0f;
-            ProjectInstaller::State state = ProjectInstaller::state(version.id);
+            Kind kind = query.kind;
+            std::string taskTarget = kind == Kind::World ? target : std::string();
+            ProjectInstaller::State state = ProjectInstaller::state(version.id, taskTarget);
             if (state == ProjectInstaller::State::Running) {
-                progressRing(version.id, right - 20.0f, centreY, ProjectInstaller::progress(version.id));
+                progressRing(version.id, right - 20.0f, centreY, ProjectInstaller::progress(version.id, taskTarget));
                 return;
             }
-            Kind kind = query.kind;
             bool intoInstance = !ProjectInstaller::folder(kind).empty() || kind == Kind::World;
             if ((intoInstance && ProjectInstaller::installed(version, kind, target)) ||
                 ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done)) {

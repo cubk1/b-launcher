@@ -52,7 +52,26 @@ namespace ProjectInstaller {
         };
 
         AsyncTasks background;
-        std::map<std::string, std::shared_ptr<Task>> tasks;
+        using TaskKey = std::pair<std::string, std::filesystem::path>;
+        std::map<TaskKey, std::shared_ptr<Task>> tasks;
+
+        std::filesystem::path worldDirectory(const Instances::Entry& entry) {
+            if (entry.gameDirectory.empty()) return {};
+            // Resolve the game directory even when saves has not been created yet.
+            return blb::fs::real_path(blb::fs::real_path(entry.gameDirectory) / "saves");
+        }
+
+        std::shared_ptr<Task> findTask(const std::string& versionId, const std::string& instanceKey) {
+            std::filesystem::path directory;
+            if (!instanceKey.empty()) {
+                const auto* entry = Instances::find(instanceKey);
+                if (entry == nullptr) return {};
+                directory = worldDirectory(*entry);
+                if (directory.empty()) return {};
+            }
+            auto found = tasks.find({versionId, directory});
+            return found == tasks.end() ? nullptr : found->second;
+        }
 
         struct CheckedFile {
             uint64_t size = 0;
@@ -117,8 +136,8 @@ namespace ProjectInstaller {
             }, {});
         }
 
-        std::shared_ptr<Task> begin(const std::string& versionId) {
-            std::shared_ptr<Task>& task = tasks[versionId];
+        std::shared_ptr<Task> begin(const std::string& versionId, const std::filesystem::path& directory = {}) {
+            std::shared_ptr<Task>& task = tasks[{versionId, directory}];
             if (!task) {
                 task = std::make_shared<Task>();
             }
@@ -489,7 +508,7 @@ namespace ProjectInstaller {
     }
 
     bool busy() {
-        for (const auto& [versionId, task] : tasks) {
+        for (const auto& [key, task] : tasks) {
             if (task->state.load() == (int) State::Running) {
                 return true;
             }
@@ -497,14 +516,14 @@ namespace ProjectInstaller {
         return false;
     }
 
-    State state(const std::string& versionId) {
-        auto found = tasks.find(versionId);
-        return found != tasks.end() ? (State) found->second->state.load() : State::Idle;
+    State state(const std::string& versionId, const std::string& instanceKey) {
+        auto task = findTask(versionId, instanceKey);
+        return task ? (State) task->state.load() : State::Idle;
     }
 
-    float progress(const std::string& versionId) {
-        auto found = tasks.find(versionId);
-        return found != tasks.end() ? found->second->fraction.load() : -1.0f;
+    float progress(const std::string& versionId, const std::string& instanceKey) {
+        auto task = findTask(versionId, instanceKey);
+        return task ? task->fraction.load() : -1.0f;
     }
 
     std::string folder(Addons::Kind kind) {
@@ -642,11 +661,12 @@ namespace ProjectInstaller {
     void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
-        if (entry == nullptr || file == nullptr || state(version.id) == State::Running) {
+        if (entry == nullptr || file == nullptr || state(version.id, instanceKey) == State::Running) {
             return;
         }
-        std::shared_ptr<Task> task = begin(version.id);
-        std::filesystem::path saves = entry->gameDirectory / "saves";
+        std::filesystem::path saves = worldDirectory(*entry);
+        if (saves.empty()) return;
+        std::shared_ptr<Task> task = begin(version.id, saves);
         std::string instanceName = entry->info.id;
         Addons::File chosen = *file;
         run(task, [task, chosen, saves, title, instanceName](blb::cancellation_token token) -> Continuation {
