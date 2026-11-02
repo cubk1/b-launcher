@@ -43,6 +43,7 @@ namespace Profiles {
         struct Image {
             bool requested = false;
             std::shared_ptr<const Pixels> pixels;
+            bool failed = false;
         };
         std::map<std::string, Image> images;
 
@@ -454,14 +455,14 @@ namespace Profiles {
                 tasks.run(
                         [id, url, make](blb::cancellation_token token) -> Continuation {
                             auto data = blb::net::http_get(url, token);
-                            if (!data) {
-                                return nullptr;
-                            }
-                            std::shared_ptr<const Pixels> source = Pixels::decode(data->data(), data->size());
+                            std::shared_ptr<const Pixels> source =
+                                    data ? Pixels::decode(data->data(), data->size()) : nullptr;
                             std::shared_ptr<const Pixels> made = source != nullptr ? make(*source) : nullptr;
-                            return [id, made] { images[id].pixels = made; };
+                            return [id, made] { images[id] = Image{true, made, made == nullptr}; };
                         },
-                        nullptr);
+                        [id](const std::string&) -> Continuation {
+                            return [id] { images[id].failed = true; };
+                        });
             }
             return entry.pixels;
         }
@@ -485,6 +486,8 @@ namespace Profiles {
 
     void reload(const std::string& key) {
         if (profiles[key].working.empty()) {
+            // Retry failures on an explicit reload; keep successful and in-flight images.
+            std::erase_if(images, [](const auto& item) { return item.second.failed; });
             load(key);
         }
     }
