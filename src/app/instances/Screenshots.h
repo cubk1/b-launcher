@@ -28,6 +28,7 @@ namespace Screenshots {
 
     std::shared_ptr<const Pixels> thumbnail(const std::filesystem::path& path, std::int64_t modified);
     std::shared_ptr<const Pixels> fullImage(const std::filesystem::path& path, std::int64_t modified);
+    bool fullImageFailed(const std::filesystem::path& path, std::int64_t modified);
     void forgetFullImage();
     void copy(const std::filesystem::path& path);
 
