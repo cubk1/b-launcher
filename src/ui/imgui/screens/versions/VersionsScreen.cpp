@@ -154,6 +154,7 @@ namespace VersionsScreen {
         float searchY = Page::TOP + 32.0f;
         float searchW = std::min(SEARCH_W, width);
         bool hasText = !UiInput::get(SEARCH_ID).empty();
+        float clearRoom = hasText ? 26.0f : 0.0f;
         bool focused = UiInput::isFocused(SEARCH_ID);
         bool over = !covered && NewUi::hit(left, searchY, searchW, SEARCH_H);
         UiRender::roundRect(left, searchY, searchW, SEARCH_H, 8.0f, UiTheme::overlay(10));
@@ -164,10 +165,11 @@ namespace VersionsScreen {
         UiWidgets::iconBeside(Ui::glyph(0xf002), left + 16.0f, hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                               searchY, SEARCH_H, focused ? UiTheme::textSecondary() : UiTheme::textFaint(), 11.0f);
         InputWidget input(SEARCH_ID);
-        input.area(left + 31.0f, searchW - 43.0f, UiWidgets::TEXT_CONTROL, 14.0f)
+        input.area(left + 31.0f, searchW - 43.0f - clearRoom, UiWidgets::TEXT_CONTROL, 14.0f)
                 .limit(64)
                 .hint("搜索版本")
-                .bounds(left, searchY, searchW, SEARCH_H);
+                .bounds(left, searchY, searchW - clearRoom, SEARCH_H)
+                .block(covered);
         input.paint();
         if (hasText) {
             float clearX = left + searchW - 16.0f;
