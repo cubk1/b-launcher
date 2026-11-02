@@ -254,7 +254,7 @@ namespace ModGraph {
             for (const Mods::Mod& mod : list.mods) {
                 identified += ModManager::remote(mod) != nullptr ? 1 : 0;
             }
-            return out + "|" + std::to_string(identified);
+            return out + "|" + std::to_string(identified) + "|" + std::to_string(ModManager::metadataRevision());
         }
 
         float headerOf(const Cluster& cluster) {

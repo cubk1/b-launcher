@@ -95,7 +95,7 @@ namespace ModManager {
         std::set<std::string> fetchingProjects;
         std::map<std::string, Clock::time_point> projectRetry;
         std::map<std::string, Addons::Versions> versionLists;
-        int remotesRevision = 0;
+        int metadataVersion = 0;
         const std::vector<Change> NO_CHANGES;
         const Progress IDLE;
 
@@ -223,6 +223,7 @@ namespace ModManager {
                             }
                         }
                         return [wanted, found, error] {
+                            ++metadataVersion;
                             for (const std::string& id : wanted) {
                                 fetchingProjects.erase(id);
                             }
@@ -243,6 +244,7 @@ namespace ModManager {
                     },
                     [wanted](const std::string&) -> Continuation {
                         return [wanted] {
+                            ++metadataVersion;
                             for (const std::string& id : wanted) {
                                 fetchingProjects.erase(id);
                                 projectRetry[id] = Clock::now() + std::chrono::seconds(30);
@@ -323,7 +325,7 @@ namespace ModManager {
                             for (const auto& item : found) {
                                 remotes[item.first] = item.second;
                             }
-                            remotesRevision++;
+                            metadataVersion++;
                             if (error.empty()) {
                                 for (const std::string& hash : lookup) {
                                     if (found.count(hash) == 0) {
@@ -376,7 +378,7 @@ namespace ModManager {
             if (!state.running && list.serial != state.serial) {
                 identify(key, state, list);
             }
-            std::tuple<int, int, int> stamp{list.serial, state.revision, remotesRevision};
+            std::tuple<int, int, int> stamp{list.serial, state.revision, metadataVersion};
             if (stamp == state.requested) {
                 return state;
             }
@@ -688,6 +690,10 @@ namespace ModManager {
     const Project* project(const std::string& projectId) {
         auto found = projects.find(projectId);
         return found != projects.end() ? &found->second : nullptr;
+    }
+
+    int metadataRevision() {
+        return metadataVersion;
     }
 
     std::string title(const std::string& projectId) {
