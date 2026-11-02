@@ -71,16 +71,20 @@ namespace MainWindow {
     static float fold = 0.0f;
     static bool folded = false;
     static bool foldLoaded = false;
-    static const float ITEM_H = 30.0f;
-    static const float ITEM_STEP = 32.0f;
-    static const float SEARCH_Y = 50.0f;
-    static const float SEARCH_H = 28.0f;
+    // Second stage below the rail: the sidebar can go all the way to zero, brought back by the edge handle.
+    static float hide = 0.0f;
+    static bool hidden = false;
+    static bool hideLoaded = false;
+    static const float ITEM_H = 34.0f;
+    static const float ITEM_STEP = 36.0f;
+    static const float SEARCH_Y = 54.0f;
+    static const float SEARCH_H = 32.0f;
     static const float LIST_TOP = SEARCH_Y + SEARCH_H + 8.0f;
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
     static const float FOOTER_H = 10.0f + 5 * ITEM_STEP + 10.0f;
-    static const float GROUP_H = 26.0f;
+    static const float GROUP_H = 30.0f;
     static const float GROUP_GAP = 6.0f;
 
     static const int PAGE_HOME = 0;
@@ -841,6 +845,9 @@ namespace MainWindow {
     }
 
     static void sidebar() {
+        if (sideW < 1.0f) {
+            return;
+        }
         UiRender::scissor(0, 0, sideW, height());
         brand();
         themeSwitch();
@@ -870,9 +877,11 @@ namespace MainWindow {
                                        isCollapsed(sources[i].key) && !searching ? 0.0f : 1.0f, 16.0f);
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
-        contentH += ITEM_STEP;
+        // The add-folder row belongs to the full sidebar; it fades out with the rail so only icons remain.
+        float folderRoom = std::max(0.0f, 1.0f - fold);
+        contentH += ITEM_STEP * folderRoom;
         if (hiddenCount() > 0) {
-            contentH += ITEM_STEP;
+            contentH += ITEM_STEP * folderRoom;
         }
 
         float listBottom = height() - FOOTER_H - 10.0f;
@@ -1002,13 +1011,16 @@ namespace MainWindow {
             arrangeSource.clear();
             arrangeKeys.clear();
         }
-        if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
+        if (folderRoom > 0.01f && cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
             UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            bool blocked = dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH);
+            bool blocked = dragging || folderRoom < 0.9f || !NewUi::rawHit(0, LIST_TOP, sideW, viewH);
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * folderRoom;
             addFolderRow(cursor, blocked);
             if (hiddenCount() > 0) {
                 hiddenFolderRow(cursor + ITEM_STEP, blocked);
             }
+            UiRender::alphaMul = savedAlpha;
             UiRender::unscissor();
         }
 
@@ -1040,6 +1052,41 @@ namespace MainWindow {
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
         navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
         UiRender::unscissor();
+    }
+
+    // Shows up only when the pointer reaches the window's left edge, so it never competes with the list.
+    static void sidebarHandle() {
+        const float w = 9.0f;
+        const float h = 46.0f;
+        float x = 2.0f;
+        float y = (height() - h) * 0.5f;
+        float hitW = 14.0f;
+        bool over = !NewUi::overlayCoversMouse() && NewUi::hit(0.0f, y, hitW, h);
+        bool atEdge = NewUi::mouseX <= 10.0f && NewUi::mouseY >= y - 70.0f && NewUi::mouseY <= y + h + 70.0f;
+        float shown = UiState::motion("sidebar#handle", (over || atEdge) ? 1.0f : 0.0f, 14.0f);
+        if (shown < 0.01f) {
+            return;
+        }
+        float savedAlpha = UiRender::alphaMul;
+        UiRender::alphaMul = savedAlpha * shown;
+        UiRender::roundRect(x, y, w, h, 4.5f, UiTheme::overlay(Ui::round(30 * shown)));
+        UiWidgets::icon(Ui::glyph(hidden ? 0xf054 : 0xf053), x + w * 0.5f, y + h * 0.5f,
+                        UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), shown), 8.0f);
+        UiRender::alphaMul = savedAlpha;
+        if (over) {
+            NewUi::tooltipText = hidden ? "展开侧栏" : "隐藏侧栏";
+            NewUi::tooltipX = x + w + 10.0f;
+            NewUi::tooltipY = y + 8.0f;
+        }
+        if (NewUi::click(0.0f, y, hitW, h)) {
+            UiSound::request(UiSound::TICK);
+            hidden = !hidden;
+            Config::data()["sidebarHidden"] = hidden;
+            Config::save();
+            if (hidden && UiInput::isFocused(SEARCH_ID)) {
+                UiInput::blur();
+            }
+        }
     }
 
     static void followList() {
@@ -1101,6 +1148,11 @@ namespace MainWindow {
         if (folded) {
             setFolded(false);
         }
+        if (hidden) {
+            hidden = false;
+            Config::data()["sidebarHidden"] = false;
+            Config::save();
+        }
         focusSearch();
     }
 
@@ -1115,8 +1167,14 @@ namespace MainWindow {
             foldLoaded = true;
             folded = b_launcher_base::json_bool(Config::data(), "sidebarFolded");
         }
+        if (!hideLoaded) {
+            hideLoaded = true;
+            hidden = b_launcher_base::json_bool(Config::data(), "sidebarHidden");
+        }
         fold = UiState::motionFrom("sidebar#fold", folded ? 1.0f : 0.0f, 12.0f, folded ? 1.0f : 0.0f);
-        sideW = UiRender::snapLayout(UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold));
+        hide = UiState::motionFrom("sidebar#hide", hidden ? 1.0f : 0.0f, 14.0f, hidden ? 1.0f : 0.0f);
+        float full = UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold);
+        sideW = UiRender::snapLayout(UiRender::lerp(full, 0.0f, hide));
         itemW = sideW - 2.0f * ITEM_X;
     }
 
@@ -1136,8 +1194,10 @@ namespace MainWindow {
             float uSpan = 1.0f;
             float vSpan = 1.0f;
             coverSpan(SIDEBAR_WIDTH + r, height(), SIDEBAR_WIDTH + r, MIN_HEIGHT, uSpan, vSpan);
-            UiRender::texture(Background::sidebar(), 0, 0, sideW + r, height(), 0.0f, (1.0f - vSpan) * 0.5f,
-                              uSpan * (sideW + r) / (SIDEBAR_WIDTH + r), (1.0f + vSpan) * 0.5f);
+            if (sideW > 1.0f) {
+                UiRender::texture(Background::sidebar(), 0, 0, sideW + r, height(), 0.0f, (1.0f - vSpan) * 0.5f,
+                                  uSpan * (sideW + r) / (SIDEBAR_WIDTH + r), (1.0f + vSpan) * 0.5f);
+            }
             coverSpan(width() - sideW, height(), MIN_WIDTH - SIDEBAR_WIDTH, MIN_HEIGHT, uSpan, vSpan);
             ShaderUtil::roundTex(UiRender::transformX(sideW), UiRender::transformY(0),
                                  UiRender::transformW(width() - sideW), UiRender::transformW(height()),
@@ -1152,6 +1212,7 @@ namespace MainWindow {
         UiRender::outlineFade(sideW, 0, width() - sideW, height(), r, UiTheme::outline(), 1.0f, 0.5f);
         sidebar();
         content();
+        sidebarHandle();
 
         // Every page but the home page offers the way back in the title bar, where no page keeps its own controls.
         if (pages.page != PAGE_HOME) {

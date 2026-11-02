@@ -4,10 +4,10 @@
 
 namespace MainWindow {
 
-    constexpr float MIN_WIDTH = 820.0f;
+    constexpr float MIN_WIDTH = 880.0f;
     constexpr float MIN_HEIGHT = 510.0f;
     constexpr float TITLE_HEIGHT = 44.0f;
-    constexpr float SIDEBAR_WIDTH = 188.0f;
+    constexpr float SIDEBAR_WIDTH = 204.0f;
 
     extern bool closeRequested;
     extern bool minimizeRequested;

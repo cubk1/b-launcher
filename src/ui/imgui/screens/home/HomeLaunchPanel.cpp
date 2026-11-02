@@ -32,16 +32,17 @@ namespace HomeLaunchPanel {
     namespace blb = b_launcher_base;
 
     namespace {
-        constexpr float CARD_MAX = 520.0f;
-        constexpr float ACCOUNT_H = 60.0f;
-        constexpr float ACCOUNT_GAP = 12.0f;
-        constexpr float LAUNCH_H = 64.0f;
-        constexpr float SIDE_W = 104.0f;
+        constexpr float CARD_MAX = 560.0f;
+        constexpr float ACCOUNT_H = 74.0f;
+        constexpr float ACCOUNT_GAP = 14.0f;
+        constexpr float LAUNCH_H = 80.0f;
+        constexpr float SIDE_W = 120.0f;
         constexpr float SIDE_GAP = 10.0f;
-        constexpr float SIDE_BTN = 27.0f;
-        constexpr float RADIUS = 14.0f;
-        constexpr float PAD = 14.0f;
-        constexpr float FACE = 36.0f;
+        constexpr float SIDE_BTN = 35.0f;
+        constexpr float RADIUS = 16.0f;
+        constexpr float PAD = 18.0f;
+        constexpr float FACE = 46.0f;
+        constexpr float ACTION = 32.0f;
         constexpr float MENU_W = 200.0f;
 
         void picture(uint32_t texture, float x, float y, float size, float radius) {
@@ -51,11 +52,11 @@ namespace HomeLaunchPanel {
         }
 
         void letter(const std::string& name, float x, float y, float size) {
-            UiRender::roundRect(x, y, size, size, 10.0f, UiTheme::surfaceRaised());
+            UiRender::roundRect(x, y, size, size, 12.0f, UiTheme::surfaceRaised());
             std::string text = name.empty() ? "?" : std::string(1, (char) std::toupper((unsigned char) name[0]));
-            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_TITLE);
+            float textW = UiFont::width(text, UiFont::MEDIUM, 18.0f);
             UiRender::textY(text, x + (size - textW) * 0.5f, y, size, UiTheme::textSecondary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_TITLE);
+                            18.0f);
         }
 
         void accountsMenu(float x, float y) {
@@ -89,26 +90,39 @@ namespace HomeLaunchPanel {
                     x, y, MENU_W);
         }
 
+        bool actionButton(const std::string& id, int glyph, const std::string& hint, float x, float y, float size,
+                          bool blocked) {
+            bool hovered = !blocked && NewUi::hit(x, y, size, size);
+            float hover = UiState::motion(id, hovered ? 1.0f : 0.0f, 18.0f);
+            if (hover > 0.001f) {
+                UiRender::roundRect(x, y, size, size, 9.0f, UiTheme::overlay(Ui::round(16 * hover)));
+            }
+            UiWidgets::icon(Ui::glyph(glyph), x + size * 0.5f, y + size * 0.5f,
+                            UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), hover), 14.0f);
+            if (hovered && !NewUi::overlayCoversMouse()) {
+                Page::tooltip(hint, x, y, size, size);
+            }
+            return !blocked && NewUi::click(x, y, size, size);
+        }
+
         void accountCard(float x, float y, float w, bool blocked) {
             HomeWidgets::panel(x, y, w, ACCOUNT_H);
             const blb::auth::account* account = Accounts::current();
             float faceY = y + (ACCOUNT_H - FACE) * 0.5f;
             float faceX = x + PAD;
-            float buttonY = y + (ACCOUNT_H - 28.0f) * 0.5f;
-            float moreX = x + w - PAD - 28.0f;
-            float switchX = moreX - 6.0f - 28.0f;
-            float refreshX = switchX - 6.0f - 28.0f;
-            float textX = faceX + FACE + 12.0f;
-            float textRoom = std::max(0.0f, refreshX - 8.0f - textX);
+            float buttonY = y + (ACCOUNT_H - ACTION) * 0.5f;
+            float switchX = x + w - PAD - ACTION;
+            float refreshX = switchX - 10.0f - ACTION;
+            float textX = faceX + FACE + 14.0f;
+            float textRoom = std::max(0.0f, refreshX - 12.0f - textX);
 
             if (account == nullptr) {
-                UiRender::roundRect(faceX, faceY, FACE, FACE, 10.0f, UiTheme::surfaceRaised());
+                UiRender::roundRect(faceX, faceY, FACE, FACE, 12.0f, UiTheme::surfaceRaised());
                 UiWidgets::icon(Ui::glyph(0xf007), faceX + FACE * 0.5f, faceY + FACE * 0.5f, UiTheme::textMuted(),
                                 FACE * 0.36f);
-                UiRender::textY("未登录", textX, y + 11.0f, 20.0f, UiTheme::textPrimary(), UiFont::BOLD,
-                                UiWidgets::TEXT_TITLE);
-                UiRender::textY(UiFont::fitEnd("添加账号后即可启动游戏", UiFont::MEDIUM, UiWidgets::TEXT_SMALL, textRoom),
-                                textX, y + 32.0f, 16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                UiRender::textY("未登录", textX, y + 14.0f, 22.0f, UiTheme::textPrimary(), UiFont::BOLD, 17.0f);
+                UiRender::textY(UiFont::fitEnd("添加账号后即可启动游戏", UiFont::MEDIUM, 12.5f, textRoom), textX,
+                                y + 40.0f, 18.0f, UiTheme::textMuted(), UiFont::MEDIUM, 12.5f);
                 bool hovered = !blocked && NewUi::hit(x, y, w, ACCOUNT_H);
                 if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
                     NewUi::rightClick = false;
@@ -125,31 +139,26 @@ namespace HomeLaunchPanel {
             std::string key = Accounts::keyOf(*account);
             uint32_t face = Textures::of(Accounts::face(*account));
             if (face != 0) {
-                picture(face, faceX, faceY, FACE, 10.0f);
+                picture(face, faceX, faceY, FACE, 12.0f);
             } else {
                 letter(account->name, faceX, faceY, FACE);
             }
-            UiRender::textY(UiFont::fitEnd(account->name, UiFont::BOLD, UiWidgets::TEXT_TITLE, textRoom), textX,
-                            y + 11.0f, 20.0f, UiTheme::textPrimary(), UiFont::BOLD, UiWidgets::TEXT_TITLE);
+            UiRender::textY(UiFont::fitEnd(account->name, UiFont::BOLD, 17.0f, textRoom), textX, y + 14.0f, 22.0f,
+                            UiTheme::textPrimary(), UiFont::BOLD, 17.0f);
             bool expired = Accounts::expired(key);
             std::string kind = expired ? std::string("登录已过期，点击刷新") : Accounts::kindOf(*account);
-            UiRender::textY(UiFont::fitEnd(kind, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, textRoom), textX, y + 32.0f,
-                            16.0f, expired ? UiTheme::danger() : UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_SMALL);
+            UiRender::textY(UiFont::fitEnd(kind, UiFont::MEDIUM, 12.5f, textRoom), textX, y + 40.0f, 18.0f,
+                            expired ? UiTheme::danger() : UiTheme::textMuted(), UiFont::MEDIUM, 12.5f);
 
             if (Accounts::busy(key)) {
-                Page::spinner(refreshX + 14.0f, buttonY + 14.0f, 6.0f, UiTheme::accent());
-            } else if (Page::iconButton("home#account#refresh", 0xf021, "重新登录", refreshX, buttonY, blocked)) {
+                Page::spinner(refreshX + ACTION * 0.5f, buttonY + ACTION * 0.5f, 7.0f, UiTheme::accent());
+            } else if (actionButton("home#account#refresh", 0xf021, "重新登录", refreshX, buttonY, ACTION, blocked)) {
                 UiSound::request(UiSound::TICK);
                 Accounts::refresh(key);
             }
-            if (Page::iconButton("home#account#switch", 0xf0c0, "切换账号", switchX, buttonY, blocked)) {
+            if (actionButton("home#account#switch", 0xf0c0, "切换账号", switchX, buttonY, ACTION, blocked)) {
                 UiSound::request(UiSound::TICK);
-                accountsMenu(switchX - MENU_W + 28.0f, y + ACCOUNT_H + 6.0f);
-            }
-            if (Page::iconButton("home#account#more", 0xf141, "更多", moreX, buttonY, blocked)) {
-                UiSound::request(UiSound::TICK);
-                accountsMenu(moreX - MENU_W + 28.0f, y + ACCOUNT_H + 6.0f);
+                accountsMenu(switchX + ACTION - MENU_W, y + ACCOUNT_H + 6.0f);
             }
         }
 
@@ -271,27 +280,26 @@ namespace HomeLaunchPanel {
                     break;
             }
 
-            float titleW = UiFont::width(title, UiFont::BOLD, 18.0f);
-            UiRender::textY(title, x + (w - titleW) * 0.5f, y + 12.0f, 24.0f, UiTheme::onAccent(), UiFont::BOLD,
-                            18.0f);
+            float titleW = UiFont::width(title, UiFont::BOLD, 21.0f);
+            UiRender::textY(title, x + (w - titleW) * 0.5f, y + 15.0f, 28.0f, UiTheme::onAccent(), UiFont::BOLD,
+                            21.0f);
             if (!detail.empty()) {
-                float detailW = UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                float detailW = UiFont::width(detail, UiFont::MEDIUM, 12.5f);
                 std::string shown = detailW > w - 2.0f * PAD
-                        ? UiFont::fitEnd(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, w - 2.0f * PAD)
+                        ? UiFont::fitEnd(detail, UiFont::MEDIUM, 12.5f, w - 2.0f * PAD)
                         : detail;
-                detailW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-                UiRender::textY(shown, x + (w - detailW) * 0.5f, y + 37.0f, 16.0f,
-                                (UiTheme::onAccent() & 0x00FFFFFFu) | 0xB4000000u, UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
+                detailW = UiFont::width(shown, UiFont::MEDIUM, 12.5f);
+                UiRender::textY(shown, x + (w - detailW) * 0.5f, y + 45.0f, 18.0f,
+                                (UiTheme::onAccent() & 0x00FFFFFFu) | 0xB4000000u, UiFont::MEDIUM, 12.5f);
             }
             if (state == Game::State::Preparing) {
                 float fraction = std::clamp(Game::progress(key), 0.0f, 1.0f);
                 float trackX = x + PAD;
                 float trackW = w - 2.0f * PAD;
-                UiRender::roundRect(trackX, y + LAUNCH_H - 8.0f, trackW, 2.0f, 1.0f,
+                UiRender::roundRect(trackX, y + LAUNCH_H - 10.0f, trackW, 3.0f, 1.5f,
                                     (UiTheme::onAccent() & 0x00FFFFFFu) | 0x40000000u);
                 if (fraction > 0.001f) {
-                    UiRender::roundRect(trackX, y + LAUNCH_H - 8.0f, trackW * fraction, 2.0f, 1.0f,
+                    UiRender::roundRect(trackX, y + LAUNCH_H - 10.0f, trackW * fraction, 3.0f, 1.5f,
                                         UiTheme::onAccent());
                 }
             }
@@ -331,14 +339,13 @@ namespace HomeLaunchPanel {
         bool sideButton(const std::string& id, const std::string& label, float x, float y, float w, bool blocked) {
             bool hovered = !blocked && NewUi::hit(x, y, w, SIDE_BTN);
             float hover = UiState::motion(id, hovered ? 1.0f : 0.0f, 18.0f);
-            UiRender::roundRect(x, y, w, SIDE_BTN, 9.0f, UiTheme::surfaceRaised());
+            UiRender::roundRect(x, y, w, SIDE_BTN, 10.0f, UiTheme::surfaceRaised());
             if (hover > 0.001f) {
-                UiRender::roundRect(x, y, w, SIDE_BTN, 9.0f, UiTheme::overlay(Ui::round(16 * hover)));
+                UiRender::roundRect(x, y, w, SIDE_BTN, 10.0f, UiTheme::overlay(Ui::round(16 * hover)));
             }
-            UiRender::outline(x, y, w, SIDE_BTN, 9.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, SIDE_BTN, 10.0f, UiTheme::outlineSoft());
             Page::centredText(label, x + w * 0.5f, y, SIDE_BTN,
-                              UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), hover),
-                              UiWidgets::TEXT_SMALL);
+                              UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), hover), 12.5f);
             return !blocked && NewUi::click(x, y, w, SIDE_BTN);
         }
     }

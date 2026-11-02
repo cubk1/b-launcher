@@ -5,13 +5,13 @@
 
 namespace UiWidgets {
 
-    constexpr float TEXT_BODY = 13.5f;
-    constexpr float TEXT_CONTROL = 13.0f;
-    constexpr float TEXT_SMALL = 11.0f;
-    constexpr float TEXT_CAPTION = 9.5f;
-    constexpr float TEXT_TITLE = 14.5f;
-    constexpr float TEXT_ICON = 12.0f;
-    constexpr float TEXT_PILL = 11.0f;
+    constexpr float TEXT_BODY = 14.8f;
+    constexpr float TEXT_CONTROL = 14.2f;
+    constexpr float TEXT_SMALL = 12.2f;
+    constexpr float TEXT_CAPTION = 10.2f;
+    constexpr float TEXT_TITLE = 16.0f;
+    constexpr float TEXT_ICON = 13.0f;
+    constexpr float TEXT_PILL = 12.0f;
 
     void dots(float x, float y, uint32_t color);
     void icon(const std::string& glyph, float cx, float cy, uint32_t color, float size);
