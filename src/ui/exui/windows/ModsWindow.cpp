@@ -37,13 +37,11 @@ namespace ForgottenMelody {
             return text;
         }
 
-        // A mod keeps its key while it is turned off and on, which renames its file to and from .disabled.
+        // Keep the key across both disabled suffixes supported by the mod scanner.
         std::string keyOf(const std::filesystem::path& file) {
-            std::wstring text = file.wstring();
-            if (endsWith(lowered(text), L".disabled")) {
-                text.resize(text.size() - 9);
-            }
-            return Platform::narrow(text);
+            std::filesystem::path enabled = file;
+            if (b_launcher_base::modpack::is_disabled_file(file)) enabled.replace_extension();
+            return Platform::narrow(enabled.wstring());
         }
 
         // What the default interface takes as a mod when files are dropped on it.
