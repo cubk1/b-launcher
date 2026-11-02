@@ -83,6 +83,7 @@ namespace InstancePage {
         constexpr int SECTION_SCREENSHOTS = 5;
         PageTransition sections(SECTION_MAIN);
         std::string sectionKey;
+        bool screenshotsFromHome = false;
 
         std::string renaming;
         std::string renameText;
@@ -959,6 +960,7 @@ namespace InstancePage {
             if (Page::navRow("instance#screenshots", "截图管理", shotsValue, y, blocked, Page::rowCorners(index, count),
                              0xf030)) {
                 Screenshots::scan(entry.key);
+                screenshotsFromHome = false;
                 sections.go(SECTION_SCREENSHOTS);
             }
             y += Page::ROW_H;
@@ -1232,6 +1234,7 @@ namespace InstancePage {
             sectionKey = id;
             sections.page = SECTION_MAIN;
             sections.mix = 1.0f;
+            screenshotsFromHome = false;
         }
         Instances::Entry entry = *found;
         sections.begin();
@@ -1251,7 +1254,14 @@ namespace InstancePage {
             }
         } else if (sections.page == SECTION_SCREENSHOTS) {
             if (InstanceScreenshots::draw(entry)) {
-                sections.go(SECTION_MAIN);
+                if (screenshotsFromHome) {
+                    screenshotsFromHome = false;
+                    sections.page = SECTION_MAIN;
+                    sections.mix = 1.0f;
+                    MainWindow::showHome();
+                } else {
+                    sections.go(SECTION_MAIN);
+                }
             }
         } else {
             mainSection(entry);
@@ -1295,6 +1305,7 @@ namespace InstancePage {
     void showScreenshots(const std::string& key) {
         MainWindow::openVersionSettings(key);
         sectionKey = key;
+        screenshotsFromHome = true;
         Screenshots::scan(key);
         if (sections.page != SECTION_SCREENSHOTS) {
             sections.go(SECTION_SCREENSHOTS);

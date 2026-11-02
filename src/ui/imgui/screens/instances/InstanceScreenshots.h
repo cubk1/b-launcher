@@ -2,8 +2,12 @@
 
 #include "app/instances/Instances.h"
 
+#include <cstdint>
+#include <string>
+
 namespace InstanceScreenshots {
 
     bool draw(const Instances::Entry& entry);
-    void openAt(const std::string& key, int index);
+    std::string dateText(std::int64_t mtime);
+    std::string sizeText(std::uint64_t bytes);
 }

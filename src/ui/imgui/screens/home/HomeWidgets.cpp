@@ -7,7 +7,7 @@
 #include "app/system/ServerStatus.h"
 #include "ui/imgui/screens/home/QuickActions.h"
 #include "ui/imgui/screens/instances/InstancePage.h"
-#include "ui/imgui/screens/instances/InstanceScreenshots.h"
+#include "ui/imgui/screens/instances/ScreenshotViewer.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -112,8 +112,7 @@ namespace HomeWidgets {
             UiRender::outline(x, y, w, h, SHOTS_RADIUS, UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), lit));
             if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::PAGE);
-                InstancePage::showScreenshots(key);
-                InstanceScreenshots::openAt(key, index);
+                ScreenshotViewer::open(key, index);
             }
         }
 
