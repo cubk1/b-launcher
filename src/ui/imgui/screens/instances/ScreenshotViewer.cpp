@@ -108,6 +108,7 @@ namespace ScreenshotViewer {
             zoom = zoomTarget = 1.0f;
             panX = panY = panTargetX = panTargetY = 0.0f;
             pressing = false;
+            lastPress = -1.0;
             Screenshots::forgetFullImage();
         }
 
@@ -408,14 +409,15 @@ namespace ScreenshotViewer {
 
             if (NewUi::pendingClick && !NewUi::clickConsumed && NewUi::hit(0.0f, 0.0f, windowW, windowH)) {
                 NewUi::clickConsumed = true;
-                bool twice = now - lastPress < DOUBLE_CLICK && std::fabs(mx - pressX) < 6.0f &&
+                bool imagePress = overImage && !inPrev && !inNext;
+                bool twice = imagePress && now - lastPress < DOUBLE_CLICK && std::fabs(mx - pressX) < 6.0f &&
                         std::fabs(my - pressY) < 6.0f;
-                lastPress = twice ? -1.0 : now;
+                lastPress = imagePress && !twice ? now : -1.0;
                 pressX = lastX = mx;
                 pressY = lastY = my;
                 dragged = false;
                 pressing = !twice;
-                if (twice && overImage) {
+                if (twice) {
                     toggleZoom(full ? full->width : 0, mx, my);
                 }
             }
@@ -487,7 +489,6 @@ namespace ScreenshotViewer {
         layer.active = true;
         closing = false;
         key = instanceKey;
-        lastPress = -1.0;
         copiedAt = -10.0;
         go(at);
         UiState::remove(OPEN);
