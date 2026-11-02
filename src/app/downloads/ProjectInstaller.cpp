@@ -35,6 +35,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <system_error>
 
 namespace ProjectInstaller {
 
@@ -291,13 +292,26 @@ namespace ProjectInstaller {
             return blb::fs::safe_filename(name) ? name : std::string("World");
         }
 
-        std::filesystem::path freePath(const std::filesystem::path& folder, const std::string& stem,
-                                       const std::string& extension) {
-            std::filesystem::path target = folder / blb::path_from_utf8(stem + extension);
-            for (int i = 2; blb::fs::exists(target); i++) {
-                target = folder / blb::path_from_utf8(stem + " (" + std::to_string(i) + ")" + extension);
+        // create must claim the destination without overwriting it. An existence
+        // check followed by a write lets concurrent world installs share a path.
+        template <class Create>
+        std::filesystem::path createUniquePath(const std::filesystem::path& folder, const std::string& stem,
+                                               const std::string& extension, Create create) {
+            for (uint64_t i = 1;; ++i) {
+                std::string suffix = i == 1 ? std::string() : " (" + std::to_string(i) + ")";
+                auto target = folder / blb::path_from_utf8(stem + suffix + extension);
+                std::error_code error;
+                if (create(target, error)) return target;
+                if (error && error != std::errc::file_exists) {
+                    throw std::filesystem::filesystem_error("无法创建保存路径", target, error);
+                }
             }
-            return target;
+        }
+
+        std::filesystem::path createWorldDirectory(const std::filesystem::path& parent, const std::string& name) {
+            return createUniquePath(parent, name, {}, [](const auto& target, auto& error) {
+                return std::filesystem::create_directory(target, error);
+            });
         }
 
         std::vector<std::string> extractWorlds(blb::zip_reader& zip, const std::filesystem::path& saves,
@@ -312,7 +326,7 @@ namespace ProjectInstaller {
             }
             std::vector<std::string> names;
             for (const std::string& root : roots) {
-                std::filesystem::path folder = freePath(saves, worldName(root, title), std::string());
+                std::filesystem::path folder = createWorldDirectory(saves, worldName(root, title));
                 std::optional<blb::error> failure;
                 auto visited = zip.for_each([&](const blb::zip_entry& entry, blb::zip_reader& reader) {
                     if (token.is_cancelled()) {
@@ -633,25 +647,25 @@ namespace ProjectInstaller {
         }
         std::shared_ptr<Task> task = begin(version.id);
         std::filesystem::path saves = entry->gameDirectory / "saves";
-        std::error_code error;
-        std::filesystem::path scratch =
-                std::filesystem::temp_directory_path(error) / "b-launcher" / ("world-" + version.id);
         std::string instanceName = entry->info.id;
         Addons::File chosen = *file;
-        run(task, [task, chosen, saves, scratch, title, instanceName](blb::cancellation_token token) -> Continuation {
-            (void) blb::fs::remove_all(scratch);
-            if (auto made = blb::fs::create_directories(scratch); !made) {
+        run(task, [task, chosen, saves, title, instanceName](blb::cancellation_token token) -> Continuation {
+            auto temporary = std::filesystem::temp_directory_path() / "b-launcher";
+            if (auto made = blb::fs::create_directories(temporary); !made) {
                 throw std::runtime_error(made.err().message);
             }
+            auto scratch = createWorldDirectory(temporary, "world");
+            struct Cleanup {
+                const std::filesystem::path& directory;
+                ~Cleanup() { (void) blb::fs::remove_all(directory); }
+            } cleanup{scratch};
             std::vector<blb::net::download_task> files = {taskFor(chosen, scratch)};
             std::filesystem::path archive = files.front().target;
             std::string problem = download(files, task, token);
             if (token.is_cancelled()) {
-                (void) blb::fs::remove_all(scratch);
                 return nullptr;
             }
             if (!problem.empty()) {
-                (void) blb::fs::remove_all(scratch);
                 return [task, title, problem] { finish(task, false, "无法下载 " + title + "：" + problem); };
             }
             std::vector<std::string> names;
@@ -668,14 +682,15 @@ namespace ProjectInstaller {
             } else {
                 std::string stem = blb::path_to_utf8(archive.stem());
                 std::string extension = blb::path_to_utf8(archive.extension());
-                std::filesystem::path copy = freePath(saves, stem, extension);
-                if (auto copied = blb::fs::copy_file(archive, copy); copied) {
+                try {
+                    auto copy = createUniquePath(saves, stem, extension, [&](const auto& target, auto& error) {
+                        return std::filesystem::copy_file(archive, target, std::filesystem::copy_options::none, error);
+                    });
                     kept = blb::path_to_utf8(copy.filename());
-                } else {
-                    failure = copied.err().message;
+                } catch (const std::exception& exception) {
+                    failure = exception.what();
                 }
             }
-            (void) blb::fs::remove_all(scratch);
             if (token.is_cancelled()) {
                 return nullptr;
             }
