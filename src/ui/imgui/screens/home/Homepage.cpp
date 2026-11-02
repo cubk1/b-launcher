@@ -7,7 +7,6 @@
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Logo.h"
-#include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -92,9 +91,15 @@ namespace Homepage {
         constexpr float HEADER_H = 36.0f;
         constexpr float TOP_PAD = 12.0f;
         constexpr float TOP_GAP = 10.0f;
-        constexpr float PANEL_GAP = 14.0f;
+        constexpr float QUICK_GAP = 28.0f;
+        constexpr float BOTTOM_PAD = 14.0f;
         constexpr float LOGO_MIN = 96.0f;
         constexpr double URL_SETTLE = 0.8;
+
+        float logoFaint() {
+            return Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
+                                                 : (UiTheme::isLight() ? 0.12f : 0.09f);
+        }
 
         struct View {
             std::string id;
@@ -757,6 +762,10 @@ namespace Homepage {
         loadHome();
     }
 
+    bool launchShown() {
+        return source() == SOURCE_NONE && views.size() <= 1 && HomeWidgets::enabled(HomeWidgets::LAUNCH);
+    }
+
     void draw(float left, float top, float right, float bottom, float reserve, bool blocked) {
         if (!started) {
             started = true;
@@ -773,26 +782,37 @@ namespace Homepage {
             float cx = (panelLeft + panelRight) * 0.5f;
             bool covered = blocked || modal.open;
             if (!announcement) {
-                float panelW = HomeLaunchPanel::width(left, right);
-                float widgetsH = HomeWidgets::height();
-                float groupH = HomeLaunchPanel::HEIGHT + (widgetsH > 0.0f ? PANEL_GAP + widgetsH : 0.0f);
-                float room = bottom - reserve - top;
-                if (groupH + 2.0f * TOP_PAD > room) {
-                    Page::Scroll body("homepage#panel", top, bottom - reserve, groupH + 2.0f * TOP_PAD, left,
+                float listH = HomeWidgets::height();
+                float columnW = HomeWidgets::width(left, right);
+                float columnX = cx - columnW * 0.5f;
+                float floor = bottom - reserve;
+                float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
+                bool logo =
+                        !HomeWidgets::enabled(HomeWidgets::LAUNCH) && floor - top - listH - gap >= LOGO_MIN + TOP_PAD;
+                if (logo || listH <= 0.0f) {
+                    float size = std::clamp(std::min(panelRight - panelLeft, floor - top - listH - gap) * 0.46f,
+                                            LOGO_MIN, 360.0f);
+                    float logoY = (top + floor - size - gap - listH) * 0.5f - 8.0f;
+                    Logo::draw(cx - size * 0.5f, logoY, size, logoFaint());
+                    if (listH > 0.0f) {
+                        HomeWidgets::draw(columnX, logoY + size + gap, columnW, covered);
+                    }
+                } else if (listH + 2.0f * TOP_PAD > floor - top) {
+                    Page::Scroll body("homepage#widgets", top, bottom, listH + 2.0f * TOP_PAD + reserve, left,
                                       right - left);
                     bool outside = body.begin();
-                    float y = body.top - body.offset + TOP_PAD;
-                    float end = HomeLaunchPanel::draw(left, y, right, covered || outside);
-                    if (widgetsH > 0.0f) {
-                        HomeWidgets::draw(cx - panelW * 0.5f, end + PANEL_GAP, panelW, covered || outside);
-                    }
+                    HomeWidgets::draw(columnX, body.top - body.offset + TOP_PAD, columnW, covered || outside);
                     body.end();
                 } else {
-                    float y = top + std::max(TOP_PAD, (room - groupH) * 0.5f);
-                    float end = HomeLaunchPanel::draw(left, y, right, covered);
-                    if (widgetsH > 0.0f) {
-                        HomeWidgets::draw(cx - panelW * 0.5f, end + PANEL_GAP, panelW, covered);
+                    bool low = HomeWidgets::alignBottom();
+                    float y = low ? std::max(top + TOP_PAD, floor - BOTTOM_PAD - listH)
+                                  : top + std::max(TOP_PAD, (floor - top - listH) * 0.5f);
+                    float space = y - top;
+                    if (low && space >= LOGO_MIN + 2.0f * TOP_PAD) {
+                        float size = std::clamp(std::min(panelRight - panelLeft, space) * 0.46f, LOGO_MIN, 360.0f);
+                        Logo::draw(cx - size * 0.5f, top + (space - size) * 0.5f, size, logoFaint());
                     }
+                    HomeWidgets::draw(columnX, y, columnW, covered);
                 }
                 if (modal.open) {
                     drawModal(blocked);
@@ -801,9 +821,7 @@ namespace Homepage {
             }
             float size = std::clamp(std::min(panelRight - panelLeft, bottom - top) * 0.46f, LOGO_MIN, 360.0f);
             float logoY = (top + bottom - size) * 0.5f - 8.0f;
-            float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
-                                                        : (UiTheme::isLight() ? 0.12f : 0.09f);
-            Logo::draw(cx - size * 0.5f, logoY, size, faint);
+            Logo::draw(cx - size * 0.5f, logoY, size, logoFaint());
         }
         if (views.empty()) {
             return;

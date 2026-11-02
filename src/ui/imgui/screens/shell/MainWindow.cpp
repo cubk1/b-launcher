@@ -1063,8 +1063,7 @@ namespace MainWindow {
     static void content() {
         pages.begin();
         if (pages.page == PAGE_HOME) {
-            // The default home page carries the launch card itself; the others keep the floating button.
-            bool floating = Homepage::source() != Homepage::SOURCE_NONE;
+            bool floating = !Homepage::launchShown();
             Homepage::draw(Page::left(), TITLE_HEIGHT, Page::right(), height() - 14.0f,
                            floating ? LaunchButton::SIZE + 22.0f : 0.0f, NewUi::overlayCoversMouse());
             if (floating) {
@@ -1174,7 +1173,7 @@ namespace MainWindow {
             closeRequested = true;
         }
         Drop::draw(width(), height());
-        bool floating = pages.page == PAGE_HOME && Homepage::source() != Homepage::SOURCE_NONE;
+        bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();
         Notifications::render(width(), height(), floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f);
     }
 

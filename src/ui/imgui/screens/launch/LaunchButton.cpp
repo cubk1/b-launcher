@@ -181,9 +181,13 @@ namespace LaunchButton {
             return out;
         }
 
-        void launchMenu(const Instances::Entry& entry, float left, float top) {
-            std::string key = entry.key;
-            size_t count = suitable(entry).size() + 1;
+        void launchMenu(const std::string& key, float left, float top, float bottom) {
+            const Instances::Entry* entry = Instances::find(key);
+            if (entry == nullptr) {
+                return;
+            }
+            float menuH = (suitable(*entry).size() + 1) * MENU_ROW + 8.0f;
+            float menuY = bottom + 6.0f + menuH <= MainWindow::height() - 8.0f ? bottom + 6.0f : top - 6.0f - menuH;
             NewUi::openMenu(
                     "launch#more#menu",
                     [key] {
@@ -211,7 +215,7 @@ namespace LaunchButton {
                         }));
                         return items;
                     },
-                    left, top - 6.0f - count * MENU_ROW - 8.0f, MENU_W);
+                    left, menuY, MENU_W);
         }
 
         float moreButton(const Instances::Entry& entry, float right, float y, float shown) {
@@ -248,10 +252,14 @@ namespace LaunchButton {
             }
             if (shown > 0.99f && NewUi::click(x, y, size, size)) {
                 UiSound::request(UiSound::TICK);
-                launchMenu(entry, x, y);
+                launchMenu(entry.key, x, y, y + size);
             }
             return right - (size + GAP) * shown;
         }
+    }
+
+    void launchAnother(const std::string& key, float left, float top, float bottom) {
+        launchMenu(key, left, top, bottom);
     }
 
     void drawStatus(float right, float bottom) {

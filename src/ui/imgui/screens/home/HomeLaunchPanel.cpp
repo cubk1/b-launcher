@@ -1,12 +1,12 @@
 #include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "app/accounts/Accounts.h"
-#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
+#include "ui/imgui/screens/launch/LaunchButton.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
@@ -32,10 +32,6 @@ namespace HomeLaunchPanel {
     namespace blb = b_launcher_base;
 
     namespace {
-        constexpr float CARD_MAX = 520.0f;
-        constexpr float ACCOUNT_H = 60.0f;
-        constexpr float ACCOUNT_GAP = 12.0f;
-        constexpr float LAUNCH_H = 64.0f;
         constexpr float SIDE_W = 104.0f;
         constexpr float SIDE_GAP = 10.0f;
         constexpr float SIDE_BTN = 27.0f;
@@ -153,21 +149,6 @@ namespace HomeLaunchPanel {
             }
         }
 
-        std::string loaderDetail(const Instances::Entry& entry) {
-            std::string text = entry.info.id;
-            for (const auto& loader : entry.info.loaders) {
-                if (!blb::install::is_primary_loader(loader.type)) {
-                    continue;
-                }
-                text += " · " + Installer::loaderName(loader.type);
-                if (!loader.version.empty()) {
-                    text += " " + loader.version;
-                }
-                break;
-            }
-            return text;
-        }
-
         std::string uptime(double seconds) {
             int total = (int) seconds;
             char text[24];
@@ -217,8 +198,8 @@ namespace HomeLaunchPanel {
                 float cx = x + w * 0.5f;
                 float cy = y + LAUNCH_H * 0.5f;
                 UiRender::scaleFactor = savedScale * UiRender::lerp(1.0f, 0.985f, press);
-                UiRender::pivotX = cx * UiRender::uiScale;
-                UiRender::pivotY = cy * UiRender::uiScale;
+                UiRender::pivotX = cx * UiRender::uiScale + UiRender::offsetX;
+                UiRender::pivotY = cy * UiRender::uiScale + UiRender::offsetY;
             }
             UiRender::shadow(x, y, w, LAUNCH_H, RADIUS, 14.0f, 4.0f, UiTheme::shadow());
             uint32_t fill = UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.08f * hover);
@@ -245,7 +226,7 @@ namespace HomeLaunchPanel {
                         detail = "先安装一个版本";
                     } else {
                         title = "启动游戏";
-                        detail = loaderDetail(*entry);
+                        detail = entry->info.id;
                     }
                     break;
                 case Game::State::Preparing: {
@@ -305,7 +286,7 @@ namespace HomeLaunchPanel {
                     NewUi::tooltipY = y + LAUNCH_H + 6.0f;
                 }
             }
-            if (usable && NewUi::click(x, y, w, LAUNCH_H)) {
+            if (usable && !blocked && NewUi::click(x, y, w, LAUNCH_H)) {
                 UiSound::request(state == Game::State::Idle ? (signedOut ? UiSound::PAGE : UiSound::PULSE)
                                                             : UiSound::RELEASE);
                 switch (state) {
@@ -328,6 +309,49 @@ namespace HomeLaunchPanel {
             }
         }
 
+        void anotherButton(const Instances::Entry& entry, float x, float y, float shown, bool blocked) {
+            if (shown < 0.01f) {
+                return;
+            }
+            const float size = LAUNCH_H;
+            float cx = x + size * 0.5f;
+            float cy = y + size * 0.5f;
+            bool live = shown > 0.99f && !blocked;
+            bool hovered = live && NewUi::hit(x, y, size, size);
+            float hover = UiState::motion("home#launch#another#hover", hovered ? 1.0f : 0.0f, 18.0f);
+            float press =
+                    UiState::motion("home#launch#another#press", hovered && NewUi::mouseDown ? 1.0f : 0.0f, 26.0f);
+            float savedAlpha = UiRender::alphaMul;
+            float savedScale = UiRender::scaleFactor;
+            float savedPivotX = UiRender::pivotX;
+            float savedPivotY = UiRender::pivotY;
+            UiRender::pivotX = cx * UiRender::uiScale + UiRender::offsetX;
+            UiRender::pivotY = cy * UiRender::uiScale + UiRender::offsetY;
+            UiRender::scaleFactor = savedScale * UiRender::lerp(0.6f, 1.0f, shown) * UiRender::lerp(1.0f, 0.94f, press);
+            UiRender::alphaMul = savedAlpha * shown;
+            UiRender::shadow(x, y, size, size, RADIUS, 14.0f, 4.0f, UiTheme::shadow());
+            UiRender::roundRect(x, y, size, size, RADIUS,
+                                UiRender::mix(UiTheme::surface(), UiTheme::surfaceRaised(), hover));
+            UiRender::outline(x, y, size, size, RADIUS, UiTheme::outlineSoft());
+            UiWidgets::icon(Ui::glyph(0xf067), cx, cy,
+                            UiRender::mix(UiTheme::textSecondary(), UiTheme::accentText(), hover), 18.0f);
+            UiRender::alphaMul = savedAlpha;
+            UiRender::scaleFactor = savedScale;
+            UiRender::pivotX = savedPivotX;
+            UiRender::pivotY = savedPivotY;
+            if (hovered) {
+                std::string hint = "再开一个 " + entry.info.id;
+                float tipW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22.0f;
+                NewUi::tooltipText = hint;
+                NewUi::tooltipX = UiRender::clamp(cx - tipW * 0.5f, 6.0f, MainWindow::width() - tipW - 6.0f);
+                NewUi::tooltipY = y + size + 6.0f;
+            }
+            if (live && NewUi::click(x, y, size, size)) {
+                UiSound::request(UiSound::TICK);
+                LaunchButton::launchAnother(entry.key, x, y, y + size);
+            }
+        }
+
         bool sideButton(const std::string& id, const std::string& label, float x, float y, float w, bool blocked) {
             bool hovered = !blocked && NewUi::hit(x, y, w, SIDE_BTN);
             float hover = UiState::motion(id, hovered ? 1.0f : 0.0f, 18.0f);
@@ -343,30 +367,31 @@ namespace HomeLaunchPanel {
         }
     }
 
-    float width(float left, float right) {
-        return std::clamp(right - left - 80.0f, 320.0f, CARD_MAX);
+    void account(float x, float y, float w, bool blocked) {
+        accountCard(x, y, w, blocked);
     }
 
-    float draw(float left, float top, float right, bool blocked) {
-        float totalW = width(left, right);
-        float mainW = totalW - SIDE_W - SIDE_GAP;
-        float x = (left + right - totalW) * 0.5f;
-        accountCard(x, top, totalW, blocked);
-        float launchY = top + ACCOUNT_H + ACCOUNT_GAP;
-        launchCard(x, launchY, mainW, blocked);
-
+    void launch(float x, float y, float w, bool blocked) {
+        float mainW = w - SIDE_W - SIDE_GAP;
+        std::string key = Instances::selected();
+        const Instances::Entry* entry = Instances::find(key);
+        bool another = entry != nullptr && Game::state(key) == Game::State::Running;
+        float shown = UiState::motion("home#launch#another", another ? 1.0f : 0.0f, 14.0f);
+        launchCard(x, y, mainW - (LAUNCH_H + SIDE_GAP) * shown, blocked);
+        if (entry != nullptr) {
+            anotherButton(*entry, x + mainW - LAUNCH_H, y, shown, blocked);
+        }
         float sideX = x + mainW + SIDE_GAP;
-        if (sideButton("home#versions", "切换版本", sideX, launchY, SIDE_W, blocked)) {
+        if (sideButton("home#versions", "切换版本", sideX, y, SIDE_W, blocked)) {
             UiSound::request(UiSound::PAGE);
             MainWindow::showVersions();
         }
-        if (sideButton("home#versionSettings", "版本设置", sideX, launchY + SIDE_BTN + SIDE_GAP, SIDE_W, blocked)) {
+        if (sideButton("home#versionSettings", "版本设置", sideX, y + SIDE_BTN + SIDE_GAP, SIDE_W, blocked)) {
             UiSound::request(UiSound::PAGE);
             std::string key = Instances::selected();
             if (!key.empty()) {
                 MainWindow::openVersionSettings(key);
             }
         }
-        return launchY + LAUNCH_H;
     }
 }

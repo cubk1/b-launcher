@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/home/HomeWidgets.h"
+#include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeOptions.h"
 #include "app/system/Config.h"
 #include "app/system/ServerStatus.h"
@@ -35,21 +36,26 @@ namespace HomeWidgets {
     namespace {
         constexpr float GAP = 12.0f;
         constexpr float PAD = 14.0f;
+        constexpr float COLUMN_MIN = 320.0f;
+        constexpr float COLUMN_MAX = 520.0f;
         constexpr float SERVER_H = 80.0f;
         constexpr float SERVER_ICON = 44.0f;
         constexpr float TITLE_LINE = 20.0f;
         constexpr float SMALL_LINE = 18.0f;
         const char* const SECTION = "homeWidgets";
         const char* const SERVER_SECTION = "homeServer";
+        const char* const ALIGN = "homeAlign";
 
         using Kind = HomeOptions::Item;
 
         const Kind KINDS[] = {
+                {ACCOUNT, "当前账号", 0xf007},
+                {LAUNCH, "启动游戏", 0xf04b},
                 {QUICK, "快捷操作", 0xf0e7},
                 {SERVER, "服务器状态", 0xf233},
         };
 
-        HomeOptions options(SECTION, KINDS, {QUICK}, "只显示标志");
+        HomeOptions options(SECTION, KINDS, {ACCOUNT, LAUNCH, QUICK}, "只显示标志");
 
         std::string serverField(const char* key) {
             const nlohmann::json& doc = Config::data();
@@ -242,6 +248,12 @@ namespace HomeWidgets {
         }
 
         float heightOf(const std::string& id) {
+            if (id == ACCOUNT) {
+                return HomeLaunchPanel::ACCOUNT_H;
+            }
+            if (id == LAUNCH) {
+                return HomeLaunchPanel::LAUNCH_H;
+            }
             if (id == QUICK) {
                 return QuickActions::height();
             }
@@ -270,6 +282,18 @@ namespace HomeWidgets {
         return options.enabled(id);
     }
 
+    bool alignBottom() {
+        return blb::json_text(Config::data(), ALIGN) == "bottom";
+    }
+
+    void setAlignBottom(bool bottom) {
+        if (alignBottom() == bottom) {
+            return;
+        }
+        Config::data()[ALIGN] = bottom ? "bottom" : "center";
+        Config::save();
+    }
+
     std::string serverAddress() {
         return serverField("address");
     }
@@ -296,6 +320,10 @@ namespace HomeWidgets {
         UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
     }
 
+    float width(float left, float right) {
+        return std::clamp(right - left - 80.0f, COLUMN_MIN, COLUMN_MAX);
+    }
+
     float height() {
         std::vector<std::string> list = visible();
         float total = 0.0f;
@@ -308,7 +336,11 @@ namespace HomeWidgets {
     void draw(float x, float y, float w, bool blocked) {
         for (const std::string& id : visible()) {
             float h = heightOf(id);
-            if (id == QUICK) {
+            if (id == ACCOUNT) {
+                HomeLaunchPanel::account(x, y, w, blocked);
+            } else if (id == LAUNCH) {
+                HomeLaunchPanel::launch(x, y, w, blocked);
+            } else if (id == QUICK) {
                 QuickActions::draw(x, y, w, blocked);
             } else if (id == SERVER) {
                 serverCard(x, y, w, blocked);

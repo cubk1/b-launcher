@@ -50,13 +50,25 @@ void HomeOptions::load() {
     const auto& doc = Config::data();
     auto saved = doc.find(section);
     bool present = saved != doc.end() && saved->is_object();
-    order = present && saved->contains("order") ? knownIds((*saved)["order"]) : std::vector<std::string>();
-    for (const Item& item : items) {
-        if (std::find(order.begin(), order.end(), item.id) == order.end()) {
-            order.push_back(item.id);
+    std::vector<std::string> known =
+            present && saved->contains("order") ? knownIds((*saved)["order"]) : std::vector<std::string>();
+    chosen = present && saved->contains("enabled") ? knownIds((*saved)["enabled"]) : defaults;
+    order = known;
+    for (size_t i = 0; i < items.size(); i++) {
+        const char* id = items[i].id;
+        if (std::find(order.begin(), order.end(), id) != order.end()) {
+            continue;
+        }
+        auto before = order.end();
+        for (size_t j = i + 1; j < items.size() && before == order.end(); j++) {
+            before = std::find(order.begin(), order.end(), items[j].id);
+        }
+        order.insert(before, id);
+        bool fresh = !known.empty() && std::find(defaults.begin(), defaults.end(), id) != defaults.end();
+        if (fresh && std::find(chosen.begin(), chosen.end(), id) == chosen.end()) {
+            chosen.push_back(id);
         }
     }
-    chosen = present && saved->contains("enabled") ? knownIds((*saved)["enabled"]) : defaults;
 }
 
 void HomeOptions::save() {

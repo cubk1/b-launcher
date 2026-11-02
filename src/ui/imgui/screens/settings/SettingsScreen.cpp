@@ -424,7 +424,8 @@ namespace SettingsScreen {
         int homepageCount() {
             int kind = Homepage::source();
             if (kind == Homepage::SOURCE_NONE) {
-                return 2 + (HomeWidgets::enabled(HomeWidgets::QUICK) ? 1 : 0) +
+                return 2 + (HomeWidgets::enabled(HomeWidgets::LAUNCH) ? 1 : 0) +
+                        (HomeWidgets::enabled(HomeWidgets::QUICK) ? 1 : 0) +
                         (HomeWidgets::enabled(HomeWidgets::SERVER) ? 2 : 0);
             }
             return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL ? 2 : 1;
@@ -467,8 +468,22 @@ namespace SettingsScreen {
                 Page::label("主页组件", y);
                 select("settings#homeWidgets", HomeWidgets::choice(), y, blocked);
                 explain("settings#homeWidgets",
-                        "显示在主页标志下方，可以多选，拖动右侧的手柄调整顺序；全部取消就只显示标志。", y,
-                        Page::controlRight() - SELECT_W - 8.0f, blocked);
+                        "显示在主页上，可以多选，拖动右侧的手柄调整顺序；不显示启动游戏时，右下角会有启动按钮，全部取消"
+                        "就只显示标志。",
+                        y, Page::controlRight() - SELECT_W - 8.0f, blocked);
+                if (HomeWidgets::enabled(HomeWidgets::LAUNCH)) {
+                    y += Page::ROW_H;
+                    Page::label("组件位置", y);
+                    select("settings#homeAlign",
+                           std::make_shared<ModeBinding>(
+                                   "settings#homeAlign",
+                                   [] { return std::string(HomeWidgets::alignBottom() ? "靠下" : "垂直居中"); },
+                                   [](const std::string& value) { HomeWidgets::setAlignBottom(value == "靠下"); },
+                                   [] { return std::vector<std::string>{"垂直居中", "靠下"}; }),
+                           y, blocked);
+                    explain("settings#homeAlign", "主页组件放在页面中间，还是靠近底部。", y,
+                            Page::controlRight() - SELECT_W - 8.0f, blocked);
+                }
                 if (HomeWidgets::enabled(HomeWidgets::QUICK)) {
                     y += Page::ROW_H;
                     Page::label("快捷操作", y);

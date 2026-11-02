@@ -2,10 +2,9 @@
 
 namespace HomeLaunchPanel {
 
-    // Account card over the launch card, with the version controls beside it.
-    constexpr float HEIGHT = 136.0f;
+    constexpr float ACCOUNT_H = 60.0f;
+    constexpr float LAUNCH_H = 64.0f;
 
-    float width(float left, float right);
-    // Returns the bottom edge of the panel.
-    float draw(float left, float top, float right, bool blocked);
+    void account(float x, float y, float w, bool blocked);
+    void launch(float x, float y, float w, bool blocked);
 }

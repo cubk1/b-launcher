@@ -20,6 +20,7 @@ namespace Homepage {
     std::string file();
     void setFile(const std::string& value);
     void reload();
+    bool launchShown();
 
     void draw(float left, float top, float right, float bottom, float reserve, bool blocked);
     void poll();
