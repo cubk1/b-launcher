@@ -368,9 +368,34 @@ namespace KeyBindEditor {
                                  UiTheme::isLight() ? 0.32f : 0.42f);
         }
 
-        int countOf(const Index& index, const std::string& key) {
+        bool clashes(const std::vector<const KeyBinds::Binding*>& list) {
+            int debug = 0;
+            int normal = 0;
+            for (const KeyBinds::Binding* binding : list) {
+                (binding->group == KeyBinds::DEBUG_GROUP ? debug : normal)++;
+            }
+            return debug > 1 || normal > 1;
+        }
+
+        int levelOf(const Index& index, const std::string& key) {
             auto found = index.find(key);
-            return found != index.end() ? (int) found->second.size() : 0;
+            if (found == index.end() || found->second.empty()) {
+                return 0;
+            }
+            return clashes(found->second) ? 2 : 1;
+        }
+
+        bool clashFor(const Index& index, const KeyBinds::Binding& binding) {
+            auto found = index.find(binding.key);
+            if (found == index.end()) {
+                return false;
+            }
+            bool debug = binding.group == KeyBinds::DEBUG_GROUP;
+            int same = 0;
+            for (const KeyBinds::Binding* other : found->second) {
+                same += (other->group == KeyBinds::DEBUG_GROUP) == debug ? 1 : 0;
+            }
+            return same > 1;
         }
 
         void centredLabel(const std::string& text, float x, float y, float w, float h, uint32_t color, float size) {
@@ -439,14 +464,14 @@ namespace KeyBindEditor {
 
             for (const Spot* side : {&forward, &back, &six, &seven, &eight}) {
                 keycap(id + "#key#" + side->name, {}, side->x, side->y, side->w, side->h, side->w * 0.5f, unit,
-                       countOf(index, side->name), state.selected == side->name, false, dim(side->name), false);
+                       levelOf(index, side->name), state.selected == side->name, false, dim(side->name), false);
             }
             uint32_t face = UiTheme::surfaceRaised();
             UiRender::roundRect(x, y + depth, w, bodyH, radius, shade(face));
             UiRender::roundRect(x, y, w, bodyH, radius, face);
             UiRender::outline(x, y, w, bodyH, radius, UiTheme::outlineSoft());
             for (const Spot* zone : {&left, &right}) {
-                int count = countOf(index, zone->name);
+                int count = levelOf(index, zone->name);
                 bool selected = state.selected == zone->name;
                 float press = UiState::motion(id + "#key#" + zone->name, selected ? 1.0f : 0.0f, 26.0f);
                 float saved = UiRender::alphaMul;
@@ -471,7 +496,7 @@ namespace KeyBindEditor {
             UiRender::rect(x + w * 0.5f - split * 0.5f, y, split, buttonsH, seam);
             UiRender::rect(x, y + buttonsH, w, split, seam);
             keycap(id + "#key#" + wheel.name, {}, wheel.x, wheel.y, wheel.w, wheel.h, wheel.w * 0.5f, unit,
-                   countOf(index, wheel.name), state.selected == wheel.name, false, dim(wheel.name), false);
+                   levelOf(index, wheel.name), state.selected == wheel.name, false, dim(wheel.name), false);
             for (const Spot* spot : {&wheel, &forward, &back, &six, &seven, &eight, &left, &right}) {
                 spots.push_back(*spot);
             }
@@ -485,8 +510,12 @@ namespace KeyBindEditor {
                                      0.0f, 1.0f, 1.0f, UiRender::applyAlpha(0xFFFFFFFFu));
                 return;
             }
+            bool debug = group.id == KeyBinds::DEBUG_GROUP;
+            bool other = group.id == KeyBinds::OTHER_GROUP;
+            int glyph = debug ? 0xf188 : other ? 0xf141 : 0xf12e;
             UiRender::roundRect(x, y, size, size, size * 0.25f, UiTheme::surfaceRaised());
-            UiWidgets::icon(Ui::glyph(0xf12e), x + size * 0.5f, y + size * 0.5f, UiTheme::textFaint(), size * 0.5f);
+            UiWidgets::icon(Ui::glyph(glyph), x + size * 0.5f, y + size * 0.5f,
+                            debug || other ? UiTheme::textSecondary() : UiTheme::textFaint(), size * 0.5f);
         }
 
         const KeyBinds::Group* groupOf(const KeyBinds::Table& table, const std::string& id) {
@@ -786,7 +815,7 @@ namespace KeyBindEditor {
                 UiRender::alphaMul = savedNote * noteShown;
                 float noteW = UiFont::width(popover.note, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 UiRender::textY(popover.note, innerR - noteW, y, POP_HEAD,
-                                here.size() > 1 ? warningInk() : UiTheme::textMuted(), UiFont::MEDIUM,
+                                clashes(here) ? warningInk() : UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_SMALL);
                 UiRender::alphaMul = savedNote;
             }
@@ -1130,7 +1159,7 @@ namespace KeyBindEditor {
         }
         int conflicts = 0;
         for (const auto& item : byKey) {
-            conflicts += item.second.size() > 1 ? 1 : 0;
+            conflicts += clashes(item.second) ? 1 : 0;
         }
         Search& search = searchOf(id + "#search", "搜索按键绑定");
         std::string query = liveText(search);
@@ -1228,7 +1257,7 @@ namespace KeyBindEditor {
             }
             bool physical = !typing && cap.key != ImGuiKey_None && ImGui::IsKeyDown(cap.key);
             keycap(id + "#key#" + cap.name, cap.label, spot.x, spot.y, spot.w, spot.h, radius, unit,
-                   countOf(byKey, cap.name), state.selected == cap.name, physical,
+                   levelOf(byKey, cap.name), state.selected == cap.name, physical,
                    searching && matched.count(cap.name) == 0, true);
             if (state.page == 0) {
                 spots.push_back(std::move(spot));
@@ -1343,7 +1372,7 @@ namespace KeyBindEditor {
                 }
                 bool capturing = state.capturing == binding.id;
                 bool isBound = KeyBinds::bound(binding.key);
-                bool clash = isBound && countOf(byKey, binding.key) > 1;
+                bool clash = isBound && clashFor(byKey, binding);
                 std::string cap = capturing ? std::string("按下按键，Esc 解除绑定") : keyText(binding);
                 float capW = std::max(64.0f, UiFont::width(cap, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f);
                 float capX = listX + rowW - 12.0f - capW;

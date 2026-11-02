@@ -498,7 +498,7 @@ namespace KeyBinds {
             auto text = names.text.find(binding.id);
             binding.name = text != names.text.end() && !text->second.empty() ? text->second : prettify(binding.id);
             std::string space = namespaceOf(binding.id);
-            binding.group = space.empty() ? std::string("other") : space;
+            binding.group = space.empty() ? std::string(OTHER_GROUP) : space;
             for (const std::string& key : {"key.categories." + space, "key.category." + space}) {
                 auto found = names.text.find(key);
                 if (found != names.text.end() && !found->second.empty()) {
@@ -580,11 +580,13 @@ namespace KeyBinds {
                 group.id = binding.group;
                 if (binding.group == VANILLA_GROUP) {
                     group.label = "Minecraft";
+                } else if (binding.group == DEBUG_GROUP) {
+                    group.label = "调试";
                 } else {
                     auto mod = names.mods.find(binding.group);
-                    group.label = mod != names.mods.end() ? mod->second
-                            : binding.group == "other"    ? std::string("其他")
-                                                          : binding.category;
+                    group.label = mod != names.mods.end()  ? mod->second
+                            : binding.group == OTHER_GROUP ? std::string("其他")
+                                                           : binding.category;
                     auto icon = names.icons.find(binding.group);
                     if (icon != names.icons.end()) {
                         group.icon = icon->second;
@@ -596,9 +598,12 @@ namespace KeyBinds {
         for (auto& item : grouped) {
             fresh.groups.push_back(std::move(item.second));
         }
-        std::stable_sort(fresh.groups.begin(), fresh.groups.end(), [](const Group& a, const Group& b) {
-            if ((a.id == VANILLA_GROUP) != (b.id == VANILLA_GROUP)) {
-                return a.id == VANILLA_GROUP;
+        auto place = [](const Group& group) {
+            return group.id == VANILLA_GROUP ? 0 : group.id == DEBUG_GROUP ? 1 : group.id == OTHER_GROUP ? 3 : 2;
+        };
+        std::stable_sort(fresh.groups.begin(), fresh.groups.end(), [&place](const Group& a, const Group& b) {
+            if (place(a) != place(b)) {
+                return place(a) < place(b);
             }
             return blb::to_lower(a.label) < blb::to_lower(b.label);
         });

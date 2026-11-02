@@ -11,6 +11,8 @@ namespace KeyBinds {
 
     constexpr const char* UNBOUND = "key.keyboard.unknown";
     constexpr const char* VANILLA_GROUP = "minecraft";
+    constexpr const char* DEBUG_GROUP = "debug";
+    constexpr const char* OTHER_GROUP = "other";
 
     struct Binding {
         std::string id;
