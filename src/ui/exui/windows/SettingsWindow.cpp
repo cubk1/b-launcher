@@ -496,12 +496,6 @@ namespace ForgottenMelody {
                 edit.SetTooltipText(explanation);
             }
 
-            void setValue(uint32_t id, const std::wstring& value) {
-                if (Text(id) != value) {
-                    SetText(id, value);
-                }
-            }
-
             void fillGame() {
                 std::vector<std::wstring> options;
                 int selected = 0;
@@ -546,7 +540,7 @@ namespace ForgottenMelody {
             }
 
             void refreshGame() {
-                setValue(COUNT,
+                UpdateText(COUNT,
                          Instances::loading() ? std::wstring(L"正在读取…")
                                               : std::to_wstring(Instances::list().size()) + L" 个实例");
                 FindControl(REFRESH)->SetEnabled(!Instances::loading());
@@ -670,7 +664,7 @@ namespace ForgottenMelody {
                 // A new interface style waits for a restart, which a game, an install or a download would block.
                 bool pending = &UiStyles::current() != &UiStyles::running();
                 bool busy = Services::busy();
-                setValue(STYLE_HINT, !pending ? L"" : busy ? L"任务进行中，暂不能重启" : L"重启后生效");
+                UpdateText(STYLE_HINT, !pending ? L"" : busy ? L"任务进行中，暂不能重启" : L"重启后生效");
                 FindControl(RESTART)->SetVisible(pending);
                 FindControl(RESTART)->SetEnabled(!busy);
             }
@@ -708,7 +702,7 @@ namespace ForgottenMelody {
                     keys.emplace_back();
                 }
                 fill(Control<exui::ListView>(JAVA_LIST), shownJava, javaKeys, std::move(rows), std::move(keys));
-                setValue(JAVA_COUNT,
+                UpdateText(JAVA_COUNT,
                          finding && javas.list.empty() ? std::wstring(L"正在查找…")
                                                        : L"共 " + std::to_wstring(javas.list.size()) + L" 个");
                 bool chosen = !selectedKey(Control<exui::ListView>(JAVA_LIST), javaKeys).empty();
@@ -870,13 +864,13 @@ namespace ForgottenMelody {
 
             void refreshAbout() {
                 Updates::State state = Updates::state();
-                setValue(UPDATE,
+                UpdateText(UPDATE,
                          state == Updates::State::Checking            ? std::wstring(L"正在检查…")
                                  : state == Updates::State::Latest    ? std::wstring(L"已是最新版本")
                                  : state == Updates::State::Available ? L"下载 v" + Platform::widen(Updates::latest())
                                                                       : std::wstring(L"检查更新"));
                 FindControl(UPDATE)->SetEnabled(state != Updates::State::Checking && state != Updates::State::Latest);
-                setValue(UPDATE_STATUS, state == Updates::State::Failed ? L"检查失败" : L"");
+                UpdateText(UPDATE_STATUS, state == Updates::State::Failed ? L"检查失败" : L"");
             }
         };
     }

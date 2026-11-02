@@ -159,15 +159,11 @@ namespace ForgottenMelody {
         const auto* current = Accounts::current();
         std::wstring account = current == nullptr ? std::wstring(L"还没有账号")
                                                   : Platform::widen(current->name + " - " + Accounts::kindOf(*current));
-        if (account != Text(ACCOUNT)) {
-            SetText(ACCOUNT, account);
-        }
+        UpdateText(ACCOUNT, account);
 
         Game::State state = Game::state(Instances::selected());
         std::wstring caption = launchCaption(state);
-        if (caption != Text(LAUNCH)) {
-            SetText(LAUNCH, caption);
-        }
+        UpdateText(LAUNCH, caption);
         bool launchable = state == Game::State::Idle && index >= 0;
         if (FindControl(LAUNCH)->IsEnabled() != launchable) {
             FindControl(LAUNCH)->SetEnabled(launchable);

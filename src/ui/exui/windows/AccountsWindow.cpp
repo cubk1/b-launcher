@@ -120,13 +120,9 @@ namespace ForgottenMelody {
             void refresh() override {
                 bool nide8 = Checked(NIDE8);
                 std::wstring serverLabel = nide8 ? L"服务器 ID" : L"认证服务器";
-                if (Text(SERVER_LABEL) != serverLabel) {
-                    SetText(SERVER_LABEL, serverLabel);
-                }
+                UpdateText(SERVER_LABEL, serverLabel);
                 std::wstring preset = nide8 ? L"服主后台" : L"设置为 LittleSkin";
-                if (Text(PRESET) != preset) {
-                    SetText(PRESET, preset);
-                }
+                UpdateText(PRESET, preset);
                 bool registrable = !registerUrl().empty();
                 if (FindControl(REGISTER)->IsVisible() != registrable) {
                     FindControl(REGISTER)->SetVisible(registrable);
@@ -143,9 +139,7 @@ namespace ForgottenMelody {
                     PostMessageW(GetHwnd(), CHOOSE_PROFILE, 0, 0);
                 }
                 std::wstring status = state == Accounts::ServerLogin::Working ? L"正在登录…" : L"";
-                if (Text(STATUS) != status) {
-                    SetText(STATUS, status);
-                }
+                UpdateText(STATUS, status);
                 FindControl(LOGIN)->SetEnabled(state == Accounts::ServerLogin::Idle);
             }
 
@@ -352,9 +346,7 @@ namespace ForgottenMelody {
                 FindControl(REMOVE)->SetEnabled(!key.empty());
                 FindControl(CURRENT)->SetEnabled(!key.empty() && key != currentKey);
                 std::wstring microsoft = login == Accounts::Login::Idle ? L"添加微软账号" : L"取消登录";
-                if (Text(MICROSOFT) != microsoft) {
-                    SetText(MICROSOFT, microsoft);
-                }
+                UpdateText(MICROSOFT, microsoft);
             }
 
             void OnAction(uint32_t id) override {

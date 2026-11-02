@@ -280,9 +280,7 @@ namespace ForgottenMelody {
                 FindControl(MAX)->SetEnabled(!automatic);
                 FindControl(OPTIONS)->SetEnabled(Patches::enabled(settings.patch));
                 std::wstring hint = automatic ? L"自动分配时为 " + std::to_wstring(automaticMemory()) + L" MB" : L"";
-                if (Text(MAX_HINT) != hint) {
-                    SetText(MAX_HINT, hint);
-                }
+                UpdateText(MAX_HINT, hint);
                 bool server = settings.login == "yggdrasil" || settings.login == "nide8";
                 bool nide8 = settings.login == "nide8";
                 for (uint32_t id : {AUTH_LABEL, AUTH, AUTH_PRESET}) {
@@ -293,13 +291,9 @@ namespace ForgottenMelody {
                 }
                 revealFocus();
                 std::wstring authLabel = nide8 ? L"服务器 ID" : L"认证服务器";
-                if (Text(AUTH_LABEL) != authLabel) {
-                    SetText(AUTH_LABEL, authLabel);
-                }
+                UpdateText(AUTH_LABEL, authLabel);
                 std::wstring preset = nide8 ? L"服主后台" : L"设置为 LittleSkin";
-                if (Text(AUTH_PRESET) != preset) {
-                    SetText(AUTH_PRESET, preset);
-                }
+                UpdateText(AUTH_PRESET, preset);
                 // The Java list may still be loading when the window opens.
                 if (javaLabels() != shownJavas) {
                     fillJava(settings);
