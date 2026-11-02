@@ -169,6 +169,20 @@ namespace Appearance {
         Config::save();
     }
 
+    bool systemFrame() {
+        return b_launcher_base::json_bool(Config::data(), "systemFrame");
+    }
+
+    void setSystemFrame(bool on) {
+        Config::data()["systemFrame"] = on;
+        Config::save();
+    }
+
+    bool systemFrameRunning() {
+        static const bool running = systemFrame();
+        return running;
+    }
+
     const char* defaultWindowTitle() {
         return About::NAME;
     }

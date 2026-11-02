@@ -33,6 +33,9 @@ namespace Appearance {
     void setUiSounds(bool on);
     bool rememberWindow();
     void setRememberWindow(bool on);
+    bool systemFrame();
+    void setSystemFrame(bool on);
+    bool systemFrameRunning();
 
     const char* defaultWindowTitle();
     std::string customWindowTitle();

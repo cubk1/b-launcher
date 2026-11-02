@@ -28,6 +28,7 @@ public:
     int height = 0;
     std::function<bool(int x, int y)> isDragArea;
     bool resizable = false;
+    bool framed = false;
     bool quitOnDestroy = true;
     std::function<void()> onClose;
     // During preparingResize(), width/height are the proposed client size and
@@ -52,12 +53,14 @@ public:
     void setTitle(const std::wstring& title);
     bool pumpMessages();
     bool minimized() const;
+    SIZE frameSize() const;
     void swap();
     void setVsync(bool on);
 
 private:
     static LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT handle(UINT msg, WPARAM wParam, LPARAM lParam);
+    DWORD style() const;
     void applyFrame();
     void applyRegion();
     bool createGlContext(HGLRC share);

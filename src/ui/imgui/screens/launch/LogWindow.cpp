@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/shell/Logo.h"
+#include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
@@ -510,12 +511,15 @@ namespace LogWindow {
             UiRender::textY(title, x, 0.0f, TITLE_H, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
             x += UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 10.0f;
             tabSpans.clear();
+            float end = w - (window.framed ? PAD : 130.0f);
             if (GameLog::tabs().size() > 1) {
-                tabs(x, w - 130.0f);
+                tabs(x, end);
             } else if (!GameLog::title().empty()) {
-                UiRender::textY(
-                        UiFont::fitEnd(GameLog::title(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w - 130.0f - x), x,
-                        0.0f, TITLE_H, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(UiFont::fitEnd(GameLog::title(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, end - x), x,
+                                0.0f, TITLE_H, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            }
+            if (window.framed) {
+                return;
             }
             float size = 26.0f;
             float y = (TITLE_H - size) * 0.5f;
@@ -963,6 +967,7 @@ namespace LogWindow {
         void create() {
             ImGuiContext* main = ImGui::GetCurrentContext();
             window.resizable = true;
+            window.framed = Appearance::systemFrameRunning();
             window.quitOnDestroy = false;
             window.onClose = [] { close(); };
             window.isDragArea = [](int x, int y) {
@@ -973,7 +978,7 @@ namespace LogWindow {
                         return false;
                     }
                 }
-                return ly < TITLE_H && lx < width() - 110.0f;
+                return ly < TITLE_H && (window.framed || lx < width() - 110.0f);
             };
             int w = (int) (START_W * layoutScale + 0.5f);
             int h = (int) (START_H * layoutScale + 0.5f);

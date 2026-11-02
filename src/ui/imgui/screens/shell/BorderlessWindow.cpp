@@ -90,20 +90,21 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
     MONITORINFO monitor = {sizeof(monitor)};
     GetMonitorInfoW(MonitorFromPoint(cursor, MONITOR_DEFAULTTOPRIMARY), &monitor);
     RECT area = monitor.rcWork;
+    SIZE extra = frameSize();
     if (resizable) {
-        clientWidth = std::min(clientWidth, (int) (area.right - area.left));
-        clientHeight = std::min(clientHeight, (int) (area.bottom - area.top));
+        clientWidth = std::min(clientWidth, (int) (area.right - area.left - extra.cx));
+        clientHeight = std::min(clientHeight, (int) (area.bottom - area.top - extra.cy));
     }
-    int x = area.left + (area.right - area.left - clientWidth) / 2;
-    int y = area.top + (area.bottom - area.top - clientHeight) / 2;
+    int outerWidth = clientWidth + (int) extra.cx;
+    int outerHeight = clientHeight + (int) extra.cy;
+    int x = area.left + (area.right - area.left - outerWidth) / 2;
+    int y = area.top + (area.bottom - area.top - outerHeight) / 2;
 
-    DWORD style =
-            WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | (resizable ? WS_MAXIMIZEBOX : 0);
     width = clientWidth;
     height = clientHeight;
     minWidth = clientWidth;
     minHeight = clientHeight;
-    hwnd = CreateWindowExW(WS_EX_APPWINDOW, CLASS_NAME, title.c_str(), style, x, y, clientWidth, clientHeight, nullptr,
+    hwnd = CreateWindowExW(WS_EX_APPWINDOW, CLASS_NAME, title.c_str(), style(), x, y, outerWidth, outerHeight, nullptr,
                            nullptr, GetModuleHandleW(nullptr), this);
     if (hwnd == nullptr) {
         return false;
@@ -133,17 +134,20 @@ void BorderlessWindow::resize(int clientWidth, int clientHeight) {
     }
     RECT rect;
     GetWindowRect(hwnd, &rect);
-    int x = (rect.left + rect.right) / 2 - clientWidth / 2;
-    int y = (rect.top + rect.bottom) / 2 - clientHeight / 2;
+    SIZE extra = frameSize();
+    int outerWidth = clientWidth + (int) extra.cx;
+    int outerHeight = clientHeight + (int) extra.cy;
+    int x = (rect.left + rect.right) / 2 - outerWidth / 2;
+    int y = (rect.top + rect.bottom) / 2 - outerHeight / 2;
     MONITORINFO monitor = {sizeof(monitor)};
     if (GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
         RECT area = monitor.rcWork;
-        x = std::max((int) area.left, std::min(x, (int) area.right - clientWidth));
-        y = std::max((int) area.top, std::min(y, (int) area.bottom - clientHeight));
+        x = std::max((int) area.left, std::min(x, (int) area.right - outerWidth));
+        y = std::max((int) area.top, std::min(y, (int) area.bottom - outerHeight));
     }
     width = clientWidth;
     height = clientHeight;
-    SetWindowPos(hwnd, nullptr, x, y, clientWidth, clientHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(hwnd, nullptr, x, y, outerWidth, outerHeight, SWP_NOZORDER | SWP_NOACTIVATE);
     applyRegion();
 }
 
@@ -184,7 +188,28 @@ void BorderlessWindow::setMinimumSize(int clientWidth, int clientHeight) {
     }
 }
 
+DWORD BorderlessWindow::style() const {
+    if (framed) {
+        return WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX |
+                (resizable ? WS_THICKFRAME | WS_MAXIMIZEBOX : 0);
+    }
+    return WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | (resizable ? WS_MAXIMIZEBOX : 0);
+}
+
+SIZE BorderlessWindow::frameSize() const {
+    if (!framed) {
+        return {0, 0};
+    }
+    RECT rect = {0, 0, 0, 0};
+    AdjustWindowRectEx(&rect, style(), FALSE, WS_EX_APPWINDOW);
+    return {rect.right - rect.left, rect.bottom - rect.top};
+}
+
 void BorderlessWindow::applyFrame() {
+    if (framed) {
+        setDarkMode(true);
+        return;
+    }
     MARGINS margins = {1, 1, 1, 1};
     DwmExtendFrameIntoClientArea(hwnd, &margins);
     COLORREF none = DWMWA_COLOR_NONE_;
@@ -224,6 +249,9 @@ void BorderlessWindow::setDarkMode(bool dark) {
     }
     BOOL value = dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_, &value, sizeof(value));
+    if (framed) {
+        return;
+    }
     COLORREF border = DWMWA_COLOR_NONE_;
     DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR_, &border, sizeof(border));
 }
@@ -433,7 +461,7 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_SIZING: {
             const auto* proposed = reinterpret_cast<const RECT*>(lParam);
-            if (inSizeMove && resizable && !IsZoomed(hwnd)) {
+            if (inSizeMove && resizable && !framed && !IsZoomed(hwnd)) {
                 // This precedes SetWindowPos, before the compositor sees the new
                 // position. WM_WINDOWPOSCHANGING is also kept for programmatic sizes.
                 prepareResize(proposed->right - proposed->left, proposed->bottom - proposed->top);
@@ -444,7 +472,7 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_WINDOWPOSCHANGING: {
             LRESULT result = DefWindowProcW(hwnd, msg, wParam, lParam);
             auto* position = reinterpret_cast<WINDOWPOS*>(lParam);
-            if (inSizeMove && resizable && !IsZoomed(hwnd) && (position->flags & SWP_NOSIZE) == 0) {
+            if (inSizeMove && resizable && !framed && !IsZoomed(hwnd) && (position->flags & SWP_NOSIZE) == 0) {
                 // Render the next size while the previous position is still on screen.
                 prepareResize(position->cx, position->cy);
                 RECT proposed;
@@ -470,7 +498,7 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
             return result;
         }
         case WM_NCCALCSIZE:
-            if (wParam == TRUE) {
+            if (wParam == TRUE && !framed) {
                 auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
                 if (IsZoomed(hwnd)) {
                     int frameX = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
@@ -496,6 +524,10 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
         case WM_NCHITTEST: {
             POINT point = {(short) LOWORD(lParam), (short) HIWORD(lParam)};
             ScreenToClient(hwnd, &point);
+            if (framed) {
+                LRESULT hit = DefWindowProcW(hwnd, msg, wParam, lParam);
+                return hit == HTCLIENT && isDragArea && isDragArea(point.x, point.y) ? HTCAPTION : hit;
+            }
             if (resizable && !IsZoomed(hwnd)) {
                 RECT client;
                 GetClientRect(hwnd, &client);
@@ -586,18 +618,23 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
                 return 0;
             }
             break;
-        case WM_NCACTIVATE: return DefWindowProcW(hwnd, msg, wParam, -1);
-        case WM_GETMINMAXINFO: {
-            auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
-            if (resizable) {
-                info->ptMinTrackSize.x = minWidth;
-                info->ptMinTrackSize.y = minHeight;
+        case WM_NCACTIVATE:
+            if (framed) {
                 break;
             }
-            info->ptMinTrackSize.x = width;
-            info->ptMinTrackSize.y = height;
-            info->ptMaxTrackSize.x = width;
-            info->ptMaxTrackSize.y = height;
+            return DefWindowProcW(hwnd, msg, wParam, -1);
+        case WM_GETMINMAXINFO: {
+            auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+            SIZE extra = frameSize();
+            if (resizable) {
+                info->ptMinTrackSize.x = minWidth + extra.cx;
+                info->ptMinTrackSize.y = minHeight + extra.cy;
+                break;
+            }
+            info->ptMinTrackSize.x = width + extra.cx;
+            info->ptMinTrackSize.y = height + extra.cy;
+            info->ptMaxTrackSize.x = width + extra.cx;
+            info->ptMaxTrackSize.y = height + extra.cy;
             return 0;
         }
         case WM_ERASEBKGND: return 1;

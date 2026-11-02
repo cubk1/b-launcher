@@ -1,17 +1,38 @@
 #include "ui/imgui/screens/shell/Logo.h"
+#include "app/system/Config.h"
 #include "app/system/EmbeddedIcons.h"
+#include "app/system/Notices.h"
 
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/UiImages.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
 
+#include <core/base/json.hpp>
+#include <core/base/strings.hpp>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <wincodec.h>
+
 #include "nanosvg.h"
 #include "nanosvgrast.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace Logo {
@@ -125,6 +146,233 @@ namespace Logo {
             cache.push_back(entry);
             return entry.texture;
         }
+
+        constexpr int CUSTOM_SIDE = 768;
+
+        struct Level {
+            int width = 0;
+            int height = 0;
+            std::vector<unsigned char> rgba;
+        };
+
+        struct Custom {
+            bool ok = false;
+            std::string error;
+            std::vector<Level> levels;
+        };
+
+        std::string chosen;
+        bool configured = false;
+        uint32_t customTexture = 0;
+        int customWidth = 0;
+        int customHeight = 0;
+        bool working = false;
+        std::thread worker;
+        std::mutex lock;
+        std::shared_ptr<Custom> finished;
+        std::string workingOn;
+
+        bool decodeRaster(const std::wstring& file, Level& out, std::string& error) {
+            IWICImagingFactory* factory = nullptr;
+            if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                        IID_PPV_ARGS(&factory)))) {
+                error = "无法读取图片";
+                return false;
+            }
+            bool ok = false;
+            IWICBitmapDecoder* decoder = nullptr;
+            IWICBitmapFrameDecode* frame = nullptr;
+            IWICBitmapScaler* scaler = nullptr;
+            IWICFormatConverter* converter = nullptr;
+            UINT sw = 0;
+            UINT sh = 0;
+            if (SUCCEEDED(factory->CreateDecoderFromFilename(file.c_str(), nullptr, GENERIC_READ,
+                                                             WICDecodeMetadataCacheOnDemand, &decoder))) {
+                GUID container = {};
+                UINT count = 0;
+                bool icon = SUCCEEDED(decoder->GetContainerFormat(&container)) &&
+                        IsEqualGUID(container, GUID_ContainerFormatIco);
+                if (FAILED(decoder->GetFrameCount(&count))) {
+                    count = 0;
+                }
+                for (UINT i = 0; i < (icon ? count : std::min(count, 1u)); i++) {
+                    IWICBitmapFrameDecode* candidate = nullptr;
+                    UINT cw = 0;
+                    UINT ch = 0;
+                    if (FAILED(decoder->GetFrame(i, &candidate))) {
+                        continue;
+                    }
+                    if (SUCCEEDED(candidate->GetSize(&cw, &ch)) && (UINT64) cw * ch > (UINT64) sw * sh) {
+                        if (frame) frame->Release();
+                        frame = candidate;
+                        sw = cw;
+                        sh = ch;
+                    } else {
+                        candidate->Release();
+                    }
+                }
+            }
+            if (frame == nullptr || sw == 0 || sh == 0) {
+                error = "无法读取这张图片";
+            } else {
+                double scale = std::min(1.0, (double) CUSTOM_SIDE / std::max(sw, sh));
+                UINT w = std::max(1u, (UINT) std::lround(sw * scale));
+                UINT h = std::max(1u, (UINT) std::lround(sh * scale));
+                if (SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
+                    SUCCEEDED(scaler->Initialize(frame, w, h, WICBitmapInterpolationModeHighQualityCubic)) &&
+                    SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+                    SUCCEEDED(converter->Initialize(scaler, GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone,
+                                                    nullptr, 0.0, WICBitmapPaletteTypeCustom))) {
+                    out.width = (int) w;
+                    out.height = (int) h;
+                    out.rgba.resize((size_t) w * h * 4);
+                    ok = SUCCEEDED(converter->CopyPixels(nullptr, w * 4, (UINT) out.rgba.size(), out.rgba.data()));
+                }
+                if (!ok) {
+                    error = "无法处理这张图片";
+                }
+            }
+            if (converter) converter->Release();
+            if (scaler) scaler->Release();
+            if (frame) frame->Release();
+            if (decoder) decoder->Release();
+            factory->Release();
+            return ok;
+        }
+
+        bool decodeVector(const std::filesystem::path& file, Level& out, std::string& error) {
+            std::ifstream in(file, std::ios::binary);
+            std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (!in.good() && !in.eof()) {
+                error = "无法读取这张图片";
+                return false;
+            }
+            NSVGimage* svg = text.empty() ? nullptr : nsvgParse(text.data(), "px", 96.0f);
+            if (svg == nullptr || svg->width <= 0.0f || svg->height <= 0.0f || svg->shapes == nullptr) {
+                if (svg != nullptr) {
+                    nsvgDelete(svg);
+                }
+                error = "无法解析这个 SVG";
+                return false;
+            }
+            NSVGrasterizer* raster = nsvgCreateRasterizer();
+            float scale = (float) CUSTOM_SIDE / std::max(svg->width, svg->height);
+            out.width = std::max(1, (int) std::lround(svg->width * scale));
+            out.height = std::max(1, (int) std::lround(svg->height * scale));
+            out.rgba.assign((size_t) out.width * out.height * 4, 0);
+            if (raster != nullptr) {
+                nsvgRasterize(raster, svg, 0.0f, 0.0f, scale, out.rgba.data(), out.width, out.height, out.width * 4);
+                nsvgDeleteRasterizer(raster);
+            }
+            nsvgDelete(svg);
+            if (raster == nullptr) {
+                error = "无法处理这个 SVG";
+                return false;
+            }
+            return true;
+        }
+
+        Level halve(const Level& source) {
+            Level out;
+            out.width = std::max(1, source.width / 2);
+            out.height = std::max(1, source.height / 2);
+            out.rgba.resize((size_t) out.width * out.height * 4);
+            for (int y = 0; y < out.height; y++) {
+                for (int x = 0; x < out.width; x++) {
+                    float color[3] = {0.0f, 0.0f, 0.0f};
+                    float alpha = 0.0f;
+                    for (int dy = 0; dy < 2; dy++) {
+                        for (int dx = 0; dx < 2; dx++) {
+                            int sx = std::min(x * 2 + dx, source.width - 1);
+                            int sy = std::min(y * 2 + dy, source.height - 1);
+                            const unsigned char* p = &source.rgba[((size_t) sy * source.width + sx) * 4];
+                            float a = p[3];
+                            color[0] += p[0] * a;
+                            color[1] += p[1] * a;
+                            color[2] += p[2] * a;
+                            alpha += a;
+                        }
+                    }
+                    unsigned char* q = &out.rgba[((size_t) y * out.width + x) * 4];
+                    for (int c = 0; c < 3; c++) {
+                        q[c] = alpha > 0.0f ? (unsigned char) std::clamp((int) std::lround(color[c] / alpha), 0, 255)
+                                            : 0;
+                    }
+                    q[3] = (unsigned char) std::lround(alpha * 0.25f);
+                }
+            }
+            return out;
+        }
+
+        bool vectorFile(const std::filesystem::path& file) {
+            std::string extension = b_launcher_base::path_to_utf8(file.extension());
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char c) { return (char) std::tolower(c); });
+            return extension == ".svg";
+        }
+
+        void releaseCustom() {
+            if (customTexture != 0) {
+                GLuint old = customTexture;
+                UiGL::DeleteTextures(1, &old);
+            }
+            customTexture = 0;
+            customWidth = 0;
+            customHeight = 0;
+        }
+
+        uint32_t uploadLevels(const std::vector<Level>& levels) {
+            uint32_t id = UiImages::upload(levels[0].rgba.data(), levels[0].width, levels[0].height);
+            if (id == 0) {
+                return 0;
+            }
+            for (size_t i = 1; i < levels.size(); i++) {
+                UiGL::TexImage2D(UGL_TEXTURE_2D, (GLint) i, UGL_RGBA8, levels[i].width, levels[i].height, 0, UGL_RGBA,
+                                 UGL_UNSIGNED_BYTE, levels[i].rgba.data());
+            }
+            UiGL::TexParameteri(UGL_TEXTURE_2D, UGL_TEXTURE_MIN_FILTER, UGL_LINEAR_MIPMAP_LINEAR);
+            return id;
+        }
+
+        void startCustom() {
+            if (chosen.empty() || working) {
+                return;
+            }
+            working = true;
+            workingOn = chosen;
+            std::filesystem::path file = b_launcher_base::path_from_utf8(chosen);
+            if (worker.joinable()) {
+                worker.join();
+            }
+            worker = std::thread([file] {
+                HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                auto result = std::make_shared<Custom>();
+                Level base;
+                bool ok = vectorFile(file) ? decodeVector(file, base, result->error)
+                                           : decodeRaster(file.wstring(), base, result->error);
+                if (ok) {
+                    result->levels.push_back(std::move(base));
+                    while (result->levels.back().width > 1 || result->levels.back().height > 1) {
+                        result->levels.push_back(halve(result->levels.back()));
+                    }
+                    result->ok = true;
+                }
+                if (SUCCEEDED(com)) {
+                    CoUninitialize();
+                }
+                std::lock_guard<std::mutex> guard(lock);
+                finished = result;
+            });
+        }
+
+        void configure() {
+            if (configured) {
+                return;
+            }
+            configured = true;
+            chosen = b_launcher_base::json_text(Config::data(), "logoPath");
+            startCustom();
+        }
     }
 
     std::vector<unsigned char> pixels(int size) {
@@ -156,5 +404,96 @@ namespace Logo {
         UiRender::alphaMul = saved * alpha;
         UiRender::texture(id, dx, dy, shown, shown);
         UiRender::alphaMul = saved;
+    }
+
+    void brand(float x, float y, float size, float alpha) {
+        configure();
+        if (chosen.empty()) {
+            draw(x, y, size, alpha);
+            return;
+        }
+        if (customTexture == 0 || size <= 0.0f || alpha <= 0.0f) {
+            return;
+        }
+        float fit = size / (float) std::max(customWidth, customHeight);
+        float w = customWidth * fit;
+        float h = customHeight * fit;
+        float dx = x + (size - w) * 0.5f;
+        float dy = y + (size - h) * 0.5f;
+        if (UiRender::scaleFactor == 1.0f) {
+            dx = UiRender::snapLayout(dx);
+            dy = UiRender::snapLayout(dy);
+        }
+        float saved = UiRender::alphaMul;
+        UiRender::alphaMul = saved * alpha;
+        UiRender::texture(customTexture, dx, dy, w, h);
+        UiRender::alphaMul = saved;
+    }
+
+    std::string customPath() {
+        configure();
+        return chosen;
+    }
+
+    void setCustomPath(const std::string& path) {
+        configure();
+        if (path == chosen) {
+            return;
+        }
+        chosen = path;
+        Config::data()["logoPath"] = chosen;
+        Config::save();
+        startCustom();
+    }
+
+    bool preparing() {
+        return working;
+    }
+
+    void poll() {
+        if (chosen.empty()) {
+            releaseCustom();
+        }
+        std::shared_ptr<Custom> result;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            result.swap(finished);
+        }
+        if (!result) {
+            return;
+        }
+        working = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+        if (workingOn != chosen) {
+            startCustom();
+            return;
+        }
+        if (!result->ok) {
+            Notices::add(Notices::Kind::Failed, "启动器标志：" + result->error, 4000);
+            chosen.clear();
+            Config::data()["logoPath"] = chosen;
+            Config::save();
+            releaseCustom();
+            return;
+        }
+        uint32_t next = uploadLevels(result->levels);
+        releaseCustom();
+        customTexture = next;
+        customWidth = result->levels.front().width;
+        customHeight = result->levels.front().height;
+    }
+
+    void shutdown() {
+        if (worker.joinable()) {
+            worker.join();
+        }
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            finished.reset();
+        }
+        working = false;
+        releaseCustom();
     }
 }

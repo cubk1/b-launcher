@@ -199,39 +199,99 @@ namespace SettingsScreen {
                     [](const std::string& value) { LaunchDefaults::setPreLaunch(value); }, y, blocked);
         }
 
-        void backgroundFileRow(float y, bool blocked) {
-            const std::string label = "背景图片文件";
+        struct ImageFile {
+            const char* id;
+            const char* label;
+            const char* fallback;
+            const char* resetTip;
+            std::string path;
+            bool busy;
+            std::optional<std::filesystem::path> (*pick)(const std::filesystem::path&);
+            void (*apply)(const std::string&);
+        };
+
+        void imageFileRow(const ImageFile& file, float y, bool blocked) {
+            const std::string label = file.label;
+            const std::string id = file.id;
             Page::label(label, y);
-            std::string path = Background::path();
             float pickX = Page::controlRight() - 27.0f;
             float right = pickX - 8.0f;
-            if (!path.empty()) {
+            if (!file.path.empty()) {
                 float resetX = pickX - 30.0f;
-                if (Page::iconButton("settings#backgroundReset", 0xf2ea, "恢复默认图片", resetX, y + 6.0f, blocked)) {
-                    Background::setPath(std::string());
+                if (Page::iconButton(id + "Reset", 0xf2ea, file.resetTip, resetX, y + 6.0f, blocked)) {
+                    file.apply(std::string());
                 }
                 right = resetX - 8.0f;
             }
-            if (Page::iconButton("settings#backgroundPick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
-                std::filesystem::path start = path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path);
-                if (std::optional<std::filesystem::path> picked = Platform::pickImage(start)) {
-                    Background::setPath(blb::path_to_utf8(*picked));
+            if (Page::iconButton(id + "Pick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
+                std::filesystem::path start =
+                        file.path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(file.path);
+                if (std::optional<std::filesystem::path> picked = file.pick(start)) {
+                    file.apply(blb::path_to_utf8(*picked));
                 }
             }
             float labelRight = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 16.0f;
-            float room = std::max(0.0f, right - labelRight - (Background::preparing() ? 24.0f : 0.0f));
-            std::string shown = path.empty() ? std::string("默认图片")
-                                             : fitTail(Platform::display(blb::path_from_utf8(path)), room);
+            float room = std::max(0.0f, right - labelRight - (file.busy ? 24.0f : 0.0f));
+            std::string shown = file.path.empty() ? std::string(file.fallback)
+                                                  : fitTail(Platform::display(blb::path_from_utf8(file.path)), room);
             float shownW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             UiRender::textY(shown, right - shownW, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
-            if (Background::preparing()) {
+            if (file.busy) {
                 Page::spinner(right - shownW - 16.0f, y + Page::ROW_H * 0.5f, 7.0f, UiTheme::accent());
             }
         }
 
+        void backgroundFileRow(float y, bool blocked) {
+            imageFileRow({"settings#background", "背景图片文件", "默认图片", "恢复默认图片", Background::path(),
+                          Background::preparing(), Platform::pickImage, Background::setPath},
+                         y, blocked);
+        }
+
+        void logoFileRow(float y, bool blocked) {
+            imageFileRow({"settings#logo", "启动器标志", "默认标志", "恢复默认标志", Logo::customPath(),
+                          Logo::preparing(), Platform::pickLogo, Logo::setCustomPath},
+                         y, blocked);
+        }
+
         int appearanceCount() {
-            return Appearance::backgroundImage() ? 9 : 8;
+            return Appearance::backgroundImage() ? 11 : 10;
+        }
+
+        float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
+                              std::string& unshown) {
+            bool busy = Services::busy();
+            std::string text = "立即重启";
+            float w = Page::buttonWidth(text, 0xf2f1);
+            float x = right - w;
+            if (Page::button(id, text, x, y + Page::FIELD_Y, w, true, blocked || busy, 0xf2f1) &&
+                !Platform::restart()) {
+                Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
+            }
+            std::string hint = busy ? "任务进行中，暂不能重启" : "重启后生效";
+            float hintX = x - 12.0f - UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            if (hintX >= labelEnd) {
+                UiRender::textY(hint, hintX, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                return hintX - 8.0f;
+            }
+            unshown = hint;
+            return x - 8.0f;
+        }
+
+        void systemFrameRow(float y, bool blocked) {
+            const std::string label = "使用系统窗口边框";
+            if (Appearance::systemFrame() != Appearance::systemFrameRunning()) {
+                float labelEnd =
+                        mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
+                std::string unshown;
+                restartControls("settings#frameRestart", Page::controlRight() - 30.0f - 12.0f, labelEnd, y, blocked,
+                                unshown);
+            }
+            Page::label(label, y);
+            toggle(
+                    "settings#systemFrame", [] { return Appearance::systemFrame(); },
+                    [](bool on) { Appearance::setSystemFrame(on); }, y, blocked);
         }
 
         void uiStyleRow(float y, bool blocked) {
@@ -258,23 +318,10 @@ namespace SettingsScreen {
             select("settings#uiStyle", uiStyle, y, blocked);
             float labelRight = Page::controlRight() - SELECT_W - 8.0f;
             if (&UiStyles::current() != &UiStyles::running()) {
-                bool busy = Services::busy();
-                std::string text = "立即重启";
-                float w = Page::buttonWidth(text, 0xf2f1);
-                float x = labelRight - w;
-                if (Page::button("settings#restart", text, x, y + Page::FIELD_Y, w, true, blocked || busy, 0xf2f1) &&
-                    !Platform::restart()) {
-                    Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
-                }
-                std::string hint = busy ? "任务进行中，暂不能重启" : "重启后生效";
-                float hintX = x - 12.0f - UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                if (hintX >= labelEnd) {
-                    UiRender::textY(hint, hintX, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                    UiWidgets::TEXT_CONTROL);
-                    labelRight = hintX - 8.0f;
-                } else {
-                    doc += "。" + hint;
-                    labelRight = x - 8.0f;
+                std::string unshown;
+                labelRight = restartControls("settings#restart", labelRight, labelEnd, y, blocked, unshown);
+                if (!unshown.empty()) {
+                    doc += "。" + unshown;
                 }
             }
             explain("settings#uiStyle", doc, y, std::max(labelEnd - 12.0f, labelRight), blocked);
@@ -354,11 +401,17 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setRememberWindow(on); }, y, blocked);
             y += Page::ROW_H;
 
+            systemFrameRow(y, blocked);
+            y += Page::ROW_H;
+
             textRow(
                     "settings#windowTitle", "窗口标题", "任务栏和窗口切换时显示的名字，留空使用默认标题。",
                     [] { return Appearance::customWindowTitle(); },
                     [](const std::string& value) { Appearance::setWindowTitle(value); }, y, blocked,
                     Appearance::defaultWindowTitle());
+            y += Page::ROW_H;
+
+            logoFileRow(y, blocked);
             y += Page::ROW_H;
 
             textRow(
