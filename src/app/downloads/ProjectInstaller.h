@@ -9,9 +9,10 @@ namespace ProjectInstaller {
 
     enum class State { Idle, Running, Done, Failed };
 
-    State state(const std::string& versionId);
+    // Supplying an instance selects a world task in that instance's saves directory.
+    State state(const std::string& versionId, const std::string& instanceKey = {});
     bool busy();
-    float progress(const std::string& versionId);
+    float progress(const std::string& versionId, const std::string& instanceKey = {});
 
     std::string folder(Addons::Kind kind);
     std::string loaderOf(const std::string& instanceKey);

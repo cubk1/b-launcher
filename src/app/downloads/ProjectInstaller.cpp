@@ -10,6 +10,7 @@
 #include <core/base/hash.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
+#include <core/base/win_util.hpp>
 #include <core/base/zip.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/meta/game_layout.hpp>
@@ -35,6 +36,7 @@
 #include <optional>
 #include <set>
 #include <stdexcept>
+#include <system_error>
 
 namespace ProjectInstaller {
 
@@ -51,7 +53,26 @@ namespace ProjectInstaller {
         };
 
         AsyncTasks background;
-        std::map<std::string, std::shared_ptr<Task>> tasks;
+        using TaskKey = std::pair<std::string, std::filesystem::path>;
+        std::map<TaskKey, std::shared_ptr<Task>> tasks;
+
+        std::filesystem::path worldDirectory(const Instances::Entry& entry) {
+            if (entry.gameDirectory.empty()) return {};
+            // Resolve the game directory even when saves has not been created yet.
+            return blb::fs::real_path(blb::fs::real_path(entry.gameDirectory) / "saves");
+        }
+
+        std::shared_ptr<Task> findTask(const std::string& versionId, const std::string& instanceKey) {
+            std::filesystem::path directory;
+            if (!instanceKey.empty()) {
+                const auto* entry = Instances::find(instanceKey);
+                if (entry == nullptr) return {};
+                directory = worldDirectory(*entry);
+                if (directory.empty()) return {};
+            }
+            auto found = tasks.find({versionId, directory});
+            return found == tasks.end() ? nullptr : found->second;
+        }
 
         struct CheckedFile {
             uint64_t size = 0;
@@ -116,8 +137,8 @@ namespace ProjectInstaller {
             }, {});
         }
 
-        std::shared_ptr<Task> begin(const std::string& versionId) {
-            std::shared_ptr<Task>& task = tasks[versionId];
+        std::shared_ptr<Task> begin(const std::string& versionId, const std::filesystem::path& directory = {}) {
+            std::shared_ptr<Task>& task = tasks[{versionId, directory}];
             if (!task) {
                 task = std::make_shared<Task>();
             }
@@ -181,31 +202,13 @@ namespace ProjectInstaller {
             return report.failures.front().reason.message;
         }
 
-        std::string slashes(std::string text) {
-            std::replace(text.begin(), text.end(), '\\', '/');
-            return text;
-        }
-
         bool junk(const std::string& name) {
             return name.starts_with("__MACOSX/");
         }
 
         bool validUtf8(std::string_view text) {
-            size_t i = 0;
-            while (i < text.size()) {
-                unsigned char c = (unsigned char) text[i];
-                size_t more = c < 0x80 ? 0 : (c >> 5) == 0x6 ? 1 : (c >> 4) == 0xE ? 2 : (c >> 3) == 0x1E ? 3 : 4;
-                if (more == 4) {
-                    return false;
-                }
-                for (size_t k = 1; k <= more; k++) {
-                    if (i + k >= text.size() || ((unsigned char) text[i + k] >> 6) != 0x2) {
-                        return false;
-                    }
-                }
-                i += more + 1;
-            }
-            return true;
+            return text.empty() ||
+                    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), (int) text.size(), nullptr, 0) > 0;
         }
 
         bool formatCode(char c) {
@@ -240,18 +243,13 @@ namespace ProjectInstaller {
             }
             std::wstring buffer((size_t) wide, L'\0');
             MultiByteToWideChar(page, flags, bytes.data(), (int) bytes.size(), buffer.data(), wide);
-            int size = WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, nullptr, 0, nullptr, nullptr);
-            std::string out((size_t) std::max(size, 0), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, out.data(), size, nullptr, nullptr);
-            return out;
+            return blb::detail::wide_to_utf8(buffer);
         }
 
         std::string entryName(const std::string& raw) {
-            std::string name = slashes(raw);
-            if (validUtf8(name)) {
-                return name;
-            }
-            return fromCodePage(name, legacyPage(name));
+            std::string name = validUtf8(raw) ? raw : fromCodePage(raw, legacyPage(raw));
+            std::replace(name.begin(), name.end(), '\\', '/');
+            return name;
         }
 
         std::vector<std::string> worldRoots(const std::vector<blb::zip_entry>& entries) {
@@ -285,19 +283,31 @@ namespace ProjectInstaller {
                 name = name.substr(slash + 1);
             }
             name = std::string(blb::trim(blb::fs::filter_filename(blb::strip_formatting(name))));
-            while (!name.empty() && (name.back() == '.' || name.back() == ' ')) {
-                name.pop_back();
-            }
+            size_t last = name.find_last_not_of(". ");
+            name.resize(last == std::string::npos ? 0 : last + 1);
             return blb::fs::safe_filename(name) ? name : std::string("World");
         }
 
-        std::filesystem::path freePath(const std::filesystem::path& folder, const std::string& stem,
-                                       const std::string& extension) {
-            std::filesystem::path target = folder / blb::path_from_utf8(stem + extension);
-            for (int i = 2; blb::fs::exists(target); i++) {
-                target = folder / blb::path_from_utf8(stem + " (" + std::to_string(i) + ")" + extension);
+        // create must claim the destination without overwriting it. An existence
+        // check followed by a write lets concurrent world installs share a path.
+        template <class Create>
+        std::filesystem::path createUniquePath(const std::filesystem::path& folder, const std::string& stem,
+                                               const std::string& extension, Create create) {
+            for (uint64_t i = 1;; ++i) {
+                std::string suffix = i == 1 ? std::string() : " (" + std::to_string(i) + ")";
+                auto target = folder / blb::path_from_utf8(stem + suffix + extension);
+                std::error_code error;
+                if (create(target, error)) return target;
+                if (error && error != std::errc::file_exists) {
+                    throw std::filesystem::filesystem_error("无法创建保存路径", target, error);
+                }
             }
-            return target;
+        }
+
+        std::filesystem::path createWorldDirectory(const std::filesystem::path& parent, const std::string& name) {
+            return createUniquePath(parent, name, {}, [](const auto& target, auto& error) {
+                return std::filesystem::create_directory(target, error);
+            });
         }
 
         std::vector<std::string> extractWorlds(blb::zip_reader& zip, const std::filesystem::path& saves,
@@ -312,7 +322,7 @@ namespace ProjectInstaller {
             }
             std::vector<std::string> names;
             for (const std::string& root : roots) {
-                std::filesystem::path folder = freePath(saves, worldName(root, title), std::string());
+                std::filesystem::path folder = createWorldDirectory(saves, worldName(root, title));
                 std::optional<blb::error> failure;
                 auto visited = zip.for_each([&](const blb::zip_entry& entry, blb::zip_reader& reader) {
                     if (token.is_cancelled()) {
@@ -475,7 +485,7 @@ namespace ProjectInstaller {
     }
 
     bool busy() {
-        for (const auto& [versionId, task] : tasks) {
+        for (const auto& [key, task] : tasks) {
             if (task->state.load() == (int) State::Running) {
                 return true;
             }
@@ -483,14 +493,14 @@ namespace ProjectInstaller {
         return false;
     }
 
-    State state(const std::string& versionId) {
-        auto found = tasks.find(versionId);
-        return found != tasks.end() ? (State) found->second->state.load() : State::Idle;
+    State state(const std::string& versionId, const std::string& instanceKey) {
+        auto task = findTask(versionId, instanceKey);
+        return task ? (State) task->state.load() : State::Idle;
     }
 
-    float progress(const std::string& versionId) {
-        auto found = tasks.find(versionId);
-        return found != tasks.end() ? found->second->fraction.load() : -1.0f;
+    float progress(const std::string& versionId, const std::string& instanceKey) {
+        auto task = findTask(versionId, instanceKey);
+        return task ? task->fraction.load() : -1.0f;
     }
 
     std::string folder(Addons::Kind kind) {
@@ -628,30 +638,31 @@ namespace ProjectInstaller {
     void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
-        if (entry == nullptr || file == nullptr || state(version.id) == State::Running) {
+        if (entry == nullptr || file == nullptr || state(version.id, instanceKey) == State::Running) {
             return;
         }
-        std::shared_ptr<Task> task = begin(version.id);
-        std::filesystem::path saves = entry->gameDirectory / "saves";
-        std::error_code error;
-        std::filesystem::path scratch =
-                std::filesystem::temp_directory_path(error) / "b-launcher" / ("world-" + version.id);
+        std::filesystem::path saves = worldDirectory(*entry);
+        if (saves.empty()) return;
+        std::shared_ptr<Task> task = begin(version.id, saves);
         std::string instanceName = entry->info.id;
         Addons::File chosen = *file;
-        run(task, [task, chosen, saves, scratch, title, instanceName](blb::cancellation_token token) -> Continuation {
-            (void) blb::fs::remove_all(scratch);
-            if (auto made = blb::fs::create_directories(scratch); !made) {
+        run(task, [task, chosen, saves, title, instanceName](blb::cancellation_token token) -> Continuation {
+            auto temporary = std::filesystem::temp_directory_path() / "b-launcher";
+            if (auto made = blb::fs::create_directories(temporary); !made) {
                 throw std::runtime_error(made.err().message);
             }
+            auto scratch = createWorldDirectory(temporary, "world");
+            struct Cleanup {
+                const std::filesystem::path& directory;
+                ~Cleanup() { (void) blb::fs::remove_all(directory); }
+            } cleanup{scratch};
             std::vector<blb::net::download_task> files = {taskFor(chosen, scratch)};
             std::filesystem::path archive = files.front().target;
             std::string problem = download(files, task, token);
             if (token.is_cancelled()) {
-                (void) blb::fs::remove_all(scratch);
                 return nullptr;
             }
             if (!problem.empty()) {
-                (void) blb::fs::remove_all(scratch);
                 return [task, title, problem] { finish(task, false, "无法下载 " + title + "：" + problem); };
             }
             std::vector<std::string> names;
@@ -668,14 +679,15 @@ namespace ProjectInstaller {
             } else {
                 std::string stem = blb::path_to_utf8(archive.stem());
                 std::string extension = blb::path_to_utf8(archive.extension());
-                std::filesystem::path copy = freePath(saves, stem, extension);
-                if (auto copied = blb::fs::copy_file(archive, copy); copied) {
+                try {
+                    auto copy = createUniquePath(saves, stem, extension, [&](const auto& target, auto& error) {
+                        return std::filesystem::copy_file(archive, target, std::filesystem::copy_options::none, error);
+                    });
                     kept = blb::path_to_utf8(copy.filename());
-                } else {
-                    failure = copied.err().message;
+                } catch (const std::exception& exception) {
+                    failure = exception.what();
                 }
             }
-            (void) blb::fs::remove_all(scratch);
             if (token.is_cancelled()) {
                 return nullptr;
             }

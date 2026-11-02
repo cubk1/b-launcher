@@ -1,4 +1,5 @@
 #include "app/launch/Game.h"
+#include "app/launch/GameOptions.h"
 #include "app/accounts/Accounts.h"
 #include "app/launch/GameLog.h"
 #include "app/instances/Instances.h"
@@ -11,6 +12,7 @@
 #include "app/system/Catalog.h"
 
 #include <core/base/cancellation.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
@@ -76,6 +78,7 @@ namespace Game {
             std::string postExit;
             Platform::Environment variables;
             std::filesystem::path commandDirectory;
+            std::filesystem::path optionsFile;
         };
 
         std::vector<std::unique_ptr<Live>> lives;
@@ -349,6 +352,7 @@ namespace Game {
             out.accountKey = live.accountKey;
             out.state = live.state;
             out.log = live.log;
+            out.optionsFile = live.optionsFile;
             if (live.state == State::Running) {
                 out.uptime = std::chrono::duration<double>(Clock::now() - live.since).count();
             }
@@ -538,6 +542,7 @@ namespace Game {
         live.postExit = options.post_exit;
         live.variables = instanceVariables(*entry);
         live.commandDirectory = entry->gameDirectory;
+        live.optionsFile = blb::fs::absolute(GameOptions::fileOf(*entry));
         settings.environment.insert(settings.environment.begin(), live.variables.begin(), live.variables.end());
 
         int log = GameLog::begin(live.name + "（" + account->name + "）", logFor(target));
