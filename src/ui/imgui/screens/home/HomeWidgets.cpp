@@ -1,9 +1,7 @@
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/HomeOptions.h"
-#include "app/accounts/Accounts.h"
 #include "app/system/Config.h"
 #include "app/system/ServerStatus.h"
-#include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/home/QuickActions.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -41,9 +39,6 @@ namespace HomeWidgets {
         constexpr float SERVER_ICON = 44.0f;
         constexpr float TITLE_LINE = 20.0f;
         constexpr float SMALL_LINE = 18.0f;
-        constexpr float ACCOUNT_H = 60.0f;
-        constexpr float FACE = 34.0f;
-        constexpr float MENU_W = 200.0f;
         const char* const SECTION = "homeWidgets";
         const char* const SERVER_SECTION = "homeServer";
 
@@ -52,7 +47,6 @@ namespace HomeWidgets {
         const Kind KINDS[] = {
                 {QUICK, "快捷操作", 0xf0e7},
                 {SERVER, "服务器状态", 0xf233},
-                {ACCOUNT, "当前账号", 0xf007},
         };
 
         HomeOptions options(SECTION, KINDS, {QUICK}, "只显示标志");
@@ -94,14 +88,6 @@ namespace HomeWidgets {
         void placeholder(int glyph, float x, float y, float size, float radius) {
             UiRender::roundRect(x, y, size, size, radius, UiTheme::surfaceRaised());
             UiWidgets::icon(Ui::glyph(glyph), x + size * 0.5f, y + size * 0.5f, UiTheme::textMuted(), size * 0.36f);
-        }
-
-        void letter(const std::string& name, float x, float y, float size, float radius) {
-            UiRender::roundRect(x, y, size, size, radius, UiTheme::surfaceRaised());
-            std::string text = name.empty() ? "?" : std::string(1, (char) std::toupper((unsigned char) name[0]));
-            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(text, x + (size - textW) * 0.5f, y, size, UiTheme::textSecondary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
         }
 
         std::string fit(const std::string& text, float size, float room) {
@@ -255,100 +241,12 @@ namespace HomeWidgets {
             }
         }
 
-        void accountMenu(float x, float y) {
-            NewUi::openMenu(
-                    "home#account#menu",
-                    [] {
-                        MenuItems items;
-                        const blb::auth::account* current = Accounts::current();
-                        std::string currentKey = current != nullptr ? Accounts::keyOf(*current) : std::string();
-                        for (const blb::auth::account& account : Accounts::list()) {
-                            std::string key = Accounts::keyOf(account);
-                            std::shared_ptr<ActionMenuItem> item = ActionMenuItem::make(account.name, 0xf007, [key] {
-                                                                       Accounts::select(key);
-                                                                   })->keys(Accounts::kindOf(account));
-                            uint32_t face = Textures::of(Accounts::face(account));
-                            if (face != 0) {
-                                item->image(face, 4.0f);
-                            }
-                            if (key == currentKey) {
-                                item->trailing(0xf00c);
-                            }
-                            items.push_back(item);
-                        }
-                        items.push_back(ActionMenuItem::make("添加账号", 0xf234, [] {
-                            MainWindow::showAccounts();
-                            AccountsScreen::openAdd();
-                        }));
-                        items.push_back(ActionMenuItem::make("管理账号", 0xf013, [] { MainWindow::showAccounts(); }));
-                        return items;
-                    },
-                    x, y, MENU_W);
-        }
-
-        void accountCard(float x, float y, float w, bool blocked) {
-            const float h = ACCOUNT_H;
-            panel(x, y, w, h);
-            bool hovered = !blocked && NewUi::hit(x, y, w, h);
-            wash("home#account", x, y, w, h, hovered);
-            float lit = UiState::getOrDefault("home#account", 0.0f);
-            float faceX = x + PAD;
-            float faceY = y + (h - FACE) * 0.5f;
-            float textX = faceX + FACE + 12.0f;
-            float room = x + w - 34.0f - textX;
-            uint32_t chevron = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
-            const blb::auth::account* account = Accounts::current();
-            if (account == nullptr) {
-                placeholder(0xf007, faceX, faceY, FACE, 8.0f);
-                UiRender::textY("还没有账号", textX, y + 11.0f, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                UiRender::textY("点击添加账号", textX, y + 31.0f, 18.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
-                UiWidgets::icon(Ui::glyph(0xf054), x + w - 20.0f, y + h * 0.5f, chevron, 9.0f);
-                if (!blocked && NewUi::click(x, y, w, h)) {
-                    UiSound::request(UiSound::PAGE);
-                    MainWindow::showAccounts();
-                    AccountsScreen::openAdd();
-                }
-                return;
-            }
-            std::string key = Accounts::keyOf(*account);
-            uint32_t face = Textures::of(Accounts::face(*account));
-            if (face != 0) {
-                picture(face, faceX, faceY, FACE, 8.0f);
-            } else {
-                letter(account->name, faceX, faceY, FACE, 8.0f);
-            }
-            UiRender::textY(fit(account->name, UiWidgets::TEXT_CONTROL, room), textX, y + 11.0f, 20.0f,
-                            UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            bool expired = Accounts::expired(key);
-            std::string kind = expired ? std::string("需要重新登录") : Accounts::kindOf(*account);
-            UiRender::textY(fit(kind, UiWidgets::TEXT_SMALL, room), textX, y + 31.0f, 18.0f,
-                            expired ? UiTheme::danger() : UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            if (Accounts::busy(key)) {
-                Page::spinner(x + w - 20.0f, y + h * 0.5f, 6.0f, UiTheme::accent());
-            } else {
-                UiWidgets::icon(Ui::glyph(0xf078), x + w - 20.0f, y + h * 0.5f, chevron, 9.0f);
-            }
-            if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
-                NewUi::rightClick = false;
-                accountMenu(NewUi::mouseX, NewUi::mouseY);
-            }
-            if (!blocked && NewUi::click(x, y, w, h)) {
-                UiSound::request(UiSound::TICK);
-                accountMenu(x + w - MENU_W, y + h + 6.0f);
-            }
-        }
-
         float heightOf(const std::string& id) {
             if (id == QUICK) {
                 return QuickActions::height();
             }
             if (id == SERVER) {
                 return SERVER_H;
-            }
-            if (id == ACCOUNT) {
-                return ACCOUNT_H;
             }
             return 0.0f;
         }
@@ -414,8 +312,6 @@ namespace HomeWidgets {
                 QuickActions::draw(x, y, w, blocked);
             } else if (id == SERVER) {
                 serverCard(x, y, w, blocked);
-            } else if (id == ACCOUNT) {
-                accountCard(x, y, w, blocked);
             }
             y += h + GAP;
         }

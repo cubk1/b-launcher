@@ -7,6 +7,7 @@
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Logo.h"
+#include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -91,8 +92,7 @@ namespace Homepage {
         constexpr float HEADER_H = 36.0f;
         constexpr float TOP_PAD = 12.0f;
         constexpr float TOP_GAP = 10.0f;
-        constexpr float QUICK_W = 360.0f;
-        constexpr float QUICK_GAP = 28.0f;
+        constexpr float PANEL_GAP = 14.0f;
         constexpr float LOGO_MIN = 96.0f;
         constexpr double URL_SETTLE = 0.8;
 
@@ -770,34 +770,40 @@ namespace Homepage {
         if (announcement || (views.size() <= 1 && source() == SOURCE_NONE)) {
             float panelLeft = MainWindow::sidebarWidth();
             float panelRight = MainWindow::width();
-            float listH = announcement ? 0.0f : HomeWidgets::height();
-            float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
             float cx = (panelLeft + panelRight) * 0.5f;
             bool covered = blocked || modal.open;
-            float floor = listH > 0.0f ? bottom - reserve : bottom;
-            if (listH > 0.0f && floor - top - listH - gap < LOGO_MIN + TOP_PAD) {
-                Page::Scroll body("homepage#widgets", top, bottom, listH + 2.0f * TOP_PAD + reserve, left,
-                                  right - left);
-                bool outside = body.begin();
-                HomeWidgets::draw(cx - QUICK_W * 0.5f, body.top - body.offset + TOP_PAD, QUICK_W, covered || outside);
-                body.end();
-            } else {
-                float size = std::clamp(std::min(panelRight - panelLeft, floor - top - listH - gap) * 0.46f, LOGO_MIN,
-                                        360.0f);
-                float logoY = (top + floor - size - gap - listH) * 0.5f - 8.0f;
-                float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
-                                                            : (UiTheme::isLight() ? 0.12f : 0.09f);
-                Logo::draw(cx - size * 0.5f, logoY, size, faint);
-                if (listH > 0.0f) {
-                    HomeWidgets::draw(cx - QUICK_W * 0.5f, logoY + size + gap, QUICK_W, covered);
-                }
-            }
             if (!announcement) {
+                float panelW = HomeLaunchPanel::width(left, right);
+                float widgetsH = HomeWidgets::height();
+                float groupH = HomeLaunchPanel::HEIGHT + (widgetsH > 0.0f ? PANEL_GAP + widgetsH : 0.0f);
+                float room = bottom - reserve - top;
+                if (groupH + 2.0f * TOP_PAD > room) {
+                    Page::Scroll body("homepage#panel", top, bottom - reserve, groupH + 2.0f * TOP_PAD, left,
+                                      right - left);
+                    bool outside = body.begin();
+                    float y = body.top - body.offset + TOP_PAD;
+                    float end = HomeLaunchPanel::draw(left, y, right, covered || outside);
+                    if (widgetsH > 0.0f) {
+                        HomeWidgets::draw(cx - panelW * 0.5f, end + PANEL_GAP, panelW, covered || outside);
+                    }
+                    body.end();
+                } else {
+                    float y = top + std::max(TOP_PAD, (room - groupH) * 0.5f);
+                    float end = HomeLaunchPanel::draw(left, y, right, covered);
+                    if (widgetsH > 0.0f) {
+                        HomeWidgets::draw(cx - panelW * 0.5f, end + PANEL_GAP, panelW, covered);
+                    }
+                }
                 if (modal.open) {
                     drawModal(blocked);
                 }
                 return;
             }
+            float size = std::clamp(std::min(panelRight - panelLeft, bottom - top) * 0.46f, LOGO_MIN, 360.0f);
+            float logoY = (top + bottom - size) * 0.5f - 8.0f;
+            float faint = Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
+                                                        : (UiTheme::isLight() ? 0.12f : 0.09f);
+            Logo::draw(cx - size * 0.5f, logoY, size, faint);
         }
         if (views.empty()) {
             return;
