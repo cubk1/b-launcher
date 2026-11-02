@@ -147,7 +147,8 @@ namespace ScreenshotViewer {
                 zoomAt(1.0f, x, y);
                 return;
             }
-            float actual = nativeW > 0 && fitW > 0.0f ? (float) nativeW / (fitW * UiRender::uiScale) : 0.0f;
+            float physicalWidth = fitW * UiRender::uiScale * UiRender::pixelScale();
+            float actual = nativeW > 0 && physicalWidth > 0.0f ? (float) nativeW / physicalWidth : 0.0f;
             zoomAt(actual > 1.5f ? actual : 2.0f, x, y);
         }
 
@@ -333,7 +334,8 @@ namespace ScreenshotViewer {
             }
             x -= PERCENT_W;
             if (full) {
-                int percent = (int) std::lround(drawW * UiRender::uiScale / (float) full->width * 100.0f);
+                float physicalWidth = drawW * UiRender::uiScale * UiRender::pixelScale();
+                int percent = (int) std::lround(physicalWidth / (float) full->width * 100.0f);
                 std::string text = std::to_string(percent) + "%";
                 bool hovered = !closing && NewUi::hit(x, toolY, PERCENT_W, TOOL);
                 float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
