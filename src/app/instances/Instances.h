@@ -18,6 +18,8 @@ namespace Instances {
         std::filesystem::path root;
         bool exists = false;
         bool custom = false;
+        // Kept out of the sidebar list; still listed in the version picker, launched and updated.
+        bool hidden = false;
     };
 
     struct Entry {
@@ -59,6 +61,9 @@ namespace Instances {
     void createFolder(const std::string& source);
     std::string addFolder(const std::filesystem::path& folder);
     void removeFolder(const std::string& source);
+    void setHidden(const std::string& source, bool hidden);
+    // Moves a game folder up (-1) or down (1) in the sidebar.
+    void moveSource(const std::string& source, int delta);
 
     void editSettings(const std::string& key, const std::function<void(blb::instance::instance_settings&)>& edit);
 

@@ -23,6 +23,7 @@
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/settings/SettingsScreen.h"
+#include "ui/imgui/screens/versions/VersionsScreen.h"
 #include "app/system/Platform.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
@@ -89,6 +90,7 @@ namespace MainWindow {
     static const int PAGE_DOWNLOADS = 1003;
     static const int PAGE_EDIT_LOADERS = 1004;
     static const int PAGE_MULTIPLAYER = 1005;
+    static const int PAGE_VERSIONS = 1006;
     static const int INSTANCE_PAGES = 10000;
 
     static const float SHELL_RADIUS = 14.0f;
@@ -273,6 +275,11 @@ namespace MainWindow {
 
     void showDownloads() {
         pages.go(PAGE_DOWNLOADS);
+    }
+
+    void showVersions() {
+        VersionsScreen::open();
+        pages.go(PAGE_VERSIONS);
     }
 
     void showLoaderEdit() {
@@ -573,6 +580,10 @@ namespace MainWindow {
                                             Platform::open(root);
                                         })->enabled(found->exists));
                         items.push_back(ActionMenuItem::make("重新读取", 0xf2f1, [] { Instances::refresh(); }));
+                        items.push_back(ActionMenuItem::make("上移", 0xf062, [key] { Instances::moveSource(key, -1); }));
+                        items.push_back(ActionMenuItem::make("下移", 0xf063, [key] { Instances::moveSource(key, 1); }));
+                        items.push_back(ActionMenuItem::make("在侧栏隐藏", 0xf06e,
+                                                             [key] { Instances::setHidden(key, true); }));
                         if (found->custom) {
                             items.push_back(
                                     ActionMenuItem::make("移除", 0xf2ed, [key] { Instances::removeFolder(key); })
@@ -604,6 +615,42 @@ namespace MainWindow {
         }
     }
 
+    static size_t hiddenCount() {
+        size_t count = 0;
+        for (const Instances::Source& source : Instances::sources()) {
+            count += source.hidden ? 1 : 0;
+        }
+        return count;
+    }
+
+    // One entry for every folder the player put away, so nothing is out of reach for good.
+    static void hiddenFolderRow(float y, bool blocked) {
+        if (hiddenCount() == 0) {
+            return;
+        }
+        NavItemWidget item("nav#hiddenFolders", Ui::glyph(0xf06e), "已隐藏的目录");
+        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
+        item.paint();
+        if (!item.pressed) {
+            return;
+        }
+        NewUi::openMenu(
+                "sidebar#hiddenFolders",
+                [] {
+                    MenuItems items;
+                    for (const Instances::Source& source : Instances::sources()) {
+                        if (!source.hidden) {
+                            continue;
+                        }
+                        std::string key = source.key;
+                        items.push_back(ActionMenuItem::make(source.label, 0xf06e,
+                                                             [key] { Instances::setHidden(key, false); }));
+                    }
+                    return items;
+                },
+                NewUi::mouseX, NewUi::mouseY, 180.0f);
+    }
+
     static void playing(const std::string& key, float y) {
         Game::State state = Game::state(key);
         float shown = UiState::motion("nav#playing#" + key, state != Game::State::Idle ? 1.0f : 0.0f, 14.0f);
@@ -632,12 +679,55 @@ namespace MainWindow {
         UiRender::alphaMul = savedAlpha;
     }
 
+    static std::vector<std::string> keysOf(const std::string& source) {
+        std::vector<std::string> keys;
+        for (const Instances::Entry& entry : Instances::list()) {
+            if (entry.source == source) {
+                keys.push_back(entry.key);
+            }
+        }
+        return keys;
+    }
+
+    // where: 0 to the top of its folder, -1 one up, 1 one down. Order beyond a folder would mean moving files.
+    static void moveVersion(const std::string& source, const std::string& key, int where) {
+        std::vector<std::string> keys = keysOf(source);
+        auto at = std::find(keys.begin(), keys.end(), key);
+        if (at == keys.end()) {
+            return;
+        }
+        size_t from = (size_t) (at - keys.begin());
+        size_t to = where == 0 ? 0
+                              : where < 0 ? (from == 0 ? 0 : from - 1)
+                                          : std::min(keys.size() - 1, from + 1);
+        if (from == to) {
+            return;
+        }
+        keys.erase(keys.begin() + (long long) from);
+        keys.insert(keys.begin() + (long long) to, key);
+        Instances::arrange(source, keys);
+    }
+
     static void instanceRow(const Instances::Entry& entry, float y, bool blocked) {
         const std::string& key = entry.key;
         if (!blocked && !NewUi::overlayCoversMouse() && NewUi::rightClick && NewUi::hit(ITEM_X, y, listW, ITEM_H)) {
             NewUi::rightClick = false;
             UiSound::request(UiSound::PAGE);
-            openVersionSettings(key);
+            std::string source = entry.source;
+            NewUi::openMenu(
+                    "sidebar#instance#" + key,
+                    [key, source] {
+                        MenuItems items;
+                        items.push_back(ActionMenuItem::make("版本设置", 0xf013, [key] { openVersionSettings(key); }));
+                        items.push_back(
+                                ActionMenuItem::make("置顶", 0xf062, [source, key] { moveVersion(source, key, 0); }));
+                        items.push_back(
+                                ActionMenuItem::make("上移", 0xf077, [source, key] { moveVersion(source, key, -1); }));
+                        items.push_back(
+                                ActionMenuItem::make("下移", 0xf078, [source, key] { moveVersion(source, key, 1); }));
+                        return items;
+                    },
+                    NewUi::mouseX, NewUi::mouseY, 160.0f);
         }
         NavItemWidget item("nav#instance#" + key, Ui::glyph(0xf071), entry.info.id);
         bool current = Instances::selected() == key &&
@@ -765,7 +855,7 @@ namespace MainWindow {
                 continue;
             }
             for (size_t i = 0; i < sources.size(); i++) {
-                if (sources[i].key == entry.source) {
+                if (sources[i].key == entry.source && !sources[i].hidden) {
                     grouped[i].push_back(&entry);
                 }
             }
@@ -773,11 +863,17 @@ namespace MainWindow {
         std::vector<float> opens(sources.size());
         float contentH = 0.0f;
         for (size_t i = 0; i < sources.size(); i++) {
+            if (sources[i].hidden) {
+                continue;
+            }
             opens[i] = UiState::motion("group#open#" + sources[i].key,
                                        isCollapsed(sources[i].key) && !searching ? 0.0f : 1.0f, 16.0f);
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
         contentH += ITEM_STEP;
+        if (hiddenCount() > 0) {
+            contentH += ITEM_STEP;
+        }
 
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - LIST_TOP;
@@ -822,6 +918,9 @@ namespace MainWindow {
         bool carried = false;
         for (size_t i = 0; i < sources.size(); i++) {
             const Instances::Source& source = sources[i];
+            if (source.hidden) {
+                continue;
+            }
             UiRender::scissor(0, LIST_TOP, sideW, viewH);
             bool headerBlocked = !NewUi::rawHit(0, std::max(LIST_TOP, cursor), sideW,
                                                 std::min(listBottom, cursor + GROUP_H) - std::max(LIST_TOP, cursor));
@@ -905,7 +1004,11 @@ namespace MainWindow {
         }
         if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
             UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            addFolderRow(cursor, dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH));
+            bool blocked = dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH);
+            addFolderRow(cursor, blocked);
+            if (hiddenCount() > 0) {
+                hiddenFolderRow(cursor + ITEM_STEP, blocked);
+            }
             UiRender::unscissor();
         }
 
@@ -960,11 +1063,15 @@ namespace MainWindow {
     static void content() {
         pages.begin();
         if (pages.page == PAGE_HOME) {
-            Homepage::draw(Page::left(), TITLE_HEIGHT, Page::right(), height() - 14.0f, LaunchButton::SIZE + 22.0f,
-                           NewUi::overlayCoversMouse());
-            float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
-            LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
-            LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
+            // The default home page carries the launch card itself; the others keep the floating button.
+            bool floating = Homepage::source() != Homepage::SOURCE_NONE;
+            Homepage::draw(Page::left(), TITLE_HEIGHT, Page::right(), height() - 14.0f,
+                           floating ? LaunchButton::SIZE + 22.0f : 0.0f, NewUi::overlayCoversMouse());
+            if (floating) {
+                float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
+                LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
+                LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
+            }
         } else if (pages.page >= INSTANCE_PAGES) {
             InstancePage::draw(shownInstance());
         } else if (pages.page == PAGE_SETTINGS) {
@@ -977,6 +1084,8 @@ namespace MainWindow {
             DownloadsScreen::draw();
         } else if (pages.page == PAGE_MULTIPLAYER) {
             MultiplayerScreen::draw();
+        } else if (pages.page == PAGE_VERSIONS) {
+            VersionsScreen::draw();
         }
         pages.end();
     }
@@ -1044,6 +1153,18 @@ namespace MainWindow {
         sidebar();
         content();
 
+        // Every page but the home page offers the way back in the title bar, where no page keeps its own controls.
+        if (pages.page != PAGE_HOME) {
+            std::string back = "返回主页";
+            float backW = std::max(76.0f, Page::buttonWidth(back, 0xf015));
+            float backY = (TITLE_HEIGHT - Page::FIELD_H) * 0.5f;
+            titleControls.push_back({sideW + 20.0f, backY, backW, Page::FIELD_H});
+            if (Page::button("topbar#home", back, sideW + 20.0f, backY, backW, false, NewUi::overlayCoversMouse(),
+                             0xf015)) {
+                pages.go(PAGE_HOME);
+            }
+        }
+
         float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
         if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
             minimizeRequested = true;
@@ -1053,7 +1174,8 @@ namespace MainWindow {
             closeRequested = true;
         }
         Drop::draw(width(), height());
-        Notifications::render(width(), height(), pages.page == PAGE_HOME ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f);
+        bool floating = pages.page == PAGE_HOME && Homepage::source() != Homepage::SOURCE_NONE;
+        Notifications::render(width(), height(), floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f);
     }
 
     bool isDragArea(float x, float y) {

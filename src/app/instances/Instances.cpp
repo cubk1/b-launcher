@@ -8,6 +8,7 @@
 
 #include <core/base/hash.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 #include <core/instance/loader_editor.hpp>
 
@@ -46,6 +47,8 @@ namespace Instances {
         constexpr double SETTLE = 1.0;
         const char* const FOLDERS = "gameFolders";
         const char* const ORDER = "instanceOrder";
+        const char* const HIDDEN = "hiddenFolders";
+        const char* const FOLDER_ORDER = "folderOrder";
 
         std::thread worker;
         std::mutex jobLock;
@@ -55,6 +58,7 @@ namespace Instances {
         bool stopping = false;
 
         std::vector<Source> roots;
+        std::set<std::string> hiddenKeys;
         blb::instance::isolation_mode mode = blb::instance::isolation_mode::modded;
         std::vector<Entry> entries;
         std::map<std::string, std::vector<std::string>> arranged;
@@ -428,6 +432,51 @@ namespace Instances {
             }
         }
 
+        // Which folders the sidebar leaves out, and the order they come in; both are the player's, not the disk's.
+        void loadPrefs() {
+            const nlohmann::json& doc = Config::data();
+            for (const std::string& key : blb::json_strings(doc, HIDDEN)) {
+                hiddenKeys.insert(key);
+            }
+            std::vector<std::string> order = blb::json_strings(doc, FOLDER_ORDER);
+            if (!order.empty()) {
+                std::vector<bool> used(roots.size(), false);
+                std::vector<Source> sorted;
+                sorted.reserve(roots.size());
+                for (const std::string& key : order) {
+                    for (size_t i = 0; i < roots.size(); i++) {
+                        if (!used[i] && roots[i].key == key) {
+                            used[i] = true;
+                            sorted.push_back(roots[i]);
+                            break;
+                        }
+                    }
+                }
+                for (size_t i = 0; i < roots.size(); i++) {
+                    if (!used[i]) {
+                        sorted.push_back(roots[i]);
+                    }
+                }
+                roots = std::move(sorted);
+            }
+            for (Source& source : roots) {
+                source.hidden = hiddenKeys.count(source.key) != 0;
+            }
+        }
+
+        void savePrefs() {
+            std::vector<std::string> keys;
+            keys.reserve(roots.size());
+            for (const Source& source : roots) {
+                keys.push_back(source.key);
+            }
+            Config::data()[FOLDER_ORDER] = keys;
+            Config::data()[HIDDEN] = std::vector<std::string>(hiddenKeys.begin(), hiddenKeys.end());
+            if (!Config::save()) {
+                notify("无法保存启动器配置", true);
+            }
+        }
+
         void loadFolders() {
             const nlohmann::json& doc = Config::data();
             auto list = doc.find(FOLDERS);
@@ -696,6 +745,7 @@ namespace Instances {
             roots.push_back(Source{"appdata", "APPDATA", appData, false});
         }
         loadFolders();
+        loadPrefs();
         worker = std::thread(runWorker);
         refresh();
     }
@@ -835,10 +885,20 @@ namespace Instances {
         if (const Source* chosen = source(preferred)) {
             return chosen;
         }
+        const Source* fallback = nullptr;
         for (const Source& entry : roots) {
+            if (entry.hidden) {
+                continue;
+            }
             if (entry.key == "local" && entry.exists) {
                 return &entry;
             }
+            if (fallback == nullptr) {
+                fallback = &entry;
+            }
+        }
+        if (fallback != nullptr) {
+            return fallback;
         }
         return roots.empty() ? nullptr : &roots.front();
     }
@@ -986,7 +1046,9 @@ namespace Instances {
             }
         }
         roots.push_back(Source{folderKey(root), folderLabel(root), root, true, true});
+        hiddenKeys.erase(roots.back().key);
         saveFolders();
+        savePrefs();
         notify("已添加游戏目录 " + roots.back().label, false);
         refresh();
         return {};
@@ -1007,6 +1069,8 @@ namespace Instances {
             return;
         }
         roots.erase(found);
+        hiddenKeys.erase(key);
+        savePrefs();
         if (arranged.erase(key) != 0) {
             saveOrder();
         }
@@ -1016,6 +1080,34 @@ namespace Instances {
         saveFolders();
         notify("已移除游戏目录 " + label + "，文件夹里的文件不会被删除", false);
         refresh();
+    }
+
+    void setHidden(const std::string& key, bool hidden) {
+        Source* found = sourceMutable(key);
+        if (found == nullptr || found->hidden == hidden) {
+            return;
+        }
+        found->hidden = hidden;
+        if (hidden) {
+            hiddenKeys.insert(key);
+        } else {
+            hiddenKeys.erase(key);
+        }
+        savePrefs();
+    }
+
+    void moveSource(const std::string& key, int delta) {
+        auto found = std::find_if(roots.begin(), roots.end(), [&](const Source& source) { return source.key == key; });
+        if (found == roots.end() || delta == 0) {
+            return;
+        }
+        long long from = found - roots.begin();
+        long long to = from + delta;
+        if (to < 0 || to >= (long long) roots.size()) {
+            return;
+        }
+        std::swap(roots[(size_t) from], roots[(size_t) to]);
+        savePrefs();
     }
 
     void editSettings(const std::string& key, const std::function<void(blb::instance::instance_settings&)>& edit) {
