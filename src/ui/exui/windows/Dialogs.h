@@ -25,9 +25,8 @@ namespace ForgottenMelody {
     int message(HWND parent, const std::wstring& text, const std::wstring& title,
                 exui::MsgBoxButtons buttons = exui::MsgBoxButtons::Ok, const std::vector<std::wstring>& labels = {});
 
-    // Creates window in the look of the 2014 dialogs: the dialog skin, fading into gray at its edges. It is at 230 alpha
-    // rather than their 150, which relied on Windows 7 blurring what is behind; without the blur, the text of the
-    // window under a dialog shows through.
+    // Creates a window with the 2014 dialog skin, preserving its background mode.
+    // Alpha is 230 rather than the original 150, which relied on Windows 7's blur behind the window.
     bool createDialog(exui::Window& window, HWND parent, const std::wstring& title, int width, int height,
                       uint32_t captionMask = exui::CaptionButtonMask::Close);
     // Shows window, focused on focus if given, and returns once it is closed. Other windows stay enabled, but their
@@ -45,8 +44,10 @@ namespace ForgottenMelody {
     std::string trimmed(const std::wstring& text);
 
     // A window that follows the services while it is open, refreshing ten times a second.
+    // Its skin covers the window while preserving the image's aspect ratio.
     class LiveForm : public exui::Form {
     public:
+        LiveForm();
         using Rows = std::vector<std::vector<std::wstring>>;
 
         // Shows rows in the list and returns whether they changed. As many rows as before are only rewritten, so

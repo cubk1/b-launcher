@@ -21,6 +21,19 @@ namespace exui {
             g.SetClip(&clip, CombineModeIntersect);
             DeleteObject(region);
         }
+
+        void DrawCover(Graphics& g, Bitmap& bitmap, const RectF& bounds) {
+            if (bounds.Width <= 0 || bounds.Height <= 0 || bitmap.GetWidth() == 0 || bitmap.GetHeight() == 0) return;
+            float scale = std::max(bounds.Width / bitmap.GetWidth(), bounds.Height / bitmap.GetHeight());
+            float width = bounds.Width / scale, height = bounds.Height / scale;
+            ImageAttributes attributes;
+            attributes.SetWrapMode(WrapModeTileFlipXY);
+            auto saved = g.Save();
+            g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+            g.DrawImage(&bitmap, bounds, (bitmap.GetWidth() - width) * 0.5f, (bitmap.GetHeight() - height) * 0.5f,
+                        width, height, UnitPixel, &attributes);
+            g.Restore(saved);
+        }
     } // namespace
 
     // Base color and skin, before the window alpha is applied.
@@ -33,6 +46,8 @@ namespace exui {
             if (m_skin && m_skinMode == SkinBackgroundMode::NineGrid)
                 DrawNineGrid(g, m_skin.get(), whole, {0, 0, m_width, m_height}, m_skinMargins.left, m_skinMargins.top,
                              m_skinMargins.right, m_skinMargins.bottom);
+            else if (m_skin && m_skinMode == SkinBackgroundMode::Cover)
+                DrawCover(g, *m_skin, RectF(0, 0, (REAL) m_width, (REAL) m_height));
             else if (m_skin)
                 g.DrawImage(m_skin.get(), 0, 0);
             g.Restore(saved);
@@ -46,6 +61,7 @@ namespace exui {
         if (m_skin) {
             switch (m_skinMode) {
                 case SkinBackgroundMode::Stretch: g.DrawImage(m_skin.get(), content); break;
+                case SkinBackgroundMode::Cover: DrawCover(g, *m_skin, content); break;
                 case SkinBackgroundMode::Tile: {
                     TextureBrush brush(m_skin.get(), WrapModeTile);
                     brush.TranslateTransform(5, 5);

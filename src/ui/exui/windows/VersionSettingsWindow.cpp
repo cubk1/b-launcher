@@ -18,6 +18,7 @@
 #include "ui/exui/windows/ExportWindow.h"
 #include "ui/exui/windows/LoadersWindow.h"
 #include "ui/exui/windows/ModsWindow.h"
+#include "ui/exui/windows/ScreenshotsWindow.h"
 #include "ui/exui/windows/ShortcutWindow.h"
 
 #include <core/base/strings.hpp>
@@ -43,6 +44,7 @@ namespace ForgottenMelody {
             LOADERS,
             EXPORT,
             SHORTCUT,
+            SCREENSHOTS,
             // 游戏
             GAME_GROUP,
             DIR_LABEL,
@@ -174,6 +176,7 @@ namespace ForgottenMelody {
                 {LOADERS, ControlKind::Button, {140, 36, 100, 30}, L"修改加载器"},
                 {EXPORT, ControlKind::Button, {248, 36, 100, 30}, L"导出整合包"},
                 {SHORTCUT, ControlKind::Button, {356, 36, 100, 30}, L"生成快捷方式"},
+                {SCREENSHOTS, ControlKind::Button, {464, 36, 100, 30}, L"截图管理"},
                 // 游戏
                 {GAME_GROUP, ControlKind::Group, {12, 92, 566, 261}, L"游戏"},
                 {DIR_LABEL, ControlKind::Label, {32, 117, 95, 26}, L"游戏目录"},
@@ -333,6 +336,7 @@ namespace ForgottenMelody {
                     case SHORTCUT: showShortcut(GetHwnd(), key); break;
                     case LOADERS: showLoaders(GetHwnd(), key); break;
                     case EXPORT: showExport(GetHwnd(), key); break;
+                    case SCREENSHOTS: showScreenshots(GetHwnd(), key); break;
                     case AUTO_MEMORY: {
                         uint32_t memory = Checked(AUTO_MEMORY) ? 0 : automaticMemory();
                         edit([memory](Settings& s) { s.max_memory_mb = memory; });

@@ -135,7 +135,6 @@ namespace ForgottenMelody {
         window.SetWindowAnimationTypes(exui::WindowAnimationKind::ZoomFade, exui::WindowAnimationKind::ZoomFade);
         window.SetControlAnimationsEnabled(false);
         window.SetWindowAlpha(230);
-        window.SetBackgroundMode(exui::SkinBackgroundMode::EdgeFade);
         return true;
     }
 
@@ -168,6 +167,10 @@ namespace ForgottenMelody {
         return value;
     }
 
+    LiveForm::LiveForm() {
+        SetBackgroundMode(exui::SkinBackgroundMode::Cover);
+    }
+
     void LiveForm::startRefreshing() {
         refresh();
         SetTimer(GetHwnd(), REFRESH_TIMER, 100, nullptr);
@@ -189,7 +192,6 @@ namespace ForgottenMelody {
             return false;
         }
         SetWindowAnimationTypes(exui::WindowAnimationKind::RevealLeft, exui::WindowAnimationKind::ZoomFade, false);
-        SetBackgroundMode(exui::SkinBackgroundMode::EdgeFade);
         sections = std::move(list);
         subject = title;
 

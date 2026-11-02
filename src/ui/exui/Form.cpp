@@ -144,9 +144,25 @@ namespace exui {
             MoveInto(group, FindControl(id));
     }
 
+    void Form::SetLayout(Layout layout, RECT margins) {
+        m_layout = std::move(layout);
+        m_layoutMargins = margins;
+        ArrangeControls();
+    }
+
+    void Form::ArrangeControls() {
+        if (m_layout) {
+            m_layout->Apply({m_layoutMargins.left, m_layoutMargins.top,
+                            GetWidth() - m_layoutMargins.left - m_layoutMargins.right,
+                            GetHeight() - m_layoutMargins.top - m_layoutMargins.bottom});
+        }
+    }
+
     LRESULT Form::HandleMessage(UINT msg, WPARAM wp, LPARAM lp) {
         if (msg == WM_CREATE || msg == WM_DESTROY) m_destroyed = msg == WM_DESTROY;
-        return Window::HandleMessage(msg, wp, lp);
+        LRESULT result = Window::HandleMessage(msg, wp, lp);
+        if (!m_destroyed && (msg == WM_SIZE || msg == WM_DPICHANGED)) ArrangeControls();
+        return result;
     }
 
     void Form::Dispatch(Widget* widget) {

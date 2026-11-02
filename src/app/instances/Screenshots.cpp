@@ -265,6 +265,10 @@ namespace Screenshots {
         return nullptr;
     }
 
+    bool fullImageFailed(const std::filesystem::path& path, std::int64_t modified) {
+        return fullOne.key == thumbKey(path, modified) && fullOne.failed;
+    }
+
     void forgetFullImage() {
         fullOne = {};
     }
