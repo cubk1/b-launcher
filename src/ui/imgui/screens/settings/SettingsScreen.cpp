@@ -17,6 +17,7 @@
 #include "app/launch/Patches.h"
 #include "ui/imgui/screens/home/QuickActions.h"
 #include "ui/imgui/screens/settings/GameOptionRows.h"
+#include "ui/imgui/screens/settings/ToolboxTab.h"
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
@@ -373,6 +374,7 @@ namespace SettingsScreen {
         constexpr int TAB_JAVA = 2;
         constexpr int TAB_ABOUT = 3;
         constexpr int TAB_PATCH = 4;
+        constexpr int TAB_TOOLS = 5;
         PageTransition sections(TAB_GAME);
 
         struct Tab {
@@ -382,8 +384,8 @@ namespace SettingsScreen {
         };
 
         const Tab TABS[] = {
-                {TAB_GAME, 0xf11b, "游戏设置"},  {TAB_PATCH, 0xf462, "补丁"}, {TAB_LAUNCHER, 0xf1de, "启动器设置"},
-                {TAB_JAVA, 0xf0f4, "Java 管理"}, {TAB_ABOUT, 0xf05a, "关于"},
+                {TAB_GAME, 0xf11b, "游戏设置"},  {TAB_PATCH, 0xf462, "补丁"},   {TAB_LAUNCHER, 0xf1de, "启动器设置"},
+                {TAB_JAVA, 0xf0f4, "Java 管理"}, {TAB_TOOLS, 0xf0ad, "工具箱"}, {TAB_ABOUT, 0xf05a, "关于"},
         };
 
         void rail(bool covered) {
@@ -1195,6 +1197,7 @@ namespace SettingsScreen {
         switch (sections.page) {
             case TAB_LAUNCHER: launcherTab(covered); break;
             case TAB_JAVA: javaTab(covered); break;
+            case TAB_TOOLS: ToolboxTab::draw(covered); break;
             case TAB_ABOUT: aboutTab(covered); break;
             case TAB_PATCH: patchTab(covered); break;
             default: gameTab(covered); break;

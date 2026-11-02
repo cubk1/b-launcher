@@ -115,6 +115,8 @@ http_send (const http_request &request, cancellation_token token)
                         static_cast<curl_off_t> (request.body.size ()));
       curl_easy_setopt (easy, CURLOPT_POSTFIELDS, request.body.data ());
     }
+  else if (request.method == "HEAD")
+    curl_easy_setopt (easy, CURLOPT_NOBODY, 1L);
   else if (request.method != "GET")
     {
       curl_easy_setopt (easy, CURLOPT_CUSTOMREQUEST, request.method.c_str ());

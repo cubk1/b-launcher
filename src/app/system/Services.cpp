@@ -13,6 +13,7 @@
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
 #include "app/system/Catalog.h"
+#include "app/system/CustomDownload.h"
 #include "app/system/Network.h"
 #include "app/system/ServerStatus.h"
 #include "app/system/Updates.h"
@@ -45,10 +46,12 @@ namespace Services {
         ShortcutLaunch::poll();
         ServerStatus::poll();
         Multiplayer::poll();
+        CustomDownload::poll();
     }
 
     void stop() {
         Multiplayer::shutdown();
+        CustomDownload::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
         Drops::shutdown();
