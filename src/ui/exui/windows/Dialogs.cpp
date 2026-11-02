@@ -186,7 +186,7 @@ namespace ForgottenMelody {
 
     bool SectionedForm::createFrame(HWND parent, const std::wstring& caption, const std::wstring& title,
                                     std::vector<Section> list, const Frame& frame) {
-        const exui::Skin skin = exui::Skin::DownloadCenterBackground;
+        const exui::Skin skin = exui::Skin::DialogBackground;
         if (!CreateHostWindow(parent, caption, frame.width, frame.height, exui::SkinBytes(skin), skinBaseColor(skin), 7,
                               exui::CaptionButtonMask::Close, false)) {
             return false;
