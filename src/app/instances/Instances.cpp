@@ -742,7 +742,11 @@ namespace Instances {
             roots.push_back(Source{"local", "当前目录", local, false});
         }
         if (!appData.empty()) {
+#if defined(_WIN32)
             roots.push_back(Source{"appdata", "APPDATA", appData, false});
+#else
+            roots.push_back(Source{"appdata", "默认目录", appData, false});
+#endif
         }
         loadFolders();
         loadPrefs();

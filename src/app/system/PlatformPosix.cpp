@@ -5,6 +5,9 @@
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_video.h>
+
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/resource.h>
@@ -424,11 +427,37 @@ namespace Platform {
         return setpriority(PRIO_PROCESS, (id_t) pid, NICE[level]) == 0;
     }
 
-    void minimizeWindow() {}
+    void minimizeWindow() {
+        if (window != nullptr) {
+            SDL_MinimizeWindow((SDL_Window*) window);
+        }
+    }
 
-    void hideWindow() {}
+    void hideWindow() {
+        if (window != nullptr) {
+            SDL_HideWindow((SDL_Window*) window);
+        }
+    }
 
-    void showWindow() {}
+    void showWindow() {
+        if (window == nullptr) {
+            return;
+        }
+        SDL_Window* shown = (SDL_Window*) window;
+        if (SDL_GetWindowFlags(shown) & SDL_WINDOW_MINIMIZED) {
+            SDL_RestoreWindow(shown);
+        }
+        SDL_ShowWindow(shown);
+        SDL_RaiseWindow(shown);
+    }
 
-    void closeWindow() {}
+    void closeWindow() {
+        if (window == nullptr) {
+            return;
+        }
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.window.windowID = SDL_GetWindowID((SDL_Window*) window);
+        SDL_PushEvent(&event);
+    }
 }
