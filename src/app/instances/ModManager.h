@@ -51,7 +51,7 @@ namespace ModManager {
     };
 
     void prepare(const std::string& key);
-    bool identifying(const std::string& key);
+    bool identifying(const std::string& key, Addons::Source source);
     std::string identifyError(const std::string& key, Addons::Source source);
     const Remote* remote(const Mods::Mod& mod);
     const Remote* remote(const Mods::Mod& mod, Addons::Source source);

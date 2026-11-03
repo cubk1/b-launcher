@@ -180,7 +180,7 @@ namespace ModVersionPicker {
         if (remote == nullptr) {
             searchField(w);
             std::string error = ModManager::identifyError(key, source);
-            if (ModManager::identifying(key)) {
+            if (ModManager::identifying(key, source)) {
                 message("正在从 " + site + " 识别…", x, middle, w, true);
             } else if (!error.empty()) {
                 message("无法连接 " + site + "：" + error, x, middle, w, false);

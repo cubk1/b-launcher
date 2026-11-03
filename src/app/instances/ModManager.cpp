@@ -54,14 +54,20 @@ namespace ModManager {
             float fraction = -1.0f;
         };
 
+        struct Identification {
+            int serial = -1;
+            bool running = false;
+            std::string error;
+        };
+
         struct Instance {
             int serial = -1;
             int revision = 0;
             std::tuple<int, int, int> requested{-1, -1, -1};
             Clock::time_point nextMetadataCheck;
-            bool running = false;
-            std::string error;
-            std::string curseError;
+            bool hashing = false;
+            std::string hashError;
+            std::map<Addons::Source, Identification> lookups;
             std::vector<Change> changes;
             std::set<std::string> adding;
             int addingGeneration = 0;
@@ -162,6 +168,27 @@ namespace ModManager {
                 }
             }
             return version;
+        }
+
+        std::optional<bool> sameVersion(const Addons::Version& selected, const Addons::Version& pinned) {
+            if (selected.source == pinned.source) {
+                return selected.projectId == pinned.projectId && selected.id == pinned.id;
+            }
+            const Addons::File* file = selected.file();
+            auto hash = file != nullptr ? blb::parse_sha1(file->sha1) : std::nullopt;
+            if (!hash) {
+                return std::nullopt;
+            }
+            bool complete = !pinned.files.empty();
+            for (const Addons::File& candidate : pinned.files) {
+                auto other = blb::parse_sha1(candidate.sha1);
+                if (!other) {
+                    complete = false;
+                } else if (*hash == *other) {
+                    return true;
+                }
+            }
+            return complete ? std::optional(false) : std::nullopt;
         }
 
         bool owns(const Mods::Mod& mod, const std::string& projectId) {
@@ -441,36 +468,24 @@ namespace ModManager {
             return pins;
         }
 
-        void identify(const std::string& key, Instance& state, const Mods::List& list) {
+        void hashFiles(const std::string& key, Instance& state, const Mods::List& list) {
             state.serial = list.serial;
-            std::vector<HashRequest> needHash;
-            std::vector<std::string> needLookup;
-            std::vector<std::uint32_t> needPrints;
+            state.hashError.clear();
+            std::vector<HashRequest> wanted;
             for (const Mods::Mod& mod : list.mods) {
                 std::string id = fileKey(mod.info);
-                auto known = hashes.find(id);
-                if (known == hashes.end()) {
-                    needHash.push_back({id, mod.info.file, mod.info.size, mod.info.modified});
-                    continue;
-                }
-                const Digest& digest = known->second;
-                if (remotes.count(digest.sha1) == 0 && unmatched.count(digest.sha1) == 0) {
-                    needLookup.push_back(digest.sha1);
-                }
-                if (curseRemotes.count(digest.fingerprint) == 0 && curseUnmatched.count(digest.fingerprint) == 0) {
-                    needPrints.push_back(digest.fingerprint);
+                if (hashes.count(id) == 0) {
+                    wanted.push_back({id, mod.info.file, mod.info.size, mod.info.modified});
                 }
             }
-            if (needHash.empty() && needLookup.empty() && needPrints.empty()) {
+            if (wanted.empty()) {
                 return;
             }
-            state.running = true;
-            state.error.clear();
-            state.curseError.clear();
+            state.hashing = true;
             tasks.run(
-                    [key, needHash, needLookup, needPrints](blb::cancellation_token token) -> Continuation {
-                        std::map<std::string, Digest> hashed;
-                        for (const HashRequest& file : needHash) {
+                    [key, wanted](blb::cancellation_token token) -> Continuation {
+                        std::map<std::string, Digest> found;
+                        for (const HashRequest& file : wanted) {
                             if (token.is_cancelled()) {
                                 return nullptr;
                             }
@@ -481,23 +496,63 @@ namespace ModManager {
                             auto data = blb::fs::read_file(file.file);
                             auto after = blb::fs::stat(file.file);
                             if (data && after.exists && after.size == file.size && after.mtime == file.modified) {
-                                hashed[file.id] = Digest{blb::to_hex(blb::sha1::digest(*data)),
-                                                         blb::modpack::detail::curseforge_fingerprint(*data)};
+                                found[file.id] = Digest{blb::to_hex(blb::sha1::digest(*data)),
+                                                        blb::modpack::detail::curseforge_fingerprint(*data)};
                             }
                         }
-                        std::vector<std::string> lookup = needLookup;
-                        std::vector<std::uint32_t> prints = needPrints;
-                        for (const auto& item : hashed) {
-                            lookup.push_back(item.second.sha1);
-                            prints.push_back(item.second.fingerprint);
-                        }
-                        std::sort(lookup.begin(), lookup.end());
-                        lookup.erase(std::unique(lookup.begin(), lookup.end()), lookup.end());
-                        std::sort(prints.begin(), prints.end());
-                        prints.erase(std::unique(prints.begin(), prints.end()), prints.end());
+                        return [key, found = std::move(found)]() mutable {
+                            for (auto& [id, digest] : found) {
+                                hashes[id] = std::move(digest);
+                            }
+                            instances[key].hashing = false;
+                            ++metadataVersion;
+                        };
+                    },
+                    [key](const std::string& error) -> Continuation {
+                        return [key, error] {
+                            instances[key].hashing = false;
+                            instances[key].hashError = error;
+                        };
+                    });
+        }
+
+        void identify(const std::string& key, Addons::Source source, Instance& state, const Mods::List& list) {
+            Identification& identification = state.lookups[source];
+            identification.serial = list.serial;
+            identification.error.clear();
+            std::vector<std::string> lookup;
+            std::vector<std::uint32_t> prints;
+            for (const Mods::Mod& mod : list.mods) {
+                auto known = hashes.find(fileKey(mod.info));
+                if (known == hashes.end()) {
+                    continue;
+                }
+                const Digest& digest = known->second;
+                if (source == Addons::Source::Modrinth) {
+                    if (remotes.count(digest.sha1) == 0 && unmatched.count(digest.sha1) == 0) {
+                        lookup.push_back(digest.sha1);
+                    }
+                } else if (curseRemotes.count(digest.fingerprint) == 0 && curseUnmatched.count(digest.fingerprint) == 0) {
+                    prints.push_back(digest.fingerprint);
+                }
+            }
+            if (lookup.empty() && prints.empty()) {
+                return;
+            }
+            std::sort(lookup.begin(), lookup.end());
+            lookup.erase(std::unique(lookup.begin(), lookup.end()), lookup.end());
+            std::sort(prints.begin(), prints.end());
+            prints.erase(std::unique(prints.begin(), prints.end()), prints.end());
+            identification.running = true;
+            tasks.run(
+                    [key, source, lookup, prints](blb::cancellation_token token) -> Continuation {
                         std::map<std::string, Remote> found;
+                        std::map<std::uint32_t, Remote> curseFound;
                         std::string error;
                         for (size_t start = 0; start < lookup.size(); start += BATCH) {
+                            if (token.is_cancelled()) {
+                                return nullptr;
+                            }
                             json body = {{"algorithm", "sha1"}, {"hashes", json::array()}};
                             for (size_t i = start; i < std::min(lookup.size(), start + BATCH); i++) {
                                 body["hashes"].push_back(lookup[i]);
@@ -512,73 +567,65 @@ namespace ModManager {
                             }
                             for (auto item = doc->begin(); item != doc->end(); ++item) {
                                 Addons::Version version = Modrinth::versionFrom(item.value());
-                                if (version.projectId.empty()) {
-                                    continue;
+                                if (!version.projectId.empty()) {
+                                    found[item.key()] = Remote{source, version.projectId, version.id,
+                                                               version.number, version.dependencies};
                                 }
-                                found[item.key()] = Remote{Addons::Source::Modrinth, version.projectId, version.id,
-                                                           version.number, version.dependencies};
                             }
                         }
-                        std::map<std::uint32_t, Remote> curseFound;
-                        std::string curseError;
                         for (size_t start = 0; start < prints.size(); start += BATCH) {
+                            if (token.is_cancelled()) {
+                                return nullptr;
+                            }
                             std::vector<std::uint32_t> chunk(prints.begin() + (long) start,
                                                              prints.begin() +
                                                                      (long) std::min(prints.size(), start + BATCH));
                             auto matched = CurseForge::matchFingerprints(chunk, token);
                             if (!matched) {
-                                curseError = matched.err().message;
+                                error = matched.err().message;
                                 break;
                             }
                             for (const auto& [print, match] : *matched) {
                                 Addons::Version version = labelled(match);
-                                curseFound[print] = Remote{Addons::Source::CurseForge, version.projectId, version.id,
+                                curseFound[print] = Remote{source, version.projectId, version.id,
                                                            version.number, version.dependencies};
                             }
                         }
-                        return [key, hashed, lookup, found, error, prints, curseFound, curseError] {
-                            for (const auto& item : hashed) {
-                                hashes[item.first] = item.second;
-                            }
+                        return [key, source, lookup, prints, found = std::move(found),
+                                curseFound = std::move(curseFound), error] {
                             for (const auto& item : found) {
                                 remotes[item.first] = item.second;
                             }
                             for (const auto& item : curseFound) {
                                 curseRemotes[item.first] = item.second;
                             }
-                            metadataVersion++;
                             if (error.empty()) {
                                 for (const std::string& hash : lookup) {
                                     if (found.count(hash) == 0) {
                                         unmatched.insert(hash);
                                     }
                                 }
-                            }
-                            if (curseError.empty()) {
                                 for (std::uint32_t print : prints) {
                                     if (curseFound.count(print) == 0) {
                                         curseUnmatched.insert(print);
                                     }
                                 }
                             }
-                            Instance& state = instances[key];
-                            state.running = false;
-                            state.error = error;
-                            state.curseError = curseError;
-                            if (Mods::of(key).serial != state.serial && error.empty() && curseError.empty()) {
-                                state.serial = -1;
-                            }
+                            Identification& identification = instances[key].lookups[source];
+                            identification.running = false;
+                            identification.error = error;
+                            ++metadataVersion;
                         };
                     },
-                    [key](const std::string& error) -> Continuation {
-                        return [key, error] {
-                            Instance& state = instances[key];
-                            state.running = false;
-                            state.error = error;
-                            state.curseError = error;
+                    [key, source](const std::string& error) -> Continuation {
+                        return [key, source, error] {
+                            Identification& identification = instances[key].lookups[source];
+                            identification.running = false;
+                            identification.error = error;
                         };
                     });
         }
+
 
         void prune(Instance& state, const Mods::List& list) {
             auto& changes = state.changes;
@@ -605,8 +652,16 @@ namespace ModManager {
                 return state;
             }
             prune(state, list);
-            if (!state.running && list.serial != state.serial) {
-                identify(key, state, list);
+            if (!state.hashing && list.serial != state.serial) {
+                hashFiles(key, state, list);
+            }
+            if (!state.hashing) {
+                for (Addons::Source source : SOURCES) {
+                    const Identification& identification = state.lookups[source];
+                    if (!identification.running && identification.serial != list.serial) {
+                        identify(key, source, state, list);
+                    }
+                }
             }
             std::tuple<int, int, int> stamp{list.serial, state.revision, metadataVersion};
             auto now = Clock::now();
@@ -635,7 +690,16 @@ namespace ModManager {
                 }
             }
             ensureVersions(pinned);
-            ensureProjects(wanted);
+            // A slow project endpoint must not hold back metadata from the other source either.
+            for (Addons::Source source : SOURCES) {
+                std::set<std::string> selected;
+                for (const std::string& id : wanted) {
+                    if (sourceOf(id) == source) {
+                        selected.insert(id);
+                    }
+                }
+                ensureProjects(selected);
+            }
             return state;
         }
 
@@ -896,13 +960,14 @@ namespace ModManager {
         sync(key);
     }
 
-    bool identifying(const std::string& key) {
-        return sync(key).running || Mods::of(key).loading;
+    bool identifying(const std::string& key, Addons::Source source) {
+        Instance& state = sync(key);
+        return state.hashing || state.lookups[source].running || Mods::of(key).loading;
     }
 
     std::string identifyError(const std::string& key, Addons::Source source) {
         Instance& state = sync(key);
-        return source == Addons::Source::CurseForge ? state.curseError : state.error;
+        return !state.hashError.empty() ? state.hashError : state.lookups[source].error;
     }
 
     const Remote* remote(const Mods::Mod& mod) {
@@ -1247,7 +1312,8 @@ namespace ModManager {
             const Mods::Mod* old = change.file.empty() ? nullptr : modAt(list, change.file);
             for (Addons::Source source : SOURCES) {
                 if (const Remote* found = old != nullptr ? remote(*old, source) : nullptr) {
-                    present[found->projectId].insert(change.target.id);
+                    // The replacement still provides this project, but its other source has a different version ID.
+                    present.try_emplace(found->projectId);
                 }
             }
         }
@@ -1287,6 +1353,24 @@ namespace ModManager {
             }
             auto installed = present.find(projectId);
             bool exact = installed != present.end() && installed->second.count(dependency.versionId) != 0;
+            bool unknown = false;
+            if (pinned != nullptr && !exact) {
+                for (const Change& change : state.changes) {
+                    if (change.disabled) {
+                        continue;
+                    }
+                    auto same = sameVersion(change.target, *pinned);
+                    exact = exact || same.value_or(false);
+                    const Mods::Mod* old = change.file.empty() ? nullptr : modAt(list, change.file);
+                    bool related = change.projectId == projectId || (old != nullptr && owns(*old, projectId));
+                    unknown = unknown || (related && !same.has_value());
+                }
+            }
+            if (!exact && unknown) {
+                push(Severity::Error, "无法确认 " + item.name + " 的指定前置版本，请从 " +
+                             Addons::sourceName(pinned->source) + " 选择 " + title(projectId) + " 的对应版本", {});
+                continue;
+            }
             if (dependency.incompatible) {
                 if (dependency.versionId.empty() ? installed != present.end() : exact) {
                     push(Severity::Error, item.name + " 与 " + title(projectId) + " 不兼容", {});
@@ -1337,8 +1421,13 @@ namespace ModManager {
 
     bool checking(const std::string& key) {
         Instance& state = sync(key);
-        if (state.running || Mods::of(key).loading) {
+        if (state.hashing || Mods::of(key).loading) {
             return true;
+        }
+        for (const Change& change : state.changes) {
+            if (state.lookups[change.target.source].running) {
+                return true;
+            }
         }
         for (const Requirement& item : requirements(key, state)) {
             const Addons::Dependency& dependency = item.dependency;
