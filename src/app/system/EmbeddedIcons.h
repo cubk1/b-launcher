@@ -35,6 +35,8 @@ namespace EmbeddedIcons {
     extern const unsigned int hmclSize;
     extern const unsigned char pcl[];
     extern const unsigned int pclSize;
+    extern const unsigned char prism[];
+    extern const unsigned int prismSize;
 
     extern const unsigned char backgroundSidebar[];
     extern const unsigned int backgroundSidebarSize;

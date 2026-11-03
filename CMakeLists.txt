@@ -140,6 +140,7 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADE
         canvas assets/images/canvas.png
         hmcl assets/images/hmcl.png
         pcl assets/images/pcl.png
+        prism assets/images/prism.png
         backgroundSidebar assets/images/background-sidebar.jpg
         backgroundPanel assets/images/background-panel.jpg)
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEADER ui/imgui/screens/shell/EmbeddedSounds.h NAMESPACE EmbeddedSounds FILES

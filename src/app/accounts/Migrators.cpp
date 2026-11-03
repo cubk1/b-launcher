@@ -130,6 +130,40 @@ namespace Migrators {
             }
         }
 
+        std::string textOf(const json& object, const char* key) {
+            auto value = object.is_object() ? object.find(key) : object.end();
+            return value != object.end() && value->is_string() ? value->get<std::string>() : std::string();
+        }
+
+        void prism(std::vector<Found>& out) {
+            std::optional<std::string> data = readFile(appData() / "PrismLauncher" / "accounts.json");
+            if (!data) {
+                return;
+            }
+            json doc = json::parse(*data, nullptr, false);
+            auto accounts = doc.is_object() ? doc.find("accounts") : doc.end();
+            if (doc.is_discarded() || !doc.is_object() || accounts == doc.end() || !accounts->is_array()) {
+                return;
+            }
+            for (const json& account : *accounts) {
+                if (textOf(account, "type") != "MSA") {
+                    continue;
+                }
+                std::string client = textOf(account, "msa-client-id");
+                if (!client.empty() && client != MicrosoftClients::PRISM_ID) {
+                    continue;
+                }
+                auto msa = account.find("msa");
+                std::string refresh = msa != account.end() ? textOf(*msa, "refresh_token") : std::string();
+                if (refresh.empty()) {
+                    continue;
+                }
+                auto profile = account.find("profile");
+                std::string name = profile != account.end() ? textOf(*profile, "name") : std::string();
+                out.push_back(Found{App::Prism, "Prism Launcher", name, refresh});
+            }
+        }
+
         uint64_t pclHash(const std::string& text) {
             uint64_t value = 5381;
             for (unsigned char c : text) {
@@ -232,6 +266,7 @@ namespace Migrators {
             officialLauncher(minecraft / "launcher_msa_credentials_microsoft_store.bin",
                              "Minecraft 启动器（Microsoft Store）", out);
             hmcl(out);
+            prism(out);
         }
         pcl(out);
         std::vector<Found> unique;

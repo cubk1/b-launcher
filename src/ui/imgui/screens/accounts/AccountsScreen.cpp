@@ -318,6 +318,7 @@ namespace AccountsScreen {
                                         case MicrosoftClients::App::Official: image = Icons::vanilla(); break;
                                         case MicrosoftClients::App::Hmcl: image = Icons::hmcl(); break;
                                         case MicrosoftClients::App::Pcl: image = Icons::pcl(); break;
+                                        case MicrosoftClients::App::Prism: image = Icons::prism(); break;
                                         default: break;
                                     }
                                     break;
@@ -467,6 +468,7 @@ namespace AccountsScreen {
                 case MicrosoftClients::App::Official: image = Icons::vanilla(); break;
                 case MicrosoftClients::App::Hmcl: image = Icons::hmcl(); break;
                 case MicrosoftClients::App::Pcl: image = Icons::pcl(); break;
+                case MicrosoftClients::App::Prism: image = Icons::prism(); break;
                 default: break;
             }
             if (image != 0) {

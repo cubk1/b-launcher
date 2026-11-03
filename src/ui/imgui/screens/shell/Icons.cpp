@@ -76,6 +76,11 @@ namespace Icons {
         return load(texture, EmbeddedIcons::pcl, EmbeddedIcons::pclSize);
     }
 
+    uint32_t prism() {
+        static uint32_t texture = 0;
+        return load(texture, EmbeddedIcons::prism, EmbeddedIcons::prismSize);
+    }
+
     uint32_t backgroundSidebar() {
         static uint32_t texture = 0;
         return load(texture, EmbeddedIcons::backgroundSidebar, EmbeddedIcons::backgroundSidebarSize);

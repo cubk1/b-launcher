@@ -15,6 +15,7 @@ namespace Icons {
     uint32_t canvas();
     uint32_t hmcl();
     uint32_t pcl();
+    uint32_t prism();
     uint32_t backgroundSidebar();
     uint32_t backgroundPanel();
 }
