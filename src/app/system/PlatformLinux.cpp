@@ -1,5 +1,8 @@
 #include "app/system/Platform.h"
+#include "app/system/EmbeddedIcons.h"
 #include "app/system/PlatformPosix.h"
+
+#include <core/base/fs.hpp>
 
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
@@ -137,6 +140,57 @@ namespace Platform {
 
     void reveal(const std::filesystem::path& path) {
         open(path.parent_path());
+    }
+
+    std::string createShortcut(const Shortcut& shortcut) {
+        std::filesystem::path file = shortcut.file;
+        if (file.extension() != ".desktop") {
+            file += ".desktop";
+        }
+        std::filesystem::path exe;
+        if (auto image = blb::environment("APPIMAGE"); image && !image->empty()) {
+            exe = blb::path_from_utf8(*image);
+        } else {
+            exe = executablePath();
+        }
+        std::filesystem::path icon = shortcut.icon;
+        if (icon.empty()) {
+            icon = configDirectory() / "b-launcher.svg";
+            if (!blb::fs::exists(icon)) {
+                auto made = blb::fs::create_directories(icon.parent_path());
+                auto written = made ? blb::fs::write_file_atomic(icon,
+                                                                 std::string_view((const char*) EmbeddedIcons::logoSvg,
+                                                                                  EmbeddedIcons::logoSvgSize))
+                                    : made;
+                if (!written) {
+                    return "无法保存快捷方式图标";
+                }
+            }
+        }
+        auto quoted = [](const std::string& text) {
+            std::string out = "\"";
+            for (char c : text) {
+                if (c == '"' || c == '`' || c == '$' || c == '\\') {
+                    out += '\\';
+                }
+                out += c;
+            }
+            return out + "\"";
+        };
+        std::string name = file.stem().string();
+        std::string text = "[Desktop Entry]\nType=Application\nName=" + name + "\nComment=" + shortcut.description +
+                "\nExec=" + quoted(blb::path_to_utf8(exe)) + " " + shortcut.arguments +
+                "\nIcon=" + blb::path_to_utf8(icon) + "\nTerminal=false\nCategories=Game;\n";
+        auto written = blb::fs::write_file_atomic(file, text);
+        if (!written) {
+            return "无法创建快捷方式：" + written.err().message;
+        }
+        std::error_code error;
+        std::filesystem::permissions(file,
+                                     std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec |
+                                             std::filesystem::perms::others_exec,
+                                     std::filesystem::perm_options::add, error);
+        return {};
     }
 
     bool recycle(const std::filesystem::path& path) {

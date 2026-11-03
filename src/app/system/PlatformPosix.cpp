@@ -5,6 +5,7 @@
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
+#include <SDL3/SDL_clipboard.h>
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
@@ -307,10 +308,6 @@ namespace Platform {
         return {};
     }
 
-    std::string createShortcut(const Shortcut&) {
-        return "这个系统暂不支持创建快捷方式";
-    }
-
     std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path& suggested) {
         std::filesystem::path file = suggested;
         file.replace_extension(".desktop");
@@ -386,8 +383,24 @@ namespace Platform {
 
     void claimLaunches() {}
 
-    bool setClipboardImage(const Pixels&) {
-        return false;
+    bool setClipboardImage(const Pixels& pixels) {
+        static std::string png;
+        std::string encoded = Pixels::encodePng(pixels);
+        if (encoded.empty()) {
+            return false;
+        }
+        png = std::move(encoded);
+        static const char* types[] = {"image/png"};
+        return SDL_SetClipboardData(
+                [](void*, const char* type, size_t* size) -> const void* {
+                    if (type == nullptr || std::strcmp(type, "image/png") != 0) {
+                        *size = 0;
+                        return nullptr;
+                    }
+                    *size = png.size();
+                    return png.data();
+                },
+                nullptr, nullptr, types, 1);
     }
 
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial) {

@@ -2,6 +2,10 @@
 
 #include "stb_image.h"
 
+#if !defined(_WIN32)
+#include <zlib.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -10,6 +14,19 @@
 
 #if !defined(_WIN32)
 namespace {
+    void bigEndian(std::string& out, uint32_t value) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            out.push_back((char) ((value >> shift) & 0xFF));
+        }
+    }
+
+    void chunk(std::string& out, const char* type, const std::string& body) {
+        bigEndian(out, (uint32_t) body.size());
+        std::string tagged = std::string(type, 4) + body;
+        out += tagged;
+        bigEndian(out, (uint32_t) crc32(0, (const Bytef*) tagged.data(), (uInt) tagged.size()));
+    }
+
     uint32_t little(const unsigned char* p, int bytes) {
         uint32_t value = 0;
         for (int i = bytes - 1; i >= 0; i--) {
@@ -70,6 +87,36 @@ namespace {
         }
         return pixels;
     }
+}
+#endif
+
+#if !defined(_WIN32)
+std::string Pixels::encodePng(const Pixels& pixels) {
+    if (pixels.width <= 0 || pixels.height <= 0 || pixels.rgba.size() < (size_t) pixels.width * pixels.height * 4) {
+        return {};
+    }
+    size_t stride = (size_t) pixels.width * 4;
+    std::string raw;
+    raw.reserve((stride + 1) * pixels.height);
+    for (int y = 0; y < pixels.height; y++) {
+        raw.push_back(0);
+        raw.append((const char*) pixels.rgba.data() + (size_t) y * stride, stride);
+    }
+    uLongf packed = compressBound((uLong) raw.size());
+    std::string compressed((size_t) packed, '\0');
+    if (compress2((Bytef*) compressed.data(), &packed, (const Bytef*) raw.data(), (uLong) raw.size(), 6) != Z_OK) {
+        return {};
+    }
+    compressed.resize((size_t) packed);
+    std::string header;
+    bigEndian(header, (uint32_t) pixels.width);
+    bigEndian(header, (uint32_t) pixels.height);
+    header += std::string("\x08\x06\x00\x00\x00", 5);
+    std::string out = "\x89PNG\r\n\x1a\n";
+    chunk(out, "IHDR", header);
+    chunk(out, "IDAT", compressed);
+    chunk(out, "IEND", std::string());
+    return out;
 }
 #endif
 

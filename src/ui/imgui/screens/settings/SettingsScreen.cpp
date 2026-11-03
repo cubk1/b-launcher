@@ -993,10 +993,17 @@ namespace SettingsScreen {
             toggle(
                     "settings#systemProxy", [] { return Network::systemProxy(); },
                     [](bool on) { Network::setSystemProxy(on); }, y, blocked);
+#if defined(_WIN32)
             explain("settings#systemProxy",
                     "开启后，下载和其他网络请求会走 Windows 系统代理，例如 Clash、v2rayN 设置的代理。"
                     "代理软件没有运行时请关闭。",
                     y, Page::controlRight() - 40.0f, blocked);
+#else
+            explain("settings#systemProxy",
+                    "开启后，下载和其他网络请求会使用 http_proxy、https_proxy 环境变量里的代理。"
+                    "代理软件没有运行时请关闭。",
+                    y, Page::controlRight() - 40.0f, blocked);
+#endif
         }
 
         void confirmReset() {
@@ -1176,7 +1183,11 @@ namespace SettingsScreen {
             float top = Page::TOP + 40.0f;
             float bottom = MainWindow::height() - 14.0f;
             if (javas.list.empty()) {
+#if defined(_WIN32)
                 std::string text = loading ? "正在查找 Java…" : "没有找到 Java，点击“添加”选择 java.exe";
+#else
+                std::string text = loading ? "正在查找 Java…" : "没有找到 Java，点击“添加”选择 java";
+#endif
                 float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float lead = loading ? 24.0f : 0.0f;
                 float x = mainX() + (mainW() - w - lead) * 0.5f;

@@ -517,7 +517,11 @@ namespace JavaDownloads {
 
     bool installed(const Package& package) {
         std::error_code error;
+#if defined(_WIN32)
         return std::filesystem::exists(homeOf(package) / "bin" / "java.exe", error);
+#else
+        return std::filesystem::exists(homeOf(package) / "bin" / "java", error);
+#endif
     }
 
     bool busy() {

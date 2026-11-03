@@ -79,6 +79,10 @@ namespace Platform {
         spawnDetached({"/usr/bin/open", "-R", path.string()});
     }
 
+    std::string createShortcut(const Shortcut&) {
+        return "这个系统不支持创建快捷方式";
+    }
+
     bool recycle(const std::filesystem::path&) {
         return false;
     }
