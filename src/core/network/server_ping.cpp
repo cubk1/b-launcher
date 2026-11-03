@@ -31,7 +31,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <arpa/nameser.h>
 #include <resolv.h>
 #endif
@@ -403,7 +403,7 @@ lookup_srv (const std::string &host)
         best.reset ();
     }
   return best;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
   std::string name = "_minecraft._tcp." + host;
   unsigned char answer[4096];
   int length

@@ -80,9 +80,7 @@ if(WIN32)
   blb_force(CURL_USE_SCHANNEL ON)
   blb_force(CURL_USE_OPENSSL OFF)
   blb_force(CURL_WINDOWS_SSPI ON)
-elseif(APPLE)
-  blb_force(CURL_USE_OPENSSL ON)
-else()
+elseif(NOT APPLE)
   blb_force(ENABLE_PROGRAMS OFF)
   blb_force(ENABLE_TESTING OFF)
   blb_force(GEN_FILES OFF)
@@ -108,11 +106,15 @@ else()
   blb_force(MBEDCRYPTO_LIBRARY mbedcrypto)
 endif()
 
-FetchContent_Declare(curl
-  URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
-  URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(curl)
+if(APPLE)
+  find_package(CURL REQUIRED)
+else()
+  FetchContent_Declare(curl
+    URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
+    URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(curl)
+endif()
 
 blb_force(MZ_COMPAT OFF)
 blb_force(MZ_ZLIB ON)
