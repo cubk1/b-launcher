@@ -7,11 +7,18 @@
 #endif
 #include "ui/imgui/screens/shell/ImGuiApp.h"
 
+#if !defined(_WIN32)
+#include <csignal>
+#endif
+
 #include <optional>
 #include <string>
 #include <string_view>
 
 int main() {
+#if !defined(_WIN32)
+    std::signal(SIGPIPE, SIG_IGN);
+#endif
     if (std::optional<DiskScan::Helper> helper = DiskScan::helperArgument()) {
         return DiskScan::runHelper(*helper);
     }

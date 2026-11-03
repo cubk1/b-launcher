@@ -83,7 +83,9 @@ set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
 if (WIN32)
     set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
 else ()
-    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c)
+    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
+            ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
+            ${FREETYPE_DIR}/src/psnames/psnames.c)
 endif ()
 add_library(freetype STATIC
         ${FREETYPE_DIR}/src/base/ftbase.c
@@ -270,6 +272,10 @@ if (WIN32)
     else ()
         message(STATUS "No ZeroTier library in ${ZEROTIER_DIR}: multiplayer is left out")
     endif ()
+elseif (TARGET zt-static)
+    target_include_directories(b-launcher PRIVATE ${libzt_SOURCE_DIR}/include)
+    target_link_libraries(b-launcher PRIVATE zt-static)
+    target_compile_definitions(b-launcher PRIVATE BLB_ZEROTIER)
 endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")

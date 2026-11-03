@@ -77,6 +77,23 @@ namespace UiFont {
             return found;
         }
 
+        bool covers(const std::string& spec, unsigned long code) {
+            size_t hash = spec.rfind('#');
+            std::string file = hash == std::string::npos ? spec : spec.substr(0, hash);
+            long face = hash == std::string::npos ? 0 : std::atol(spec.c_str() + hash + 1);
+            FT_Library library = nullptr;
+            if (FT_Init_FreeType(&library) != 0) {
+                return false;
+            }
+            FT_Face loaded = nullptr;
+            bool found = FT_New_Face(library, file.c_str(), face, &loaded) == 0 && FT_Get_Char_Index(loaded, code) != 0;
+            if (loaded != nullptr) {
+                FT_Done_Face(loaded);
+            }
+            FT_Done_FreeType(library);
+            return found;
+        }
+
 #if defined(__APPLE__)
         std::string fontFile(const char* name) {
             CFStringRef family = CFStringCreateWithCString(nullptr, name, kCFStringEncodingUTF8);
@@ -108,11 +125,16 @@ namespace UiFont {
 
         std::vector<std::string> systemFallbacks() {
             std::vector<std::string> out;
-            for (const char* name : {"PingFang SC", "Hiragino Sans GB", "Apple Symbols"}) {
+            for (const char* name : {"PingFang SC", "Hiragino Sans GB", "STHeiti"}) {
                 std::string spec = systemFont(name);
-                if (!spec.empty()) {
+                if (!spec.empty() && covers(spec, 0x4E2D)) {
                     out.push_back(spec);
+                    break;
                 }
+            }
+            std::string symbols = systemFont("Apple Symbols");
+            if (!symbols.empty()) {
+                out.push_back(symbols);
             }
             return out;
         }
@@ -174,7 +196,7 @@ namespace UiFont {
                     if (!readable(spec)) {
                         spec.clear();
                     } else {
-                        spec += "#" + std::to_string(index);
+                        spec += "#" + std::to_string(index & 0xFFFF);
                     }
                 }
                 destroy(found);
@@ -189,27 +211,37 @@ namespace UiFont {
 
         std::vector<std::string> systemFallbacks() {
             std::vector<std::string> out;
-            for (const char* query : {"sans-serif:lang=zh-cn", "sans-serif:lang=zh-tw", "symbol"}) {
+            for (const char* query :
+                 {"sans-serif:lang=zh-cn", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN",
+                  "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Droid Sans Fallback", "AR PL UMing CN", ":lang=zh-cn"}) {
                 std::string spec = fontConfig().find(query);
-                if (!spec.empty() && std::find(out.begin(), out.end(), spec) == out.end()) {
+                if (!spec.empty() && covers(spec, 0x4E2D)) {
                     out.push_back(spec);
+                    break;
                 }
-            }
-            if (!out.empty()) {
-                return out;
             }
             const char* known[][2] = {
                     {"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
                     {"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
                     {"/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
                     {"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "WenQuanYi Micro Hei"},
-                    {"/usr/share/fonts/wenquanyi/wqy-microhei/wqy-microhei.ttc", "WenQuanYi Micro Hei"}};
+                    {"/usr/share/fonts/wenquanyi/wqy-microhei/wqy-microhei.ttc", "WenQuanYi Micro Hei"},
+                    {"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", "Droid Sans Fallback"}};
             for (const auto& [file, family] : known) {
-                if (readable(file)) {
-                    int face = faceNamed(file, family);
-                    out.push_back(std::string(file) + "#" + std::to_string(face < 0 ? 0 : face));
+                if (!out.empty()) {
                     break;
                 }
+                if (readable(file)) {
+                    int face = faceNamed(file, family);
+                    std::string spec = std::string(file) + "#" + std::to_string(face < 0 ? 0 : face);
+                    if (covers(spec, 0x4E2D)) {
+                        out.push_back(spec);
+                    }
+                }
+            }
+            std::string symbols = fontConfig().find("symbol");
+            if (!symbols.empty() && std::find(out.begin(), out.end(), symbols) == out.end()) {
+                out.push_back(symbols);
             }
             return out;
         }

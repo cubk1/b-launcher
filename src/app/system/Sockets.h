@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -25,6 +26,7 @@ using BOOL = int;
 using DWORD = unsigned int;
 
 constexpr SOCKET INVALID_SOCKET = -1;
+constexpr int SOCKET_ERROR = -1;
 constexpr BOOL TRUE = 1;
 constexpr int WSAEINTR = EINTR;
 constexpr int WSAEWOULDBLOCK = EWOULDBLOCK;
