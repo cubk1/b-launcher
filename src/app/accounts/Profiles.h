@@ -57,6 +57,7 @@ namespace Profiles {
     void rename(const std::string& key, const std::string& name);
 
     std::shared_ptr<const Pixels> capeFront(const std::string& url);
+    bool capeFrontFailed(const std::string& url);
 
     void poll();
     void shutdown();

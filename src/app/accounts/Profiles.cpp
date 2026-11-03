@@ -705,6 +705,11 @@ namespace Profiles {
         return image("cape:" + url, url, capeImage);
     }
 
+    bool capeFrontFailed(const std::string& url) {
+        auto found = images.find("cape:" + url);
+        return found != images.end() && found->second.failed;
+    }
+
     void poll() {
         tasks.poll();
     }

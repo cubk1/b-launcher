@@ -11,6 +11,7 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/ListView.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/ProfileWindow.h"
 
 #include <string>
 #include <vector>
@@ -295,7 +296,7 @@ namespace ForgottenMelody {
         // on the right.
         class AccountsWindow : public LiveForm {
         public:
-            enum : uint32_t { LIST = 1, MICROSOFT, OFFLINE, EXTERNAL, IMPORT, REMOVE, CURRENT };
+            enum : uint32_t { LIST = 1, MICROSOFT, OFFLINE, EXTERNAL, IMPORT, REMOVE, CURRENT, PROFILE };
             // Opens the login dialog once the window runs, as a window of its own runs a loop of its own.
             static constexpr UINT OPEN_EXTERNAL = WM_APP + 1;
 
@@ -306,6 +307,7 @@ namespace ForgottenMelody {
                         {OFFLINE, ControlKind::Button, {130, 402, 100, 35}, L"添加离线账号"},
                         {EXTERNAL, ControlKind::Button, {240, 402, 90, 35}, L"外置登录"},
                         {IMPORT, ControlKind::Button, {340, 402, 90, 35}, L"导入"},
+                        {PROFILE, ControlKind::Button, {435, 402, 60, 35}, L"用户资料"},
                         {REMOVE, ControlKind::Button, {500, 402, 90, 35}, L"删除"},
                         {CURRENT, ControlKind::Button, {610, 402, 90, 35}, L"设为当前"},
                 };
@@ -317,6 +319,7 @@ namespace ForgottenMelody {
                 list.InsertColumn(L"名称", 160);
                 list.InsertColumn(L"类型", 160);
                 list.InsertColumn(L"状态", 350);
+                FindControl(PROFILE)->SetTooltipText(L"管理微软账号的皮肤、披风和用户名");
                 startRefreshing();
                 return true;
             }
@@ -343,6 +346,8 @@ namespace ForgottenMelody {
                 fill(Control<exui::ListView>(LIST), shown, shownKeys, std::move(rows), std::move(keys));
 
                 std::string key = selectedKey();
+                const auto* selected = Accounts::find(key);
+                FindControl(PROFILE)->SetEnabled(selected && selected->type == blb::auth::account_type::microsoft);
                 FindControl(REMOVE)->SetEnabled(!key.empty());
                 FindControl(CURRENT)->SetEnabled(!key.empty() && key != currentKey);
                 std::wstring microsoft = login == Accounts::Login::Idle ? L"添加微软账号" : L"取消登录";
@@ -383,6 +388,7 @@ namespace ForgottenMelody {
                         break;
                     }
                     case CURRENT: Accounts::select(selectedKey()); break;
+                    case PROFILE: showProfile(GetHwnd(), selectedKey()); break;
                 }
                 refresh();
             }

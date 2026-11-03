@@ -198,6 +198,7 @@ namespace ForgottenMelody {
         SetWindowAnimationTypes(exui::WindowAnimationKind::RevealLeft, exui::WindowAnimationKind::ZoomFade, false);
         sections = std::move(list);
         subject = title;
+        footerButtonWidth = frame.doneWidth;
 
         const int height = frame.bottom - frame.top;
         // As much room on the left as on the right: 下载中心's list started 2 pixels further left, and now ends where
@@ -247,6 +248,23 @@ namespace ForgottenMelody {
             names->SetSelectedRow(index);
         }
         sectionShown(index);
+    }
+
+    void SectionedForm::setSubject(const std::wstring& title) {
+        if (subject == title) return;
+        subject = title;
+        for (const Section& section : sections) {
+            if (FindControl(section.panel)->IsVisible()) {
+                UpdateText(TITLE, subject.empty() ? section.name : subject + L" - " + section.name);
+                break;
+            }
+        }
+    }
+
+    void SectionedForm::setFooterActions(std::vector<exui::Layout> actions) {
+        const RECT bounds = FindControl(DONE)->GetBounds();
+        actions.push_back(cell(DONE, footerButtonWidth));
+        exui::Layout::Row(std::move(actions), 8).Apply({15, bounds.top, GetWidth() - 30, bounds.bottom - bounds.top});
     }
 
     void SectionedForm::choose(uint32_t id, const std::vector<std::wstring>& options, int selected) {

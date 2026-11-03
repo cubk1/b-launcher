@@ -100,6 +100,9 @@ namespace ForgottenMelody {
         bool createFrame(HWND parent, const std::wstring& caption, const std::wstring& title, std::vector<Section> list,
                          const Frame& frame = {});
         void showSection(int index);
+        void setSubject(const std::wstring& title);
+        // Places common actions before the frame's close button.
+        void setFooterActions(std::vector<exui::Layout> actions);
         virtual void sectionShown(int) {}
         // Fills a combo box with options and selects one.
         void choose(uint32_t id, const std::vector<std::wstring>& options, int selected);
@@ -118,6 +121,7 @@ namespace ForgottenMelody {
 
         std::vector<Section> sections;
         std::wstring subject;
+        int footerButtonWidth = 80;
         exui::Widget* focused = nullptr;
     };
 }
