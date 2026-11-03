@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/instances/ModVersionPicker.h"
 #include "app/instances/ModManager.h"
+#include "ui/imgui/screens/downloads/SourceMarks.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/Page.h"
 
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace ModVersionPicker {
@@ -30,12 +32,16 @@ namespace ModVersionPicker {
         constexpr float DIALOG_H = 460.0f;
         constexpr float PAD = 20.0f;
         constexpr float ROW = 34.0f;
+        constexpr float SEGMENT = 30.0f;
+        constexpr float SWITCH_W = SEGMENT * 2.0f;
         const char* const DIALOG = "mods#versions";
 
         struct Search {
             std::string owner;
             std::string text;
             std::shared_ptr<TextBinding> binding;
+            std::filesystem::path file;
+            std::optional<Addons::Source> source;
         };
 
         std::map<std::string, Search> searches;
@@ -83,6 +89,48 @@ namespace ModVersionPicker {
                             UiWidgets::TEXT_CONTROL);
         }
 
+        Addons::Source sourceFor(const std::string& key, const Mods::Mod& mod, Search& search) {
+            if (search.file != mod.info.file) {
+                search.file = mod.info.file;
+                search.source.reset();
+            }
+            if (search.source) {
+                return *search.source;
+            }
+            if (const ModManager::Change* change = ModManager::changeFor(key, mod.info.file)) {
+                return change->target.source;
+            }
+            const ModManager::Remote* remote = ModManager::remote(mod);
+            return remote != nullptr ? remote->source : Addons::Source::Modrinth;
+        }
+
+        void sourceSwitch(Search& search, Addons::Source active, float x, float y, bool blocked) {
+            UiRender::roundRect(x, y, SWITCH_W, Page::FIELD_H, 7.0f, UiTheme::surfaceRaised());
+            const Addons::Source options[] = {Addons::Source::Modrinth, Addons::Source::CurseForge};
+            for (int i = 0; i < 2; i++) {
+                Addons::Source option = options[i];
+                float segmentX = x + (float) i * SEGMENT;
+                bool chosen = option == active;
+                bool hovered = !blocked && NewUi::hit(segmentX, y, SEGMENT, Page::FIELD_H);
+                if (chosen) {
+                    UiRender::roundRect(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
+                                        UiTheme::surface());
+                    UiRender::outline(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
+                                      UiTheme::outlineSoft());
+                }
+                uint32_t ink = chosen ? UiTheme::accent() : hovered ? UiTheme::textSecondary() : UiTheme::textMuted();
+                const float mark = 13.0f;
+                SourceMarks::draw(option, segmentX + (SEGMENT - mark) * 0.5f, y + (Page::FIELD_H - mark) * 0.5f, mark,
+                                  ink);
+                if (hovered) {
+                    Page::tooltip(Addons::sourceName(option), segmentX, y, SEGMENT, Page::FIELD_H);
+                }
+                if (!blocked && NewUi::click(segmentX, y, SEGMENT, Page::FIELD_H)) {
+                    search.source = option;
+                }
+            }
+        }
+
         const Mods::Mod* current() {
             for (const Mods::Mod& mod : Mods::of(pickerKey).mods) {
                 if (mod.info.file == pickerFile) {
@@ -118,21 +166,26 @@ namespace ModVersionPicker {
         float top = y + Page::FIELD_H + 8.0f;
         float bottom = y + h;
         float middle = top + (bottom - top) * 0.35f;
+        Addons::Source source = sourceFor(key, mod, search);
+        std::string site = Addons::sourceName(source);
         auto searchField = [&](float width) {
+            float fieldW = width - SWITCH_W - 8.0f;
             TextFieldWidget field(search.binding);
-            field.box(x, y, width, Page::FIELD_H).bounds(x, y, width, Page::FIELD_H).block(blocked);
+            field.box(x, y, fieldW, Page::FIELD_H).bounds(x, y, fieldW, Page::FIELD_H).block(blocked);
             field.paint();
+            sourceSwitch(search, source, x + width - SWITCH_W, y, blocked);
         };
 
-        const ModManager::Remote* remote = ModManager::remote(mod);
+        const ModManager::Remote* remote = ModManager::remote(mod, source);
         if (remote == nullptr) {
             searchField(w);
+            std::string error = ModManager::identifyError(key, source);
             if (ModManager::identifying(key)) {
-                message("正在从 Modrinth 识别…", x, middle, w, true);
-            } else if (!ModManager::identifyError(key).empty()) {
-                message("无法连接 Modrinth：" + ModManager::identifyError(key), x, middle, w, false);
+                message("正在从 " + site + " 识别…", x, middle, w, true);
+            } else if (!error.empty()) {
+                message("无法连接 " + site + "：" + error, x, middle, w, false);
             } else {
-                message("没有在 Modrinth 上找到这个模组", x, middle, w, false);
+                message("没有在 " + site + " 上找到这个模组", x, middle, w, false);
             }
             return false;
         }

@@ -1,4 +1,5 @@
 #include "app/instances/ModManager.h"
+#include "app/downloads/CurseForge.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Instances.h"
@@ -13,6 +14,7 @@
 #include <core/base/json.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
+#include <core/modpack/modpack_impl.hpp>
 #include <core/modpack/mods.hpp>
 #include <core/network/download_client.hpp>
 #include <core/network/http_client.hpp>
@@ -43,6 +45,7 @@ namespace ModManager {
         constexpr size_t BATCH = 80;
         const char* const BUILTIN[] = {"minecraft", "java",     "fabricloader", "fabric-loader", "quilt_loader",
                                        "forge",     "neoforge", "javafml",      "lowcodefml",    "mixinextras"};
+        constexpr Addons::Source SOURCES[] = {Addons::Source::Modrinth, Addons::Source::CurseForge};
 
         struct Shared {
             std::mutex lock;
@@ -57,6 +60,7 @@ namespace ModManager {
             Clock::time_point nextMetadataCheck;
             bool running = false;
             std::string error;
+            std::string curseError;
             std::vector<Change> changes;
             std::set<std::string> adding;
             int addingGeneration = 0;
@@ -92,12 +96,19 @@ namespace ModManager {
             Addons::Dependency dependency;
         };
 
+        struct Digest {
+            std::string sha1;
+            std::uint32_t fingerprint = 0;
+        };
+
         AsyncTasks tasks;
         AsyncTasks applying;
         std::map<std::string, Instance> instances;
-        std::map<std::string, std::string> hashes;
+        std::map<std::string, Digest> hashes;
         std::map<std::string, Remote> remotes;
         std::set<std::string> unmatched;
+        std::map<std::uint32_t, Remote> curseRemotes;
+        std::set<std::uint32_t> curseUnmatched;
         std::map<std::string, Project> projects;
         std::set<std::string> fetchingProjects;
         std::map<std::string, Clock::time_point> projectRetry;
@@ -134,6 +145,32 @@ namespace ModManager {
 
         std::string loaderOf(const std::string& key) {
             return ProjectInstaller::loaderOf(key);
+        }
+
+        Addons::Source sourceOf(const std::string& projectId) {
+            bool numeric = !projectId.empty() &&
+                    std::all_of(projectId.begin(), projectId.end(), [](char c) { return c >= '0' && c <= '9'; });
+            return numeric ? Addons::Source::CurseForge : Addons::Source::Modrinth;
+        }
+
+        Addons::Version labelled(Addons::Version version) {
+            if (version.source == Addons::Source::CurseForge && !version.name.empty()) {
+                version.number = version.name;
+                if (blb::to_lower(version.number).ends_with(".jar")) {
+                    version.number.resize(version.number.size() - 4);
+                }
+            }
+            return version;
+        }
+
+        bool owns(const Mods::Mod& mod, const std::string& projectId) {
+            for (Addons::Source source : SOURCES) {
+                const Remote* found = remote(mod, source);
+                if (found != nullptr && found->projectId == projectId) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         bool fits(const Addons::Version& version, const std::string& loader) {
@@ -206,15 +243,33 @@ namespace ModManager {
             tasks.run(
                     [wanted](blb::cancellation_token token) -> Continuation {
                         std::vector<Project> found;
-                        std::string error;
-                        for (size_t start = 0; start < wanted.size(); start += BATCH) {
+                        std::set<std::string> failed;
+                        std::vector<std::string> modrinth;
+                        std::vector<std::string> curse;
+                        for (const std::string& id : wanted) {
+                            (sourceOf(id) == Addons::Source::CurseForge ? curse : modrinth).push_back(id);
+                        }
+                        for (size_t start = 0; start < curse.size(); start += BATCH) {
+                            std::vector<std::string> chunk(curse.begin() + (long) start,
+                                                           curse.begin() +
+                                                                   (long) std::min(curse.size(), start + BATCH));
+                            auto hits = CurseForge::fetchProjects(chunk, token);
+                            if (!hits) {
+                                failed.insert(curse.begin() + (long) start, curse.end());
+                                break;
+                            }
+                            for (const Addons::Hit& hit : *hits) {
+                                found.push_back(Project{hit.id, hit.slug, hit.title, hit.iconUrl});
+                            }
+                        }
+                        for (size_t start = 0; start < modrinth.size(); start += BATCH) {
                             json ids = json::array();
-                            for (size_t i = start; i < std::min(wanted.size(), start + BATCH); i++) {
-                                ids.push_back(wanted[i]);
+                            for (size_t i = start; i < std::min(modrinth.size(), start + BATCH); i++) {
+                                ids.push_back(modrinth[i]);
                             }
                             auto doc = request("GET", "/projects?ids=" + blb::url_encode(ids.dump()), {}, token);
                             if (!doc) {
-                                error = doc.err().message;
+                                failed.insert(modrinth.begin() + (long) start, modrinth.end());
                                 break;
                             }
                             if (!doc->is_array()) {
@@ -231,7 +286,7 @@ namespace ModManager {
                                 }
                             }
                         }
-                        return [wanted, found, error] {
+                        return [wanted, found, failed] {
                             ++metadataVersion;
                             for (const std::string& id : wanted) {
                                 fetchingProjects.erase(id);
@@ -243,7 +298,7 @@ namespace ModManager {
                                 if (projects.count(id) != 0) {
                                     continue;
                                 }
-                                if (error.empty()) {
+                                if (failed.count(id) == 0) {
                                     projects[id] = Project{id, {}, {}, {}};
                                 } else {
                                     projectRetry[id] = Clock::now() + std::chrono::seconds(30);
@@ -341,8 +396,10 @@ namespace ModManager {
                 }
                 affected.insert(change.projectId);
                 if (const Mods::Mod* old = modAt(list, change.file)) {
-                    if (const Remote* found = remote(*old)) {
-                        affected.insert(found->projectId);
+                    for (Addons::Source source : SOURCES) {
+                        if (const Remote* found = remote(*old, source)) {
+                            affected.insert(found->projectId);
+                        }
                     }
                 }
                 for (const Addons::Dependency& dependency : change.target.dependencies) {
@@ -387,23 +444,31 @@ namespace ModManager {
             state.serial = list.serial;
             std::vector<HashRequest> needHash;
             std::vector<std::string> needLookup;
+            std::vector<std::uint32_t> needPrints;
             for (const Mods::Mod& mod : list.mods) {
                 std::string id = fileKey(mod.info);
                 auto known = hashes.find(id);
                 if (known == hashes.end()) {
                     needHash.push_back({id, mod.info.file, mod.info.size, mod.info.modified});
-                } else if (remotes.count(known->second) == 0 && unmatched.count(known->second) == 0) {
-                    needLookup.push_back(known->second);
+                    continue;
+                }
+                const Digest& digest = known->second;
+                if (remotes.count(digest.sha1) == 0 && unmatched.count(digest.sha1) == 0) {
+                    needLookup.push_back(digest.sha1);
+                }
+                if (curseRemotes.count(digest.fingerprint) == 0 && curseUnmatched.count(digest.fingerprint) == 0) {
+                    needPrints.push_back(digest.fingerprint);
                 }
             }
-            if (needHash.empty() && needLookup.empty()) {
+            if (needHash.empty() && needLookup.empty() && needPrints.empty()) {
                 return;
             }
             state.running = true;
             state.error.clear();
+            state.curseError.clear();
             tasks.run(
-                    [key, needHash, needLookup](blb::cancellation_token token) -> Continuation {
-                        std::map<std::string, std::string> hashed;
+                    [key, needHash, needLookup, needPrints](blb::cancellation_token token) -> Continuation {
+                        std::map<std::string, Digest> hashed;
                         for (const HashRequest& file : needHash) {
                             if (token.is_cancelled()) {
                                 return nullptr;
@@ -412,18 +477,23 @@ namespace ModManager {
                             if (!before.exists || before.size != file.size || before.mtime != file.modified) {
                                 continue;
                             }
-                            auto digest = blb::sha1_file(file.file, token);
+                            auto data = blb::fs::read_file(file.file);
                             auto after = blb::fs::stat(file.file);
-                            if (digest && after.exists && after.size == file.size && after.mtime == file.modified) {
-                                hashed[file.id] = blb::to_hex(*digest);
+                            if (data && after.exists && after.size == file.size && after.mtime == file.modified) {
+                                hashed[file.id] = Digest{blb::to_hex(blb::sha1::digest(*data)),
+                                                         blb::modpack::detail::curseforge_fingerprint(*data)};
                             }
                         }
                         std::vector<std::string> lookup = needLookup;
+                        std::vector<std::uint32_t> prints = needPrints;
                         for (const auto& item : hashed) {
-                            lookup.push_back(item.second);
+                            lookup.push_back(item.second.sha1);
+                            prints.push_back(item.second.fingerprint);
                         }
                         std::sort(lookup.begin(), lookup.end());
                         lookup.erase(std::unique(lookup.begin(), lookup.end()), lookup.end());
+                        std::sort(prints.begin(), prints.end());
+                        prints.erase(std::unique(prints.begin(), prints.end()), prints.end());
                         std::map<std::string, Remote> found;
                         std::string error;
                         for (size_t start = 0; start < lookup.size(); start += BATCH) {
@@ -444,16 +514,36 @@ namespace ModManager {
                                 if (version.projectId.empty()) {
                                     continue;
                                 }
-                                found[item.key()] =
-                                        Remote{version.projectId, version.id, version.number, version.dependencies};
+                                found[item.key()] = Remote{Addons::Source::Modrinth, version.projectId, version.id,
+                                                           version.number, version.dependencies};
                             }
                         }
-                        return [key, hashed, lookup, found, error] {
+                        std::map<std::uint32_t, Remote> curseFound;
+                        std::string curseError;
+                        for (size_t start = 0; start < prints.size(); start += BATCH) {
+                            std::vector<std::uint32_t> chunk(prints.begin() + (long) start,
+                                                             prints.begin() +
+                                                                     (long) std::min(prints.size(), start + BATCH));
+                            auto matched = CurseForge::matchFingerprints(chunk, token);
+                            if (!matched) {
+                                curseError = matched.err().message;
+                                break;
+                            }
+                            for (const auto& [print, match] : *matched) {
+                                Addons::Version version = labelled(match);
+                                curseFound[print] = Remote{Addons::Source::CurseForge, version.projectId, version.id,
+                                                           version.number, version.dependencies};
+                            }
+                        }
+                        return [key, hashed, lookup, found, error, prints, curseFound, curseError] {
                             for (const auto& item : hashed) {
                                 hashes[item.first] = item.second;
                             }
                             for (const auto& item : found) {
                                 remotes[item.first] = item.second;
+                            }
+                            for (const auto& item : curseFound) {
+                                curseRemotes[item.first] = item.second;
                             }
                             metadataVersion++;
                             if (error.empty()) {
@@ -463,10 +553,18 @@ namespace ModManager {
                                     }
                                 }
                             }
+                            if (curseError.empty()) {
+                                for (std::uint32_t print : prints) {
+                                    if (curseFound.count(print) == 0) {
+                                        curseUnmatched.insert(print);
+                                    }
+                                }
+                            }
                             Instance& state = instances[key];
                             state.running = false;
                             state.error = error;
-                            if (Mods::of(key).serial != state.serial && error.empty()) {
+                            state.curseError = curseError;
+                            if (Mods::of(key).serial != state.serial && error.empty() && curseError.empty()) {
                                 state.serial = -1;
                             }
                         };
@@ -476,6 +574,7 @@ namespace ModManager {
                             Instance& state = instances[key];
                             state.running = false;
                             state.error = error;
+                            state.curseError = error;
                         };
                     });
         }
@@ -548,11 +647,12 @@ namespace ModManager {
             std::string loader = loaderOf(key);
             tasks.run(
                     [id, projectId, game, loader](blb::cancellation_token token) -> Continuation {
-                        Addons::Fetched fetched = Modrinth::fetchProjectVersions(projectId, game, "", token);
+                        Addons::Fetched fetched =
+                                Addons::fetchProjectVersions(sourceOf(projectId), projectId, game, "", token);
                         std::vector<Addons::Version> kept;
                         for (const Addons::Version& version : fetched.versions) {
                             if (fits(version, loader)) {
-                                kept.push_back(version);
+                                kept.push_back(labelled(version));
                             }
                         }
                         return [id, ok = fetched.ok, error = fetched.error, kept] {
@@ -799,16 +899,26 @@ namespace ModManager {
         return sync(key).running || Mods::of(key).loading;
     }
 
-    std::string identifyError(const std::string& key) {
-        return sync(key).error;
+    std::string identifyError(const std::string& key, Addons::Source source) {
+        Instance& state = sync(key);
+        return source == Addons::Source::CurseForge ? state.curseError : state.error;
     }
 
     const Remote* remote(const Mods::Mod& mod) {
-        auto hash = hashes.find(fileKey(mod.info));
-        if (hash == hashes.end()) {
+        const Remote* found = remote(mod, Addons::Source::Modrinth);
+        return found != nullptr ? found : remote(mod, Addons::Source::CurseForge);
+    }
+
+    const Remote* remote(const Mods::Mod& mod, Addons::Source source) {
+        auto digest = hashes.find(fileKey(mod.info));
+        if (digest == hashes.end()) {
             return nullptr;
         }
-        auto found = remotes.find(hash->second);
+        if (source == Addons::Source::CurseForge) {
+            auto found = curseRemotes.find(digest->second.fingerprint);
+            return found != curseRemotes.end() ? &found->second : nullptr;
+        }
+        auto found = remotes.find(digest->second.sha1);
         return found != remotes.end() ? &found->second : nullptr;
     }
 
@@ -890,15 +1000,16 @@ namespace ModManager {
                                      }),
                       changes.end());
         state.revision++;
-        const Remote* current = remote(*mod);
+        const Remote* current = remote(*mod, target.source);
         if (current != nullptr && current->versionId == target.id) {
             return;
         }
+        const Remote* shown = current != nullptr ? current : remote(*mod);
         Change change;
         change.file = mod->info.file;
         change.name = mod->info.name;
         change.projectId = target.projectId;
-        change.from = current != nullptr ? current->number : mod->info.version;
+        change.from = shown != nullptr ? shown->number : mod->info.version;
         change.disabled = !mod->info.enabled;
         change.target = target;
         changes.push_back(std::move(change));
@@ -942,7 +1053,7 @@ namespace ModManager {
                     } else if (!pin.empty()) {
                         fetched = Modrinth::fetchVersion(pin, token);
                     } else {
-                        fetched = Modrinth::fetchProjectVersions(projectId, game, "", token);
+                        fetched = Addons::fetchProjectVersions(sourceOf(projectId), projectId, game, "", token);
                     }
                     std::vector<Addons::Version> kept;
                     for (const Addons::Version& version : fetched.versions) {
@@ -951,7 +1062,7 @@ namespace ModManager {
                                         version.gameVersions.end();
                         if (version.projectId == projectId && (pin.empty() || version.id == pin) &&
                             supportsGame && fits(version, loader)) {
-                            kept.push_back(version);
+                            kept.push_back(labelled(version));
                         }
                     }
                     return [key, projectId, game, id, generation, pins, pin, ok = fetched.ok, error = fetched.error,
@@ -987,8 +1098,7 @@ namespace ModManager {
                             }
                         }
                         for (const Mods::Mod& mod : Mods::of(key).mods) {
-                            const Remote* installed = remote(mod);
-                            if (installed == nullptr || installed->projectId != projectId) {
+                            if (!owns(mod, projectId)) {
                                 continue;
                             }
                             if (!mod.info.enabled) {
@@ -1072,13 +1182,22 @@ namespace ModManager {
             }
             ids.insert(mod.info.id);
             ids.insert(mod.info.provides.begin(), mod.info.provides.end());
-            if (const Remote* found = remote(mod)) {
-                present[found->projectId].insert(found->versionId);
+            for (Addons::Source source : SOURCES) {
+                if (const Remote* found = remote(mod, source)) {
+                    present[found->projectId].insert(found->versionId);
+                }
             }
         }
         for (const Change& change : state.changes) {
-            if (!change.disabled) {
-                present[change.projectId].insert(change.target.id);
+            if (change.disabled) {
+                continue;
+            }
+            present[change.projectId].insert(change.target.id);
+            const Mods::Mod* old = change.file.empty() ? nullptr : modAt(list, change.file);
+            for (Addons::Source source : SOURCES) {
+                if (const Remote* found = old != nullptr ? remote(*old, source) : nullptr) {
+                    present[found->projectId].insert(change.target.id);
+                }
             }
         }
         auto satisfied = [&](const std::string& projectId) {
@@ -1154,6 +1273,7 @@ namespace ModManager {
                             std::find(mod->info.provides.begin(), mod->info.provides.end(), dependency.id) !=
                                     mod->info.provides.end();
                     if (names && dependency.required && dependency.client && !dependency.version.empty() &&
+                        target.source == Addons::Source::Modrinth &&
                         !blb::modpack::version_in_range(target.number, dependency.version)) {
                         push(Severity::Warning, other.info.name + " 要求 " + change.name + " " + dependency.version,
                              {});

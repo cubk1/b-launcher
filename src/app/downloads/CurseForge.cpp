@@ -543,6 +543,64 @@ namespace CurseForge {
         return out;
     }
 
+    blb::result<std::map<std::uint32_t, Version>> matchFingerprints(const std::vector<std::uint32_t>& fingerprints,
+                                                                    blb::cancellation_token token) {
+        std::map<std::uint32_t, Version> out;
+        if (fingerprints.empty()) {
+            return out;
+        }
+        json body = {{"fingerprints", fingerprints}};
+        auto doc = api("/fingerprints/" + std::to_string(GAME), body.dump(), token);
+        if (!doc) {
+            return doc.err();
+        }
+        auto data = doc->find("data");
+        if (data == doc->end() || !data->is_object()) {
+            return out;
+        }
+        auto matches = data->find("exactMatches");
+        if (matches == data->end() || !matches->is_array()) {
+            return out;
+        }
+        for (const json& match : *matches) {
+            auto file = match.find("file");
+            if (file == match.end() || !file->is_object()) {
+                continue;
+            }
+            Version version = parseFile(*file);
+            if (!version.id.empty() && !version.projectId.empty()) {
+                out.emplace((std::uint32_t) number(*file, "fileFingerprint"), std::move(version));
+            }
+        }
+        return out;
+    }
+
+    blb::result<std::vector<Hit>> fetchProjects(const std::vector<std::string>& ids, blb::cancellation_token token) {
+        std::vector<Hit> out;
+        json list = json::array();
+        for (const std::string& value : ids) {
+            if (numeric(value)) {
+                list.push_back(std::stoll(value));
+            }
+        }
+        if (list.empty()) {
+            return out;
+        }
+        json body = {{"modIds", list}, {"filterPcOnly", true}};
+        auto doc = api("/mods", body.dump(), token);
+        if (!doc) {
+            return doc.err();
+        }
+        if (auto data = doc->find("data"); data != doc->end() && data->is_array()) {
+            for (const json& item : *data) {
+                if (item.is_object()) {
+                    out.push_back(parseHit(item));
+                }
+            }
+        }
+        return out;
+    }
+
     void poll() {
         tasks.poll();
         // What is still loading is written when it arrives.

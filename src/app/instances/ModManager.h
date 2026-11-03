@@ -10,6 +10,7 @@
 namespace ModManager {
 
     struct Remote {
+        Addons::Source source = Addons::Source::Modrinth;
         std::string projectId;
         std::string versionId;
         std::string number;
@@ -51,8 +52,9 @@ namespace ModManager {
 
     void prepare(const std::string& key);
     bool identifying(const std::string& key);
-    std::string identifyError(const std::string& key);
+    std::string identifyError(const std::string& key, Addons::Source source);
     const Remote* remote(const Mods::Mod& mod);
+    const Remote* remote(const Mods::Mod& mod, Addons::Source source);
     const Project* project(const std::string& projectId);
     int metadataRevision();
     std::string dependencyProject(const Addons::Dependency& dependency);

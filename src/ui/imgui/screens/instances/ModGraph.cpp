@@ -483,7 +483,11 @@ namespace ModGraph {
                 int index = (int) nodes.size();
                 if (const ModManager::Remote* remote = ModManager::remote(mod)) {
                     node.projectId = remote->projectId;
-                    byProject.emplace(remote->projectId, index);
+                }
+                for (Addons::Source source : {Addons::Source::Modrinth, Addons::Source::CurseForge}) {
+                    if (const ModManager::Remote* remote = ModManager::remote(mod, source)) {
+                        byProject.emplace(remote->projectId, index);
+                    }
                 }
                 nodes.push_back(std::move(node));
                 claim(mod.info.id, index);
