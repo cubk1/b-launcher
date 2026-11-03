@@ -289,10 +289,6 @@ namespace Platform {
 
     void claimLaunches() {}
 
-    bool recycle(const std::filesystem::path&) {
-        return false;
-    }
-
     bool setClipboardImage(const Pixels&) {
         return false;
     }

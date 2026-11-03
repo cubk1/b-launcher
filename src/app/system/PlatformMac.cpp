@@ -79,6 +79,10 @@ namespace Platform {
         spawnDetached({"/usr/bin/open", "-R", path.string()});
     }
 
+    bool recycle(const std::filesystem::path&) {
+        return false;
+    }
+
     Memory memory() {
         Memory out;
         uint64_t total = blb::current_platform().total_memory;
