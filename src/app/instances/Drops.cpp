@@ -9,6 +9,7 @@
 #include <core/modpack/modpack.hpp>
 #include <core/modpack/mods.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -18,6 +19,7 @@
 #include <windows.h>
 #include <ole2.h>
 #include <shellapi.h>
+#endif
 
 #include <algorithm>
 #include <condition_variable>
@@ -41,9 +43,18 @@ namespace Drops {
             blb::modpack::pack_manifest manifest;
         };
 
+#if !defined(_WIN32)
+        struct POINT {
+            long x;
+            long y;
+        };
+#endif
+
         Handlers handlers;
+#if defined(_WIN32)
         HWND target = nullptr;
         bool oleReady = false;
+#endif
 
         bool over = false;
         std::vector<std::filesystem::path> dragged;
@@ -80,6 +91,7 @@ namespace Drops {
             return !handlers.accepting || handlers.accepting();
         }
 
+#if defined(_WIN32)
         std::vector<std::filesystem::path> filesOf(IDataObject* data) {
             std::vector<std::filesystem::path> out;
             FORMATETC format = {CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
@@ -101,6 +113,7 @@ namespace Drops {
             ReleaseStgMedium(&medium);
             return out;
         }
+#endif
 
         bool acceptable(const std::vector<std::filesystem::path>& files) {
             return std::any_of(files.begin(), files.end(), [](const std::filesystem::path& file) {
@@ -206,6 +219,7 @@ namespace Drops {
             wake.notify_one();
         }
 
+#if defined(_WIN32)
         class Target final : public IDropTarget {
         public:
             HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** object) override {
@@ -270,6 +284,7 @@ namespace Drops {
         };
 
         Target dropTargetObject;
+#endif
 
         std::string instanceName(const std::string& key) {
             const Instances::Entry* entry = Instances::find(key);
@@ -350,23 +365,36 @@ namespace Drops {
 
     void attach(void* window, Handlers next) {
         handlers = std::move(next);
+#if defined(_WIN32)
         target = (HWND) window;
         HRESULT ole = OleInitialize(nullptr);
         oleReady = SUCCEEDED(ole);
         if (oleReady) {
             RegisterDragDrop(target, &dropTargetObject);
         }
+#else
+        (void) window;
+#endif
     }
 
     void detach() {
+#if defined(_WIN32)
         if (target != nullptr && oleReady) {
             RevokeDragDrop(target);
             OleUninitialize();
         }
         oleReady = false;
         target = nullptr;
+#endif
         over = false;
         dragged.clear();
+    }
+
+    void dropped(std::vector<std::filesystem::path> files, int x, int y) {
+        if (!accepting() || !acceptable(files)) {
+            return;
+        }
+        classifyLater(std::move(files), false, POINT{x, y});
     }
 
     bool hovering() {

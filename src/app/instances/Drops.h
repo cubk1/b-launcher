@@ -27,6 +27,7 @@ namespace Drops {
     // go into the target instance.
     void attach(void* window, Handlers handlers);
     void detach();
+    void dropped(std::vector<std::filesystem::path> files, int x, int y);
     // Whether files are dragged over the window, and what dropping them would do; it starts with 松开 when they can
     // be taken.
     bool hovering();

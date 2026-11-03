@@ -517,6 +517,7 @@ namespace SettingsScreen {
         constexpr float SCAN_BAR_H = 4.0f;
         constexpr double SCAN_SWEEP = 1.4;
 
+#if defined(_WIN32)
         bool scanning(DiskScan::Kind kind) {
             const DiskScan::Status& scan = DiskScan::status();
             return scan.state == DiskScan::State::Running && scan.kind == kind;
@@ -526,6 +527,7 @@ namespace SettingsScreen {
             UiState::remove(barId);
             DiskScan::start(kind);
         }
+#endif
 
         void scanBar(const std::string& id, float x, float y, float w) {
             const DiskScan::Status& scan = DiskScan::status();
@@ -563,6 +565,7 @@ namespace SettingsScreen {
 
         constexpr float DRIVE_W = 120.0f;
 
+#if defined(_WIN32)
         std::string sizeText(uint64_t bytes) {
             double gigabytes = (double) bytes / 1e9;
             char text[32];
@@ -690,6 +693,7 @@ namespace SettingsScreen {
                                 UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             }
         }
+#endif
 
         void foundRows(float y, bool blocked) {
             const DiskScan::Status& scan = DiskScan::status();
@@ -728,7 +732,11 @@ namespace SettingsScreen {
         }
 
         void gameTab(bool covered) {
+#if defined(_WIN32)
             const int instanceCount = 3;
+#else
+            const int instanceCount = 2;
+#endif
             const int foundCount = (int) DiskScan::status().folders.size();
             const int launchCount = 6;
             std::string source = optionsSource();
@@ -750,7 +758,9 @@ namespace SettingsScreen {
                 Page::caption("实例", y);
                 Page::card(y + Page::CAPTION_H, instanceCount);
                 instanceRows(y + Page::CAPTION_H, blocked);
+#if defined(_WIN32)
                 folderRows(y + Page::CAPTION_H + 2 * Page::ROW_H, blocked);
+#endif
             }
             y += Page::CAPTION_H + instanceCount * Page::ROW_H + Page::GAP;
 
@@ -1117,6 +1127,7 @@ namespace SettingsScreen {
                            covered || loading)) {
                 Catalog::refreshJava();
             }
+#if defined(_WIN32)
             float searchX = refreshX - 32.0f;
             bool diskRunning = DiskScan::status().state == DiskScan::State::Running;
             if (diskRunning) {
@@ -1130,6 +1141,10 @@ namespace SettingsScreen {
             if (!javaScanning) {
                 driveSelect("settings#java#drives", drivesX, Page::TOP + 4.0f, covered || diskRunning);
             }
+#else
+            float drivesX = refreshX;
+            bool javaScanning = false;
+#endif
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
             float addX = drivesX - 8.0f - addW;
