@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/onboarding/Onboarding.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
+#include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
 #include "ui/imgui/screens/shell/Logo.h"
@@ -370,6 +371,16 @@ namespace Onboarding {
         }
 
         void homeStep(float x, float y, float w) {
+            if (Homepage::source() != Homepage::SOURCE_NONE) {
+                std::string hint = "当前主页：" + Homepage::choice() + "。切换后可使用主页组件。";
+                UiRender::textY(UiFont::fitEnd(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w), x, y, 24.0f,
+                                UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                if (action("onboarding#useWidgets", "使用主页组件", x, y + 38.0f, 160.0f, true, 0xf00a)) {
+                    Homepage::choose("无");
+                    kick(0.45f);
+                }
+                return;
+            }
             const float h = 30.0f;
             float cursor = x;
             float rowY = y;
@@ -489,9 +500,10 @@ namespace Onboarding {
             float avail = sh - 24.0f;
             float rowH2 = std::clamp((avail - gap * 4.0f) / 5.0f, 15.0f, 24.0f);
 
+            bool widgets = Homepage::source() == Homepage::SOURCE_NONE;
             std::vector<std::string> active;
             for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
-                if (HomeWidgets::enabled(kind.id)) {
+                if (widgets && HomeWidgets::enabled(kind.id)) {
                     active.push_back(kind.id);
                 }
             }
@@ -500,7 +512,7 @@ namespace Onboarding {
             size_t index = 0;
             for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
                 std::string id = "onboarding#pv#" + std::string(kind.id);
-                bool on = HomeWidgets::enabled(kind.id);
+                bool on = widgets && HomeWidgets::enabled(kind.id);
                 float vis = UiState::motion(id, on ? 1.0f : 0.0f, 20.0f);
                 if (vis <= 0.01f) {
                     continue;
@@ -519,8 +531,11 @@ namespace Onboarding {
                 float saved = UiRender::alphaMul;
                 UiRender::alphaMul = saved * empty;
                 UiRender::circle(midX, sy + sh * 0.5f - 8.0f, 12.0f, UiTheme::accentSoft(40));
-                UiWidgets::icon(Ui::glyph(0xf04b), midX, sy + sh * 0.5f - 8.0f, UiTheme::accent(), 10.0f);
-                Page::centredText("主页不显示组件", midX, sy + sh * 0.5f + 8.0f, 18.0f, UiTheme::textFaint(),
+                UiWidgets::icon(Ui::glyph(widgets ? 0xf04b : 0xf0ac), midX, sy + sh * 0.5f - 8.0f,
+                                UiTheme::accent(), 10.0f);
+                std::string label = widgets ? "主页不显示组件" : Homepage::choice();
+                Page::centredText(UiFont::fitEnd(label, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, colW),
+                                  midX, sy + sh * 0.5f + 8.0f, 18.0f, UiTheme::textFaint(),
                                   UiWidgets::TEXT_SMALL);
                 UiRender::alphaMul = saved;
             }

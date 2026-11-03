@@ -15,6 +15,7 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
+#include "ui/exui/windows/KeyBindPanel.h"
 #include "ui/exui/windows/ExportWindow.h"
 #include "ui/exui/windows/LoadersWindow.h"
 #include "ui/exui/windows/ModsWindow.h"
@@ -45,6 +46,7 @@ namespace ForgottenMelody {
             EXPORT,
             SHORTCUT,
             SCREENSHOTS,
+            KEYS,
             // 游戏
             GAME_GROUP,
             DIR_LABEL,
@@ -172,6 +174,7 @@ namespace ForgottenMelody {
                 {EXPORT, ControlKind::Button, {}, L"导出整合包"},
                 {SHORTCUT, ControlKind::Button, {}, L"生成快捷方式"},
                 {SCREENSHOTS, ControlKind::Button, {}, L"截图管理"},
+                {KEYS, ControlKind::Button, {}, L"按键绑定"},
                 // 游戏
                 {GAME_GROUP, ControlKind::Group, {}, L"游戏"},
                 {DIR_LABEL, ControlKind::Label, {}, L"游戏目录"},
@@ -329,6 +332,7 @@ namespace ForgottenMelody {
                     case LOADERS: showLoaders(GetHwnd(), key); break;
                     case EXPORT: showExport(GetHwnd(), key); break;
                     case SCREENSHOTS: showScreenshots(GetHwnd(), key); break;
+                    case KEYS: showKeyBinds(GetHwnd(), key); break;
                     case AUTO_MEMORY: {
                         uint32_t memory = Checked(AUTO_MEMORY) ? 0 : automaticMemory();
                         edit([memory](Settings& s) { s.max_memory_mb = memory; });
@@ -376,8 +380,8 @@ namespace ForgottenMelody {
                 if (server) serverRows.push_back(std::move(authRow));
                 serverRows.push_back(row(JOIN_LABEL, {cell(JOIN, 300)}));
                 page->SetContentLayout(Layout::Column({
-                        group(MANAGE_GROUP, {Layout::Row({cell(MODS, 100), cell(LOADERS, 100), cell(EXPORT, 100),
-                                                        cell(SHORTCUT, 100), cell(SCREENSHOTS, 100)}, 8, 30)},
+                        group(MANAGE_GROUP, {Layout::Row({cell(MODS), cell(LOADERS), cell(EXPORT)}, 8, 30),
+                                            Layout::Row({cell(KEYS), cell(SCREENSHOTS), cell(SHORTCUT)}, 8, 30)},
                               {20, 26, 14, 16}),
                         group(GAME_GROUP, {
                                 row(DIR_LABEL, {cell(DIR, 250)}),

@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace Config {
 
@@ -35,10 +36,18 @@ namespace Config {
         return Platform::storeValue(VALUE, data().dump(), true);
     }
 
-    void reset() {
-        doc = nlohmann::json::object();
+    bool reset() {
+        nlohmann::json defaults = nlohmann::json::object();
+        const auto& previous = data();
+        if (auto folders = previous.find("gameFolders"); folders != previous.end()) {
+            defaults["gameFolders"] = *folders;
+        }
+        if (!Platform::storeValue(VALUE, defaults.dump(), true)) {
+            return false;
+        }
+        doc = std::move(defaults);
         loaded = true;
         frozen = true;
-        Platform::storeValue(VALUE, doc.dump(), true);
+        return true;
     }
 }

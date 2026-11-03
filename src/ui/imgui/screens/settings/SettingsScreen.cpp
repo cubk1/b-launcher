@@ -1005,7 +1005,10 @@ namespace SettingsScreen {
                 if (dangerButton("settings#resetAll#confirm", "重置并重启", x + w - 124.0f, buttonY, 104.0f, 0xf2f1,
                                  false)) {
                     Dialog::close();
-                    Config::reset();
+                    if (!Config::reset()) {
+                        Notices::add(Notices::Kind::Failed, "无法保存重置后的设置，请稍后重试", 5000);
+                        return;
+                    }
                     if (!Platform::restart()) {
                         Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
                     }
