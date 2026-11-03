@@ -3,6 +3,7 @@
 #include "app/instances/Instances.h"
 
 #include <filesystem>
+#include <array>
 #include <map>
 #include <optional>
 #include <string>
@@ -10,6 +11,21 @@
 #include <vector>
 
 namespace GameOptions {
+
+    enum class Option { Brightness, Fov, Sensitivity, RenderDistance, GuiScale };
+    struct OptionSpec {
+        Option id;
+        const char* key;
+        const char* label;
+        const char* description;
+        int low, high, fallback;
+        const char* unit;
+    };
+    extern const std::array<OptionSpec, 5> OPTIONS;
+
+    // UI units: percentages, degrees, chunks and the GUI scale multiplier (0 = automatic).
+    int value(const std::filesystem::path& file, Option option);
+    std::string setValue(const std::filesystem::path& file, Option option, double value);
 
     std::filesystem::path fileOf(const Instances::Entry& entry);
     bool ownFile(const Instances::Entry& entry);

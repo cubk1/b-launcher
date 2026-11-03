@@ -293,8 +293,15 @@ namespace ForgottenMelody {
         exui::Widget* now = GetFocusedWidget();
         if (now == focused) return;
         focused = now;
-        if (now == nullptr || now->GetParent() != &page.GetContent()) return;
-        int top = now->GetY(), bottom = top + now->GetHeight();
+        if (now == nullptr) return;
+        int top = now->GetY();
+        auto* parent = now->GetParent();
+        while (parent && parent != &page.GetContent()) {
+            top += parent->GetY();
+            parent = parent->GetParent();
+        }
+        if (!parent) return;
+        int bottom = top + now->GetHeight();
         int view = page.GetHeight(), scrolled = page.GetScrollPosition();
         if (top < scrolled) page.ScrollTo(top - 30);
         else if (bottom > scrolled + view) page.ScrollTo(bottom - view + 12);

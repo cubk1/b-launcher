@@ -8,6 +8,7 @@
 #include "app/instances/InstanceSettings.h"
 #include "app/instances/Instances.h"
 #include "app/launch/LaunchDefaults.h"
+#include "app/launch/GameOptions.h"
 #include "app/launch/Patches.h"
 #include "app/system/Catalog.h"
 #include "app/system/Platform.h"
@@ -16,6 +17,7 @@
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/KeyBindPanel.h"
+#include "ui/exui/windows/GameOptionsPanel.h"
 #include "ui/exui/windows/ExportWindow.h"
 #include "ui/exui/windows/LoadersWindow.h"
 #include "ui/exui/windows/ModsWindow.h"
@@ -63,6 +65,7 @@ namespace ForgottenMelody {
             PATCH,
             OPTIONS_LABEL,
             OPTIONS,
+            GAME_OPTIONS_GROUP, GAME_OPTIONS_PANEL,
             // 内存
             MEMORY_GROUP,
             AUTO_MEMORY,
@@ -191,6 +194,7 @@ namespace ForgottenMelody {
                 {PATCH, ControlKind::Combo, {}},
                 {OPTIONS_LABEL, ControlKind::Label, {}, L"游戏设置文件"},
                 {OPTIONS, ControlKind::Edit, {}},
+                {GAME_OPTIONS_GROUP, ControlKind::Group, {}, L"游戏选项"},
                 // 内存
                 {MEMORY_GROUP, ControlKind::Group, {}, L"内存"},
                 {AUTO_MEMORY, ControlKind::Check, {}, L"自动分配"},
@@ -261,9 +265,11 @@ namespace ForgottenMelody {
                 AddControl(SCROLL, scroll);
                 MoveInto(PAGE, {SCROLL});
                 AddControls(CONTROLS);
+                gameOptions = &static_cast<GameOptionsPanel&>(AddControl(GAME_OPTIONS_PANEL, std::make_shared<GameOptionsPanel>()));
                 for (const exui::ControlSpec& spec : CONTROLS) {
                     MoveInto(page->GetContent(), {spec.id});
                 }
+                MoveInto(page->GetContent(), {GAME_OPTIONS_PANEL});
                 fill(*entry);
                 showSection(0);
                 startRefreshing();
@@ -285,7 +291,13 @@ namespace ForgottenMelody {
                 UpdateText(MAX_HINT, hint);
                 bool server = settings.login == "yggdrasil" || settings.login == "nide8";
                 bool nide8 = settings.login == "nide8";
-                if (!laidOut || server != withServer) {
+                bool own = GameOptions::ownFile(*entry);
+                gameOptions->SetVisible(own);
+                gameOptions->SetFile(own ? GameOptions::fileOf(*entry) : std::filesystem::path());
+                gameOptions->Refresh();
+                int height = own ? gameOptions->PreferredHeight() : 0;
+                if (!laidOut || server != withServer || height != optionsHeight) {
+                    optionsHeight = height;
                     layout(server);
                 }
                 revealFocus(*page);
@@ -368,6 +380,8 @@ namespace ForgottenMelody {
         private:
             std::string key;
             exui::ScrollPanel* page = nullptr;
+            GameOptionsPanel* gameOptions = nullptr;
+            int optionsHeight = 0;
             bool laidOut = false, withServer = false;
 
             void layout(bool server) {
@@ -379,7 +393,7 @@ namespace ForgottenMelody {
                 authRow.SetVisible(server);
                 if (server) serverRows.push_back(std::move(authRow));
                 serverRows.push_back(row(JOIN_LABEL, {cell(JOIN, 300)}));
-                page->SetContentLayout(Layout::Column({
+                std::vector<Layout> groups{
                         group(MANAGE_GROUP, {Layout::Row({cell(MODS), cell(LOADERS), cell(EXPORT)}, 8, 30),
                                             Layout::Row({cell(KEYS), cell(SCREENSHOTS), cell(SHORTCUT)}, 8, 30)},
                               {20, 26, 14, 16}),
@@ -419,7 +433,10 @@ namespace ForgottenMelody {
                                 Layout::Row({cell(NO_DEFAULT_JVM_ARGS, 250)}, 0, 26),
                                 Layout::Row({cell(NO_INTEGRITY_CHECK, 250)}, 0, 26),
                         }, {20, 25, 20, 11}),
-                }, 10), {12, 10, 0, 10});
+                };
+                FindControl(GAME_OPTIONS_GROUP)->SetVisible(optionsHeight > 0);
+                if (optionsHeight > 0) groups.insert(groups.begin() + 2, group(GAME_OPTIONS_GROUP, {cell(GAME_OPTIONS_PANEL, optionsHeight)}));
+                page->SetContentLayout(Layout::Column(std::move(groups), 10), {12, 10, 0, 10});
             }
 
             // The paths behind the Java choices: none for 自动选择, then the ones found and the one chosen by hand.
