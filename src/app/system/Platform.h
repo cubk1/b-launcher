@@ -23,6 +23,7 @@ namespace Platform {
     std::filesystem::path cacheDirectory();
     bool open(const std::filesystem::path& path);
     bool openUrl(const std::string& url);
+    bool webUrl(const std::string& url);
     std::wstring widen(const std::string& text);
 
     constexpr unsigned long long LAUNCH_MESSAGE = 0x424C4C4EULL;

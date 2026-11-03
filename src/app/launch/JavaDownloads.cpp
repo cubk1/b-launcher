@@ -8,6 +8,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
+#include <core/base/platform.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
@@ -305,9 +306,13 @@ namespace JavaDownloads {
     }
 
     std::filesystem::path root() {
+#if defined(_WIN32)
         const wchar_t* local = _wgetenv(L"LOCALAPPDATA");
         std::filesystem::path base =
                 local != nullptr && *local != 0 ? std::filesystem::path(local) : Platform::exeDirectory();
+#else
+        std::filesystem::path base = blb::app_data_directory();
+#endif
         return base / L"b-launcher" / L"java";
     }
 
