@@ -38,6 +38,10 @@ namespace Config {
 
     bool reset() {
         nlohmann::json defaults = nlohmann::json::object();
+        const auto& previous = data();
+        if (auto folders = previous.find("gameFolders"); folders != previous.end()) {
+            defaults["gameFolders"] = *folders;
+        }
         if (!Platform::storeValue(VALUE, defaults.dump(), true)) {
             return false;
         }
