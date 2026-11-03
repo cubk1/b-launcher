@@ -125,14 +125,16 @@ struct loader_installer::impl
         java_cache = *installer->options ().java_candidates;
         java::prune_missing (*java_cache);
       }
-    if (!java_cache)
+    if (java_cache)
       {
-        auto options = installer->options ().java_scan;
-        options.runtime_roots.push_back (installer->layout ().runtime ());
-        auto found = java::scan_java (options, token);
-        BLB_TRY (token.check ());
-        java_cache = std::move (found);
+        if (auto chosen = java::select_java (*java_cache, requirement))
+          return *chosen;
       }
+    auto options = installer->options ().java_scan;
+    options.runtime_roots.push_back (installer->layout ().runtime ());
+    auto found = java::scan_java (options, token);
+    BLB_TRY (token.check ());
+    java_cache = std::move (found);
     if (auto chosen = java::select_java (*java_cache, requirement))
       return *chosen;
     BLB_TRY_ASSIGN (auto installed,

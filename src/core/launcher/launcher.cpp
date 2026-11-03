@@ -176,10 +176,23 @@ game_launcher::resolve_java (const meta::version &resolved,
       return install;
     }
   auto requirement = java::requirement_for (resolved);
+  bool cached;
+  {
+    std::lock_guard lock (m_impl->java_mutex);
+    cached = m_impl->java_cache.has_value ()
+             || m_impl->installer->options ().java_candidates.has_value ();
+  }
   auto candidates = java_candidates (false, token);
   BLB_TRY (token.check ());
   if (auto chosen = java::select_java (candidates, requirement))
     return *chosen;
+  if (cached)
+    {
+      candidates = java_candidates (true, token);
+      BLB_TRY (token.check ());
+      if (auto chosen = java::select_java (candidates, requirement))
+        return *chosen;
+    }
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,
                        sformat ("no java {}+ found", requirement.min_major));
