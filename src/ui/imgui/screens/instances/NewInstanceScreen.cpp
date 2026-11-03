@@ -76,6 +76,8 @@ namespace NewInstanceScreen {
         bool readingLoaders = false;
         std::string loaderReadError;
         unsigned loaderReadGeneration = 0;
+        // A Fabric install without Fabric API leaves most modpacks broken, so picking Fabric picks the API too.
+        bool autoFabricApi = false;
 
         std::string kindOf(const blb::meta::manifest_version& version) {
             switch (Catalog::kindOf(version)) {
@@ -346,10 +348,10 @@ namespace NewInstanceScreen {
             ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
         }
 
-        void installButton(float right, float bottom, const std::string& problem) {
+        void installButton(float right, float bottom, const std::string& problem, bool waiting) {
             const char* action = editing.empty() ? "安装" : "应用";
             bool installing = Installer::running();
-            bool usable = installing || problem.empty();
+            bool usable = installing || (problem.empty() && !waiting);
             float morph = easeOut(UiState::motion("new#install#morph", installing ? 1.0f : 0.0f, 10.0f));
             float w = UiRender::lerp(BUTTON_W, SQUARE, morph);
             float h = UiRender::lerp(BUTTON_H, SQUARE, morph);
@@ -384,6 +386,11 @@ namespace NewInstanceScreen {
             if (!problem.empty() && !installing && morph < 0.01f) {
                 float problemW = UiFont::width(problem, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY(problem, x - 14.0f - problemW, y, h, UiTheme::danger(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            } else if (waiting && !installing && morph < 0.01f) {
+                std::string text = "正在获取 Fabric API 版本…";
+                float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(text, x - 14.0f - textW, y, h, UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
             }
             if (installing && hovered) {
@@ -551,7 +558,38 @@ namespace NewInstanceScreen {
 
         void settings(float top, float bottom, float gone, bool blocked);
 
+        // Picking Fabric also picks the newest Fabric API: wait for its list once, then never again unless re-picked.
+        void attachFabricApi() {
+            if (!autoFabricApi) {
+                return;
+            }
+            if (chosen.count(loader_type::fabric) == 0 || chosen.count(loader_type::fabric_api) != 0) {
+                autoFabricApi = false;
+                return;
+            }
+            const Catalog::LoaderVersions& api = Catalog::loader(loader_type::fabric_api, minecraft);
+            if (api.status == Catalog::Status::Loading) {
+                return;
+            }
+            autoFabricApi = false;
+            if (api.status != Catalog::Status::Ready || api.list.empty()) {
+                return;
+            }
+            const blb::install::loader_version* latest = nullptr;
+            for (const blb::install::loader_version& version : api.list) {
+                if (version.stable) {
+                    latest = &version;
+                    break;
+                }
+            }
+            if (latest == nullptr) {
+                latest = &api.list.front();
+            }
+            loaderSelection.select(loader_type::fabric_api, latest->version);
+        }
+
         void setupStep() {
+            attachFabricApi();
             bool installing = Installer::running();
             float phase = easeOut(UiState::motion("new#install#phase", installing ? 1.0f : 0.0f, 8.0f));
             bool blocked = NewUi::overlayCoversMouse();
@@ -619,7 +657,7 @@ namespace NewInstanceScreen {
                 problem = source == nullptr ? std::string("没有可用的游戏目录")
                                             : Instances::checkInstallId(source->key, instanceName());
             }
-            installButton(Page::right(), buttonBottom, problem);
+            installButton(Page::right(), buttonBottom, problem, autoFabricApi);
         }
 
         void infoRow(const char* label, const std::string& value, float y) {
@@ -840,6 +878,7 @@ namespace NewInstanceScreen {
                     });
             if (clicked >= 0) {
                 loaderSelection.select(picking, versions.list[clicked].version);
+                autoFabricApi = editing.empty() && picking == loader_type::fabric;
                 steps.go(STEP_SETUP);
             }
         }
@@ -894,6 +933,7 @@ namespace NewInstanceScreen {
 
     void reset() {
         loaderSelection.reset();
+        autoFabricApi = false;
         typedName.clear();
         modpack.reset();
         editing.clear();
