@@ -5,15 +5,8 @@
 #include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
 #include <algorithm>
+#include <chrono>
 #include <cwctype>
 #include <map>
 #include <string_view>
@@ -26,10 +19,10 @@ namespace GameOptions {
     namespace blb = b_launcher_base;
 
     namespace {
-        constexpr ULONGLONG RECHECK_MS = 1000;
+        constexpr uint64_t RECHECK_MS = 1000;
 
         struct Cached {
-            ULONGLONG checked = 0;
+            uint64_t checked = 0;
             std::filesystem::file_time_type stamp{};
             bool exists = false;
             unsigned revision = 0;
@@ -70,7 +63,9 @@ namespace GameOptions {
 
         const Cached& load(const std::filesystem::path& file) {
             Cached& entry = cache[keyOf(file)];
-            ULONGLONG now = GetTickCount64();
+            uint64_t now = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch())
+                                   .count();
             if (entry.checked != 0 && now - entry.checked < RECHECK_MS) {
                 return entry;
             }

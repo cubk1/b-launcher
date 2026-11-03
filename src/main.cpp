@@ -2,7 +2,9 @@
 #include "app/system/DiskScan.h"
 #include "app/system/Platform.h"
 #include "app/system/UiStyles.h"
+#if defined(_WIN32)
 #include "ui/exui/windows/ForgottenMelody.h"
+#endif
 #include "ui/imgui/screens/shell/ImGuiApp.h"
 
 #include <optional>
@@ -24,8 +26,10 @@ int main() {
     }
     Game::setQuiet(headless);
     UiStyles::start(Platform::uiArgument());
+#if defined(_WIN32)
     if (std::string_view(UiStyles::running().key) == "forgotten-melody") {
         return ForgottenMelody::run(pendingLaunch, headless);
     }
+#endif
     return ImGuiApp::run(pendingLaunch, headless);
 }
