@@ -80,7 +80,7 @@ set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 if (WIN32)
     set(IMGUI_PLATFORM_SOURCES ${IMGUI_DIR}/backends/imgui_impl_win32.cpp)
 else ()
-    set(IMGUI_PLATFORM_SOURCES "")
+    set(IMGUI_PLATFORM_SOURCES ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp)
 endif ()
 add_library(imgui STATIC
         ${IMGUI_DIR}/imgui.cpp
@@ -93,6 +93,9 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
 target_link_libraries(imgui PUBLIC freetype)
+if (NOT WIN32)
+    target_link_libraries(imgui PUBLIC SDL3::SDL3-static)
+endif ()
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
 list(FILTER UI_SOURCES EXCLUDE REGEX "/src/ui/imgui/screens/")
@@ -136,6 +139,9 @@ if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 else ()
     target_link_libraries(ui PUBLIC SDL3::SDL3-static)
+    if (APPLE)
+        target_link_libraries(ui PUBLIC "-framework CoreText" "-framework CoreFoundation")
+    endif ()
 endif ()
 
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/system/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES

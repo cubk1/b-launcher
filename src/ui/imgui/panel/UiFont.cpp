@@ -27,9 +27,199 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+#include <string_view>
+#if defined(__APPLE__)
+#include <CoreText/CoreText.h>
+#else
+#include <dlfcn.h>
+#endif
 #endif
 
 namespace UiFont {
+
+#if !defined(_WIN32)
+    namespace {
+        bool readable(const std::string& file) {
+            return access(file.c_str(), R_OK) == 0;
+        }
+
+        int faceNamed(const std::string& file, std::string_view family) {
+            FT_Library library = nullptr;
+            if (FT_Init_FreeType(&library) != 0) {
+                return -1;
+            }
+            int found = -1;
+            FT_Face face = nullptr;
+            long count = FT_New_Face(library, file.c_str(), -1, &face) == 0 ? face->num_faces : 0;
+            if (face != nullptr) {
+                FT_Done_Face(face);
+            }
+            for (long i = 0; i < count && found < 0; i++) {
+                if (FT_New_Face(library, file.c_str(), i, &face) != 0) {
+                    continue;
+                }
+                if (face->family_name != nullptr && family == face->family_name && face->style_name != nullptr &&
+                    std::string_view(face->style_name) == "Regular") {
+                    found = (int) i;
+                }
+                FT_Done_Face(face);
+            }
+            FT_Done_FreeType(library);
+            return found;
+        }
+
+#if defined(__APPLE__)
+        std::string fontFile(const char* name) {
+            CFStringRef family = CFStringCreateWithCString(nullptr, name, kCFStringEncodingUTF8);
+            CTFontRef font = CTFontCreateWithName(family, 16.0, nullptr);
+            CFRelease(family);
+            std::string file;
+            if (font != nullptr) {
+                CFURLRef url = (CFURLRef) CTFontCopyAttribute(font, kCTFontURLAttribute);
+                char buffer[4096];
+                if (url != nullptr && CFURLGetFileSystemRepresentation(url, true, (UInt8*) buffer, sizeof(buffer))) {
+                    file = buffer;
+                }
+                if (url != nullptr) {
+                    CFRelease(url);
+                }
+                CFRelease(font);
+            }
+            return file;
+        }
+
+        std::string systemFont(const char* name) {
+            std::string file = fontFile(name);
+            if (file.empty() || !readable(file)) {
+                return {};
+            }
+            int face = file.ends_with(".ttc") ? faceNamed(file, name) : 0;
+            return face < 0 ? std::string() : file + "#" + std::to_string(face);
+        }
+
+        std::vector<std::string> systemFallbacks() {
+            std::vector<std::string> out;
+            for (const char* name : {"PingFang SC", "Hiragino Sans GB", "Apple Symbols"}) {
+                std::string spec = systemFont(name);
+                if (!spec.empty()) {
+                    out.push_back(spec);
+                }
+            }
+            return out;
+        }
+
+        std::string codeFont() {
+            return systemFont("Menlo");
+        }
+#else
+        struct FontConfig {
+            void* library = dlopen("libfontconfig.so.1", RTLD_NOW | RTLD_LOCAL);
+            void* config = nullptr;
+            void* (*parse)(const unsigned char*) = nullptr;
+            int (*substitute)(void*, void*, int) = nullptr;
+            void (*defaults)(void*) = nullptr;
+            void* (*match)(void*, void*, int*) = nullptr;
+            int (*text)(void*, const char*, int, unsigned char**) = nullptr;
+            int (*number)(void*, const char*, int, int*) = nullptr;
+            void (*destroy)(void*) = nullptr;
+
+            FontConfig() {
+                if (library == nullptr) {
+                    return;
+                }
+                auto init = (void* (*) ()) dlsym(library, "FcInitLoadConfigAndFonts");
+                parse = (void* (*) (const unsigned char*) ) dlsym(library, "FcNameParse");
+                substitute = (int (*)(void*, void*, int)) dlsym(library, "FcConfigSubstitute");
+                defaults = (void (*)(void*)) dlsym(library, "FcDefaultSubstitute");
+                match = (void* (*) (void*, void*, int*) ) dlsym(library, "FcFontMatch");
+                text = (int (*)(void*, const char*, int, unsigned char**)) dlsym(library, "FcPatternGetString");
+                number = (int (*)(void*, const char*, int, int*)) dlsym(library, "FcPatternGetInteger");
+                destroy = (void (*)(void*)) dlsym(library, "FcPatternDestroy");
+                if (init && parse && substitute && defaults && match && text && number && destroy) {
+                    config = init();
+                }
+            }
+
+            std::string find(const char* query) {
+                if (config == nullptr) {
+                    return {};
+                }
+                void* pattern = parse((const unsigned char*) query);
+                if (pattern == nullptr) {
+                    return {};
+                }
+                substitute(config, pattern, 0);
+                defaults(pattern);
+                int result = 0;
+                void* found = match(config, pattern, &result);
+                destroy(pattern);
+                if (found == nullptr) {
+                    return {};
+                }
+                unsigned char* file = nullptr;
+                int index = 0;
+                std::string spec;
+                if (text(found, "file", 0, &file) == 0 && file != nullptr) {
+                    number(found, "index", 0, &index);
+                    spec = std::string((const char*) file);
+                    if (!readable(spec)) {
+                        spec.clear();
+                    } else {
+                        spec += "#" + std::to_string(index);
+                    }
+                }
+                destroy(found);
+                return spec;
+            }
+        };
+
+        FontConfig& fontConfig() {
+            static FontConfig instance;
+            return instance;
+        }
+
+        std::vector<std::string> systemFallbacks() {
+            std::vector<std::string> out;
+            for (const char* query : {"sans-serif:lang=zh-cn", "sans-serif:lang=zh-tw", "symbol"}) {
+                std::string spec = fontConfig().find(query);
+                if (!spec.empty() && std::find(out.begin(), out.end(), spec) == out.end()) {
+                    out.push_back(spec);
+                }
+            }
+            if (!out.empty()) {
+                return out;
+            }
+            const char* known[][2] = {
+                    {"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
+                    {"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
+                    {"/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", "Noto Sans CJK SC"},
+                    {"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", "WenQuanYi Micro Hei"},
+                    {"/usr/share/fonts/wenquanyi/wqy-microhei/wqy-microhei.ttc", "WenQuanYi Micro Hei"}};
+            for (const auto& [file, family] : known) {
+                if (readable(file)) {
+                    int face = faceNamed(file, family);
+                    out.push_back(std::string(file) + "#" + std::to_string(face < 0 ? 0 : face));
+                    break;
+                }
+            }
+            return out;
+        }
+
+        std::string codeFont() {
+            return fontConfig().find("monospace");
+        }
+#endif
+    }
+#endif
 
     ImFont* baseFonts[FAMILY_COUNT] = {};
     std::unordered_map<int, int> fallbackCache;
@@ -37,7 +227,11 @@ namespace UiFont {
     bool raw = false;
     bool shadow = false;
     bool shadowPass = false;
+#if defined(_WIN32)
     std::vector<std::string> fallbackFonts = {"msyh.ttc#1", "msyh.ttf", "seguisym.ttf"};
+#else
+    std::vector<std::string> fallbackFonts = systemFallbacks();
+#endif
 #ifdef IMGUI_ENABLE_FREETYPE
     unsigned int loaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
 #else
@@ -137,9 +331,22 @@ namespace UiFont {
         size = (unsigned int) length.QuadPart;
         return (const unsigned char*) view;
 #else
-        (void) path;
-        (void) size;
-        return nullptr;
+        int file = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (file < 0) {
+            return nullptr;
+        }
+        struct stat info {};
+        if (fstat(file, &info) != 0 || info.st_size < 100 || info.st_size > 0x7FFFFFFF) {
+            close(file);
+            return nullptr;
+        }
+        void* view = mmap(nullptr, (size_t) info.st_size, PROT_READ, MAP_PRIVATE, file, 0);
+        close(file);
+        if (view == MAP_FAILED) {
+            return nullptr;
+        }
+        size = (unsigned int) info.st_size;
+        return (const unsigned char*) view;
 #endif
     }
 
@@ -202,7 +409,12 @@ namespace UiFont {
         baseFonts[BOLD] = text;
         baseFonts[DISPLAY] = text;
         baseFonts[MONO] = text;
+#if defined(_WIN32)
         ImFont* code = fromSystem("consola.ttf");
+#else
+        std::string codeSpec = codeFont();
+        ImFont* code = codeSpec.empty() ? nullptr : fromSystem(codeSpec);
+#endif
         baseFonts[CODE] = code != nullptr ? code : text;
         baseFonts[ICON] = fromMemory(EmbeddedFonts::iconFont, EmbeddedFonts::iconFontSize, "fa-solid-900.ttf");
         fallbackCount = 0;
