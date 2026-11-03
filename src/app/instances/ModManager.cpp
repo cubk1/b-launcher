@@ -164,6 +164,27 @@ namespace ModManager {
             return version;
         }
 
+        std::optional<bool> sameVersion(const Addons::Version& selected, const Addons::Version& pinned) {
+            if (selected.source == pinned.source) {
+                return selected.projectId == pinned.projectId && selected.id == pinned.id;
+            }
+            const Addons::File* file = selected.file();
+            auto hash = file != nullptr ? blb::parse_sha1(file->sha1) : std::nullopt;
+            if (!hash) {
+                return std::nullopt;
+            }
+            bool complete = !pinned.files.empty();
+            for (const Addons::File& candidate : pinned.files) {
+                auto other = blb::parse_sha1(candidate.sha1);
+                if (!other) {
+                    complete = false;
+                } else if (*hash == *other) {
+                    return true;
+                }
+            }
+            return complete ? std::optional(false) : std::nullopt;
+        }
+
         bool owns(const Mods::Mod& mod, const std::string& projectId) {
             for (Addons::Source source : SOURCES) {
                 const Remote* found = remote(mod, source);
@@ -1247,7 +1268,8 @@ namespace ModManager {
             const Mods::Mod* old = change.file.empty() ? nullptr : modAt(list, change.file);
             for (Addons::Source source : SOURCES) {
                 if (const Remote* found = old != nullptr ? remote(*old, source) : nullptr) {
-                    present[found->projectId].insert(change.target.id);
+                    // The replacement still provides this project, but its other source has a different version ID.
+                    present.try_emplace(found->projectId);
                 }
             }
         }
@@ -1287,6 +1309,24 @@ namespace ModManager {
             }
             auto installed = present.find(projectId);
             bool exact = installed != present.end() && installed->second.count(dependency.versionId) != 0;
+            bool unknown = false;
+            if (pinned != nullptr && !exact) {
+                for (const Change& change : state.changes) {
+                    if (change.disabled) {
+                        continue;
+                    }
+                    auto same = sameVersion(change.target, *pinned);
+                    exact = exact || same.value_or(false);
+                    const Mods::Mod* old = change.file.empty() ? nullptr : modAt(list, change.file);
+                    bool related = change.projectId == projectId || (old != nullptr && owns(*old, projectId));
+                    unknown = unknown || (related && !same.has_value());
+                }
+            }
+            if (!exact && unknown) {
+                push(Severity::Error, "无法确认 " + item.name + " 的指定前置版本，请从 " +
+                             Addons::sourceName(pinned->source) + " 选择 " + title(projectId) + " 的对应版本", {});
+                continue;
+            }
             if (dependency.incompatible) {
                 if (dependency.versionId.empty() ? installed != present.end() : exact) {
                     push(Severity::Error, item.name + " 与 " + title(projectId) + " 不兼容", {});
