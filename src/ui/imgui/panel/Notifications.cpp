@@ -154,7 +154,7 @@ namespace Notifications {
             UiRender::textY(text, x, y, HEIGHT, withAlpha(TEXT_COLOR, alpha), UiFont::MONO, TEXT_SIZE);
         }
 
-        void renderItems(float screenW, float screenH, float inset) {
+        void renderItems(float screenW, float screenH, float inset, bool top, float topInset) {
             long long now = nowMs();
             long long elapsed = lastUpdate == 0 ? 16 : std::min(100LL, now - lastUpdate);
             lastUpdate = now;
@@ -192,7 +192,8 @@ namespace Notifications {
                     opacity = 1.0f - easeOutCubic(t);
                 }
 
-                float targetY = screenH - BOTTOM - inset - (i + 1) * STEP;
+                float targetY = top ? topInset + (float) i * STEP
+                                    : screenH - BOTTOM - inset - (float) (i + 1) * STEP;
                 float cy = std::isnan(item.shownY) ? targetY : item.shownY + (targetY - item.shownY) * yLerp;
                 item.shownY = cy;
 
@@ -314,7 +315,7 @@ namespace Notifications {
         item.live = false;
     }
 
-    void render(float layoutW, float layoutH, float bottomInset) {
+    void render(float layoutW, float layoutH, float bottomInset, bool top, float topInset) {
         if (items.empty()) {
             lastUpdate = 0;
             return;
@@ -333,7 +334,7 @@ namespace Notifications {
         UiRender::offsetX = 0.0f;
         UiRender::offsetY = 0.0f;
         UiRender::alphaMul = 1.0f;
-        renderItems(layoutW / SCALE, layoutH / SCALE, bottomInset / SCALE);
+        renderItems(layoutW / SCALE, layoutH / SCALE, bottomInset / SCALE, top, topInset / SCALE);
         UiRender::uiScale = savedUiScale;
         UiRender::scaleFactor = savedScaleFactor;
         UiRender::pivotX = savedPivotX;

@@ -59,7 +59,7 @@ namespace HomeWidgets {
                 {SERVER, "服务器状态", 0xf233}, {SHOTS, "最近截图", 0xf030},
         };
 
-        HomeOptions options(SECTION, KINDS, {}, "只显示标志");
+        HomeOptions options(SECTION, KINDS, {ACCOUNT, LAUNCH, SHOTS}, "只显示标志");
 
         constexpr float SHOTS_PAD = 12.0f;
         constexpr float SHOTS_GAP = 8.0f;
@@ -386,6 +386,29 @@ namespace HomeWidgets {
 
     bool enabled(const std::string& id) {
         return options.enabled(id);
+    }
+
+    const std::vector<WidgetKind>& widgetKinds() {
+        static const std::vector<WidgetKind> all = [] {
+            std::vector<WidgetKind> out;
+            for (const Kind& kind : KINDS) {
+                out.push_back({kind.id, kind.label, kind.glyph});
+            }
+            return out;
+        }();
+        return all;
+    }
+
+    void setWidgetEnabled(const std::string& id, bool on) {
+        if (options.enabled(id) == on) {
+            return;
+        }
+        for (const WidgetKind& kind : widgetKinds()) {
+            if (id == kind.id) {
+                options.choice()->choose(kind.label);
+                return;
+            }
+        }
     }
 
     bool alignBottom() {

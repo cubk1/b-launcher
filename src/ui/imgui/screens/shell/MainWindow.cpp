@@ -9,9 +9,11 @@
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
+#include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/multiplayer/MultiplayerScreen.h"
 #include "app/multiplayer/Multiplayer.h"
+#include "ui/imgui/screens/onboarding/Onboarding.h"
 #include "app/system/Config.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -353,6 +355,7 @@ namespace MainWindow {
     }
 
     static void fadeGlyph(int glyph, float cx, float cy, uint32_t tint, float amount, float size);
+    static void shell();
 
     static int framesCounted = 0;
     static double fpsSince = -1.0;
@@ -1145,10 +1148,28 @@ namespace MainWindow {
         UiRender::reset();
         countFrame();
         titleControls.clear();
-        unfold();
-        followList();
-        searchShortcut();
+        if (!Onboarding::covering()) {
+            unfold();
+            followList();
+            searchShortcut();
+            shell();
+        }
+        if (Onboarding::drawing()) {
+            Onboarding::draw();
+        }
+        if (!Appearance::systemFrameRunning()) {
+            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
+            if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
+                minimizeRequested = true;
+            }
+            maximizeButton(width() - 14 - 56, buttonY);
+            if (windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true)) {
+                closeRequested = true;
+            }
+        }
+    }
 
+    static void shell() {
         float r = SHELL_RADIUS;
         uint32_t sidebarFill = UiTheme::sidebar();
         uint32_t panelFill = UiTheme::panel();
@@ -1186,26 +1207,18 @@ namespace MainWindow {
             }
         }
 
-        if (!Appearance::systemFrameRunning()) {
-            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
-            if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
-                minimizeRequested = true;
-            }
-            maximizeButton(width() - 14 - 56, buttonY);
-            if (windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true)) {
-                closeRequested = true;
-            }
-        }
         Drop::draw(width(), height());
+        // Widgets pinned to the bottom leave no room for toasts, so they move under the window buttons.
+        bool underTitle = pages.page == PAGE_HOME && HomeWidgets::alignBottom();
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();
         float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
         float columnTop = 0.0f;
         float columnBottom = 0.0f;
-        if (pages.page == PAGE_HOME && !floating && Homepage::column(columnTop, columnBottom) &&
+        if (pages.page == PAGE_HOME && !underTitle && !floating && Homepage::column(columnTop, columnBottom) &&
             columnBottom + 8.0f > height() - Notifications::clearance()) {
             inset = Notifications::insetAbove(height(), columnTop);
         }
-        Notifications::render(width(), height(), inset);
+        Notifications::render(width(), height(), inset, underTitle, TITLE_HEIGHT + 6.0f);
     }
 
     bool isDragArea(float x, float y) {

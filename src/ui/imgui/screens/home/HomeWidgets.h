@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace HomeWidgets {
 
@@ -15,6 +16,15 @@ namespace HomeWidgets {
 
     std::shared_ptr<Choice> choice();
     bool enabled(const std::string& id);
+
+    struct WidgetKind {
+        const char* id;
+        const char* label;
+        int glyph;
+    };
+
+    const std::vector<WidgetKind>& widgetKinds();
+    void setWidgetEnabled(const std::string& id, bool on);
 
     std::string serverAddress();
     void setServerAddress(const std::string& value);

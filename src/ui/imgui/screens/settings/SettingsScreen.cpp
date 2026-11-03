@@ -2,8 +2,10 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/shell/Dialog.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
+#include "app/system/Config.h"
 #include "app/system/DiskScan.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
@@ -14,6 +16,7 @@
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/onboarding/Onboarding.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/launch/Patches.h"
 #include "app/launch/ServerList.h"
@@ -100,6 +103,31 @@ namespace SettingsScreen {
                     .hitArea(mainX(), rowY, mainW(), Page::ROW_H)
                     .block(blocked);
             widget.paint();
+        }
+
+        bool dangerButton(const std::string& id, const std::string& text, float x, float y, float w, int glyph,
+                          bool blocked) {
+            bool hovered = !blocked && NewUi::hit(x, y, w, FIELD_H);
+            float lit = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
+            uint32_t red = UiTheme::danger() & 0x00FFFFFFu;
+            UiRender::roundRect(x, y, w, FIELD_H, 7.0f, red | ((uint32_t) Ui::round(72.0f + 40.0f * lit) << 24));
+            UiRender::outline(x, y, w, FIELD_H, 7.0f, red | ((uint32_t) Ui::round(140.0f + 70.0f * lit) << 24));
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            if (glyph != 0) {
+                float contentW = 10.0f + 6.0f + textW;
+                float start = x + (w - contentW) * 0.5f;
+                UiWidgets::icon(Ui::glyph(glyph), start + 5.0f, y + FIELD_H * 0.5f, UiTheme::danger(), 10.0f);
+                UiRender::textY(text, start + 16.0f, y, FIELD_H, UiTheme::danger(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            } else {
+                UiRender::textY(text, x + (w - textW) * 0.5f, y, FIELD_H, UiTheme::danger(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            }
+            if (!blocked && NewUi::click(x, y, w, FIELD_H)) {
+                UiSound::request(UiSound::forLabel(text));
+                return true;
+            }
+            return false;
         }
 
         void textRow(const std::string& id, const char* label, const char* doc, std::function<std::string()> read,
@@ -951,11 +979,65 @@ namespace SettingsScreen {
                     y, Page::controlRight() - 40.0f, blocked);
         }
 
+        void confirmReset() {
+            Dialog::open("settings#resetAll", 480.0f, 186.0f, [](float x, float y, float w, float h) {
+                UiRender::textY("重置启动器设置？", x + 20.0f, y + 20.0f, 26.0f, UiTheme::textPrimary(),
+                                UiFont::MEDIUM, 16.0f);
+                UiRender::textY("外观、主页、窗口等设置恢复默认，启动器会重启。", x + 20.0f, y + 56.0f, 20.0f,
+                                UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY("账户、实例和下载的文件不受影响。", x + 20.0f, y + 76.0f, 20.0f,
+                                UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float buttonY = y + h - 20.0f - Page::FIELD_H;
+                if (Page::button("settings#resetAll#cancel", "取消", x + w - 212.0f, buttonY, 72.0f, false, false)) {
+                    Dialog::close();
+                    return;
+                }
+                if (dangerButton("settings#resetAll#confirm", "重置并重启", x + w - 124.0f, buttonY, 104.0f, 0xf2f1,
+                                 false)) {
+                    Dialog::close();
+                    Config::reset();
+                    if (!Platform::restart()) {
+                        Notices::add(Notices::Kind::Failed, "重启失败，请手动重新打开启动器", 5000);
+                    }
+                }
+            });
+        }
+
+        void guideRow(float y, bool blocked) {
+            const std::string label = "使用启动引导";
+            const std::string text = "开始引导";
+            Page::label(label, y);
+            float w = Page::buttonWidth(text, 0xf0d0);
+            float x = Page::controlRight() - w;
+            if (Page::button("settings#guide", text, x, y + Page::FIELD_Y, w, false, blocked, 0xf0d0)) {
+                Onboarding::start();
+            }
+            explain("settings#guide",
+                    "走一遍主题色、缩放、背景和主页组件的外观设置，当前设置会保留，随时可以跳过。",
+                    y, x - 8.0f, blocked);
+        }
+
+        void resetRow(float y, bool blocked) {
+            const std::string label = "重置启动器设置";
+            const std::string text = "重置并重启";
+            Page::label(label, y);
+            float w = Page::buttonWidth(text, 0xf2f1);
+            float x = Page::controlRight() - w;
+            if (dangerButton("settings#resetAll", text, x, y + Page::FIELD_Y, w, 0xf2f1, blocked || Services::busy())) {
+                confirmReset();
+            }
+            explain("settings#resetAll",
+                    "主题、缩放、背景、主页组件、窗口大小、侧栏展开状态等设置全部恢复默认，启动器随即重启。"
+                    "账户、实例和下载的文件不受影响。",
+                    y, x - 8.0f, blocked);
+        }
+
         void launcherTab(bool covered) {
             int lookCount = appearanceCount();
             int homeCount = homepageCount();
             float contentH = Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H +
-                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + Page::ROW_H;
+                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + Page::ROW_H + Page::GAP +
+                    Page::CAPTION_H + 2 * Page::ROW_H;
             Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -971,6 +1053,11 @@ namespace SettingsScreen {
             Page::caption("网络", y);
             Page::card(y + Page::CAPTION_H, 1);
             networkRows(y + Page::CAPTION_H, blocked);
+            y += Page::CAPTION_H + Page::ROW_H + Page::GAP;
+            Page::caption("引导与重置", y);
+            Page::card(y + Page::CAPTION_H, 2);
+            guideRow(y + Page::CAPTION_H, blocked);
+            resetRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
             body.end();
         }
 
