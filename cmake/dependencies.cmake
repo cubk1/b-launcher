@@ -80,8 +80,32 @@ if(WIN32)
   blb_force(CURL_USE_SCHANNEL ON)
   blb_force(CURL_USE_OPENSSL OFF)
   blb_force(CURL_WINDOWS_SSPI ON)
-else()
+elseif(APPLE)
   blb_force(CURL_USE_OPENSSL ON)
+else()
+  blb_force(ENABLE_PROGRAMS OFF)
+  blb_force(ENABLE_TESTING OFF)
+  blb_force(GEN_FILES OFF)
+  blb_force(MBEDTLS_FATAL_WARNINGS OFF)
+  blb_force(USE_STATIC_MBEDTLS_LIBRARY ON)
+  blb_force(USE_SHARED_MBEDTLS_LIBRARY OFF)
+  blb_force(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON)
+
+  FetchContent_Declare(mbedtls
+    URL ${BLB_DEP_BASE}/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+    URL_HASH SHA256=a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(mbedtls)
+
+  blb_force(CURL_USE_OPENSSL OFF)
+  blb_force(CURL_USE_MBEDTLS ON)
+  blb_force(CURL_CA_BUNDLE none)
+  blb_force(CURL_CA_PATH none)
+  blb_force(HAVE_MBEDTLS_DES_CRYPT_ECB 0)
+  blb_force(MBEDTLS_INCLUDE_DIR "${mbedtls_SOURCE_DIR}/include")
+  blb_force(MBEDTLS_LIBRARY mbedtls)
+  blb_force(MBEDX509_LIBRARY mbedx509)
+  blb_force(MBEDCRYPTO_LIBRARY mbedcrypto)
 endif()
 
 FetchContent_Declare(curl
