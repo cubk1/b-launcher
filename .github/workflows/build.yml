@@ -12,10 +12,8 @@ jobs:
       - name: Install tools
         run: choco install upx ninja -y --no-progress
       - name: Configure
-        run: cmake -S . -B build -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES="Release;MinSizeRel"
-      - name: Build Release
-        run: cmake --build build --config Release
-      - name: Build MinSizeRel
+        run: cmake -S . -B build -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=MinSizeRel
+      - name: Build
         run: cmake --build build --config MinSizeRel
       - uses: actions/upload-artifact@v4
         with:
