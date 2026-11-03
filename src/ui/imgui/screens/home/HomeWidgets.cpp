@@ -59,7 +59,7 @@ namespace HomeWidgets {
                 {SERVER, "服务器状态", 0xf233}, {SHOTS, "最近截图", 0xf030},
         };
 
-        HomeOptions options(SECTION, KINDS, {}, "只显示标志");
+        HomeOptions options(SECTION, KINDS, {ACCOUNT, LAUNCH, SHOTS}, "只显示标志");
 
         constexpr float SHOTS_PAD = 12.0f;
         constexpr float SHOTS_GAP = 8.0f;

@@ -59,10 +59,10 @@ namespace Onboarding {
 
         const char* const TITLES[STEPS] = {"主题色", "界面缩放", "背景", "主页组件"};
         const char* const HINTS[STEPS] = {
-                "改这个颜色，选中项、按钮和进度条都会跟着变。",
+                "改主题颜色，让你的启动器丰富多彩。",
                 "字小就调大，窗口会按比例一起放大。",
-                "打开后侧栏和面板会铺上图片，也可以换成自己的。",
-                "主页上放哪些卡片，之后还能在设置里改。",
+                "设置启动器背景图片",
+                "你的启动器，你来定义",
         };
 
         const uint32_t ACCENTS[] = {
@@ -73,7 +73,9 @@ namespace Onboarding {
         bool checked = false;
         bool shown = false;
         bool leaving = false;
+        bool outro = false;
         double leaveAt = 0.0;
+        double outroAt = 0.0;
         double shownAt = 0.0;
         int step = STEP_THEME;
         float direction = 1.0f;
@@ -170,10 +172,13 @@ namespace Onboarding {
         }
 
         void complete() {
+            if (outro || leaving) {
+                return;
+            }
             Config::data()[DONE_KEY] = true;
             Config::save();
-            leaving = true;
-            leaveAt = ImGui::GetTime();
+            outro = true;
+            outroAt = ImGui::GetTime();
             UiSound::request(UiSound::PULSE);
         }
 
@@ -572,7 +577,9 @@ namespace Onboarding {
         checked = true;
         shown = true;
         leaving = false;
+        outro = false;
         shownAt = 0.0;
+        outroAt = 0.0;
         step = STEP_THEME;
         direction = 1.0f;
         pageMix = 1.0f;
@@ -607,24 +614,37 @@ namespace Onboarding {
         }
         float w = MainWindow::width();
         float h = MainWindow::height();
-        float fade = 1.0f;
+        float savedAlpha = UiRender::alphaMul;
         if (leaving) {
-            fade = 1.0f - (float) ((now - leaveAt) / (double) LEAVE_SECONDS);
-            if (fade <= 0.001f) {
+            float remain = 1.0f - (float) ((now - leaveAt) / (double) LEAVE_SECONDS);
+            if (remain <= 0.001f) {
                 shown = false;
                 leaving = false;
                 return;
             }
+            UiRender::alphaMul = savedAlpha * remain;
+            UiRender::roundRect(0.0f, 0.0f, w, h, 14.0f, UiTheme::shell());
+            UiRender::alphaMul = savedAlpha;
             UiState::keepAnimating();
+            return;
         }
 
-        float savedAlpha = UiRender::alphaMul;
-        UiRender::alphaMul = savedAlpha * fade;
         UiRender::roundRect(0.0f, 0.0f, w, h, 14.0f, UiTheme::shell());
 
         if ((float) (now - shownAt) < INTRO_HOLD) {
             splash(w, h, (float) (now - shownAt));
-            UiRender::alphaMul = savedAlpha;
+            UiState::keepAnimating();
+            return;
+        }
+        if (outro) {
+            float elapsed = (float) (now - outroAt);
+            if (elapsed >= INTRO_HOLD) {
+                outro = false;
+                leaving = true;
+                leaveAt = now;
+                return;
+            }
+            splash(w, h, elapsed);
             UiState::keepAnimating();
             return;
         }
