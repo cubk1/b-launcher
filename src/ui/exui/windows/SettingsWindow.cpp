@@ -19,6 +19,7 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/Label.h"
 #include "ui/exui/widgets/ListView.h"
+#include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/InstancesWindow.h"
 
@@ -27,6 +28,7 @@
 #include <filesystem>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -129,8 +131,7 @@ namespace ForgottenMelody {
             LINKS,
         };
 
-        // The window's coordinates of the sections' panels.
-        constexpr int PANEL_LEFT = 210, PANEL_TOP = 75;
+        constexpr uint32_t PAGE_IDS[] = {GAME, PATCH, LAUNCHER, JAVA, ABOUT};
 
         struct Isolation {
             blb::instance::isolation_mode mode;
@@ -248,103 +249,103 @@ namespace ForgottenMelody {
             bool create(HWND parent) {
                 static const exui::ControlSpec CONTROLS[] = {
                         // 游戏设置
-                        {INSTANCES, ControlKind::Group, {225, 85, 645, 105}, L"实例"},
-                        {ISOLATION_LABEL, ControlKind::Label, {245, 112, 95, 26}, L"默认版本隔离"},
-                        {ISOLATION, ControlKind::Combo, {345, 110, 200, 28}},
-                        {COUNT_LABEL, ControlKind::Label, {245, 147, 95, 26}, L"实例列表"},
-                        {COUNT, ControlKind::Label, {345, 147, 110, 26}},
-                        {REFRESH, ControlKind::Button, {460, 145, 80, 30}, L"重新读取"},
-                        {MANAGE, ControlKind::Button, {550, 145, 90, 30}, L"实例管理"},
-                        {LAUNCH, ControlKind::Group, {225, 205, 645, 245}, L"启动"},
-                        {LANGUAGE_LABEL, ControlKind::Label, {245, 232, 95, 26}, L"游戏语言"},
-                        {LANGUAGE, ControlKind::Combo, {345, 230, 200, 28}},
-                        {GC_LABEL, ControlKind::Label, {245, 267, 95, 26}, L"内存管理"},
-                        {GC, ControlKind::Combo, {345, 265, 200, 28}},
-                        {JVM_LABEL, ControlKind::Label, {245, 302, 95, 26}, L"JVM 参数"},
-                        {JVM, ControlKind::Edit, {345, 300, 505, 26}},
-                        {GAME_ARGS_LABEL, ControlKind::Label, {245, 337, 95, 26}, L"游戏参数"},
-                        {GAME_ARGS, ControlKind::Edit, {345, 335, 505, 26}},
-                        {LOGS, ControlKind::Check, {245, 370, 200, 26}, L"显示游戏日志"},
-                        {PRE_LAUNCH_LABEL, ControlKind::Label, {245, 407, 95, 26}, L"启动前命令"},
-                        {PRE_LAUNCH, ControlKind::Edit, {345, 405, 505, 26}},
-                        // 补丁, in two columns. 皮肤 is laid out as with every row shown; refresh() closes it up.
-                        {ENABLE, ControlKind::Group, {225, 85, 315, 70}, L"启用"},
-                        {ALL, ControlKind::Check, {245, 110, 270, 26}, L"为所有实例启用"},
-                        {SKINS, ControlKind::Group, {225, 170, 315, 280}, L"皮肤"},
-                        {SKIN_LEGACY, ControlKind::Check, {245, 195, 270, 26}, L"修复旧版皮肤"},
-                        {SKIN_AUTHLIB, ControlKind::Check, {245, 230, 270, 26}, L"自定义皮肤"},
-                        {SKIN_MODE_LABEL, ControlKind::Label, {245, 267, 75, 26}, L"皮肤优先级"},
-                        {SKIN_MODE, ControlKind::Combo, {325, 265, 195, 28}},
-                        {SKIN_SOURCE_LABEL, ControlKind::Label, {245, 302, 75, 26}, L"皮肤来源"},
-                        {SKIN_SOURCE, ControlKind::Combo, {325, 300, 195, 28}},
-                        {SKIN_IMAGE_LABEL, ControlKind::Label, {245, 337, 75, 26}, L"皮肤图片"},
-                        {SKIN_IMAGE, ControlKind::Edit, {325, 335, 140, 26}},
-                        {SKIN_IMAGE_PICK, ControlKind::Button, {470, 335, 50, 26}, L"浏览"},
-                        {CAPE_IMAGE_LABEL, ControlKind::Label, {245, 372, 75, 26}, L"披风图片"},
-                        {CAPE_IMAGE, ControlKind::Edit, {325, 370, 140, 26}},
-                        {CAPE_IMAGE_PICK, ControlKind::Button, {470, 370, 50, 26}, L"浏览"},
-                        {PLAYER_LABEL, ControlKind::Label, {245, 337, 75, 26}, L"正版玩家名"},
-                        {PLAYER, ControlKind::Edit, {325, 335, 195, 26}},
-                        {SKIN_TRUSTED, ControlKind::Check, {245, 405, 270, 26}, L"标记为已签名"},
-                        {FIXES, ControlKind::Group, {555, 85, 315, 140}, L"修复"},
-                        {LOG4J, ControlKind::Check, {575, 110, 270, 26}, L"Log4Shell 漏洞修复"},
-                        {IME, ControlKind::Check, {575, 145, 270, 26}, L"中文输入修复"},
-                        {LWJGL, ControlKind::Check, {575, 180, 270, 26}, L"LWJGL 内存访问"},
-                        {GAME_WINDOW, ControlKind::Group, {555, 240, 315, 105}, L"窗口"},
-                        {WINDOW_TITLE_LABEL, ControlKind::Label, {575, 267, 75, 26}, L"窗口标题"},
-                        {WINDOW_TITLE, ControlKind::Edit, {655, 265, 195, 26}},
-                        {WINDOW_ICON_LABEL, ControlKind::Label, {575, 302, 75, 26}, L"窗口图标"},
-                        {WINDOW_ICON, ControlKind::Edit, {655, 300, 140, 26}},
-                        {WINDOW_ICON_PICK, ControlKind::Button, {800, 300, 50, 26}, L"浏览"},
-                        {DEBUGGING, ControlKind::Group, {555, 360, 315, 70}, L"调试"},
-                        {DEBUG_LOG, ControlKind::Check, {575, 385, 270, 26}, L"输出调试日志"},
+                        {INSTANCES, ControlKind::Group, {}, L"实例"},
+                        {ISOLATION_LABEL, ControlKind::Label, {}, L"默认版本隔离"},
+                        {ISOLATION, ControlKind::Combo, {}},
+                        {COUNT_LABEL, ControlKind::Label, {}, L"实例列表"},
+                        {COUNT, ControlKind::Label, {}},
+                        {REFRESH, ControlKind::Button, {}, L"重新读取"},
+                        {MANAGE, ControlKind::Button, {}, L"实例管理"},
+                        {LAUNCH, ControlKind::Group, {}, L"启动"},
+                        {LANGUAGE_LABEL, ControlKind::Label, {}, L"游戏语言"},
+                        {LANGUAGE, ControlKind::Combo, {}},
+                        {GC_LABEL, ControlKind::Label, {}, L"内存管理"},
+                        {GC, ControlKind::Combo, {}},
+                        {JVM_LABEL, ControlKind::Label, {}, L"JVM 参数"},
+                        {JVM, ControlKind::Edit, {}},
+                        {GAME_ARGS_LABEL, ControlKind::Label, {}, L"游戏参数"},
+                        {GAME_ARGS, ControlKind::Edit, {}},
+                        {LOGS, ControlKind::Check, {}, L"显示游戏日志"},
+                        {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
+                        {PRE_LAUNCH, ControlKind::Edit, {}},
+                        // 补丁
+                        {ENABLE, ControlKind::Group, {}, L"启用"},
+                        {ALL, ControlKind::Check, {}, L"为所有实例启用"},
+                        {SKINS, ControlKind::Group, {}, L"皮肤"},
+                        {SKIN_LEGACY, ControlKind::Check, {}, L"修复旧版皮肤"},
+                        {SKIN_AUTHLIB, ControlKind::Check, {}, L"自定义皮肤"},
+                        {SKIN_MODE_LABEL, ControlKind::Label, {}, L"皮肤优先级"},
+                        {SKIN_MODE, ControlKind::Combo, {}},
+                        {SKIN_SOURCE_LABEL, ControlKind::Label, {}, L"皮肤来源"},
+                        {SKIN_SOURCE, ControlKind::Combo, {}},
+                        {SKIN_IMAGE_LABEL, ControlKind::Label, {}, L"皮肤图片"},
+                        {SKIN_IMAGE, ControlKind::Edit, {}},
+                        {SKIN_IMAGE_PICK, ControlKind::Button, {}, L"浏览"},
+                        {CAPE_IMAGE_LABEL, ControlKind::Label, {}, L"披风图片"},
+                        {CAPE_IMAGE, ControlKind::Edit, {}},
+                        {CAPE_IMAGE_PICK, ControlKind::Button, {}, L"浏览"},
+                        {PLAYER_LABEL, ControlKind::Label, {}, L"正版玩家名"},
+                        {PLAYER, ControlKind::Edit, {}},
+                        {SKIN_TRUSTED, ControlKind::Check, {}, L"标记为已签名"},
+                        {FIXES, ControlKind::Group, {}, L"修复"},
+                        {LOG4J, ControlKind::Check, {}, L"Log4Shell 漏洞修复"},
+                        {IME, ControlKind::Check, {}, L"中文输入修复"},
+                        {LWJGL, ControlKind::Check, {}, L"LWJGL 内存访问"},
+                        {GAME_WINDOW, ControlKind::Group, {}, L"窗口"},
+                        {WINDOW_TITLE_LABEL, ControlKind::Label, {}, L"窗口标题"},
+                        {WINDOW_TITLE, ControlKind::Edit, {}},
+                        {WINDOW_ICON_LABEL, ControlKind::Label, {}, L"窗口图标"},
+                        {WINDOW_ICON, ControlKind::Edit, {}},
+                        {WINDOW_ICON_PICK, ControlKind::Button, {}, L"浏览"},
+                        {DEBUGGING, ControlKind::Group, {}, L"调试"},
+                        {DEBUG_LOG, ControlKind::Check, {}, L"输出调试日志"},
                         // 启动器设置
-                        {LOOK, ControlKind::Group, {225, 85, 645, 75}, L"外观"},
-                        {STYLE_LABEL, ControlKind::Label, {245, 112, 95, 26}, L"界面风格"},
-                        {STYLE, ControlKind::Combo, {345, 110, 200, 28}},
-                        {STYLE_HINT, ControlKind::Label, {555, 112, 195, 26}},
-                        {RESTART, ControlKind::Button, {760, 108, 90, 30}, L"立即重启"},
+                        {LOOK, ControlKind::Group, {}, L"外观"},
+                        {STYLE_LABEL, ControlKind::Label, {}, L"界面风格"},
+                        {STYLE, ControlKind::Combo, {}},
+                        {STYLE_HINT, ControlKind::Label, {}},
+                        {RESTART, ControlKind::Button, {}, L"立即重启"},
                         // Java 管理: the Java found on this computer above, the Java to download below.
-                        {INSTALLED, ControlKind::Group, {225, 85, 645, 215}, L"本机 Java"},
-                        {JAVA_LIST, ControlKind::List, {240, 108, 615, 150}},
-                        {ADD_JAVA, ControlKind::Button, {240, 264, 80, 28}, L"添加"},
-                        {REMOVE_JAVA, ControlKind::Button, {325, 264, 80, 28}, L"移除"},
-                        {JAVA_FOLDER, ControlKind::Button, {410, 264, 80, 28}, L"打开目录"},
-                        {JAVA_COUNT, ControlKind::Label, {500, 265, 260, 26}},
-                        {RESCAN, ControlKind::Button, {765, 264, 90, 28}, L"重新查找"},
-                        {DOWNLOADS, ControlKind::Group, {225, 310, 645, 215}, L"下载 Java"},
-                        {DOWNLOAD_LIST, ControlKind::List, {240, 333, 615, 150}},
-                        {MAJOR_LABEL, ControlKind::Label, {240, 490, 40, 26}, L"版本"},
-                        {MAJOR, ControlKind::Combo, {280, 489, 125, 28}},
-                        {DOWNLOAD_STATUS, ControlKind::Label, {415, 490, 245, 26}},
-                        {RELOAD, ControlKind::Button, {670, 489, 90, 28}, L"刷新列表"},
-                        {INSTALL, ControlKind::Button, {765, 489, 90, 28}, L"安装"},
+                        {INSTALLED, ControlKind::Group, {}, L"本机 Java"},
+                        {JAVA_LIST, ControlKind::List, {}},
+                        {ADD_JAVA, ControlKind::Button, {}, L"添加"},
+                        {REMOVE_JAVA, ControlKind::Button, {}, L"移除"},
+                        {JAVA_FOLDER, ControlKind::Button, {}, L"打开目录"},
+                        {JAVA_COUNT, ControlKind::Label, {}},
+                        {RESCAN, ControlKind::Button, {}, L"重新查找"},
+                        {DOWNLOADS, ControlKind::Group, {}, L"下载 Java"},
+                        {DOWNLOAD_LIST, ControlKind::List, {}},
+                        {MAJOR_LABEL, ControlKind::Label, {}, L"版本"},
+                        {MAJOR, ControlKind::Combo, {}},
+                        {DOWNLOAD_STATUS, ControlKind::Label, {}},
+                        {RELOAD, ControlKind::Button, {}, L"刷新列表"},
+                        {INSTALL, ControlKind::Button, {}, L"安装"},
                         // 关于
                         {.id = PRODUCT,
                          .kind = ControlKind::Label,
-                         .bounds = {240, 88, 200, 36},
+                         .bounds = {},
                          .caption = Platform::widen(About::BRAND),
                          .font = L"微软雅黑",
                          .fontSize = 22,
                          .fontStyle = Gdiplus::FontStyleBold},
                         {.id = PRODUCT_VERSION,
                          .kind = ControlKind::Label,
-                         .bounds = {400, 97, 120, 22},
+                         .bounds = {},
                          .caption = L"v" + Platform::widen(About::VERSION),
                          .textColor = MUTED},
                         {.id = TAGLINE,
                          .kind = ControlKind::Label,
-                         .bounds = {242, 122, 300, 20},
+                         .bounds = {},
                          .caption = L"an open-source minecraft launcher",
                          .textColor = MUTED},
                         {.id = UPDATE_STATUS,
                          .kind = ControlKind::Label,
-                         .bounds = {605, 97, 150, 26},
+                         .bounds = {},
                          .textColor = 0xD2C00000},
-                        {UPDATE, ControlKind::Button, {765, 95, 90, 30}},
-                        {PROJECT, ControlKind::Group, {225, 150, 315, 95}, L"项目"},
-                        {THANKS, ControlKind::Group, {555, 150, 315, 95}, L"鸣谢"},
-                        {CREDITS, ControlKind::Group, {225, 260, 645, 211}, L"开源组件"},
+                        {UPDATE, ControlKind::Button, {}},
+                        {PROJECT, ControlKind::Group, {}, L"项目"},
+                        {THANKS, ControlKind::Group, {}, L"鸣谢"},
+                        {CREDITS, ControlKind::Group, {}, L"开源组件"},
                 };
                 if (!createFrame(parent, L"设置", L"",
                                  {{L"游戏设置", GAME},
@@ -355,21 +356,28 @@ namespace ForgottenMelody {
                     return false;
                 }
                 AddControls(CONTROLS);
-                MoveInto(GAME,
+                for (uint32_t id : PAGE_IDS) {
+                    auto& panel = *FindControl(id);
+                    pages[id] = &panel.Add<exui::ScrollPanel>(0, 0, panel.GetWidth(), panel.GetHeight());
+                }
+                MoveInto(pages.at(GAME)->GetContent(),
                          {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE, LAUNCH,
                           LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS, LOGS,
                           PRE_LAUNCH_LABEL, PRE_LAUNCH});
-                MoveInto(PATCH,
+                MoveInto(pages.at(PATCH)->GetContent(),
                          {ENABLE, ALL, SKINS, FIXES, LOG4J, IME, LWJGL, GAME_WINDOW, WINDOW_TITLE_LABEL, WINDOW_TITLE,
                           WINDOW_ICON_LABEL, WINDOW_ICON, WINDOW_ICON_PICK, DEBUGGING, DEBUG_LOG});
                 for (uint32_t id : SKIN_CONTROLS) {
-                    MoveInto(PATCH, {id});
+                    MoveInto(pages.at(PATCH)->GetContent(), {id});
                 }
-                MoveInto(LAUNCHER, {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART});
-                MoveInto(JAVA,
+                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART});
+                MoveInto(pages.at(JAVA)->GetContent(),
                          {INSTALLED, JAVA_LIST, ADD_JAVA, REMOVE_JAVA, JAVA_FOLDER, JAVA_COUNT, RESCAN, DOWNLOADS,
                           DOWNLOAD_LIST, MAJOR_LABEL, MAJOR, DOWNLOAD_STATUS, RELOAD, INSTALL});
-                MoveInto(ABOUT, {PRODUCT, PRODUCT_VERSION, TAGLINE, UPDATE_STATUS, UPDATE, PROJECT, THANKS, CREDITS});
+                MoveInto(pages.at(ABOUT)->GetContent(), {PRODUCT, PRODUCT_VERSION, TAGLINE, UPDATE_STATUS, UPDATE, PROJECT, THANKS, CREDITS});
+                layoutGame();
+                layoutLauncher();
+                layoutJava();
                 fillGame();
                 fillPatch();
                 fillLauncher();
@@ -390,6 +398,7 @@ namespace ForgottenMelody {
                     refreshJava();
                 }
                 refreshAbout();
+                revealFocus(*pages.at(PAGE_IDS[lastSection]));
             }
 
             void OnSelection(uint32_t id, int index) override {
@@ -480,11 +489,85 @@ namespace ForgottenMelody {
         private:
             // How 皮肤 is laid out now, so that its rows only move when it changes.
             int skinShape = -1;
+            std::map<uint32_t, exui::ScrollPanel*> pages;
             Rows shownJava, shownDownloads;
             // The executable of each Java shown and the folder of each download; empty for a row saying there is none.
             std::vector<std::string> javaKeys, downloadKeys;
             // The Java versions offered to filter the downloads by, 0 for all of them.
             std::vector<int> shownMajors;
+
+            exui::Layout field(uint32_t id, int width, int height = 26) {
+                return cell(id, width, height, exui::Layout::Align::Start);
+            }
+
+            exui::Layout setting(uint32_t label, std::vector<exui::Layout> fields, int labelWidth = 95) {
+                return row(label, std::move(fields), 30, labelWidth, exui::Layout::Align::Center);
+            }
+
+            exui::Layout toggle(uint32_t id, int width = 270) {
+                return exui::Layout::Row({field(id, width)}, 0, 30);
+            }
+
+            exui::Layout formGroup(uint32_t id, std::vector<exui::Layout> rows) {
+                return group(id, std::move(rows), {20, 25, 20, 15}, 5);
+            }
+
+            void setPageLayout(uint32_t id, exui::Layout layout) {
+                // The scroll panel reserves 12 pixels for its bar within the frame's right gutter.
+                pages.at(id)->SetContentLayout(std::move(layout), {15, 10, 3, 10});
+            }
+
+            void layoutGame() {
+                using exui::Layout;
+                setPageLayout(GAME, Layout::Column({
+                        formGroup(INSTANCES, {
+                                setting(ISOLATION_LABEL, {field(ISOLATION, 200, 28)}),
+                                setting(COUNT_LABEL, {cell(COUNT, 110, 26),
+                                        Layout::Row({cell(REFRESH, 80), cell(MANAGE, 90)}, 10, 180)}),
+                        }),
+                        formGroup(LAUNCH, {
+                                setting(LANGUAGE_LABEL, {field(LANGUAGE, 200, 28)}),
+                                setting(GC_LABEL, {field(GC, 200, 28)}),
+                                setting(JVM_LABEL, {field(JVM, 505)}),
+                                setting(GAME_ARGS_LABEL, {field(GAME_ARGS, 505)}),
+                                toggle(LOGS, 200),
+                                setting(PRE_LAUNCH_LABEL, {field(PRE_LAUNCH, 505)}),
+                        }),
+                }, 15));
+            }
+
+            void layoutLauncher() {
+                using exui::Layout;
+                setPageLayout(LAUNCHER, group(LOOK, {
+                        row(STYLE_LABEL, {
+                                Layout::Column({Layout::Inset(Layout::Row({field(STYLE, 200, 28)}, 0, 28),
+                                                                    {0, 2, 0, 4})}, 0, 205),
+                                Layout::Row({cell(STYLE_HINT, 195, 26)}, 0, 200),
+                                field(RESTART, 90, 30),
+                        }, 34, 95, Layout::Align::Center),
+                }, {20, 23, 20, 18}));
+            }
+
+            void layoutJava() {
+                using exui::Layout;
+                setPageLayout(JAVA, Layout::Column({
+                        group(INSTALLED, {
+                                cell(JAVA_LIST, 150),
+                                Layout::Row({
+                                        Layout::Row({cell(ADD_JAVA, 80), cell(REMOVE_JAVA, 80), cell(JAVA_FOLDER, 80)}, 5, 255),
+                                        cell(JAVA_COUNT, 260, 26), cell(RESCAN, 90),
+                                }, 5, 28),
+                        }, {15, 23, 15, 8}, 6),
+                        group(DOWNLOADS, {
+                                cell(DOWNLOAD_LIST, 150),
+                                Layout::Row({
+                                        Layout::Row({cell(MAJOR_LABEL, 40, 26), cell(MAJOR, 125)}, 0, 165),
+                                        cell(DOWNLOAD_STATUS, 245, 26),
+                                        Layout::Row({cell(RELOAD, 90), cell(INSTALL, 90)}, 5, 185),
+                                }, 10, 28),
+                        }, {15, 23, 15, 8}, 6),
+                }, 10));
+            }
 
             // A text setting, applied as it is typed, with the explanation of the default interface on its label.
             void text(uint32_t label, uint32_t id, const std::string& value,
@@ -585,43 +668,39 @@ namespace ForgottenMelody {
                 }
             }
 
-            // The rows of 皮肤 as in the default interface: those of the source only while custom skins are on.
+            // These rows also decide which source-specific controls are visible.
             void layoutSkins() {
+                using exui::Layout;
                 bool custom = Patches::flag("skin.authlib");
                 std::string source = Patches::value("skin.source");
                 int shape = !custom ? 0 : source == "custom" ? 1 : source == "littleskin" ? 2 : 3;
-                if (shape == skinShape) {
-                    return;
-                }
+                if (shape == skinShape) return;
                 skinShape = shape;
-                std::vector<std::vector<uint32_t>> rows = {{SKIN_LEGACY}, {SKIN_AUTHLIB}};
+                for (uint32_t id : SKIN_CONTROLS) FindControl(id)->SetVisible(false);
+                std::vector<Layout> rows{toggle(SKIN_LEGACY), toggle(SKIN_AUTHLIB)};
                 if (custom) {
-                    rows.push_back({SKIN_MODE_LABEL, SKIN_MODE});
-                    rows.push_back({SKIN_SOURCE_LABEL, SKIN_SOURCE});
+                    rows.push_back(setting(SKIN_MODE_LABEL, {field(SKIN_MODE, 195, 28)}, 75));
+                    rows.push_back(setting(SKIN_SOURCE_LABEL, {field(SKIN_SOURCE, 195, 28)}, 75));
                     if (shape == 1) {
-                        rows.push_back({SKIN_IMAGE_LABEL, SKIN_IMAGE, SKIN_IMAGE_PICK});
-                        rows.push_back({CAPE_IMAGE_LABEL, CAPE_IMAGE, CAPE_IMAGE_PICK});
+                        rows.push_back(setting(SKIN_IMAGE_LABEL, {field(SKIN_IMAGE, 140), field(SKIN_IMAGE_PICK, 50)}, 75));
+                        rows.push_back(setting(CAPE_IMAGE_LABEL, {field(CAPE_IMAGE, 140), field(CAPE_IMAGE_PICK, 50)}, 75));
                     } else if (shape == 3) {
-                        rows.push_back({PLAYER_LABEL, PLAYER});
+                        rows.push_back(setting(PLAYER_LABEL, {field(PLAYER, 195)}, 75));
                     }
-                    rows.push_back({SKIN_TRUSTED});
+                    rows.push_back(toggle(SKIN_TRUSTED));
                 }
-                for (uint32_t id : SKIN_CONTROLS) {
-                    FindControl(id)->SetVisible(false);
-                }
-                const RECT group = FindControl(SKINS)->GetBounds();
-                for (int i = 0; i < (int) rows.size(); i++) {
-                    for (uint32_t id : rows[i]) {
-                        exui::Widget* widget = FindControl(id);
-                        RECT bounds = widget->GetBounds();
-                        // Labels sit 2 pixels lower than the controls beside them.
-                        int top = group.top + 25 + 35 * i + (dynamic_cast<exui::Label*>(widget) != nullptr ? 2 : 0);
-                        widget->SetBounds(bounds.left, top, bounds.right - bounds.left, bounds.bottom - bounds.top);
-                        widget->SetVisible(true);
-                    }
-                }
-                FindControl(SKINS)->SetBounds(group.left, group.top, group.right - group.left,
-                                              35 * (int) rows.size() + 35);
+                for (const Layout& row : rows) row.SetVisible(true);
+                setPageLayout(PATCH, Layout::Row({
+                        Layout::Column({formGroup(ENABLE, {toggle(ALL)}), formGroup(SKINS, std::move(rows))}, 15),
+                        Layout::Column({
+                                formGroup(FIXES, {toggle(LOG4J), toggle(IME), toggle(LWJGL)}),
+                                formGroup(GAME_WINDOW, {
+                                        setting(WINDOW_TITLE_LABEL, {field(WINDOW_TITLE, 195)}, 75),
+                                        setting(WINDOW_ICON_LABEL, {field(WINDOW_ICON, 140), field(WINDOW_ICON_PICK, 50)}, 75),
+                                }),
+                                formGroup(DEBUGGING, {toggle(DEBUG_LOG)}),
+                        }, 15),
+                }, 15));
             }
 
             // Like the default interface: PNG files for the skin and the cape, and the dialog opens where the
@@ -820,46 +899,62 @@ namespace ForgottenMelody {
                 }
             }
 
-            // A link of 关于: a name and a value, of which the one that names the page opens it.
-            void addLink(uint32_t& id, const About::Link& link, int x, int y, int valueX, bool valueOpens) {
+            exui::Layout addLink(uint32_t& id, const About::Link& link, int column, bool valueOpens) {
+                using exui::Layout;
                 uint32_t name = id++, value = id++;
                 AddControl({.id = name,
                             .kind = valueOpens ? ControlKind::Label : ControlKind::Hyperlink,
-                            .bounds = {x, y, valueX - x - 5, 22},
+                            .bounds = {},
                             .caption = Platform::widen(link.name)});
                 AddControl({.id = value,
                             .kind = valueOpens ? ControlKind::Hyperlink : ControlKind::Label,
-                            .bounds = {valueX, y, x + 295 - valueX, 22},
+                            .bounds = {},
                             .caption = Platform::widen(link.value),
                             .textColor = valueOpens ? 0xD2000000 : MUTED});
                 auto& hyperlink = Control<exui::Hyperlink>(valueOpens ? value : name);
                 hyperlink.SetTargetUrl(Platform::widen(link.url));
                 hyperlink.SetTooltipText(Platform::widen(link.url));
-                // Only the text opens the page.
-                RECT bounds = hyperlink.GetBounds();
-                int width = (int) std::ceil(exui::widget_detail::UnboundedTextWidth(hyperlink)) + 2;
-                hyperlink.SetBounds(bounds.left, bounds.top, width, bounds.bottom - bounds.top);
-                MoveInto(ABOUT, {name, value});
+                int linkWidth = (int) std::ceil(exui::widget_detail::UnboundedTextWidth(hyperlink)) + 2;
+                MoveInto(pages.at(ABOUT)->GetContent(), {name, value});
+                Layout label = valueOpens ? cell(name, column - 5)
+                                           : Layout::Row({cell(name, linkWidth)}, 0, column - 5);
+                return Layout::Row({std::move(label), cell(value, valueOpens ? linkWidth : 295 - column)}, 5, 22);
             }
 
             void fillAbout() {
-                auto& product = *FindControl(PRODUCT);
-                int productRight = 240 + (int) std::ceil(exui::widget_detail::UnboundedTextWidth(product));
-                FindControl(PRODUCT_VERSION)->SetBounds(productRight + 10 - PANEL_LEFT, 104 - PANEL_TOP, 120, 22);
+                using exui::Layout;
                 Control<exui::Label>(UPDATE_STATUS)
                         .SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
                 uint32_t id = LINKS;
-                for (int i = 0; i < (int) std::size(About::PROJECT); i++) {
-                    addLink(id, About::PROJECT[i], 245, 175 + 30 * i, 320, true);
+                std::vector<Layout> project, thanks, left, right;
+                for (const About::Link& link : About::PROJECT) project.push_back(addLink(id, link, 75, true));
+                for (const About::Link& link : About::THANKS) thanks.push_back(addLink(id, link, 95, false));
+                size_t split = (std::size(About::CREDITS) + 1) / 2;
+                for (size_t i = 0; i < std::size(About::CREDITS); ++i) {
+                    (i < split ? left : right).push_back(addLink(id, About::CREDITS[i], 160, false));
                 }
-                for (int i = 0; i < (int) std::size(About::THANKS); i++) {
-                    addLink(id, About::THANKS[i], 575, 175 + 30 * i, 670, false);
-                }
-                // Two columns of six.
-                for (int i = 0; i < (int) std::size(About::CREDITS); i++) {
-                    int x = i < 6 ? 245 : 575;
-                    addLink(id, About::CREDITS[i], x, 287 + 30 * (i % 6), x + 160, false);
-                }
+                int productWidth = (int) std::ceil(exui::widget_detail::UnboundedTextWidth(*FindControl(PRODUCT)));
+                auto heading = Layout::Inset(Layout::Row({
+                        Layout::Column({
+                                Layout::Row({field(PRODUCT, productWidth, 36),
+                                             cell(PRODUCT_VERSION, 120, 22, Layout::Align::End)}, 10, 38),
+                                Layout::Inset(Layout::Row({field(TAGLINE, 300, 20)}, 0, 20), {2, 0, 0, 0}),
+                        }, 0, 365),
+                        Layout::Inset(Layout::Row({cell(UPDATE_STATUS, 150, 26), cell(UPDATE, 90)}, 10, 30),
+                                      {0, 7, 0, 21}),
+                }, 0), {15, 3, 15, 4});
+                setPageLayout(ABOUT, Layout::Column({
+                        std::move(heading),
+                        Layout::Column({
+                                Layout::Row({
+                                        Layout::Column({group(PROJECT, std::move(project), {20, 25, 0, 18}, 8)}),
+                                        Layout::Column({group(THANKS, std::move(thanks), {20, 25, 0, 18}, 8)}),
+                                }, 15, Layout::Auto),
+                                Layout::Frame(*FindControl(CREDITS), Layout::Row({
+                                        Layout::Column(std::move(left), 8), Layout::Column(std::move(right), 8),
+                                }, 35), {20, 27, 0, 12}),
+                        }, 15, Layout::Auto),
+                }, 0));
             }
 
             void refreshAbout() {
