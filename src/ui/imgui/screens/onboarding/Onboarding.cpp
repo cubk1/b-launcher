@@ -59,8 +59,8 @@ namespace Onboarding {
 
         const char* const TITLES[STEPS] = {"主题色", "界面缩放", "背景", "主页组件"};
         const char* const HINTS[STEPS] = {
-                "改主题颜色，让你的启动器丰富多彩。",
-                "字小就调大，窗口会按比例一起放大。",
+                "改主题颜色，让你的启动器丰富多彩",
+                "字小就调大，窗口会按比例一起放大",
                 "设置启动器背景图片",
                 "你的启动器，你来定义",
         };
@@ -218,8 +218,7 @@ namespace Onboarding {
             bool hovered = NewUi::hit(cx - 15.0f, cy - 15.0f, 30.0f, 30.0f);
             float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
             float sel = UiState::motion(
-                    id + "#sel",
-                    (Appearance::accent() & 0x00FFFFFFu) == (color & 0x00FFFFFFu) ? 1.0f : 0.0f, 16.0f);
+                    id + "#sel", (Appearance::accent() & 0x00FFFFFFu) == (color & 0x00FFFFFFu) ? 1.0f : 0.0f, 16.0f);
             if (lit > 0.001f) {
                 UiRender::circle(cx, cy, 14.0f + 2.0f * lit, UiTheme::overlay(Ui::round(14.0f * lit)));
             }
@@ -277,9 +276,9 @@ namespace Onboarding {
             const float segH = 32.0f;
             float segW = 56.0f;
             for (int percent : zooms) {
-                segW = std::max(segW, UiFont::width(std::to_string(percent) + "%", UiFont::MEDIUM,
-                                                   UiWidgets::TEXT_CONTROL) +
-                                              30.0f);
+                segW = std::max(segW,
+                                UiFont::width(std::to_string(percent) + "%", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) +
+                                        30.0f);
             }
             segW = std::min(segW, 84.0f);
             float total = segW * (float) zooms.size();
@@ -309,9 +308,9 @@ namespace Onboarding {
         }
 
         void backgroundStep(float x, float y, float w) {
-            auto flag = std::make_shared<FlagBinding>("onboarding#background",
-                                                      [] { return Appearance::backgroundImage(); },
-                                                      [](bool on) { Appearance::setBackgroundImage(on); });
+            auto flag = std::make_shared<FlagBinding>(
+                    "onboarding#background", [] { return Appearance::backgroundImage(); },
+                    [](bool on) { Appearance::setBackgroundImage(on); });
             UiRender::textY("显示背景图片", x + 2.0f, y, 24.0f, UiTheme::textSecondary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             ToggleWidget toggle("onboarding#background", flag, true);
@@ -343,8 +342,8 @@ namespace Onboarding {
                     path = Background::path();
                 }
             }
-            std::string name = path.empty() ? std::string("默认图片")
-                                            : Platform::display(b_launcher_base::path_from_utf8(path));
+            std::string name =
+                    path.empty() ? std::string("默认图片") : Platform::display(b_launcher_base::path_from_utf8(path));
             name = UiFont::fitStart(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                     std::max(0.0f, right - 8.0f - (x + 80.0f)));
             float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -353,8 +352,8 @@ namespace Onboarding {
                             UiWidgets::TEXT_CONTROL);
         }
 
-        void chip(const std::string& widgetId, int glyph, const std::string& text, float x, float y, float w,
-                  float h, bool on) {
+        void chip(const std::string& widgetId, int glyph, const std::string& text, float x, float y, float w, float h,
+                  bool on) {
             std::string id = "onboarding#home#" + widgetId;
             bool hovered = NewUi::hit(x, y, w, h);
             float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
@@ -444,8 +443,7 @@ namespace Onboarding {
             if (image) {
                 float uSpan = 1.0f;
                 float vSpan = 1.0f;
-                cover(sw, sh, MainWindow::MIN_WIDTH - MainWindow::SIDEBAR_WIDTH, MainWindow::MIN_HEIGHT, uSpan,
-                      vSpan);
+                cover(sw, sh, MainWindow::MIN_WIDTH - MainWindow::SIDEBAR_WIDTH, MainWindow::MIN_HEIGHT, uSpan, vSpan);
                 ShaderUtil::roundTex(UiRender::transformX(sx), UiRender::transformY(sy), UiRender::transformW(sw),
                                      UiRender::transformW(sh), UiRender::transformW(cr), Background::panel(), 0.0f,
                                      (1.0f - vSpan) * 0.5f, uSpan, (1.0f + vSpan) * 0.5f, 0xFFFFFFFFu, 0xF);
@@ -503,9 +501,7 @@ namespace Onboarding {
                     active.push_back(kind.id);
                 }
             }
-            float stack = active.empty()
-                    ? 0.0f
-                    : (float) active.size() * rowH2 + (float) (active.size() - 1) * gap;
+            float stack = active.empty() ? 0.0f : (float) active.size() * rowH2 + (float) (active.size() - 1) * gap;
             float top = sy + (sh - stack) * 0.5f;
             size_t index = 0;
             for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
