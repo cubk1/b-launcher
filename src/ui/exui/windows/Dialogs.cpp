@@ -11,6 +11,7 @@
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
 #include "ui/exui/widgets/ListView.h"
+#include "ui/exui/widgets/ScrollPanel.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -251,6 +252,31 @@ namespace ForgottenMelody {
             combo.AddItem(option);
         }
         combo.SetSelectedIndex(selected);
+    }
+
+    exui::Layout SectionedForm::cell(uint32_t id, int extent, int crossExtent, exui::Layout::Align align) {
+        return {*FindControl(id), extent, crossExtent, align};
+    }
+
+    exui::Layout SectionedForm::row(uint32_t label, std::vector<exui::Layout> fields, int height, int labelWidth,
+                                   exui::Layout::Align labelAlign) {
+        fields.insert(fields.begin(), cell(label, labelWidth, 26, labelAlign));
+        return exui::Layout::Row(std::move(fields), 5, height);
+    }
+
+    exui::Layout SectionedForm::group(uint32_t id, std::vector<exui::Layout> rows, RECT padding, int gap) {
+        return exui::Layout::Frame(*FindControl(id), exui::Layout::Column(std::move(rows), gap), padding);
+    }
+
+    void SectionedForm::revealFocus(exui::ScrollPanel& page) {
+        exui::Widget* now = GetFocusedWidget();
+        if (now == focused) return;
+        focused = now;
+        if (now == nullptr || now->GetParent() != &page.GetContent()) return;
+        int top = now->GetY(), bottom = top + now->GetHeight();
+        int view = page.GetHeight(), scrolled = page.GetScrollPosition();
+        if (top < scrolled) page.ScrollTo(top - 30);
+        else if (bottom > scrolled + view) page.ScrollTo(bottom - view + 12);
     }
 
     void SectionedForm::OnSelection(uint32_t id, int index) {

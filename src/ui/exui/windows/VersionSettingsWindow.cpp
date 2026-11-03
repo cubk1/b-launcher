@@ -285,7 +285,7 @@ namespace ForgottenMelody {
                 if (!laidOut || server != withServer) {
                     layout(server);
                 }
-                revealFocus();
+                revealFocus(*page);
                 std::wstring authLabel = nide8 ? L"服务器 ID" : L"认证服务器";
                 UpdateText(AUTH_LABEL, authLabel);
                 std::wstring preset = nide8 ? L"服主后台" : L"设置为 LittleSkin";
@@ -365,31 +365,15 @@ namespace ForgottenMelody {
             std::string key;
             exui::ScrollPanel* page = nullptr;
             bool laidOut = false, withServer = false;
-            // The control that had the focus at the last refresh.
-            exui::Widget* focused = nullptr;
-
-            exui::Layout cell(uint32_t id, int width = 0, int height = 0) {
-                return {*FindControl(id), width, height};
-            }
-
-            exui::Layout row(uint32_t label, std::vector<exui::Layout> fields, int height = 26) {
-                fields.insert(fields.begin(), {*FindControl(label), 95, 26, exui::Layout::Align::Start});
-                return exui::Layout::Row(std::move(fields), 5, height);
-            }
-
-            exui::Layout group(uint32_t id, std::vector<exui::Layout> rows, RECT padding = {20, 25, 20, 12}) {
-                return exui::Layout::Frame(*FindControl(id), exui::Layout::Column(std::move(rows), 7), padding);
-            }
 
             void layout(bool server) {
                 using exui::Layout;
                 laidOut = true;
                 withServer = server;
                 std::vector<Layout> serverRows{row(LOGIN_LABEL, {cell(LOGIN, 250)})};
-                for (uint32_t id : {AUTH_LABEL, AUTH, AUTH_PRESET}) FindControl(id)->SetVisible(server);
-                if (server) {
-                    serverRows.push_back(row(AUTH_LABEL, {cell(AUTH, 260), cell(AUTH_PRESET, 134, 30)}));
-                }
+                auto authRow = row(AUTH_LABEL, {cell(AUTH, 260), cell(AUTH_PRESET, 134, 30)});
+                authRow.SetVisible(server);
+                if (server) serverRows.push_back(std::move(authRow));
                 serverRows.push_back(row(JOIN_LABEL, {cell(JOIN, 300)}));
                 page->SetContentLayout(Layout::Column({
                         group(MANAGE_GROUP, {Layout::Row({cell(MODS, 100), cell(LOADERS, 100), cell(EXPORT, 100),
@@ -434,24 +418,6 @@ namespace ForgottenMelody {
                 }, 10), {12, 10, 0, 10});
             }
 
-            // Tab may move the focus to a control scrolled out of sight; the page then scrolls to it.
-            void revealFocus() {
-                exui::Widget* now = GetFocusedWidget();
-                if (now == focused) {
-                    return;
-                }
-                focused = now;
-                if (now == nullptr || now->GetParent() != &page->GetContent()) {
-                    return;
-                }
-                int top = now->GetY(), bottom = now->GetY() + now->GetHeight();
-                int view = page->GetHeight(), scrolled = page->GetScrollPosition();
-                if (top < scrolled) {
-                    page->ScrollTo(top - 30);
-                } else if (bottom > scrolled + view) {
-                    page->ScrollTo(bottom - view + 12);
-                }
-            }
             // The paths behind the Java choices: none for 自动选择, then the ones found and the one chosen by hand.
             std::vector<std::filesystem::path> javaPaths;
             std::vector<std::wstring> shownJavas;

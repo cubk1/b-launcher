@@ -11,6 +11,7 @@
 
 namespace exui {
     class ListView;
+    class ScrollPanel;
 }
 
 namespace ForgottenMelody {
@@ -102,6 +103,13 @@ namespace ForgottenMelody {
         virtual void sectionShown(int) {}
         // Fills a combo box with options and selects one.
         void choose(uint32_t id, const std::vector<std::wstring>& options, int selected);
+        // Shared setting rows/groups; callers can select the spacing used by their form.
+        exui::Layout cell(uint32_t id, int extent = 0, int crossExtent = 0,
+                          exui::Layout::Align align = exui::Layout::Align::Center);
+        exui::Layout row(uint32_t label, std::vector<exui::Layout> fields, int height = 26, int labelWidth = 95,
+                         exui::Layout::Align labelAlign = exui::Layout::Align::Start);
+        exui::Layout group(uint32_t id, std::vector<exui::Layout> rows, RECT padding = {20, 25, 20, 12}, int gap = 7);
+        void revealFocus(exui::ScrollPanel& page);
         void OnSelection(uint32_t id, int index) override;
         void OnAction(uint32_t id) override;
 
@@ -110,5 +118,6 @@ namespace ForgottenMelody {
 
         std::vector<Section> sections;
         std::wstring subject;
+        exui::Widget* focused = nullptr;
     };
 }

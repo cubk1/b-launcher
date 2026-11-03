@@ -19,7 +19,9 @@ namespace exui {
         static Layout Column(std::vector<Layout> children, int gap = 8, int extent = 0);
         // The frame and its contents stay in the same widget parent.
         static Layout Frame(Widget& frame, Layout content, RECT padding = {});
+        static Layout Inset(Layout content, RECT padding);
         Gdiplus::Size Measure() const;
+        void SetVisible(bool visible) const;
         void Apply(Gdiplus::Rect bounds) const;
 
     private:

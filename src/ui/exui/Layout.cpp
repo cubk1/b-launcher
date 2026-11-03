@@ -21,12 +21,22 @@ namespace exui {
     }
 
     Layout Layout::Frame(Widget& frame, Layout content, RECT padding) {
+        Layout result = Inset(std::move(content), padding);
+        result.control = &frame;
+        return result;
+    }
+
+    Layout Layout::Inset(Layout content, RECT padding) {
         if (content.extent == 0) content.extent = Auto;
         Layout result = Column({std::move(content)}, 0, Auto);
-        result.control = &frame;
         result.padding = {std::max(0L, padding.left), std::max(0L, padding.top),
                           std::max(0L, padding.right), std::max(0L, padding.bottom)};
         return result;
+    }
+
+    void Layout::SetVisible(bool visible) const {
+        if (control) control->SetVisible(visible);
+        for (const Layout& child : children) child.SetVisible(visible);
     }
 
     int Layout::Extent(Axis parentAxis) const {
