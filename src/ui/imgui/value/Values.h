@@ -65,6 +65,11 @@ public:
         return 0;
     }
 
+    virtual std::string optionDetail(const std::string& option) {
+        (void) option;
+        return std::string();
+    }
+
     virtual bool anchorGlyphs() {
         return false;
     }

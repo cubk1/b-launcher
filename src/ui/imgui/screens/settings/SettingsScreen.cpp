@@ -15,10 +15,12 @@
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/launch/Patches.h"
+#include "app/launch/ServerList.h"
 #include "ui/imgui/screens/home/QuickActions.h"
 #include "ui/imgui/screens/settings/GameOptionRows.h"
 #include "ui/imgui/screens/settings/KeyBindEditor.h"
 #include "ui/imgui/screens/settings/ToolboxTab.h"
+#include "ui/imgui/screens/shell/Textures.h"
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
@@ -51,6 +53,7 @@
 #include <cstdlib>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -523,12 +526,96 @@ namespace SettingsScreen {
             KeyBindEditor::draw("settings#keys", shared, false, note, Page::TOP, covered);
         }
 
+        class SavedServers final : public Choice {
+        public:
+            SavedServers() : Choice("settings#savedServers") {}
+
+            std::vector<std::string> options() override {
+                std::vector<std::string> out;
+                for (const Item& item : items()) {
+                    out.push_back(item.label);
+                }
+                return out;
+            }
+
+            bool selected(const std::string& option) override {
+                const ServerList::Server* server = find(option);
+                return server != nullptr && matches(*server);
+            }
+
+            void choose(const std::string& option) override {
+                if (const ServerList::Server* server = find(option)) {
+                    HomeWidgets::setServerAddress(server->address);
+                    HomeWidgets::setServerName(server->name);
+                }
+            }
+
+            std::string label() override {
+                std::vector<Item> all = items();
+                for (const Item& item : all) {
+                    if (matches(*item.server)) {
+                        return item.label;
+                    }
+                }
+                return ServerList::loading() ? "正在读取…" : all.empty() ? "没有保存的服务器" : "选择服务器";
+            }
+
+            uint32_t optionImage(const std::string& option) override {
+                const ServerList::Server* server = find(option);
+                return server != nullptr ? Textures::of(server->icon) : 0;
+            }
+
+            std::string optionDetail(const std::string& option) override {
+                const ServerList::Server* server = find(option);
+                return server != nullptr && !server->name.empty() ? server->address : std::string();
+            }
+
+        private:
+            struct Item {
+                std::string label;
+                const ServerList::Server* server;
+            };
+
+            static std::vector<Item> items() {
+                std::vector<Item> out;
+                std::set<std::string> used;
+                for (const ServerList::Server& server : ServerList::servers()) {
+                    std::string label = server.name.empty() ? server.address : server.name;
+                    if (!used.insert(label).second) {
+                        label += "（" + server.address + "）";
+                        used.insert(label);
+                    }
+                    out.push_back({label, &server});
+                }
+                return out;
+            }
+
+            static const ServerList::Server* find(const std::string& option) {
+                for (const Item& item : items()) {
+                    if (item.label == option) {
+                        return item.server;
+                    }
+                }
+                return nullptr;
+            }
+
+            static bool matches(const ServerList::Server& server) {
+                return blb::to_lower(server.address) == blb::to_lower(Ui::trim(HomeWidgets::serverAddress()));
+            }
+        };
+
+        void savedServerRow(float y, bool blocked) {
+            static auto saved = std::make_shared<SavedServers>();
+            Page::label("已保存的服务器", y);
+            select("settings#savedServers", saved, y, blocked || ServerList::servers().empty());
+        }
+
         int homepageCount() {
             int kind = Homepage::source();
             if (kind == Homepage::SOURCE_NONE) {
                 return 2 + (HomeWidgets::enabled(HomeWidgets::LAUNCH) ? 1 : 0) +
                         (HomeWidgets::enabled(HomeWidgets::QUICK) ? 1 : 0) +
-                        (HomeWidgets::enabled(HomeWidgets::SERVER) ? 2 : 0);
+                        (HomeWidgets::enabled(HomeWidgets::SERVER) ? 3 : 0);
             }
             return kind == Homepage::SOURCE_FILE || kind == Homepage::SOURCE_URL ? 2 : 1;
         }
@@ -595,16 +682,17 @@ namespace SettingsScreen {
                 }
                 if (HomeWidgets::enabled(HomeWidgets::SERVER)) {
                     y += Page::ROW_H;
+                    savedServerRow(y, blocked);
+                    y += Page::ROW_H;
                     textRow(
                             "settings#serverAddress", "服务器地址",
-                            "要显示状态的 Minecraft 服务器，可以带端口，例如 mc.example.com:25565；不带端口时会先查询 "
-                            "SRV 记录。",
+                            "要显示状态的 Minecraft 服务器",
                             [] { return HomeWidgets::serverAddress(); },
                             [](const std::string& value) { HomeWidgets::setServerAddress(value); }, y, blocked,
                             "例如 mc.example.com");
                     y += Page::ROW_H;
                     textRow(
-                            "settings#serverName", "服务器名称", "卡片上显示的名字，留空就显示服务器地址。",
+                            "settings#serverName", "服务器名称", "卡片上显示的名字，留空显示服务器地址。",
                             [] { return HomeWidgets::serverName(); },
                             [](const std::string& value) { HomeWidgets::setServerName(value); }, y, blocked,
                             "使用服务器地址");
@@ -626,7 +714,7 @@ namespace SettingsScreen {
                     [](bool on) { Network::setSystemProxy(on); }, y, blocked);
             explain("settings#systemProxy",
                     "开启后，下载和其他网络请求会走 Windows 系统代理，例如 Clash、v2rayN 设置的代理。"
-                    "代理软件没有运行时请关闭，否则会连不上。",
+                    "代理软件没有运行时请关闭。",
                     y, Page::controlRight() - 40.0f, blocked);
         }
 

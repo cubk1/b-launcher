@@ -813,8 +813,11 @@ namespace NewUi {
             measuredScale = scaleNow;
             measuredWidest = 0.0f;
             for (int i = 0; i < count; i++) {
-                measuredWidest =
-                        std::max(measuredWidest, UiFont::width(options[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL));
+                std::string detail = choice->optionDetail(options[i]);
+                float extra =
+                        detail.empty() ? 0.0f : 24.0f + UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                measuredWidest = std::max(measuredWidest,
+                                          UiFont::width(options[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + extra);
             }
         }
         float widest = measuredWidest;
@@ -1021,6 +1024,12 @@ namespace NewUi {
             optionTextX += 18;
         }
         UiRender::textY(option, optionTextX, ry, 32, optionColor, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        std::string detail = popupChoice != nullptr ? popupChoice->optionDetail(option) : std::string();
+        if (!detail.empty()) {
+            float detailW = UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiRender::textY(detail, rx + rowW - 12.0f - (grip ? 26.0f : 0.0f) - detailW, ry, 32, UiTheme::textMuted(),
+                            UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+        }
         if (grip) {
             bool gripHover = hit(rx + rowW - 26, ry, 26, 32);
             UiWidgets::icon(Ui::glyph(0xf58e), rx + rowW - 14, ry + 16,

@@ -13,6 +13,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/KeyBinds.h"
+#include "app/launch/ServerList.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
 #include "app/system/Catalog.h"
@@ -44,6 +45,7 @@ namespace Services {
         Mods::poll();
         ModManager::poll();
         KeyBinds::poll();
+        ServerList::poll();
         Screenshots::poll();
         Exports::poll();
         Drops::poll();
@@ -65,6 +67,7 @@ namespace Services {
         Exports::shutdown();
         Screenshots::shutdown();
         KeyBinds::shutdown();
+        ServerList::shutdown();
         ModManager::shutdown();
         Mods::shutdown();
         Installer::shutdown();
