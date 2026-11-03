@@ -11,6 +11,9 @@
 #include "app/launch/Patches.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
+#include "app/system/CustomDownload.h"
+#include "app/system/Notices.h"
+#include "app/system/PclThemes.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
 #include "app/system/UiStyles.h"
@@ -19,9 +22,14 @@
 #include "ui/exui/widgets/EditBox.h"
 #include "ui/exui/widgets/Label.h"
 #include "ui/exui/widgets/ListView.h"
+#include "ui/exui/widgets/ProgressBar.h"
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/InstancesWindow.h"
+
+#include <core/base/format.hpp>
+#include <core/base/fs.hpp>
+#include <core/base/strings.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -117,6 +125,12 @@ namespace ForgottenMelody {
             DOWNLOAD_STATUS,
             RELOAD,
             INSTALL,
+            // 工具箱
+            TOOLS,
+            FILE_DOWNLOAD,
+            URL_LABEL, URL, FOLDER_LABEL, FOLDER, PICK_FOLDER, NAME_LABEL, NAME, DOWNLOAD_NOTE,
+            START_DOWNLOAD, OPEN_FOLDER, DOWNLOAD_STATE, PROGRESS, DOWNLOAD_DETAILS, DOWNLOAD_TARGET,
+            PCL_GROUP, PCL_NOTE, UNLOCK_PCL, PCL_RESULT,
             // 关于
             ABOUT,
             PRODUCT,
@@ -131,7 +145,7 @@ namespace ForgottenMelody {
             LINKS,
         };
 
-        constexpr uint32_t PAGE_IDS[] = {GAME, PATCH, LAUNCHER, JAVA, ABOUT};
+        constexpr uint32_t PAGE_IDS[] = {GAME, PATCH, LAUNCHER, JAVA, TOOLS, ABOUT};
 
         struct Isolation {
             blb::instance::isolation_mode mode;
@@ -242,6 +256,18 @@ namespace ForgottenMelody {
         int lastSection = 0;
         int javaMajor = 21;
 
+        struct DownloadInput {
+            std::string url, folder, name;
+            bool initialized = false;
+        } downloadInput;
+
+        std::string amount(double bytes) {
+            if (bytes >= 1073741824.0) return blb::sformat("{:.2f} GB", bytes / 1073741824.0);
+            if (bytes >= 1048576.0) return blb::sformat("{:.1f} MB", bytes / 1048576.0);
+            if (bytes >= 1024.0) return blb::sformat("{:.0f} KB", bytes / 1024.0);
+            return blb::sformat("{:.0f} B", bytes);
+        }
+
         // The sections of the default interface in the frame of 下载中心. Every change applies at once, as in the
         // default interface.
         class SettingsWindow : public SectionedForm {
@@ -320,6 +346,26 @@ namespace ForgottenMelody {
                         {DOWNLOAD_STATUS, ControlKind::Label, {}},
                         {RELOAD, ControlKind::Button, {}, L"刷新列表"},
                         {INSTALL, ControlKind::Button, {}, L"安装"},
+                        // 工具箱
+                        {FILE_DOWNLOAD, ControlKind::Group, {}, L"自定义下载"},
+                        {URL_LABEL, ControlKind::Label, {}, L"下载地址"},
+                        {URL, ControlKind::Edit, {}},
+                        {FOLDER_LABEL, ControlKind::Label, {}, L"保存到"},
+                        {FOLDER, ControlKind::Edit, {}},
+                        {PICK_FOLDER, ControlKind::Button, {}, L"选择文件夹"},
+                        {NAME_LABEL, ControlKind::Label, {}, L"文件名"},
+                        {NAME, ControlKind::Edit, {}},
+                        {DOWNLOAD_NOTE, ControlKind::Label, {}, L"文件名留空时根据地址生成。关闭设置后，下载仍会继续。"},
+                        {START_DOWNLOAD, ControlKind::Button, {}, L"开始下载"},
+                        {OPEN_FOLDER, ControlKind::Button, {}, L"打开文件夹"},
+                        {DOWNLOAD_STATE, ControlKind::Label, {}},
+                        {PROGRESS, ControlKind::Progress, {}},
+                        {DOWNLOAD_DETAILS, ControlKind::Label, {}},
+                        {DOWNLOAD_TARGET, ControlKind::Label, {}},
+                        {PCL_GROUP, ControlKind::Group, {}, L"PCL 隐藏主题"},
+                        {PCL_NOTE, ControlKind::Label, {}, L"请先运行过 PCL，解锁后重启 PCL 即可生效。"},
+                        {UNLOCK_PCL, ControlKind::Button, {}, L"解锁隐藏主题"},
+                        {PCL_RESULT, ControlKind::Label, {}},
                         // 关于
                         {.id = PRODUCT,
                          .kind = ControlKind::Label,
@@ -352,6 +398,7 @@ namespace ForgottenMelody {
                                   {L"补丁", PATCH},
                                   {L"启动器设置", LAUNCHER},
                                   {L"Java 管理", JAVA},
+                                  {L"工具箱", TOOLS},
                                   {L"关于", ABOUT}})) {
                     return false;
                 }
@@ -374,6 +421,10 @@ namespace ForgottenMelody {
                 MoveInto(pages.at(JAVA)->GetContent(),
                          {INSTALLED, JAVA_LIST, ADD_JAVA, REMOVE_JAVA, JAVA_FOLDER, JAVA_COUNT, RESCAN, DOWNLOADS,
                           DOWNLOAD_LIST, MAJOR_LABEL, MAJOR, DOWNLOAD_STATUS, RELOAD, INSTALL});
+                MoveInto(pages.at(TOOLS)->GetContent(),
+                         {FILE_DOWNLOAD, URL_LABEL, URL, FOLDER_LABEL, FOLDER, PICK_FOLDER, NAME_LABEL, NAME,
+                          DOWNLOAD_NOTE, START_DOWNLOAD, OPEN_FOLDER, DOWNLOAD_STATE, PROGRESS, DOWNLOAD_DETAILS,
+                          DOWNLOAD_TARGET, PCL_GROUP, PCL_NOTE, UNLOCK_PCL, PCL_RESULT});
                 MoveInto(pages.at(ABOUT)->GetContent(), {PRODUCT, PRODUCT_VERSION, TAGLINE, UPDATE_STATUS, UPDATE, PROJECT, THANKS, CREDITS});
                 layoutGame();
                 layoutLauncher();
@@ -382,6 +433,7 @@ namespace ForgottenMelody {
                 fillPatch();
                 fillLauncher();
                 fillJava();
+                fillTools();
                 fillAbout();
                 showSection(lastSection);
                 startRefreshing();
@@ -398,6 +450,7 @@ namespace ForgottenMelody {
                     refreshJava();
                 }
                 refreshAbout();
+                refreshTools();
                 revealFocus(*pages.at(PAGE_IDS[lastSection]));
             }
 
@@ -434,6 +487,10 @@ namespace ForgottenMelody {
                 switch (id) {
                     case REFRESH: Instances::refresh(); break;
                     case MANAGE: showInstances(GetHwnd()); break;
+                    case START_DOWNLOAD:
+                    case PICK_FOLDER:
+                    case OPEN_FOLDER:
+                    case UNLOCK_PCL: toolAction(id); break;
                     case LOGS: LaunchDefaults::setShowLogs(Checked(LOGS)); break;
                     case ALL: Patches::setAll(Checked(ALL)); break;
                     case SKIN_IMAGE_PICK: pickImage(SKIN_IMAGE, true); break;
@@ -489,6 +546,9 @@ namespace ForgottenMelody {
         private:
             // How 皮肤 is laid out now, so that its rows only move when it changes.
             int skinShape = -1;
+            int toolsShape = -1;
+            bool cancelling = false;
+            std::optional<CustomDownload::State> paintedDownloadState;
             std::map<uint32_t, exui::ScrollPanel*> pages;
             Rows shownJava, shownDownloads;
             // The executable of each Java shown and the folder of each download; empty for a row saying there is none.
@@ -546,6 +606,170 @@ namespace ForgottenMelody {
                                 field(RESTART, 90, 30),
                         }, 34, 95, Layout::Align::Center),
                 }, {20, 23, 20, 18}));
+            }
+
+            void fillTools() {
+                for (uint32_t id : {DOWNLOAD_NOTE, DOWNLOAD_STATE, DOWNLOAD_DETAILS, DOWNLOAD_TARGET, PCL_NOTE, PCL_RESULT})
+                    Control<exui::Label>(id).SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
+                Control<exui::Label>(PCL_RESULT).SetMultiline(true);
+                Control<exui::Label>(DOWNLOAD_DETAILS).SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
+                FindControl(URL)->SetTooltipText(L"HTTP 或 HTTPS 文件地址");
+                FindControl(NAME)->SetTooltipText(L"留空时根据下载地址生成文件名");
+                Control<exui::ProgressBar>(PROGRESS).SetRange(0, 1000);
+                if (!downloadInput.initialized) {
+                    downloadInput.initialized = true;
+                    downloadInput.folder = blb::path_to_utf8(Platform::exeDirectory());
+                    if (CustomDownload::busy()) {
+                        const auto& task = CustomDownload::status();
+                        downloadInput.url = task.url;
+                        downloadInput.folder = blb::path_to_utf8(task.target.parent_path());
+                        downloadInput.name = blb::path_to_utf8(task.target.filename());
+                    }
+                }
+                bindDownload(URL, downloadInput.url);
+                bindDownload(FOLDER, downloadInput.folder);
+                bindDownload(NAME, downloadInput.name);
+            }
+
+            void layoutTools(bool progress, bool details, bool target, bool pclResult) {
+                int shape = (int) progress | (details << 1) | (target << 2) | (pclResult << 3);
+                if (shape == toolsShape) return;
+                toolsShape = shape;
+                using exui::Layout;
+                FindControl(DOWNLOAD_STATE)->SetVisible(progress);
+                FindControl(PROGRESS)->SetVisible(progress);
+                FindControl(DOWNLOAD_DETAILS)->SetVisible(progress && details);
+                FindControl(DOWNLOAD_TARGET)->SetVisible(target);
+                FindControl(PCL_RESULT)->SetVisible(pclResult);
+                Layout indicator = Layout::Column({}, 0);
+                if (progress) {
+                    std::vector<Layout> status{cell(DOWNLOAD_STATE, details ? 85 : 0)};
+                    if (details) status.push_back(cell(DOWNLOAD_DETAILS));
+                    indicator = Layout::Column({Layout::Row(std::move(status), 8, 18), cell(PROGRESS, 8)}, 4);
+                }
+                std::vector<Layout> download{
+                        setting(URL_LABEL, {cell(URL)}),
+                        setting(FOLDER_LABEL, {cell(FOLDER), cell(PICK_FOLDER, 88)}),
+                        setting(NAME_LABEL, {cell(NAME)}),
+                        cell(DOWNLOAD_NOTE, 24),
+                        Layout::Row({std::move(indicator), cell(START_DOWNLOAD, 100), cell(OPEN_FOLDER, 100)}, 10, 30),
+                };
+                if (target) download.push_back(cell(DOWNLOAD_TARGET, 22));
+                std::vector<Layout> pcl{Layout::Row({cell(PCL_NOTE), cell(UNLOCK_PCL, 120)}, 10, 30)};
+                if (pclResult) pcl.push_back(cell(PCL_RESULT, 32));
+                setPageLayout(TOOLS, Layout::Column({formGroup(FILE_DOWNLOAD, std::move(download)),
+                                                   formGroup(PCL_GROUP, std::move(pcl))}, 15));
+            }
+
+            void refreshTools() {
+                const auto& task = CustomDownload::status();
+                bool running = CustomDownload::busy();
+                if (!running) cancelling = false;
+                for (uint32_t id : {URL, FOLDER, NAME, PICK_FOLDER}) FindControl(id)->SetEnabled(!running);
+                UpdateText(START_DOWNLOAD, !running ? L"开始下载" : cancelling ? L"正在取消…" : L"取消下载");
+                FindControl(START_DOWNLOAD)->SetEnabled(running ? !cancelling : !trimmed(Text(URL)).empty());
+                FindControl(OPEN_FOLDER)->SetEnabled(!trimmed(Text(FOLDER)).empty());
+                std::wstring state, details;
+                switch (task.state) {
+                    case CustomDownload::State::Idle: state = task.url.empty() ? L"填写地址后开始下载" : L"下载已取消，可以重新开始"; break;
+                    case CustomDownload::State::Probing: state = cancelling ? L"正在取消下载…" : L"正在连接…"; break;
+                    case CustomDownload::State::Running: state = cancelling ? L"正在取消下载…" : L"下载中"; break;
+                    case CustomDownload::State::Done: state = L"下载完成"; details = Platform::widen(amount((double) std::max(task.done, task.total))); break;
+                    case CustomDownload::State::Failed: state = L"下载失败：" + Platform::widen(task.error); break;
+                }
+                if (task.state == CustomDownload::State::Running) {
+                    std::string text = amount((double) task.done) + (task.total > 0 ? " / " + amount((double) task.total) : "（总大小未知）");
+                    if (std::isfinite(task.speed) && task.speed > 0) {
+                        text += " · " + amount(task.speed) + "/s";
+                        if (task.total > task.done && task.speed > 1) {
+                            double seconds = (double) (task.total - task.done) / task.speed;
+                            if (seconds < 60) text += blb::sformat(" · 剩余约 {:.0f} 秒", std::ceil(seconds));
+                            else if (seconds < 3600) text += blb::sformat(" · 剩余约 {:.0f} 分钟", std::ceil(seconds / 60));
+                            else text += blb::sformat(" · 剩余约 {:.0f} 小时", std::ceil(seconds / 3600));
+                        }
+                    }
+                    details = Platform::widen(text);
+                }
+                UpdateText(DOWNLOAD_STATE, state);
+                FindControl(DOWNLOAD_STATE)->SetTooltipText(state);
+                UpdateText(DOWNLOAD_DETAILS, details);
+                FindControl(DOWNLOAD_DETAILS)->SetTooltipText(details);
+                std::wstring target = task.target.empty() ? L"" : L"保存到：" + task.target.wstring();
+                UpdateText(DOWNLOAD_TARGET, target);
+                FindControl(DOWNLOAD_TARGET)->SetTooltipText(target);
+                auto& bar = Control<exui::ProgressBar>(PROGRESS);
+                bar.SetIndeterminate(running && (task.state == CustomDownload::State::Probing || task.total == 0));
+                int position = task.state == CustomDownload::State::Done ? 1000 : task.total > 0 &&
+                        task.state != CustomDownload::State::Idle ? (int) (1000 * std::clamp((double) task.done / task.total, 0.0, 1.0)) : 0;
+                if (bar.GetPosition() != position) bar.SetPosition(position);
+                if (paintedDownloadState != task.state) {
+                    bool failed = task.state == CustomDownload::State::Failed;
+                    FindControl(DOWNLOAD_STATE)->SetTextColor(failed ? 0xD2C00000 : 0xD2000000);
+                    bar.SetFillColors(failed ? 0xE6C04030 : 0xE60088FF, failed ? 0xE6D07040 : 0xE600E080);
+                    paintedDownloadState = task.state;
+                }
+                const auto& pcl = PclThemes::status();
+                std::wstring result = pcl.state == PclThemes::State::Done ? L"已解锁隐藏主题，重启 PCL 后生效。"
+                        : pcl.state == PclThemes::State::Failed ? L"解锁失败：" + Platform::widen(pcl.error)
+                                                               : L"";
+                UpdateText(PCL_RESULT, result);
+                FindControl(PCL_RESULT)->SetTooltipText(result);
+                bool progress = task.state != CustomDownload::State::Idle;
+                layoutTools(progress, !details.empty(), progress && !target.empty(), !result.empty());
+            }
+
+            void toolAction(uint32_t id) {
+                if (id == START_DOWNLOAD) {
+                    if (CustomDownload::busy()) { CustomDownload::cancel(); cancelling = true; }
+                    else beginDownload();
+                } else if (id == PICK_FOLDER && !CustomDownload::busy()) {
+                    std::string folder = trimmed(Text(FOLDER));
+                    auto picked = Platform::pickFolder(folder.empty() ? Platform::exeDirectory() : blb::path_from_utf8(folder));
+                    if (picked && !CustomDownload::busy()) SetText(FOLDER, picked->wstring());
+                } else if (id == OPEN_FOLDER) {
+                    std::error_code error;
+                    auto folder = blb::path_from_utf8(trimmed(Text(FOLDER)));
+                    if (!std::filesystem::is_directory(folder, error) || !Platform::open(folder))
+                        message(GetHwnd(), L"无法打开保存文件夹，请确认路径存在。", L"自定义下载");
+                } else if (id == UNLOCK_PCL) {
+                    PclThemes::unlock();
+                    const auto& result = PclThemes::status();
+                    if (result.state == PclThemes::State::Done)
+                        Notices::add(Notices::Kind::Done, "PCL 主题已解锁，重启 PCL 后生效", 4000);
+                    else if (result.state == PclThemes::State::Failed)
+                        Notices::add(Notices::Kind::Failed, "解锁失败：" + result.error, 5000);
+                }
+            }
+
+            void bindDownload(uint32_t id, std::string& value) {
+                SetText(id, Platform::widen(value));
+                Control<exui::EditBox>(id).OnTextChanged = [this, &value](const std::wstring& text) {
+                    value = Platform::narrow(text);
+                    refreshTools();
+                };
+            }
+
+            void beginDownload() {
+                std::string url = trimmed(Text(URL)), folder = trimmed(Text(FOLDER)), name = trimmed(Text(NAME));
+                if (!blb::iequals(std::string_view(url).substr(0, 7), "http://") &&
+                    !blb::iequals(std::string_view(url).substr(0, 8), "https://")) {
+                    message(GetHwnd(), L"下载地址需要以 http:// 或 https:// 开头。", L"自定义下载");
+                    return;
+                }
+                if (folder.empty()) { message(GetHwnd(), L"请选择保存文件夹。", L"自定义下载"); return; }
+                if (name.empty()) name = CustomDownload::nameOf(url);
+                if (!blb::fs::safe_filename(name)) { message(GetHwnd(), L"文件名无效，含有不能使用的字符。", L"自定义下载"); return; }
+                std::error_code error;
+                auto target = std::filesystem::absolute(blb::path_from_utf8(folder) / blb::path_from_utf8(name), error);
+                bool exists = !error && std::filesystem::exists(target, error);
+                if (error) { message(GetHwnd(), L"无法检查目标文件：" + Platform::widen(error.message()), L"自定义下载"); return; }
+                if (exists) {
+                    bool directory = std::filesystem::is_directory(target, error);
+                    if (directory || error) { message(GetHwnd(), L"目标路径无法写入文件，请更换文件名或目录。", L"自定义下载"); return; }
+                    if (message(GetHwnd(), L"文件已存在：\n" + target.wstring() + L"\n是否覆盖？原文件将被替换。",
+                                L"覆盖文件", exui::MsgBoxButtons::OkCancel, {L"取消", L"覆盖"}) != 0) return;
+                }
+                if (!CustomDownload::busy()) CustomDownload::start(url, target);
             }
 
             void layoutJava() {

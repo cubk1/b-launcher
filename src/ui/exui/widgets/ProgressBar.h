@@ -10,6 +10,8 @@ namespace exui {
         ProgressBar(int x, int y, int width, int height);
         void SetRange(int minimum, int maximum);
         void SetPosition(int position);
+        void SetIndeterminate(bool enabled);
+        bool IsIndeterminate() const noexcept { return m_indeterminate; }
         int GetMin() const noexcept {
             return m_min;
         }
@@ -44,10 +46,16 @@ namespace exui {
         }
         void OnPaint(Gdiplus::Graphics& g) override;
 
+    protected:
+        void OnTimer() override;
+        void OnWindowChanged() override;
+
     private:
         int m_min = 0, m_max = 100, m_pos = 0;
         bool m_vertical = false, m_rounded = true;
         bool m_explicitRounded = false;
+        bool m_indeterminate = false;
+        unsigned m_phase = 0;
         bool IsRounded() const noexcept {
             return m_explicitRounded ? m_rounded : WindowIsRounded();
         }

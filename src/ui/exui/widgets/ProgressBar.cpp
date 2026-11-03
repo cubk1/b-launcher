@@ -33,6 +33,22 @@ namespace exui {
         m_pos = position;
         Invalidate();
     }
+    void ProgressBar::SetIndeterminate(bool enabled) {
+        if (m_indeterminate == enabled) return;
+        m_indeterminate = enabled;
+        m_phase = 0;
+        if (enabled) StartTimer(30);
+        else StopTimer();
+        Invalidate();
+    }
+    void ProgressBar::OnWindowChanged() {
+        if (m_indeterminate) StartTimer(30);
+    }
+    void ProgressBar::OnTimer() {
+        if (!m_indeterminate || !IsEffectivelyVisible()) return;
+        m_phase = (m_phase + 1) % 60;
+        Invalidate();
+    }
     // The filled part of the inner area, which is 4px shorter than the bar.
     int ProgressBar::GetFillExtent() const noexcept {
         if (m_max == m_min) return 0;
@@ -61,7 +77,20 @@ namespace exui {
         }
         RectF fill = inner;
         const int extent = GetFillExtent();
-        if (m_vertical) {
+        if (m_indeterminate) {
+            float length = std::max(0.0f, m_vertical ? inner.Height : inner.Width);
+            float segment = length * 0.3f;
+            float start = -segment + (length + segment) * m_phase / 59.0f;
+            float from = std::clamp(start, 0.0f, length);
+            float to = std::clamp(start + segment, 0.0f, length);
+            if (m_vertical) {
+                fill.Y += length - to;
+                fill.Height = to - from;
+            } else {
+                fill.X += from;
+                fill.Width = to - from;
+            }
+        } else if (m_vertical) {
             fill.Height = float(extent);
             fill.Y = float(GetHeight() - extent - 2);
         } else
