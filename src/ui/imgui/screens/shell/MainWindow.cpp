@@ -1295,6 +1295,7 @@ namespace MainWindow {
         float savedScroll = listScroll;
         float savedSmooth = listSmooth;
         bool savedRestored = scrollRestored;
+        size_t savedControls = titleControls.size();
 
         UiRender::scissor(x, y, w, h);
         layoutWidth = w / scale;
@@ -1328,6 +1329,7 @@ namespace MainWindow {
         listScroll = savedScroll;
         listSmooth = savedSmooth;
         scrollRestored = savedRestored;
+        titleControls.resize(savedControls);
         UiRender::unscissor();
     }
 
