@@ -2,7 +2,7 @@
 
 namespace Onboarding {
 
-    // The wizard still has to be painted; it owns the whole window.
+    // True while the guide is on screen; it owns the whole window.
     bool drawing();
 
     // The shell underneath must not be drawn or clicked.
@@ -10,9 +10,6 @@ namespace Onboarding {
 
     void draw();
 
-    // Runs the wizard again from the first step, without touching stored settings.
+    // Runs the guide from the first step.
     void start();
-
-    // Remembers an unfinished wizard so the next start asks again.
-    void remember();
 }

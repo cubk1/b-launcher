@@ -5,7 +5,6 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
-#include "app/system/Config.h"
 #include "app/system/Platform.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
@@ -22,7 +21,6 @@
 
 #include "imgui.h"
 
-#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
 #include <algorithm>
@@ -44,7 +42,6 @@ namespace Onboarding {
         constexpr int STEP_BACKGROUND = 2;
         constexpr int STEP_HOME = 3;
 
-        constexpr const char* DONE_KEY = "onboardingDone";
         constexpr float LEAVE_SECONDS = 0.18f;
         constexpr float INTRO_HOLD = 1.0f;
         constexpr float INTRO_OUT = 0.18f;
@@ -70,7 +67,6 @@ namespace Onboarding {
                 0xFF43A96Bu, 0xFF2AA9A0u, 0xFF3B9AE1u, 0xFF8A8F98u,
         };
 
-        bool checked = false;
         bool shown = false;
         bool leaving = false;
         bool outro = false;
@@ -175,8 +171,6 @@ namespace Onboarding {
             if (outro || leaving) {
                 return;
             }
-            Config::data()[DONE_KEY] = true;
-            Config::save();
             outro = true;
             outroAt = ImGui::GetTime();
             UiSound::request(UiSound::PULSE);
@@ -560,17 +554,10 @@ namespace Onboarding {
     }
 
     bool drawing() {
-        if (!checked) {
-            checked = true;
-            // Anything but a recorded completion counts as a first start, including
-            // an install that stored settings before the wizard existed.
-            shown = !b_launcher_base::json_bool(Config::data(), DONE_KEY);
-        }
         return shown;
     }
 
     void start() {
-        checked = true;
         shown = true;
         leaving = false;
         outro = false;
@@ -586,18 +573,7 @@ namespace Onboarding {
     }
 
     bool covering() {
-        return drawing() && !leaving;
-    }
-
-    void remember() {
-        if (!checked || !shown || leaving) {
-            return;
-        }
-        // A repeated run that was abandoned keeps the earlier completion.
-        if (!b_launcher_base::json_bool(Config::data(), DONE_KEY)) {
-            Config::data()[DONE_KEY] = false;
-            Config::save();
-        }
+        return shown && !leaving;
     }
 
     void draw() {

@@ -105,6 +105,31 @@ namespace SettingsScreen {
             widget.paint();
         }
 
+        bool dangerButton(const std::string& id, const std::string& text, float x, float y, float w, int glyph,
+                          bool blocked) {
+            bool hovered = !blocked && NewUi::hit(x, y, w, FIELD_H);
+            float lit = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
+            uint32_t red = UiTheme::danger() & 0x00FFFFFFu;
+            UiRender::roundRect(x, y, w, FIELD_H, 7.0f, red | ((uint32_t) Ui::round(72.0f + 40.0f * lit) << 24));
+            UiRender::outline(x, y, w, FIELD_H, 7.0f, red | ((uint32_t) Ui::round(140.0f + 70.0f * lit) << 24));
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            if (glyph != 0) {
+                float contentW = 10.0f + 6.0f + textW;
+                float start = x + (w - contentW) * 0.5f;
+                UiWidgets::icon(Ui::glyph(glyph), start + 5.0f, y + FIELD_H * 0.5f, UiTheme::danger(), 10.0f);
+                UiRender::textY(text, start + 16.0f, y, FIELD_H, UiTheme::danger(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            } else {
+                UiRender::textY(text, x + (w - textW) * 0.5f, y, FIELD_H, UiTheme::danger(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            }
+            if (!blocked && NewUi::click(x, y, w, FIELD_H)) {
+                UiSound::request(UiSound::forLabel(text));
+                return true;
+            }
+            return false;
+        }
+
         void textRow(const std::string& id, const char* label, const char* doc, std::function<std::string()> read,
                      std::function<void(const std::string&)> write, float rowY, bool blocked, const char* hint = "无") {
             Page::label(label, rowY);
@@ -958,16 +983,16 @@ namespace SettingsScreen {
             Dialog::open("settings#resetAll", 480.0f, 186.0f, [](float x, float y, float w, float h) {
                 UiRender::textY("重置启动器设置？", x + 20.0f, y + 20.0f, 26.0f, UiTheme::textPrimary(),
                                 UiFont::MEDIUM, 16.0f);
-                UiRender::textY("外观、主页、窗口等设置恢复默认，启动器会重启，", x + 20.0f, y + 56.0f, 20.0f,
+                UiRender::textY("外观、主页、窗口等设置恢复默认，启动器会重启。", x + 20.0f, y + 56.0f, 20.0f,
                                 UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY("并再次显示首次启动的引导。账户和实例不受影响。", x + 20.0f, y + 76.0f, 20.0f,
+                UiRender::textY("账户、实例和下载的文件不受影响。", x + 20.0f, y + 76.0f, 20.0f,
                                 UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float buttonY = y + h - 20.0f - Page::FIELD_H;
                 if (Page::button("settings#resetAll#cancel", "取消", x + w - 212.0f, buttonY, 72.0f, false, false)) {
                     Dialog::close();
                     return;
                 }
-                if (Page::button("settings#resetAll#confirm", "重置并重启", x + w - 124.0f, buttonY, 104.0f, true,
+                if (dangerButton("settings#resetAll#confirm", "重置并重启", x + w - 124.0f, buttonY, 104.0f, 0xf2f1,
                                  false)) {
                     Dialog::close();
                     Config::reset();
@@ -979,8 +1004,8 @@ namespace SettingsScreen {
         }
 
         void guideRow(float y, bool blocked) {
-            const std::string label = "首次启动引导";
-            const std::string text = "重新运行";
+            const std::string label = "使用启动引导";
+            const std::string text = "开始引导";
             Page::label(label, y);
             float w = Page::buttonWidth(text, 0xf0d0);
             float x = Page::controlRight() - w;
@@ -988,7 +1013,7 @@ namespace SettingsScreen {
                 Onboarding::start();
             }
             explain("settings#guide",
-                    "重新走一遍主题色、缩放、背景和主页组件的设置，当前设置保留，随时可以跳过。",
+                    "走一遍主题色、缩放、背景和主页组件的外观设置，当前设置会保留，随时可以跳过。",
                     y, x - 8.0f, blocked);
         }
 
@@ -998,8 +1023,7 @@ namespace SettingsScreen {
             Page::label(label, y);
             float w = Page::buttonWidth(text, 0xf2f1);
             float x = Page::controlRight() - w;
-            if (Page::button("settings#resetAll", text, x, y + Page::FIELD_Y, w, false,
-                             blocked || Services::busy(), 0xf2f1)) {
+            if (dangerButton("settings#resetAll", text, x, y + Page::FIELD_Y, w, 0xf2f1, blocked || Services::busy())) {
                 confirmReset();
             }
             explain("settings#resetAll",
