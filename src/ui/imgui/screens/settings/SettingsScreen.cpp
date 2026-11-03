@@ -291,7 +291,11 @@ namespace SettingsScreen {
         }
 
         int appearanceCount() {
+#if defined(_WIN32)
             return Appearance::backgroundImage() ? 12 : 11;
+#else
+            return Appearance::backgroundImage() ? 11 : 10;
+#endif
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -330,6 +334,7 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setSystemFrame(on); }, y, blocked);
         }
 
+#if defined(_WIN32)
         void uiStyleRow(float y, bool blocked) {
             const std::string label = "界面风格";
             Page::label(label, y);
@@ -362,10 +367,13 @@ namespace SettingsScreen {
             }
             explain("settings#uiStyle", doc, y, std::max(labelEnd - 12.0f, labelRight), blocked);
         }
+#endif
 
         void appearanceRows(float y, bool blocked) {
+#if defined(_WIN32)
             uiStyleRow(y, blocked);
             y += Page::ROW_H;
+#endif
 
             Page::label("主题", y);
             auto theme = std::make_shared<ModeBinding>(

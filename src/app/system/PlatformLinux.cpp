@@ -90,15 +90,15 @@ namespace Platform {
     }
 
     std::filesystem::path executablePath() {
+        if (auto image = blb::environment("APPIMAGE"); image && !image->empty()) {
+            return blb::path_from_utf8(*image);
+        }
         std::error_code error;
         std::filesystem::path path = std::filesystem::read_symlink("/proc/self/exe", error);
         return error ? std::filesystem::path() : path;
     }
 
     std::filesystem::path exeDirectory() {
-        if (auto image = blb::environment("APPIMAGE"); image && !image->empty()) {
-            return blb::path_from_utf8(*image).parent_path();
-        }
         std::filesystem::path exe = executablePath();
         return exe.empty() ? std::filesystem::current_path() : exe.parent_path();
     }
@@ -147,12 +147,7 @@ namespace Platform {
         if (file.extension() != ".desktop") {
             file += ".desktop";
         }
-        std::filesystem::path exe;
-        if (auto image = blb::environment("APPIMAGE"); image && !image->empty()) {
-            exe = blb::path_from_utf8(*image);
-        } else {
-            exe = executablePath();
-        }
+        std::filesystem::path exe = executablePath();
         std::filesystem::path icon = shortcut.icon;
         if (icon.empty()) {
             icon = configDirectory() / "b-launcher.svg";

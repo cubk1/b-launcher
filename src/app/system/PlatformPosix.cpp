@@ -23,6 +23,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <thread>
 
@@ -132,6 +134,18 @@ namespace Platform {
                 return -1;
             }
             return pid;
+        }
+
+        bool exited(pid_t pid) {
+#if defined(__linux__)
+            std::ifstream file("/proc/" + std::to_string(pid) + "/stat");
+            std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            size_t close = text.rfind(')');
+            return close != std::string::npos && close + 2 < text.size() && text[close + 2] == 'Z';
+#else
+            (void) pid;
+            return false;
+#endif
         }
 
         std::vector<std::string> shellCommand(const std::string& command) {
@@ -370,7 +384,7 @@ namespace Platform {
             return;
         }
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (kill(pid, 0) == 0 && std::chrono::steady_clock::now() < deadline) {
+        while (kill(pid, 0) == 0 && !exited(pid) && std::chrono::steady_clock::now() < deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }
