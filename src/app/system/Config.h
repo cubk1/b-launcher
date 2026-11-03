@@ -7,6 +7,6 @@ namespace Config {
     nlohmann::json& data();
     bool save();
 
-    // Wipes every stored setting; callers restart so nothing stale stays live.
-    void reset();
+    // Restores defaults; callers restart after success so no stale state stays live.
+    bool reset();
 }
