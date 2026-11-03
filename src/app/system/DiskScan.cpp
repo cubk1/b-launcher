@@ -6,6 +6,7 @@
 
 #include <core/base/strings.hpp>
 #include <core/java/java_detect.hpp>
+#include <core/base/win_util.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -30,6 +31,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <unordered_map>
 
@@ -51,9 +53,19 @@ namespace DiskScan {
             uint16_t length = 0;
         };
 
+        struct HandleCloser {
+            void operator()(HANDLE handle) const {
+                if (handle != INVALID_HANDLE_VALUE) {
+                    CloseHandle(handle);
+                }
+            }
+        };
+
+        using Handle = std::unique_ptr<void, HandleCloser>;
+
         struct Volume {
             wchar_t letter = 0;
-            HANDLE handle = INVALID_HANDLE_VALUE;
+            Handle handle;
             uint64_t root = 0;
             uint64_t records = 1;
             USN_JOURNAL_DATA_V0 journal = {};
@@ -139,17 +151,18 @@ namespace DiskScan {
                     path.find(L"\\system volume information\\") != std::wstring::npos;
         }
 
-        bool rootOf(const std::wstring& drive, uint64_t& root) {
-            HANDLE handle = CreateFileW(drive.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                        nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-            if (handle == INVALID_HANDLE_VALUE) {
-                return false;
+        DWORD rootOf(const std::wstring& drive, uint64_t& root) {
+            Handle handle(CreateFileW(drive.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
+            if (handle.get() == INVALID_HANDLE_VALUE) {
+                return GetLastError();
             }
             BY_HANDLE_FILE_INFORMATION info = {};
-            bool ok = GetFileInformationByHandle(handle, &info) != FALSE;
-            CloseHandle(handle);
+            if (!GetFileInformationByHandle(handle.get(), &info)) {
+                return GetLastError();
+            }
             root = ((uint64_t) info.nFileIndexHigh << 32 | info.nFileIndexLow) & INDEX_MASK;
-            return ok;
+            return ERROR_SUCCESS;
         }
 
         bool journalOf(HANDLE volume, USN_JOURNAL_DATA_V0& journal) {
@@ -168,37 +181,35 @@ namespace DiskScan {
                                     nullptr);
         }
 
-        bool openVolume(wchar_t letter, Volume& out) {
+        DWORD openVolume(wchar_t letter, Volume& out) {
             out.letter = letter;
-            if (!rootOf(std::wstring(1, letter) + L":\\", out.root)) {
-                return false;
+            if (DWORD error = rootOf(std::wstring(1, letter) + L":\\", out.root)) {
+                return error;
             }
             std::wstring device = L"\\\\.\\" + std::wstring(1, letter) + L":";
-            out.handle = CreateFileW(device.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                                     OPEN_EXISTING, 0, nullptr);
-            if (out.handle == INVALID_HANDLE_VALUE) {
-                return false;
+            out.handle.reset(CreateFileW(device.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                         OPEN_EXISTING, 0, nullptr));
+            if (out.handle.get() == INVALID_HANDLE_VALUE) {
+                return GetLastError();
             }
-            if (!journalOf(out.handle, out.journal)) {
-                CloseHandle(out.handle);
-                out.handle = INVALID_HANDLE_VALUE;
-                return false;
+            if (!journalOf(out.handle.get(), out.journal)) {
+                return GetLastError();
             }
             NTFS_VOLUME_DATA_BUFFER data = {};
             DWORD bytes = 0;
-            if (DeviceIoControl(out.handle, FSCTL_GET_NTFS_VOLUME_DATA, nullptr, 0, &data, sizeof(data), &bytes,
+            if (DeviceIoControl(out.handle.get(), FSCTL_GET_NTFS_VOLUME_DATA, nullptr, 0, &data, sizeof(data), &bytes,
                                 nullptr) &&
                 data.BytesPerFileRecordSegment > 0) {
                 out.records = std::max<uint64_t>(
                         1, (uint64_t) data.MftValidDataLength.QuadPart / data.BytesPerFileRecordSegment);
             }
-            return true;
+            return ERROR_SUCCESS;
         }
 
-        void scanVolume(const Volume& target, Found& found, const std::function<void(uint64_t)>& advance) {
+        DWORD scanVolume(const Volume& target, Found& found, const std::function<void(uint64_t)>& advance) {
             std::wstring drive = std::wstring(1, target.letter) + L":\\";
             uint64_t root = target.root;
-            HANDLE volume = target.handle;
+            HANDLE volume = target.handle.get();
             std::unordered_map<uint64_t, Node> dirs;
             dirs.reserve(1u << 18);
             std::wstring names;
@@ -208,14 +219,24 @@ namespace DiskScan {
             const unsigned char* data = (const unsigned char*) buffer.data();
             MFT_ENUM_DATA_V0 range = {0, 0, target.journal.NextUsn};
             DWORD bytes = 0;
-            while (DeviceIoControl(volume, FSCTL_ENUM_USN_DATA, &range, sizeof(range), buffer.data(), BUFFER_BYTES,
-                                   &bytes, nullptr) &&
-                   bytes > sizeof(USN)) {
+            for (;;) {
+                if (!DeviceIoControl(volume, FSCTL_ENUM_USN_DATA, &range, sizeof(range), buffer.data(), BUFFER_BYTES,
+                                     &bytes, nullptr)) {
+                    DWORD error = GetLastError();
+                    if (error == ERROR_HANDLE_EOF) {
+                        break;
+                    }
+                    return error;
+                }
+                if (bytes < sizeof(USN)) {
+                    return ERROR_INVALID_DATA;
+                }
                 size_t at = sizeof(USN);
                 while (at + offsetof(USN_RECORD_V2, FileName) <= bytes) {
                     const auto* record = (const USN_RECORD_V2*) (data + at);
-                    if (record->RecordLength == 0 || at + record->RecordLength > bytes) {
-                        break;
+                    if (record->RecordLength < offsetof(USN_RECORD_V2, FileName) ||
+                        at + record->RecordLength > bytes) {
+                        return ERROR_INVALID_DATA;
                     }
                     if (record->MajorVersion == 2 &&
                         (size_t) record->FileNameOffset + record->FileNameLength <= record->RecordLength) {
@@ -235,7 +256,11 @@ namespace DiskScan {
                     }
                     at += record->RecordLength;
                 }
-                range.StartFileReferenceNumber = *(const DWORDLONG*) data;
+                uint64_t next = *(const DWORDLONG*) data;
+                if (at != bytes || next <= range.StartFileReferenceNumber) {
+                    return ERROR_INVALID_DATA;
+                }
+                range.StartFileReferenceNumber = next;
                 advance(range.StartFileReferenceNumber & INDEX_MASK);
             }
 
@@ -274,22 +299,28 @@ namespace DiskScan {
                     found.folders.emplace_back(path);
                 }
             }
+            return ERROR_SUCCESS;
         }
 
         Found scanAll(const std::wstring& letters, const Report& report) {
             Found found;
             std::vector<Volume> volumes;
-            wchar_t drives[512] = {};
-            DWORD length = GetLogicalDriveStringsW((DWORD) std::size(drives) - 1, drives);
-            for (const wchar_t* drive = drives; length > 0 && *drive != L'\0'; drive += std::wcslen(drive) + 1) {
-                if (letters.find((wchar_t) std::towupper(drive[0])) == std::wstring::npos ||
-                    !ntfs(drive, GetDriveTypeW(drive), nullptr)) {
-                    continue;
+            auto fail = [&](wchar_t letter, DWORD error) {
+                found.error = "无法读取 " + std::string(1, (char) letter) + ": 盘：" +
+                        blb::detail::last_error_message(error);
+            };
+            for (wchar_t letter : letters) {
+                std::wstring drive = std::wstring(1, letter) + L":\\";
+                if (!ntfs(drive.c_str(), GetDriveTypeW(drive.c_str()), nullptr)) {
+                    found.error = std::string(1, (char) letter) + ": 盘不可用或不是 NTFS 格式";
+                    return found;
                 }
                 Volume volume;
-                if (openVolume(drive[0], volume)) {
-                    volumes.push_back(volume);
+                if (DWORD error = openVolume(letter, volume)) {
+                    fail(letter, error);
+                    return found;
                 }
+                volumes.push_back(std::move(volume));
             }
             uint64_t total = 0;
             for (const Volume& volume : volumes) {
@@ -297,13 +328,17 @@ namespace DiskScan {
             }
             total = std::max<uint64_t>(1, total);
             uint64_t before = 0;
-            for (const Volume& volume : volumes) {
+            for (Volume& volume : volumes) {
                 report((float) ((double) before / (double) total), volume.letter);
-                scanVolume(volume, found, [&](uint64_t next) {
+                DWORD error = scanVolume(volume, found, [&](uint64_t next) {
                     uint64_t done = before + std::min(next, volume.records);
                     report((float) ((double) done / (double) total), volume.letter);
                 });
-                CloseHandle(volume.handle);
+                volume.handle.reset();
+                if (error != ERROR_SUCCESS) {
+                    fail(volume.letter, error);
+                    return found;
+                }
                 before += volume.records;
                 found.volumes++;
             }
