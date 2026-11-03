@@ -193,6 +193,23 @@ target_compile_definitions(blb_simdjson PUBLIC
   SIMDJSON_IMPLEMENTATION_WESTMERE=0
   SIMDJSON_DISABLE_DEPRECATED_API=1)
 
+if(NOT WIN32)
+  blb_force(SDL_SHARED OFF)
+  blb_force(SDL_STATIC ON)
+  blb_force(SDL_TEST_LIBRARY OFF)
+  blb_force(SDL_EXAMPLES OFF)
+  blb_force(SDL_INSTALL OFF)
+  foreach(subsystem CAMERA JOYSTICK HAPTIC HIDAPI SENSOR POWER GPU RENDER VULKAN METAL)
+    blb_force(SDL_${subsystem} OFF)
+  endforeach()
+
+  FetchContent_Declare(sdl3
+    URL ${BLB_DEP_BASE}/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(sdl3)
+endif()
+
 set(BUILD_SHARED_LIBS ${BLB_SAVED_BUILD_SHARED_LIBS})
 
 set(BLB_CURL_TARGET CURL::libcurl_static)
