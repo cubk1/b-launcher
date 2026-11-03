@@ -10,6 +10,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "app/launch/ShortcutLaunch.h"
+#include "app/multiplayer/Multiplayer.h"
 #include "app/system/Config.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -18,6 +19,7 @@
 #include "ui/exui/Resources.h"
 #include "ui/exui/windows/LogWindow.h"
 #include "ui/exui/windows/MainWindow.h"
+#include "ui/exui/windows/MultiplayerWindow.h"
 
 #include <ole2.h>
 
@@ -76,7 +78,19 @@ namespace ForgottenMelody {
             }
             bool launchSent = false;
             bool launchFailed = false;
+            std::optional<ULONGLONG> closingRoom;
             window.OnWindowMessageFilter = [&](UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
+                if (msg == WM_CLOSE && (closingRoom || Multiplayer::active())) {
+                    if (!closingRoom) {
+                        closingRoom = GetTickCount64();
+                        Multiplayer::leave();
+                        window.GetRoot().SetEnabled(false);
+                        closeMultiplayer();
+                        Notices::add(Notices::Kind::Info, "正在关闭房间，关闭后启动器会退出", 4000);
+                    }
+                    result = 0;
+                    return true;
+                }
                 if (msg == WM_COPYDATA) {
                     const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lp);
                     if (data == nullptr || data->lpData == nullptr || data->cbData < sizeof(wchar_t)) {
@@ -94,6 +108,12 @@ namespace ForgottenMelody {
                 }
                 GameLog::poll();
                 Services::poll();
+                if (closingRoom && (Multiplayer::state().role == Multiplayer::Role::None ||
+                                    GetTickCount64() - *closingRoom >= 10000)) {
+                    window.CloseWindow();
+                    result = 0;
+                    return true;
+                }
                 window.refresh();
                 if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
                     launchSent = outcome->launched;
@@ -122,6 +142,7 @@ namespace ForgottenMelody {
                 window.ShowWindowWithAnimation();
             }
             window.RunModalLoop();
+            closeMultiplayer();
             closeLog();
             Platform::window = nullptr;
             disconnect();
