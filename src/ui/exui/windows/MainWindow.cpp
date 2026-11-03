@@ -10,6 +10,7 @@
 #include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
+#include "app/multiplayer/Multiplayer.h"
 #include "app/system/Platform.h"
 #include "ui/exui/Skins.h"
 #include "ui/exui/windows/AccountsWindow.h"
@@ -17,6 +18,7 @@
 #include "ui/exui/windows/DownloadsWindow.h"
 #include "ui/exui/windows/LogWindow.h"
 #include "ui/exui/windows/NoticesWindow.h"
+#include "ui/exui/windows/MultiplayerWindow.h"
 #include "ui/exui/windows/SettingsWindow.h"
 #include "ui/exui/widgets/ComboBox.h"
 #include "ui/exui/widgets/Label.h"
@@ -28,7 +30,7 @@ namespace ForgottenMelody {
     namespace {
         using exui::ControlKind;
 
-        enum : uint32_t { LAUNCH = 1, DOWNLOADS, SETTINGS, INSTANCE, FOLDER, CREDIT, ACCOUNT, NOTICE, DROP };
+        enum : uint32_t { LAUNCH = 1, DOWNLOADS, SETTINGS, INSTANCE, FOLDER, CREDIT, ACCOUNT, NOTICE, DROP, MULTIPLAYER };
 
         constexpr Gdiplus::ARGB CREDIT_COLOR = 0xFEC0C0C0;
 
@@ -54,6 +56,11 @@ namespace ForgottenMelody {
                 {.id = ACCOUNT,
                  .kind = ControlKind::Hyperlink,
                  .bounds = {461, 423, 252, 25},
+                 .textColor = CREDIT_COLOR},
+                {.id = MULTIPLAYER,
+                 .kind = ControlKind::Hyperlink,
+                 .bounds = {351, 423, 100, 25},
+                 .caption = L"联机",
                  .textColor = CREDIT_COLOR},
         };
 
@@ -137,6 +144,7 @@ namespace ForgottenMelody {
         account.SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
         // It opens the account settings rather than a page, so it never turns to the visited color.
         account.SetColors(CREDIT_COLOR, 0xD20060C0, CREDIT_COLOR);
+        Control<exui::Hyperlink>(MULTIPLAYER).SetColors(CREDIT_COLOR, 0xD20060C0, CREDIT_COLOR);
         // Notices go above 启动游戏, centered over it and 下载中心; failures get a message box.
         AddControl(NOTICE, std::make_shared<NoticeLine>(430, 283, 260, 25));
         // Over everything while files are dragged over the window, saying what dropping them does, as the default
@@ -184,7 +192,19 @@ namespace ForgottenMelody {
         const auto* current = Accounts::current();
         std::wstring account = current == nullptr ? std::wstring(L"还没有账号")
                                                   : Platform::widen(current->name + " - " + Accounts::kindOf(*current));
-        UpdateText(ACCOUNT, account);
+        const auto& room = Multiplayer::state();
+        std::wstring online = L"联机";
+        if (room.role != Multiplayer::Role::None && !room.code.empty()) online += L" - " + Platform::widen(room.code);
+        if (Text(ACCOUNT) != account || Text(MULTIPLAYER) != online) {
+            UpdateText(ACCOUNT, account);
+            UpdateText(MULTIPLAYER, online);
+            int accountWidth = std::clamp((int) std::ceil(exui::widget_detail::UnboundedTextWidth(*FindControl(ACCOUNT))) + 4, 60, 252);
+            int onlineWidth = std::clamp((int) std::ceil(exui::widget_detail::UnboundedTextWidth(*FindControl(MULTIPLAYER))) + 4, 32, 100);
+            FindControl(ACCOUNT)->SetBounds(713 - accountWidth, 423, accountWidth, 25);
+            FindControl(MULTIPLAYER)->SetBounds(713 - accountWidth - 12 - onlineWidth, 423, onlineWidth, 25);
+        }
+        FindControl(MULTIPLAYER)->SetTooltipText(room.role == Multiplayer::Role::None ? L"创建或加入联机房间"
+                                                                                   : Platform::widen(Multiplayer::stageText()));
 
         Game::State state = Game::state(Instances::selected());
         std::wstring caption = launchCaption(state);
@@ -310,6 +330,7 @@ namespace ForgottenMelody {
             case ACCOUNT: showAccounts(GetHwnd()); break;
             case DOWNLOADS: showDownloads(GetHwnd()); break;
             case SETTINGS: showSettings(GetHwnd()); break;
+            case MULTIPLAYER: showMultiplayer(GetHwnd()); break;
             case NOTICE: PostMessageW(GetHwnd(), OPEN_NOTICES, 0, 0); break;
         }
     }
