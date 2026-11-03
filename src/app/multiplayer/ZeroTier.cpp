@@ -1,6 +1,7 @@
 #include "app/multiplayer/ZeroTier.h"
 #include "app/system/Platform.h"
 
+#if defined(BLB_ZEROTIER)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -10,7 +11,6 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#if defined(BLB_ZEROTIER)
 #define ADD_EXPORTS
 #include <ZeroTierSockets.h>
 #endif

@@ -52,6 +52,11 @@ if (MSVC)
 endif ()
 
 set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
+if (WIN32)
+    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+else ()
+    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c)
+endif ()
 add_library(freetype STATIC
         ${FREETYPE_DIR}/src/base/ftbase.c
         ${FREETYPE_DIR}/src/base/ftbbox.c
@@ -59,8 +64,7 @@ add_library(freetype STATIC
         ${FREETYPE_DIR}/src/base/ftinit.c
         ${FREETYPE_DIR}/src/base/ftmm.c
         ${FREETYPE_DIR}/src/base/ftsynth.c
-        ${FREETYPE_DIR}/builds/windows/ftsystem.c
-        ${FREETYPE_DIR}/builds/windows/ftdebug.c
+        ${FREETYPE_SYSTEM_SOURCES}
         ${FREETYPE_DIR}/src/autofit/autofit.c
         ${FREETYPE_DIR}/src/gzip/ftgzip.c
         ${FREETYPE_DIR}/src/sfnt/sfnt.c
@@ -71,13 +75,18 @@ target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_S
         "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+if (WIN32)
+    set(IMGUI_PLATFORM_SOURCES ${IMGUI_DIR}/backends/imgui_impl_win32.cpp)
+else ()
+    set(IMGUI_PLATFORM_SOURCES "")
+endif ()
 add_library(imgui STATIC
         ${IMGUI_DIR}/imgui.cpp
         ${IMGUI_DIR}/imgui_draw.cpp
         ${IMGUI_DIR}/imgui_tables.cpp
         ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_win32.cpp
+        ${IMGUI_PLATFORM_SOURCES}
         ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
@@ -153,43 +162,57 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/launch/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
         launcherAgent assets/launcher-agent.jar)
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp HEADER ui/exui/EmbeddedSkins.h NAMESPACE EmbeddedSkins FILES
-        mainBackground assets/exui/main_background.jpg
-        dialogBackground assets/exui/dialog_background.jpg
-        msgBoxBorder assets/exui/msgbox_border.png
-        msgBoxSkin assets/exui/msgbox_skin.png
-        downloadCenterBackground assets/exui/download_center_background.png
-        frameAtlas assets/exui/frame_atlas.png
-        comboButtonNormal assets/exui/combo_button_normal.png
-        comboButtonHover assets/exui/combo_button_hover.png
-        radioSprites assets/exui/radio_sprites.png
-        checkSprites assets/exui/check_sprites.png
-        menuCheckmark assets/exui/menu_checkmark.png)
-file(GLOB_RECURSE EXUI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/*.cpp)
-list(FILTER EXUI_SOURCES EXCLUDE REGEX "/src/ui/exui/(gallery|windows)/")
-add_library(exui STATIC ${EXUI_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp)
-target_include_directories(exui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(exui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-target_link_libraries(exui PUBLIC gdiplus msimg32 dwmapi uxtheme shlwapi shcore comctl32 imm32 comdlg32 ole32 oleaut32 uuid)
-if (MSVC)
-    target_compile_options(exui PRIVATE /W4)
-endif ()
-option(BLB_EXUI_GALLERY "Build exui_gallery, which renders the EXUI widgets and windows to PNG files" OFF)
-if (BLB_EXUI_GALLERY)
-    add_executable(exui_gallery src/ui/exui/gallery/Gallery.cpp)
-    target_compile_definitions(exui_gallery PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-    target_link_libraries(exui_gallery PRIVATE exui)
+if (WIN32)
+    embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp HEADER ui/exui/EmbeddedSkins.h NAMESPACE EmbeddedSkins FILES
+            mainBackground assets/exui/main_background.jpg
+            dialogBackground assets/exui/dialog_background.jpg
+            msgBoxBorder assets/exui/msgbox_border.png
+            msgBoxSkin assets/exui/msgbox_skin.png
+            downloadCenterBackground assets/exui/download_center_background.png
+            frameAtlas assets/exui/frame_atlas.png
+            comboButtonNormal assets/exui/combo_button_normal.png
+            comboButtonHover assets/exui/combo_button_hover.png
+            radioSprites assets/exui/radio_sprites.png
+            checkSprites assets/exui/check_sprites.png
+            menuCheckmark assets/exui/menu_checkmark.png)
+    file(GLOB_RECURSE EXUI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/*.cpp)
+    list(FILTER EXUI_SOURCES EXCLUDE REGEX "/src/ui/exui/(gallery|windows)/")
+    add_library(exui STATIC ${EXUI_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp)
+    target_include_directories(exui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(exui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(exui PUBLIC gdiplus msimg32 dwmapi uxtheme shlwapi shcore comctl32 imm32 comdlg32 ole32 oleaut32 uuid)
+    if (MSVC)
+        target_compile_options(exui PRIVATE /W4)
+    endif ()
+    option(BLB_EXUI_GALLERY "Build exui_gallery, which renders the EXUI widgets and windows to PNG files" OFF)
+    if (BLB_EXUI_GALLERY)
+        add_executable(exui_gallery src/ui/exui/gallery/Gallery.cpp)
+        target_compile_definitions(exui_gallery PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+        target_link_libraries(exui_gallery PRIVATE exui)
+    endif ()
 endif ()
 
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/windows/*.cpp)
-add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp)
+if (WIN32)
+    file(GLOB_RECURSE EXUI_WINDOW_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/windows/*.cpp)
+    list(APPEND APP_SOURCES ${EXUI_WINDOW_SOURCES})
+    list(SORT APP_SOURCES)
+    set(APP_RESOURCES src/app.rc)
+else ()
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/src/app/system/PclThemes\\.cpp$")
+    set(APP_RESOURCES "")
+endif ()
+add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} ${APP_RESOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
-target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
+if (WIN32)
+    target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
+else ()
+    target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json)
+endif ()
 set(ZEROTIER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libzt)
 if (WIN32)
     target_link_libraries(b-launcher PRIVATE iphlpapi)
@@ -204,8 +227,10 @@ endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif ()
-find_program(UPX_EXECUTABLE upx)
-add_custom_command(TARGET b-launcher POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DUPX=${UPX_EXECUTABLE} -DFILE=$<TARGET_FILE:b-launcher>
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/upx.cmake
-        VERBATIM)
+if (WIN32)
+    find_program(UPX_EXECUTABLE upx)
+    add_custom_command(TARGET b-launcher POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DUPX=${UPX_EXECUTABLE} -DFILE=$<TARGET_FILE:b-launcher>
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/upx.cmake
+            VERBATIM)
+endif ()
