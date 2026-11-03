@@ -44,6 +44,7 @@ namespace About {
             {"reproc", "MIT", "https://github.com/DaanDeMeyer/reproc"},
             {"stb", "MIT", "https://github.com/nothings/stb"},
             {"nanosvg", "zlib License", "https://github.com/memononen/nanosvg"},
+            {"libzt", "BUSL-1.1", "https://github.com/zerotier/libzt"},
             {"Font Awesome Free", "SIL OFL 1.1", "https://fontawesome.com"},
     };
 }
