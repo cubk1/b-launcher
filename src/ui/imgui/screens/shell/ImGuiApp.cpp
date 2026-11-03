@@ -13,6 +13,7 @@
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/onboarding/Onboarding.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
 
@@ -484,6 +485,7 @@ namespace ImGuiApp {
 
         window.onModalFrame = nullptr;
         MainWindow::save();
+        Onboarding::remember();
         Config::save();
 
         LogWindow::shutdown();
