@@ -51,6 +51,7 @@ public:
     bool pumpMessages();
     void swap();
     void setVsync(bool on);
+    void setTyping(bool typing);
     void makeCurrent();
     float density() const;
     float displayScale() const;

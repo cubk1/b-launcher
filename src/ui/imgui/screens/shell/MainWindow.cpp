@@ -60,6 +60,7 @@ namespace MainWindow {
 
     bool closeRequested = false;
     bool minimizeRequested = false;
+    float cornerRadius = 0.0f;
     bool maximizeRequested = false;
 
     static const float RAIL_W = 48.0f;
@@ -1256,7 +1257,7 @@ namespace MainWindow {
     }
 
     static void shell() {
-        frame(0.0f);
+        frame(cornerRadius);
         sidebar();
         content();
 

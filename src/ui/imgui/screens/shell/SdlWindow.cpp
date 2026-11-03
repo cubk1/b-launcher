@@ -104,7 +104,7 @@ bool SdlWindow::create(const std::string& title, int clientWidth, int clientHeig
         flags |= SDL_WINDOW_RESIZABLE;
     }
     if (!framed) {
-        flags |= SDL_WINDOW_BORDERLESS;
+        flags |= SDL_WINDOW_BORDERLESS | SDL_WINDOW_TRANSPARENT;
     }
     window = SDL_CreateWindow(title.c_str(), clientWidth, clientHeight, flags);
     if (window == nullptr) {
@@ -331,6 +331,17 @@ void SdlWindow::swap() {
 
 void SdlWindow::setVsync(bool on) {
     SDL_GL_SetSwapInterval(on ? 1 : 0);
+}
+
+void SdlWindow::setTyping(bool typing) {
+    if (window == nullptr || typing == SDL_TextInputActive(window)) {
+        return;
+    }
+    if (typing) {
+        SDL_StartTextInput(window);
+    } else {
+        SDL_StopTextInput(window);
+    }
 }
 
 void SdlWindow::makeCurrent() {

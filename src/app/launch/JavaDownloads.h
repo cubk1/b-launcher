@@ -18,6 +18,7 @@ namespace JavaDownloads {
         std::string url;
         std::string sha256;
         std::string prefix;
+        std::string rootPrefix;
         std::string homePrefix;
         uint64_t archiveSize = 0;
         uint64_t unpackedSize = 0;

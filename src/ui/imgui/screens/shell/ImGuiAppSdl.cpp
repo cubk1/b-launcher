@@ -21,6 +21,7 @@
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiImages.h"
+#include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiState.h"
@@ -44,6 +45,7 @@
 namespace {
 
     constexpr int ICON_SIZE = 64;
+    constexpr float CORNER_RADIUS = 8.0f;
     constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
     constexpr double IDLE_FRAME_MS = 100.0;
     constexpr double ROOM_CLOSE_MS = 10000.0;
@@ -226,6 +228,7 @@ namespace ImGuiApp {
                 }
             }
             MainWindow::setSize(window.width / scale, window.height / scale, window.maximized());
+            MainWindow::cornerRadius = window.framed || window.maximized() ? 0.0f : CORNER_RADIUS;
 
             window.makeCurrent();
             window.newFrame();
@@ -251,8 +254,9 @@ namespace ImGuiApp {
             UiRender::end();
 
             ImGui::Render();
+            window.setTyping(!NewUi::textEditing.empty() || !UiInput::focused.empty());
             UiGL::Viewport(0, 0, window.width, window.height);
-            UiGL::ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            UiGL::ClearColor(0.0f, 0.0f, 0.0f, window.framed || window.maximized() ? 1.0f : 0.0f);
             UiGL::Clear(UGL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             window.swap();

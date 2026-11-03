@@ -1190,6 +1190,9 @@ namespace LogWindow {
         NewUi::render(draw);
         UiRender::end();
         ImGui::Render();
+#if !defined(_WIN32)
+        window.setTyping(!NewUi::textEditing.empty());
+#endif
         uint32_t clear = UiTheme::panel();
 #if defined(_WIN32)
         glViewport(0, 0, window.width, window.height);

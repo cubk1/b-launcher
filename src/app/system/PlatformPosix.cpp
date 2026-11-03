@@ -5,7 +5,9 @@
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
 #include <fcntl.h>
@@ -15,6 +17,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -134,6 +137,94 @@ namespace Platform {
             return {"/bin/sh", "-c", command};
         }
 
+        struct Filter {
+            std::string name;
+            std::string pattern;
+        };
+
+        struct DialogWait {
+            std::atomic<bool> done{false};
+            std::mutex lock;
+            std::vector<std::filesystem::path> picked;
+        };
+
+        void dialogDone(void* data, const char* const* files, int) {
+            DialogWait& wait = *(DialogWait*) data;
+            {
+                std::lock_guard<std::mutex> guard(wait.lock);
+                for (const char* const* at = files; at != nullptr && *at != nullptr; at++) {
+                    wait.picked.push_back(blb::path_from_utf8(*at));
+                }
+            }
+            wait.done = true;
+        }
+
+        std::vector<std::filesystem::path> showDialog(SDL_FileDialogType type, const std::string& title,
+                                                      const std::filesystem::path& location,
+                                                      const std::vector<Filter>& filters, bool many) {
+            DialogWait wait;
+            std::vector<SDL_DialogFileFilter> list;
+            for (const Filter& filter : filters) {
+                list.push_back({filter.name.c_str(), filter.pattern.c_str()});
+            }
+            std::string where = blb::path_to_utf8(location);
+            SDL_PropertiesID properties = SDL_CreateProperties();
+            if (!list.empty()) {
+                SDL_SetPointerProperty(properties, SDL_PROP_FILE_DIALOG_FILTERS_POINTER, list.data());
+                SDL_SetNumberProperty(properties, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, (Sint64) list.size());
+            }
+            if (window != nullptr) {
+                SDL_SetPointerProperty(properties, SDL_PROP_FILE_DIALOG_WINDOW_POINTER, window);
+            }
+            if (!where.empty()) {
+                SDL_SetStringProperty(properties, SDL_PROP_FILE_DIALOG_LOCATION_STRING, where.c_str());
+            }
+            SDL_SetBooleanProperty(properties, SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, many);
+            SDL_SetStringProperty(properties, SDL_PROP_FILE_DIALOG_TITLE_STRING, title.c_str());
+            SDL_ShowFileDialogWithProperties(type, dialogDone, &wait, properties);
+            while (!wait.done) {
+                SDL_PumpEvents();
+                SDL_Delay(10);
+            }
+            SDL_DestroyProperties(properties);
+            std::lock_guard<std::mutex> guard(wait.lock);
+            return std::move(wait.picked);
+        }
+
+        std::optional<std::filesystem::path> pickOne(SDL_FileDialogType type, const std::string& title,
+                                                     const std::filesystem::path& location,
+                                                     const std::vector<Filter>& filters) {
+            std::vector<std::filesystem::path> picked = showDialog(type, title, location, filters, false);
+            if (picked.empty()) {
+                return std::nullopt;
+            }
+            return picked.front();
+        }
+
+        std::filesystem::path folderOf(const std::filesystem::path& initial) {
+            std::error_code error;
+            if (initial.empty()) {
+                return {};
+            }
+            return std::filesystem::is_directory(initial, error) ? initial : initial.parent_path();
+        }
+
+        std::string extensions(const wchar_t* pattern) {
+            std::string out;
+            for (std::string_view part : blb::split(narrow(pattern), ';')) {
+                std::string_view trimmed = blb::trim(part);
+                if (trimmed.starts_with("*.")) {
+                    trimmed.remove_prefix(2);
+                }
+                if (trimmed.empty() || trimmed == "*") {
+                    continue;
+                }
+                out += out.empty() ? "" : ";";
+                out += std::string(trimmed);
+            }
+            return out.empty() ? std::string("*") : out;
+        }
+
         std::filesystem::path storeFile(const std::string& name) {
             if (!blb::fs::safe_filename(name)) {
                 return {};
@@ -220,12 +311,15 @@ namespace Platform {
         return "这个系统暂不支持创建快捷方式";
     }
 
-    std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path& suggested) {
+        std::filesystem::path file = suggested;
+        file.replace_extension(".desktop");
+        return pickOne(SDL_FILEDIALOG_SAVEFILE, "快捷方式保存位置", file, {{"快捷方式 (*.desktop)", "desktop"}});
     }
 
-    std::optional<std::filesystem::path> pickIcon(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickIcon(const std::filesystem::path& initial) {
+        return pickOne(SDL_FILEDIALOG_OPENFILE, "选择快捷方式图标", folderOf(initial),
+                       {{"图标或图片", "png;svg;ico;jpg;jpeg;bmp;gif"}, {"所有文件", "*"}});
     }
 
     std::string launchArgument() {
@@ -296,33 +390,40 @@ namespace Platform {
         return false;
     }
 
-    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial) {
+        std::error_code error;
+        bool exists = !initial.empty() && std::filesystem::exists(initial, error);
+        return pickOne(SDL_FILEDIALOG_OPENFOLDER, "选择游戏目录", exists ? initial : std::filesystem::path(), {});
     }
 
-    std::optional<std::filesystem::path> pickJava(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickJava(const std::filesystem::path& initial) {
+        return pickOne(SDL_FILEDIALOG_OPENFILE, "选择 Java", folderOf(initial), {});
     }
 
-    std::vector<std::filesystem::path> pickFiles(const std::filesystem::path&, const wchar_t*, const wchar_t*,
-                                                 const wchar_t*) {
-        return {};
+    std::vector<std::filesystem::path> pickFiles(const std::filesystem::path& initial, const wchar_t* title,
+                                                 const wchar_t* typeName, const wchar_t* pattern) {
+        return showDialog(SDL_FILEDIALOG_OPENFILE, narrow(title), folderOf(initial),
+                          {{narrow(typeName), extensions(pattern)}, {"所有文件", "*"}}, true);
     }
 
-    std::optional<std::filesystem::path> pickSaveFile(const std::filesystem::path&, const wchar_t*, void*) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickSaveFile(const std::filesystem::path& suggested, const wchar_t* title,
+                                                      void*) {
+        return pickOne(SDL_FILEDIALOG_SAVEFILE, narrow(title), suggested,
+                       {{"日志文件 (*.log)", "log"}, {"文本文件 (*.txt)", "txt"}});
     }
 
-    std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path& suggested) {
+        return pickOne(SDL_FILEDIALOG_SAVEFILE, "导出整合包", suggested, {{"Modrinth 整合包 (*.mrpack)", "mrpack"}});
     }
 
-    std::optional<std::filesystem::path> pickImage(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickImage(const std::filesystem::path& initial) {
+        return pickOne(SDL_FILEDIALOG_OPENFILE, "选择背景图片", folderOf(initial),
+                       {{"图片", "png;jpg;jpeg;bmp;gif;webp"}, {"所有文件", "*"}});
     }
 
-    std::optional<std::filesystem::path> pickLogo(const std::filesystem::path&) {
-        return std::nullopt;
+    std::optional<std::filesystem::path> pickLogo(const std::filesystem::path& initial) {
+        return pickOne(SDL_FILEDIALOG_OPENFILE, "选择启动器标志", folderOf(initial),
+                       {{"图片", "png;svg;ico;jpg;jpeg;bmp;gif;webp"}, {"所有文件", "*"}});
     }
 
     std::optional<std::string> loadValue(const std::string& name) {

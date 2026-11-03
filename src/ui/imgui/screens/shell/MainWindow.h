@@ -11,6 +11,7 @@ namespace MainWindow {
 
     extern bool closeRequested;
     extern bool minimizeRequested;
+    extern float cornerRadius;
     extern bool maximizeRequested;
 
     void init();

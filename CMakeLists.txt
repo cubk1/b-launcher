@@ -257,7 +257,7 @@ target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERS
 if (WIN32)
     target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
 else ()
-    target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json)
+    target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json ZLIB::ZLIB)
     if (APPLE)
         target_link_libraries(b-launcher PRIVATE "-framework CoreServices")
     endif ()
