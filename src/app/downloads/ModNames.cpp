@@ -368,7 +368,11 @@ namespace ModNames {
             if (english.empty()) {
                 continue;
             }
-            const Name& name = entry(english);
+            Name& name = entry(english);
+            // Once original names have been shown during an outage, finish their lookups in the background.
+            if (paused && name.pending) {
+                name.retry = true;
+            }
             if (name.pending && !name.retry && !paused) {
                 done = false;
             }
