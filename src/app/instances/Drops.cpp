@@ -390,7 +390,16 @@ namespace Drops {
         dragged.clear();
     }
 
+    void hover(bool inside, int x, int y) {
+        over = inside && accepting();
+        hoverPoint = over ? POINT{x, y} : POINT{-1, -1};
+        if (!over) {
+            dragged.clear();
+        }
+    }
+
     void dropped(std::vector<std::filesystem::path> files, int x, int y) {
+        over = false;
         if (!accepting() || !acceptable(files)) {
             return;
         }
@@ -428,6 +437,11 @@ namespace Drops {
             packs += name.ends_with(".mrpack") ? 1 : 0;
             zips += name.ends_with(".zip") ? 1 : 0;
         }
+#if !defined(_WIN32)
+        if (dragged.empty()) {
+            return "松开以添加";
+        }
+#endif
         if (mods + packs + zips == 0) {
             return "不能添加这些文件";
         }

@@ -191,6 +191,7 @@ namespace ImGuiApp {
         window.onDrop = [](std::vector<std::filesystem::path> files, int x, int y) {
             Drops::dropped(std::move(files), x, y);
         };
+        window.onDragOver = [](bool inside, int x, int y) { Drops::hover(inside, x, y); };
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();

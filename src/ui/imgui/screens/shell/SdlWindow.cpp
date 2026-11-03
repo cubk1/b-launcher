@@ -265,13 +265,27 @@ void SdlWindow::handle(SDL_Event& event) {
         case SDL_EVENT_WINDOW_RESIZED:
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: refreshSize(); break;
-        case SDL_EVENT_DROP_BEGIN: dropping.clear(); return;
+        case SDL_EVENT_DROP_BEGIN:
+            dropping.clear();
+            if (onDragOver) {
+                onDragOver(true, -1, -1);
+            }
+            return;
+        case SDL_EVENT_DROP_POSITION:
+            if (onDragOver) {
+                float ratio = density();
+                onDragOver(true, (int) (event.drop.x * ratio), (int) (event.drop.y * ratio));
+            }
+            return;
         case SDL_EVENT_DROP_FILE:
             if (event.drop.data != nullptr) {
                 dropping.push_back(b_launcher_base::path_from_utf8(event.drop.data));
             }
             return;
         case SDL_EVENT_DROP_COMPLETE:
+            if (onDragOver) {
+                onDragOver(false, -1, -1);
+            }
             if (onDrop && !dropping.empty()) {
                 float ratio = density();
                 onDrop(std::move(dropping), (int) (event.drop.x * ratio), (int) (event.drop.y * ratio));
