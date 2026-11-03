@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
+#include <utility>
 
 namespace Page {
 
@@ -29,6 +30,11 @@ namespace Page {
         };
 
         std::unordered_map<std::string, ScrollState> scrolls;
+        std::string scrollPrefix;
+
+        std::string scrollKey(const std::string& id) {
+            return scrollPrefix + id;
+        }
 
         bool clipping = false;
         float clipTop = 0.0f;
@@ -271,6 +277,14 @@ namespace Page {
         return false;
     }
 
+    ScrollScope::ScrollScope(const std::string& name) : saved(scrollPrefix) {
+        scrollPrefix += name + "#";
+    }
+
+    ScrollScope::~ScrollScope() {
+        scrollPrefix = std::move(saved);
+    }
+
     Scroll::Scroll(const std::string& id, float top, float bottom, float contentHeight)
         : Scroll(id, top, bottom, contentHeight, columnLeft(), columnWidth()) {}
 
@@ -278,10 +292,10 @@ namespace Page {
         : top(top),
           bottom(bottom),
           offset(0.0f),
-          id(id),
+          id(scrollKey(id)),
           left(left),
           width(width) {
-        ScrollState& state = scrolls[id];
+        ScrollState& state = scrolls[this->id];
         maxScroll = std::max(0.0f, contentHeight - (bottom - top));
         if (NewUi::hit(left - 16.0f, top, width + 32.0f, bottom - top) && ImGui::GetIO().MouseWheel != 0.0f) {
             state.target -= ImGui::GetIO().MouseWheel * ROW_H * 1.5f;
@@ -292,12 +306,12 @@ namespace Page {
     }
 
     float scrollOffset(const std::string& id) {
-        auto found = scrolls.find(id);
+        auto found = scrolls.find(scrollKey(id));
         return found != scrolls.end() ? UiRender::snapLayout(found->second.shown) : 0.0f;
     }
 
     void scrollTo(const std::string& id, float target) {
-        scrolls[id].target = target;
+        scrolls[scrollKey(id)].target = target;
     }
 
     bool Scroll::begin() {

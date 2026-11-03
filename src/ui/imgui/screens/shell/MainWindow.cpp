@@ -1296,6 +1296,7 @@ namespace MainWindow {
         float savedSmooth = listSmooth;
         bool savedRestored = scrollRestored;
         size_t savedControls = titleControls.size();
+        Page::ScrollScope previewScroll("miniature");
 
         UiRender::scissor(x, y, w, h);
         layoutWidth = w / scale;

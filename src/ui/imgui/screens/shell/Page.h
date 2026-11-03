@@ -62,6 +62,18 @@ namespace Page {
     float scrollOffset(const std::string& id);
     void scrollTo(const std::string& id, float target);
 
+    // Separate scroll positions and scrollbar interaction IDs for another rendering of the same pages.
+    class ScrollScope {
+    public:
+        explicit ScrollScope(const std::string& name);
+        ~ScrollScope();
+        ScrollScope(const ScrollScope&) = delete;
+        ScrollScope& operator=(const ScrollScope&) = delete;
+
+    private:
+        std::string saved;
+    };
+
     class Scroll {
     public:
         float top;
