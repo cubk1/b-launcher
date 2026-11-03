@@ -1,13 +1,5 @@
 #include "app/system/Redirect.h"
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "app/system/Sockets.h"
 
 #include <algorithm>
 #include <cstring>
@@ -35,16 +27,25 @@ namespace {
     };
 
     bool nonBlocking(SOCKET socket) {
+#if defined(_WIN32)
         u_long enabled = 1;
         return ioctlsocket(socket, FIONBIO, &enabled) == 0;
+#else
+        int flags = fcntl(socket, F_GETFL, 0);
+        return flags >= 0 && fcntl(socket, F_SETFL, flags | O_NONBLOCK) == 0;
+#endif
     }
 
     bool startWinsock() {
+#if defined(_WIN32)
         static bool started = [] {
             WSADATA data;
             return WSAStartup(MAKEWORD(2, 2), &data) == 0;
         }();
         return started;
+#else
+        return true;
+#endif
     }
 
     SOCKET listenOn(int family, int port, int* failure = nullptr) {
@@ -54,8 +55,16 @@ namespace {
             if (failure) *failure = WSAGetLastError();
             return INVALID_SOCKET;
         }
+#if defined(_WIN32)
         BOOL exclusive = TRUE;
         setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*) &exclusive, sizeof(exclusive));
+#else
+        int reuse = 1;
+        setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#if defined(SO_NOSIGPIPE)
+        setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &reuse, sizeof(reuse));
+#endif
+#endif
         int bound;
         if (family == AF_INET6) {
             DWORD only = 1;
@@ -211,21 +220,27 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
         fd_set writable;
         FD_ZERO(&readable);
         FD_ZERO(&writable);
+        int listening = 0;
+        SOCKET highest = 0;
         for (unsigned long long s : sockets) {
             if ((SOCKET) s != INVALID_SOCKET) {
                 FD_SET((SOCKET) s, &readable);
+                highest = std::max(highest, (SOCKET) s);
+                listening++;
             }
         }
-        if (readable.fd_count == 0 && clients.empty()) {
+        if (listening == 0 && clients.empty()) {
             return blb::make_error(blb::errc::network, "没有在等待登录");
         }
         for (const auto& client : clients) {
             if (client->reply.empty()) FD_SET(client->socket, &readable);
             else FD_SET(client->socket, &writable);
+            highest = std::max(highest, client->socket);
         }
         auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - Clock::now()).count();
-        timeval step = {0, (long) std::clamp<long long>(remaining, 0, 200000)};
-        int ready = select(0, &readable, &writable, nullptr, &step);
+        timeval step = {};
+        step.tv_usec = (decltype(step.tv_usec)) std::clamp<long long>(remaining, 0, 200000);
+        int ready = select((int) highest + 1, &readable, &writable, nullptr, &step);
         if (ready < 0 && WSAGetLastError() != WSAEINTR) {
             return blb::make_error(blb::errc::network, "无法等待浏览器登录");
         }
@@ -257,7 +272,7 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
             }
             if (client->reply.empty() && FD_ISSET(client->socket, &readable)) {
                 char buffer[2048];
-                int n = recv(client->socket, buffer, sizeof(buffer), 0);
+                int n = (int) recv(client->socket, buffer, sizeof(buffer), 0);
                 if (n <= 0) {
                     client->done = n == 0 || WSAGetLastError() != WSAEWOULDBLOCK;
                     continue;
@@ -289,7 +304,11 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
             }
             if (!client->reply.empty() && (client->sent == 0 || FD_ISSET(client->socket, &writable))) {
                 int amount = (int) std::min<size_t>(16384, client->reply.size() - client->sent);
-                int n = send(client->socket, client->reply.data() + client->sent, amount, 0);
+#if defined(MSG_NOSIGNAL)
+                int n = (int) send(client->socket, client->reply.data() + client->sent, amount, MSG_NOSIGNAL);
+#else
+                int n = (int) send(client->socket, client->reply.data() + client->sent, amount, 0);
+#endif
                 if (n > 0) client->sent += (size_t) n;
                 bool failed = n <= 0 && (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK);
                 if (failed || client->sent == client->reply.size()) {
