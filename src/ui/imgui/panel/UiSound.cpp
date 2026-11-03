@@ -1,5 +1,6 @@
 #include "UiSound.h"
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -8,6 +9,10 @@
 #endif
 #include <windows.h>
 #include <mmsystem.h>
+#else
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_init.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -23,6 +28,49 @@ namespace UiSound {
         std::vector<unsigned char> sounds[KIND_COUNT];
         int requested = -1;
         bool requestedOwn = false;
+#if !defined(_WIN32)
+        SDL_AudioSpec specs[KIND_COUNT];
+        std::vector<unsigned char> samples[KIND_COUNT];
+        SDL_AudioStream* stream = nullptr;
+        bool unavailable = false;
+
+        bool decode(Kind kind) {
+            samples[kind].clear();
+            if (sounds[kind].empty()) {
+                return false;
+            }
+            Uint8* buffer = nullptr;
+            Uint32 length = 0;
+            SDL_IOStream* io = SDL_IOFromConstMem(sounds[kind].data(), sounds[kind].size());
+            if (io == nullptr || !SDL_LoadWAV_IO(io, true, &specs[kind], &buffer, &length)) {
+                return false;
+            }
+            samples[kind].assign(buffer, buffer + length);
+            SDL_free(buffer);
+            return true;
+        }
+
+        void play(Kind kind) {
+            if (unavailable || samples[kind].empty()) {
+                return;
+            }
+            if (stream == nullptr) {
+                if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+                    unavailable = true;
+                    return;
+                }
+                stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &specs[kind], nullptr, nullptr);
+                if (stream == nullptr) {
+                    unavailable = true;
+                    return;
+                }
+                SDL_ResumeAudioStreamDevice(stream);
+            }
+            SDL_ClearAudioStream(stream);
+            SDL_SetAudioStreamFormat(stream, &specs[kind], nullptr);
+            SDL_PutAudioStreamData(stream, samples[kind].data(), (int) samples[kind].size());
+        }
+#endif
 
         uint32_t readU32(const unsigned char* p) {
             return (uint32_t) p[0] | ((uint32_t) p[1] << 8) | ((uint32_t) p[2] << 16) | ((uint32_t) p[3] << 24);
@@ -81,6 +129,9 @@ namespace UiSound {
         }
         std::vector<unsigned char> data(wav, wav + size);
         sounds[kind] = scale(data, volume) ? std::move(data) : std::vector<unsigned char>();
+#if !defined(_WIN32)
+        decode(kind);
+#endif
     }
 
     void request(Kind kind) {
@@ -101,7 +152,11 @@ namespace UiSound {
         if (!enabled || kind < 0 || sounds[kind].empty()) {
             return;
         }
+#if defined(_WIN32)
         PlaySoundW((LPCWSTR) sounds[kind].data(), nullptr, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+#else
+        play((Kind) kind);
+#endif
     }
 
     Kind forLabel(const std::string& label) {
