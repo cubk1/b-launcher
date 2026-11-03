@@ -35,6 +35,7 @@
 #include <core/base/strings.hpp>
 #include <core/network/http_client.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -43,6 +44,11 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include "app/system/PlatformPosix.h"
+
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -237,7 +243,11 @@ namespace Homepage {
             if (inner == "date" || inner == "time") {
                 std::time_t now = std::time(nullptr);
                 std::tm local{};
+#if defined(_WIN32)
                 localtime_s(&local, &now);
+#else
+                localtime_r(&now, &local);
+#endif
                 char text[32];
                 std::strftime(text, sizeof(text), inner == "date" ? "%Y/%m/%d" : "%H:%M:%S", &local);
                 return std::string(text);
@@ -522,10 +532,22 @@ namespace Homepage {
             }
             showModal("运行程序", "主页请求运行：\n" + path + (args.empty() ? std::string() : " " + args), "运行",
                       [path, args] {
+#if defined(_WIN32)
                           std::wstring file = blb::path_from_utf8(path).wstring();
                           std::wstring parameters = blb::path_from_utf8(args).wstring();
                           ShellExecuteW(nullptr, L"open", file.c_str(),
                                         parameters.empty() ? nullptr : parameters.c_str(), nullptr, SW_SHOWNORMAL);
+#else
+                        if (access(path.c_str(), X_OK) != 0) {
+                            Platform::open(blb::path_from_utf8(path));
+                            return;
+                        }
+                        std::vector<std::string> command{path};
+                        for (std::string& arg : blb::split_arguments(args)) {
+                            command.push_back(std::move(arg));
+                        }
+                        Platform::spawnDetached(command);
+#endif
                       });
         }
 

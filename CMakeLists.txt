@@ -134,6 +134,8 @@ target_include_directories(ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CUR
 target_link_libraries(ui PUBLIC imgui)
 if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
+else ()
+    target_link_libraries(ui PUBLIC SDL3::SDL3-static)
 endif ()
 
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/system/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES

@@ -94,6 +94,7 @@ namespace UiGL {
     void* extensionProc(const char* name);
     bool load(LoaderFn loader = nullptr);
     bool loaded();
+    void* currentContext();
 
     extern GLuint(UGL_APIENTRY* CreateShader)(GLenum type);
     extern void(UGL_APIENTRY* ShaderSource)(GLuint shader, GLsizei count, const GLchar* const* string,

@@ -1,5 +1,9 @@
 #include "UiGL.h"
 
+#if !defined(_WIN32)
+#include <SDL3/SDL_video.h>
+#endif
+
 namespace UiGL {
 
     GLuint(UGL_APIENTRY* CreateShader)(GLenum) = nullptr;
@@ -69,8 +73,7 @@ namespace UiGL {
         return value == 0 || value == 1 || value == 2 || value == 3 || value == -1
                 ? nullptr : reinterpret_cast<void*>(proc);
 #else
-        (void) name;
-        return nullptr;
+        return reinterpret_cast<void*>(SDL_GL_GetProcAddress(name));
 #endif
     }
 
@@ -84,10 +87,18 @@ namespace UiGL {
         return proc;
     }
 #else
-    static void* defaultLoader(const char*) {
-        return nullptr;
+    static void* defaultLoader(const char* name) {
+        return extensionProc(name);
     }
 #endif
+
+    void* currentContext() {
+#if defined(_WIN32)
+        return wglGetCurrentContext();
+#else
+        return SDL_GL_GetCurrentContext();
+#endif
+    }
 
     template <typename T>
     static bool bind(T& target, LoaderFn loader, const char* name) {
