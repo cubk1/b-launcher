@@ -205,7 +205,8 @@ namespace InstanceMods {
                     version.empty() ? 0.0f : UiFont::width(version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 8.0f;
             float x = Page::left() + 48.0f;
             float nameRoom = std::max(60.0f, limit - x - versionW - tagsW - 4.0f);
-            std::string name = UiFont::fitEnd(mod.info.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, nameRoom);
+            std::string name =
+                    UiFont::fitEnd(ModManager::displayName(mod), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, nameRoom);
             float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
@@ -409,7 +410,7 @@ namespace InstanceMods {
         std::vector<const Mods::Mod*> filtered(const Mods::List& list, const std::string& query) {
             std::vector<const Mods::Mod*> shown;
             for (const Mods::Mod& mod : list.mods) {
-                if (Mods::matches(mod, query)) {
+                if (ModManager::matches(mod, query)) {
                     shown.push_back(&mod);
                 }
             }
@@ -440,6 +441,10 @@ namespace InstanceMods {
                 } else {
                     message("还没有模组，点击“添加”或把 .jar 文件拖进窗口", top, false);
                 }
+                return;
+            }
+            if (!ModManager::namesReady(list)) {
+                message("正在读取模组…", top, true);
                 return;
             }
             std::vector<const Mods::Mod*> shown = filtered(list, query);

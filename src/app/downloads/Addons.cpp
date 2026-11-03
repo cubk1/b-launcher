@@ -1,5 +1,6 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/Recent.h"
 #include "app/system/CallbackQueue.h"
@@ -265,6 +266,7 @@ namespace Addons {
     void poll() {
         Modrinth::poll();
         CurseForge::poll();
+        ModNames::poll();
         finished.poll();
         // An icon still on its way, or that failed, is only its address.
         iconUse.trim(icons, KEPT_ICONS, [](const Icon& icon) { return icon.pixels != nullptr; });
@@ -285,5 +287,6 @@ namespace Addons {
         iconWorkers.clear();
         Modrinth::shutdown();
         CurseForge::shutdown();
+        ModNames::shutdown();
     }
 }

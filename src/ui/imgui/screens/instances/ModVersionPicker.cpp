@@ -149,9 +149,9 @@ namespace ModVersionPicker {
             const std::string title = "切换版本";
             UiRender::textY(title, x + PAD, y + 16.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             float nameX = x + PAD + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            UiRender::textY(
-                    UiFont::fitEnd(mod->info.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, x + w - PAD - nameX), nameX,
-                    y + 16.0f, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(UiFont::fitEnd(ModManager::displayName(*mod), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                           x + w - PAD - nameX),
+                            nameX, y + 16.0f, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             if (list(DIALOG, pickerKey, *mod, x + PAD, y + 54.0f, w - 2.0f * PAD, h - 54.0f - 14.0f, false)) {
                 Dialog::close();
             }

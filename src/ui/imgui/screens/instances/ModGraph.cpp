@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/instances/ModGraph.h"
+#include "app/downloads/ModNames.h"
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "app/system/Platform.h"
@@ -254,7 +255,8 @@ namespace ModGraph {
             for (const Mods::Mod& mod : list.mods) {
                 identified += ModManager::remote(mod) != nullptr ? 1 : 0;
             }
-            return out + "|" + std::to_string(identified) + "|" + std::to_string(ModManager::metadataRevision());
+            return out + "|" + std::to_string(identified) + "|" + std::to_string(ModManager::metadataRevision()) + "|" +
+                    std::to_string(ModNames::revision());
         }
 
         float headerOf(const Cluster& cluster) {
@@ -479,7 +481,7 @@ namespace ModGraph {
                 Node node;
                 node.id = "file:" + stemOf(mod.info.file);
                 node.mod = (int) i;
-                node.name = mod.info.name;
+                node.name = ModManager::displayName(mod);
                 int index = (int) nodes.size();
                 if (const ModManager::Remote* remote = ModManager::remote(mod)) {
                     node.projectId = remote->projectId;
@@ -782,7 +784,7 @@ namespace ModGraph {
                 return true;
             }
             if (node.kind == Kind::Local) {
-                return Mods::matches(list.mods[(size_t) node.mod], query);
+                return ModManager::matches(list.mods[(size_t) node.mod], query);
             }
             return blb::icontains(nameOf(node), query);
         }
@@ -1032,7 +1034,7 @@ namespace ModGraph {
             float room = std::max(0.0f, (right - textX) / scale);
             version = UiFont::fitEnd(version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room * 0.45f);
             float versionW = UiFont::width(version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            std::string name = UiFont::fitEnd(mod.info.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+            std::string name = UiFont::fitEnd(ModManager::displayName(mod), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                               std::max(0.0f, room - versionW - 8.0f));
             float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             zoomText(name, textX, y, h, UiTheme::textPrimary(), UiWidgets::TEXT_CONTROL, scale, scale);
@@ -1064,6 +1066,14 @@ namespace ModGraph {
                         lines.back() = UiFont::fitEnd(tail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, CARD_W - 28.0f);
                     }
                     detail.about = lines;
+                }
+                std::string chinese = ModManager::chineseName(*mod);
+                if (!chinese.empty()) {
+                    if (ModNames::original()) {
+                        detail.rows.push_back({"中文名", chinese});
+                    } else {
+                        detail.rows.push_back({"原名", mod->info.name});
+                    }
                 }
                 std::string authors = joined(mod->info.authors);
                 if (!authors.empty()) {
@@ -1227,6 +1237,12 @@ namespace ModGraph {
             float linkX = right - 26.0f;
             if (Page::iconButton("mods#graph#card#reveal", 0xf07c, "在文件夹中显示", linkX, linkY, blocked)) {
                 Platform::reveal(mod->info.file);
+            }
+            if (long long wiki = ModManager::wikiId(*mod); wiki > 0) {
+                linkX -= 30.0f;
+                if (Page::iconButton("mods#graph#card#wiki", 0xf02d, "在 MC 百科上查看", linkX, linkY, blocked)) {
+                    Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
+                }
             }
             const std::tuple<std::string, int, const char*> links[] = {{mod->info.homepage, 0xf0ac, "主页"},
                                                                        {mod->info.sources, 0xf121, "源代码"},

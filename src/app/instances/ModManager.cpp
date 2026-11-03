@@ -1,5 +1,6 @@
 #include "app/instances/ModManager.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Instances.h"
@@ -952,6 +953,56 @@ namespace ModManager {
         return entry != nullptr ? entry->info.minecraft_version : std::string();
     }
 
+    namespace {
+        std::string nameKey(const Mods::Mod& mod) {
+            if (!ModNames::zh(mod.info.name).empty()) {
+                return mod.info.name;
+            }
+            if (const Remote* found = remote(mod)) {
+                const Project* info = project(found->projectId);
+                if (info != nullptr && !info->title.empty() && info->title != mod.info.name &&
+                    !ModNames::zh(info->title).empty()) {
+                    return info->title;
+                }
+            }
+            return std::string();
+        }
+    }
+
+    std::string chineseName(const Mods::Mod& mod) {
+        std::string key = nameKey(mod);
+        return key.empty() ? std::string() : ModNames::zh(key);
+    }
+
+    std::string displayName(const Mods::Mod& mod) {
+        if (ModNames::original()) {
+            return mod.info.name;
+        }
+        std::string zh = chineseName(mod);
+        return zh.empty() ? mod.info.name : zh;
+    }
+
+    long long wikiId(const Mods::Mod& mod) {
+        std::string key = nameKey(mod);
+        return key.empty() ? 0 : ModNames::wikiId(key);
+    }
+
+    bool matches(const Mods::Mod& mod, const std::string& query) {
+        return Mods::matches(mod, query) || blb::icontains(chineseName(mod), query);
+    }
+
+    bool namesReady(const Mods::List& list) {
+        if (ModNames::original()) {
+            return true;
+        }
+        std::vector<std::string> names;
+        names.reserve(list.mods.size());
+        for (const Mods::Mod& mod : list.mods) {
+            names.push_back(mod.info.name);
+        }
+        return ModNames::resolved(names);
+    }
+
     const Addons::Versions& versions(const std::string& key, const std::string& projectId) {
         std::string id = key + "|" + projectId;
         if (versionLists.count(id) == 0) {
@@ -1007,7 +1058,7 @@ namespace ModManager {
         const Remote* shown = current != nullptr ? current : remote(*mod);
         Change change;
         change.file = mod->info.file;
-        change.name = mod->info.name;
+        change.name = displayName(*mod);
         change.projectId = target.projectId;
         change.from = shown != nullptr ? shown->number : mod->info.version;
         change.disabled = !mod->info.enabled;

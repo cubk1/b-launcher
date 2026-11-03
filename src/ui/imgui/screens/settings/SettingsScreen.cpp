@@ -6,6 +6,7 @@
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
 #include "app/system/Config.h"
+#include "app/downloads/ModNames.h"
 #include "app/system/DiskScan.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
@@ -290,7 +291,7 @@ namespace SettingsScreen {
         }
 
         int appearanceCount() {
-            return Appearance::backgroundImage() ? 11 : 10;
+            return Appearance::backgroundImage() ? 12 : 11;
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -410,6 +411,15 @@ namespace SettingsScreen {
                                }
                                return options;
                            }),
+                   y, blocked);
+            y += Page::ROW_H;
+
+            Page::label("模组名称", y);
+            select("settings#modNames",
+                   std::make_shared<ModeBinding>(
+                           "settings#modNames", [] { return std::string(ModNames::original() ? "原名" : "中文名"); },
+                           [](const std::string& value) { ModNames::setOriginal(value == "原名"); },
+                           [] { return std::vector<std::string>{"中文名", "原名"}; }),
                    y, blocked);
             y += Page::ROW_H;
 

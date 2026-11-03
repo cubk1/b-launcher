@@ -60,6 +60,11 @@ namespace ModManager {
     std::string dependencyProject(const Addons::Dependency& dependency);
     std::string title(const std::string& projectId);
     std::string gameVersion(const std::string& key);
+    std::string chineseName(const Mods::Mod& mod);
+    std::string displayName(const Mods::Mod& mod);
+    long long wikiId(const Mods::Mod& mod);
+    bool matches(const Mods::Mod& mod, const std::string& query);
+    bool namesReady(const Mods::List& list);
 
     const Addons::Versions& versions(const std::string& key, const std::string& projectId);
     void refreshVersions(const std::string& key, const std::string& projectId);

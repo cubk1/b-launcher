@@ -5,6 +5,7 @@
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -960,9 +961,17 @@ namespace DownloadsScreen {
                                   UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
             float limit = downloadsX - 22.0f;
 
-            std::string title = fitEnd(hit.title, limit - textX, UiWidgets::TEXT_BODY);
+            std::string chinese = ModNames::applies(query.kind) ? ModNames::zh(hit.title) : std::string();
+            bool original = chinese.empty() || ModNames::original();
+            std::string title = fitEnd(original ? hit.title : chinese, limit - textX, UiWidgets::TEXT_BODY);
             UiRender::textY(title, textX, titleY, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
             float tagX = textX + UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
+            if (!chinese.empty() && tagX < limit) {
+                std::string other = fitEnd(original ? chinese : hit.title, limit - tagX, UiWidgets::TEXT_SMALL);
+                UiRender::textY(other, tagX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                tagX += UiFont::width(other, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 8.0f;
+            }
             for (const std::string& category : hit.categories) {
                 float tagW = tag(categoryLabel(category), tagX, titleCentre, limit, UiTheme::surfaceRaised(),
                                  UiTheme::textSecondary());
@@ -1073,22 +1082,32 @@ namespace DownloadsScreen {
 
         void resultsView(bool covered) {
             followTyping();
-            const Addons::Results& results = Addons::search(source, query);
+            Addons::Query effective = query;
+            bool translating = false;
+            if (ModNames::applies(query.kind)) {
+                ModNames::Rewrite rewrite = ModNames::rewrite(query.text);
+                translating = rewrite.waiting;
+                effective.text = rewrite.text;
+            }
+            float y = Page::TOP;
+            float listTop = y + FILTER_H + 10.0f;
+            const float pagesH = 28.0f;
+            float pagesY = MainWindow::height() - 12.0f - pagesH;
+            float listBottom = pagesY - 8.0f;
+            static const Addons::Results waiting;
+            const Addons::Results& results = translating ? waiting : Addons::search(source, effective);
             static const Addons::Results* shownFrom = nullptr;
             static bool shownReady = false;
-            bool ready = results.status == Addons::Status::Ready;
+            bool named = results.status != Addons::Status::Ready || !ModNames::applies(query.kind) ||
+                    ModNames::original() || ModNames::resolved(results.hits);
+            bool ready = results.status == Addons::Status::Ready && named;
             if (ready && (shownFrom != &results || !shownReady)) {
                 shown = results;
             }
             shownFrom = &results;
             shownReady = ready;
-            bool loading = results.status == Addons::Status::Loading;
-            float y = Page::TOP;
-            filters(y, shown.total, !shown.hits.empty() || results.status == Addons::Status::Ready, covered);
-            float listTop = y + FILTER_H + 10.0f;
-            const float pagesH = 28.0f;
-            float pagesY = MainWindow::height() - 12.0f - pagesH;
-            float listBottom = pagesY - 8.0f;
+            bool loading = results.status == Addons::Status::Loading || !named;
+            filters(y, shown.total, !shown.hits.empty() || ready, covered);
 
             if (results.status == Addons::Status::Failed) {
                 message("搜索失败：" + results.error, UiTheme::danger(), listTop, listBottom, false);
@@ -1096,7 +1115,7 @@ namespace DownloadsScreen {
                 float w = Page::buttonWidth(retry);
                 if (Page::button("downloads#retry", retry, mainX() + (mainW() - w) * 0.5f,
                                  (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
-                    Addons::refresh(source, query);
+                    Addons::refresh(source, effective);
                 }
                 return;
             }
@@ -1309,16 +1328,34 @@ namespace DownloadsScreen {
             projectIcon(project.iconUrl, iconX, Page::TOP, 32.0f);
             float textX = iconX + 44.0f;
             float linkX = Page::right() - 28.0f;
-            UiRender::textY(fitEnd(project.title, linkX - 8.0f - textX, Page::TITLE_SIZE), textX, Page::TOP - 2.0f,
-                            22.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
+            bool named = ModNames::applies(query.kind);
+            std::string chinese = named ? ModNames::zh(project.title) : std::string();
+            long long wiki = named ? ModNames::wikiId(project.title) : 0;
+            float wikiX = linkX - 32.0f;
+            float textRight = (wiki > 0 ? wikiX : linkX) - 8.0f;
+            bool original = chinese.empty() || ModNames::original();
+            std::string heading = fitEnd(original ? project.title : chinese, textRight - textX, Page::TITLE_SIZE);
+            UiRender::textY(heading, textX, Page::TOP - 2.0f, 22.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            Page::TITLE_SIZE);
+            float englishX = textX + UiFont::width(heading, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
+            if (!chinese.empty() && englishX < textRight) {
+                UiRender::textY(
+                        fitEnd(original ? chinese : project.title, textRight - englishX, UiWidgets::TEXT_CONTROL),
+                        englishX, Page::TOP - 2.0f, 22.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                        UiWidgets::TEXT_CONTROL);
+            }
             std::string byline = project.author.empty() ? std::string() : project.author + "  ";
             byline += Addons::count(project.downloads) + " 次下载";
-            UiRender::textY(fitEnd(byline, linkX - 8.0f - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f,
-                            16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiRender::textY(fitEnd(byline, textRight - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
+                            UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             std::string site = std::string("在 ") + Addons::sourceName(source) + " 上查看";
             if (Page::iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP + 2.0f, covered) &&
                 !project.pageUrl.empty()) {
                 Platform::openUrl(project.pageUrl);
+            }
+            if (wiki > 0 &&
+                Page::iconButton("downloads#wiki", 0xf02d, "在 MC 百科上查看", wikiX, Page::TOP + 2.0f, covered)) {
+                Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
             }
 
             float rowY = Page::TOP + 46.0f;
