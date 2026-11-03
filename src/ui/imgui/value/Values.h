@@ -69,6 +69,11 @@ public:
         return 0;
     }
 
+    virtual float optionImageRadius(const std::string& option) {
+        (void) option;
+        return 0.0f;
+    }
+
     virtual std::string optionDetail(const std::string& option) {
         (void) option;
         return std::string();

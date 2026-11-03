@@ -9,6 +9,7 @@
 #include "UiTheme.h"
 #include "UiWidgets.h"
 #include "UiKeys.h"
+#include "../gl/ShaderUtil.h"
 #include "../menu/ContextMenu.h"
 #include "../menu/MenuItems.h"
 #include "../overlay/UiOverlays.h"
@@ -1027,7 +1028,15 @@ namespace NewUi {
             UiWidgets::anchorGlyph(option, optionTextX + 6, ry + 16, optionColor);
             optionTextX += 18;
         } else if (optionImage != 0) {
-            UiRender::texture(optionImage, optionTextX - 1, ry + 9, 14, 14);
+            float imageRadius = popupChoice->optionImageRadius(option);
+            if (imageRadius > 0.0f) {
+                ShaderUtil::roundTex(UiRender::transformX(optionTextX - 1), UiRender::transformY(ry + 9),
+                                     UiRender::transformW(14.0f), UiRender::transformW(14.0f),
+                                     UiRender::transformW(imageRadius), optionImage, 0.0f, 0.0f, 1.0f, 1.0f,
+                                     UiRender::applyAlpha(0xFFFFFFFFu));
+            } else {
+                UiRender::texture(optionImage, optionTextX - 1, ry + 9, 14, 14);
+            }
             optionTextX += 18;
         } else if (!optionGlyph.empty()) {
             UiWidgets::iconBeside(optionGlyph, optionTextX + 6, label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, ry, 32,

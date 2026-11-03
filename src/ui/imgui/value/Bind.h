@@ -26,6 +26,7 @@ public:
     std::function<std::vector<std::string>()> source;
     std::unordered_map<std::string, std::string> icons;
     std::unordered_map<std::string, uint32_t> images;
+    std::unordered_map<std::string, float> imageRadii;
     bool anchors;
 
     ModeBinding(const std::string& owner, std::function<std::string()> getter,
@@ -73,10 +74,11 @@ public:
     std::string label() override;
     std::string optionIcon(const std::string& option) override;
     uint32_t optionImage(const std::string& option) override;
+    float optionImageRadius(const std::string& option) override;
     bool anchorGlyphs() override;
 
     ModeBinding& icon(const std::string& option, int codepoint);
-    ModeBinding& image(const std::string& option, uint32_t texture);
+    ModeBinding& image(const std::string& option, uint32_t texture, float radius = 0.0f);
     ModeBinding& anchorIcons();
 };
 

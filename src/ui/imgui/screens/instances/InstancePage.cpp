@@ -824,7 +824,7 @@ namespace InstancePage {
             binding->icon(FOLLOW_ACCOUNT, 0xf0c1);
             for (const blb::auth::account& account : Accounts::list()) {
                 if (uint32_t face = Textures::of(Accounts::face(account))) {
-                    binding->image(accountLabel(account), face);
+                    binding->image(accountLabel(account), face, 3.5f);
                 }
             }
             return binding;

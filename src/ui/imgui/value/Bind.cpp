@@ -98,8 +98,14 @@ uint32_t ModeBinding::optionImage(const std::string& option) {
     return found == images.end() ? 0u : found->second;
 }
 
-ModeBinding& ModeBinding::image(const std::string& option, uint32_t texture) {
+float ModeBinding::optionImageRadius(const std::string& option) {
+    auto found = imageRadii.find(option);
+    return found == imageRadii.end() ? 0.0f : found->second;
+}
+
+ModeBinding& ModeBinding::image(const std::string& option, uint32_t texture, float radius) {
     images[option] = texture;
+    imageRadii[option] = radius;
     return *this;
 }
 
