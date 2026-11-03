@@ -18,6 +18,7 @@
 #include <core/network/download_client.hpp>
 #include <core/network/mirror_provider.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -25,8 +26,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
 
 #include <algorithm>
+#include <cwctype>
 #include <atomic>
 #include <cctype>
 #include <functional>
@@ -206,6 +209,7 @@ namespace ProjectInstaller {
             return name.starts_with("__MACOSX/");
         }
 
+#if defined(_WIN32)
         bool validUtf8(std::string_view text) {
             return text.empty() ||
                     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), (int) text.size(), nullptr, 0) > 0;
@@ -245,9 +249,48 @@ namespace ProjectInstaller {
             MultiByteToWideChar(page, flags, bytes.data(), (int) bytes.size(), buffer.data(), wide);
             return blb::detail::wide_to_utf8(buffer);
         }
+#else
+        bool validUtf8(std::string_view text) {
+            for (size_t i = 0; i < text.size();) {
+                unsigned char lead = (unsigned char) text[i];
+                size_t more = lead < 0x80   ? 0
+                        : (lead >> 5) == 6  ? 1
+                        : (lead >> 4) == 14 ? 2
+                        : (lead >> 3) == 30 ? 3
+                                            : 4;
+                if (more == 4 || i + more >= text.size()) {
+                    return false;
+                }
+                for (size_t k = 1; k <= more; k++) {
+                    if (((unsigned char) text[i + k] & 0xC0) != 0x80) {
+                        return false;
+                    }
+                }
+                i += more + 1;
+            }
+            return true;
+        }
+
+        std::string fromLatin1(const std::string& bytes) {
+            std::string out;
+            for (unsigned char c : bytes) {
+                if (c < 0x80) {
+                    out += (char) c;
+                } else {
+                    out += (char) (0xC0 | (c >> 6));
+                    out += (char) (0x80 | (c & 0x3F));
+                }
+            }
+            return out;
+        }
+#endif
 
         std::string entryName(const std::string& raw) {
+#if defined(_WIN32)
             std::string name = validUtf8(raw) ? raw : fromCodePage(raw, legacyPage(raw));
+#else
+            std::string name = validUtf8(raw) ? raw : fromLatin1(raw);
+#endif
             std::replace(name.begin(), name.end(), '\\', '/');
             return name;
         }
@@ -567,9 +610,19 @@ namespace ProjectInstaller {
                 }
                 auto task = taskFor(*file, target);
                 auto name = task.target.filename().wstring();
-                if (std::any_of(names.begin(), names.end(), [&](const auto& existing) {
+                if (std::any_of(
+                            names.begin(), names.end(),
+                            [&](const auto& existing) {
+#if defined(_WIN32)
                         return CompareStringOrdinal(existing.c_str(), -1, name.c_str(), -1, TRUE) == CSTR_EQUAL;
-                    })) {
+#else
+                                return existing.size() == name.size() &&
+                                        std::equal(existing.begin(), existing.end(), name.begin(),
+                                                   [](wchar_t x, wchar_t y) {
+                                                       return std::towlower(x) == std::towlower(y);
+                                                   });
+#endif
+                            })) {
                     throw std::runtime_error("模组文件名冲突：" + file->filename);
                 }
                 names.push_back(std::move(name));
