@@ -33,6 +33,7 @@ namespace DiskScan {
     struct Helper {
         std::wstring output;
         std::wstring drives;
+        std::wstring cancelEvent;
     };
 
     const std::vector<Drive>& drives();

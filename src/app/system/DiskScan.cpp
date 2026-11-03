@@ -20,6 +20,7 @@
 #include <objbase.h>
 #include <winioctl.h>
 #include <shellapi.h>
+#include <sddl.h>
 
 #include <algorithm>
 #include <atomic>
@@ -62,6 +63,7 @@ namespace DiskScan {
         };
 
         using Handle = std::unique_ptr<void, HandleCloser>;
+        using Cancelled = std::function<bool()>;
 
         struct Volume {
             wchar_t letter = 0;
@@ -206,7 +208,8 @@ namespace DiskScan {
             return ERROR_SUCCESS;
         }
 
-        DWORD scanVolume(const Volume& target, Found& found, const std::function<void(uint64_t)>& advance) {
+        DWORD scanVolume(const Volume& target, Found& found, const std::function<void(uint64_t)>& advance,
+                         const Cancelled& cancelled) {
             std::wstring drive = std::wstring(1, target.letter) + L":\\";
             uint64_t root = target.root;
             HANDLE volume = target.handle.get();
@@ -220,6 +223,9 @@ namespace DiskScan {
             MFT_ENUM_DATA_V0 range = {0, 0, target.journal.NextUsn};
             DWORD bytes = 0;
             for (;;) {
+                if (cancelled()) {
+                    return ERROR_CANCELLED;
+                }
                 if (!DeviceIoControl(volume, FSCTL_ENUM_USN_DATA, &range, sizeof(range), buffer.data(), BUFFER_BYTES,
                                      &bytes, nullptr)) {
                     DWORD error = GetLastError();
@@ -284,6 +290,9 @@ namespace DiskScan {
                 return path;
             };
             for (uint64_t parent : javaParents) {
+                if (cancelled()) {
+                    return ERROR_CANCELLED;
+                }
                 auto bin = dirs.find(parent);
                 if (bin == dirs.end() || !same(names.data() + bin->second.offset, bin->second.length, L"bin")) {
                     continue;
@@ -294,6 +303,9 @@ namespace DiskScan {
                 }
             }
             for (uint64_t game : games) {
+                if (cancelled()) {
+                    return ERROR_CANCELLED;
+                }
                 std::wstring path = pathOf(game);
                 if (!path.empty() && !ignored(path + L"\\")) {
                     found.folders.emplace_back(path);
@@ -302,14 +314,18 @@ namespace DiskScan {
             return ERROR_SUCCESS;
         }
 
-        Found scanAll(const std::wstring& letters, const Report& report) {
+        Found scanAll(const std::wstring& letters, const Report& report, const Cancelled& cancelled) {
             Found found;
             std::vector<Volume> volumes;
             auto fail = [&](wchar_t letter, DWORD error) {
-                found.error = "无法读取 " + std::string(1, (char) letter) + ": 盘：" +
-                        blb::detail::last_error_message(error);
+                found.error = error == ERROR_CANCELLED ? std::string("已取消")
+                        : "无法读取 " + std::string(1, (char) letter) + ": 盘：" + blb::detail::last_error_message(error);
             };
             for (wchar_t letter : letters) {
+                if (cancelled()) {
+                    fail(letter, ERROR_CANCELLED);
+                    return found;
+                }
                 std::wstring drive = std::wstring(1, letter) + L":\\";
                 if (!ntfs(drive.c_str(), GetDriveTypeW(drive.c_str()), nullptr)) {
                     found.error = std::string(1, (char) letter) + ": 盘不可用或不是 NTFS 格式";
@@ -333,7 +349,7 @@ namespace DiskScan {
                 DWORD error = scanVolume(volume, found, [&](uint64_t next) {
                     uint64_t done = before + std::min(next, volume.records);
                     report((float) ((double) done / (double) total), volume.letter);
-                });
+                }, cancelled);
                 volume.handle.reset();
                 if (error != ERROR_SUCCESS) {
                     fail(volume.letter, error);
@@ -380,12 +396,34 @@ namespace DiskScan {
 
         std::string runElevated(const std::filesystem::path& output, const std::wstring& letters,
                                 blb::cancellation_token token) {
+            if (token.is_cancelled()) {
+                return "已取消";
+            }
             wchar_t exe[MAX_PATH * 4] = {};
             DWORD length = GetModuleFileNameW(nullptr, exe, (DWORD) std::size(exe));
             if (length == 0 || length >= std::size(exe)) {
                 return "找不到启动器程序";
             }
-            std::wstring parameters = std::wstring(HELPER_FLAG) + L" \"" + output.wstring() + L"\" " + letters;
+            std::wstring eventName = L"Local\\b-launcher-disks-" + std::to_wstring(GetCurrentProcessId()) + L"-" +
+                    std::to_wstring(GetTickCount64());
+            PSECURITY_DESCRIPTOR descriptor = nullptr;
+            // The elevated helper may run as a different administrator account.
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)", SDDL_REVISION_1, &descriptor, nullptr)) {
+                return "无法创建搜索取消信号";
+            }
+            SECURITY_ATTRIBUTES security = {sizeof(security), descriptor, FALSE};
+            Handle cancel(CreateEventW(&security, TRUE, FALSE, eventName.c_str()));
+            LocalFree(descriptor);
+            if (!cancel) {
+                return "无法创建搜索取消信号";
+            }
+            auto registration = token.on_cancel([handle = cancel.get()] { SetEvent(handle); });
+            if (token.is_cancelled()) {
+                return "已取消";
+            }
+            std::wstring parameters = std::wstring(HELPER_FLAG) + L" \"" + output.wstring() + L"\" \"" + letters +
+                    L"\" \"" + eventName + L"\"";
             std::filesystem::path progress = progressFile(output);
             HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
             SHELLEXECUTEINFOW info = {};
@@ -398,23 +436,27 @@ namespace DiskScan {
             info.nShow = SW_HIDE;
             bool launched = ShellExecuteExW(&info) != FALSE;
             DWORD failure = launched ? 0 : GetLastError();
+            Handle process(info.hProcess);
             if (SUCCEEDED(com)) {
                 CoUninitialize();
             }
-            if (!launched || info.hProcess == nullptr) {
+            if (!launched || !process) {
                 return failure == ERROR_CANCELLED ? "已取消管理员授权" : "无法以管理员身份运行搜索";
             }
             stage = 1;
-            while (WaitForSingleObject(info.hProcess, 100) == WAIT_TIMEOUT) {
-                if (token.is_cancelled()) {
-                    CloseHandle(info.hProcess);
-                    return "已取消";
-                }
+            DWORD waited;
+            while ((waited = WaitForSingleObject(process.get(), 100)) == WAIT_TIMEOUT) {
                 readProgress(progress);
             }
+            if (waited != WAIT_OBJECT_0) {
+                SetEvent(cancel.get());
+                return "无法等待搜索结束";
+            }
+            if (token.is_cancelled()) {
+                return "已取消";
+            }
             DWORD code = 1;
-            GetExitCodeProcess(info.hProcess, &code);
-            CloseHandle(info.hProcess);
+            GetExitCodeProcess(process.get(), &code);
             return code == 0 ? std::string() : "搜索没有完成";
         }
 
@@ -496,13 +538,16 @@ namespace DiskScan {
         }
         tasks.run(
                 [output, excluded, kind, letters](blb::cancellation_token token) -> Continuation {
+                    if (token.is_cancelled()) {
+                        return nullptr;
+                    }
                     Found found;
                     if (elevated()) {
                         stage = 1;
                         found = scanAll(letters, [](float value, wchar_t drive) {
                             fraction = value;
                             reading = (int) drive;
-                        });
+                        }, [token] { return token.is_cancelled(); });
                     } else {
                         std::error_code ignore;
                         std::filesystem::remove(output, ignore);
@@ -599,7 +644,7 @@ namespace DiskScan {
         std::optional<Helper> helper;
         for (int i = 1; i + 1 < count; i++) {
             if (std::wcscmp(args[i], HELPER_FLAG) == 0) {
-                helper = Helper{args[i + 1], i + 2 < count ? args[i + 2] : L""};
+                helper = Helper{args[i + 1], i + 2 < count ? args[i + 2] : L"", i + 3 < count ? args[i + 3] : L""};
             }
         }
         LocalFree(args);
@@ -607,6 +652,17 @@ namespace DiskScan {
     }
 
     int runHelper(const Helper& helper) {
+        Handle signal;
+        if (!helper.cancelEvent.empty()) {
+            signal.reset(OpenEventW(SYNCHRONIZE, FALSE, helper.cancelEvent.c_str()));
+            if (!signal) {
+                return 1;
+            }
+        }
+        auto cancelled = [&] { return signal && WaitForSingleObject(signal.get(), 0) == WAIT_OBJECT_0; };
+        if (cancelled()) {
+            return ERROR_CANCELLED;
+        }
         const std::wstring& output = helper.output;
         std::filesystem::path progress = progressFile(output);
         auto last = std::chrono::steady_clock::now() - std::chrono::seconds(1);
@@ -618,7 +674,10 @@ namespace DiskScan {
             last = now;
             std::ofstream out(progress, std::ios::trunc);
             out << value << ' ' << (int) drive;
-        });
+        }, cancelled);
+        if (cancelled()) {
+            return ERROR_CANCELLED;
+        }
         nlohmann::json doc;
         doc["volumes"] = found.volumes;
         doc["error"] = found.error;
