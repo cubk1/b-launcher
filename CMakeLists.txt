@@ -32,6 +32,8 @@ target_link_libraries(core PUBLIC ${BLB_CURL_TARGET} ${BLB_MINIZIP_TARGET} repro
 if (WIN32)
     target_compile_definitions(core PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _WIN32_WINNT=0x0A00)
     target_link_libraries(core PUBLIC ws2_32 dnsapi)
+elseif (NOT APPLE)
+    target_link_libraries(core PUBLIC resolv)
 endif ()
 if (MSVC)
     target_compile_options(core PRIVATE /W4 /utf-8 /permissive- /Zc:__cplusplus)
