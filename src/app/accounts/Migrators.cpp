@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -14,6 +15,9 @@
 #include <windows.h>
 #include <bcrypt.h>
 #include <wincrypt.h>
+#else
+#include <core/base/platform.hpp>
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -32,10 +36,12 @@ namespace Migrators {
     using MicrosoftClients::App;
 
     namespace {
+#if defined(_WIN32)
         std::filesystem::path appData() {
             const wchar_t* folder = _wgetenv(L"APPDATA");
             return folder != nullptr && *folder != 0 ? std::filesystem::path(folder) : std::filesystem::path();
         }
+#endif
 
         std::optional<std::string> readFile(const std::filesystem::path& path) {
             std::error_code error;
@@ -49,6 +55,7 @@ namespace Migrators {
             return std::move(*data);
         }
 
+#if defined(_WIN32)
         std::optional<std::string> unprotect(const std::string& data) {
             DATA_BLOB input = {(DWORD) data.size(), (BYTE*) data.data()};
             DATA_BLOB output = {};
@@ -129,14 +136,15 @@ namespace Migrators {
                               refresh->get<std::string>()});
             }
         }
+#endif
 
         std::string textOf(const json& object, const char* key) {
             auto value = object.is_object() ? object.find(key) : object.end();
             return value != object.end() && value->is_string() ? value->get<std::string>() : std::string();
         }
 
-        void prism(std::vector<Found>& out) {
-            std::optional<std::string> data = readFile(appData() / "PrismLauncher" / "accounts.json");
+        void prism(const std::filesystem::path& folder, std::vector<Found>& out) {
+            std::optional<std::string> data = readFile(folder / "accounts.json");
             if (!data) {
                 return;
             }
@@ -164,6 +172,7 @@ namespace Migrators {
             }
         }
 
+#if defined(_WIN32)
         uint64_t pclHash(const std::string& text) {
             uint64_t value = 5381;
             for (unsigned char c : text) {
@@ -256,19 +265,27 @@ namespace Migrators {
                 }
             }
         }
+#endif
     }
 
     std::vector<Found> scan() {
         std::vector<Found> out;
+#if defined(_WIN32)
         std::filesystem::path minecraft = appData() / ".minecraft";
         if (!appData().empty()) {
             officialLauncher(minecraft / "launcher_msa_credentials.bin", "Minecraft 启动器", out);
             officialLauncher(minecraft / "launcher_msa_credentials_microsoft_store.bin",
                              "Minecraft 启动器（Microsoft Store）", out);
             hmcl(out);
-            prism(out);
+            prism(appData() / "PrismLauncher", out);
         }
         pcl(out);
+#else
+        prism(blb::app_data_directory() / "PrismLauncher", out);
+#if defined(__linux__)
+        prism(blb::home_directory() / ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher", out);
+#endif
+#endif
         std::vector<Found> unique;
         for (Found& found : out) {
             if (std::none_of(unique.begin(), unique.end(),
