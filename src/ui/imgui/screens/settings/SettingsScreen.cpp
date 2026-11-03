@@ -58,6 +58,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace SettingsScreen {
@@ -761,11 +762,8 @@ namespace SettingsScreen {
             SavedServers() : Choice("settings#savedServers") {}
 
             std::vector<std::string> options() override {
-                std::vector<std::string> out;
-                for (const Item& item : items()) {
-                    out.push_back(blb::to_lower(item.server->address));
-                }
-                return out;
+                sync();
+                return keys;
             }
 
             bool selected(const std::string& option) override {
@@ -781,13 +779,10 @@ namespace SettingsScreen {
             }
 
             std::string label() override {
-                std::vector<Item> all = items();
-                for (const Item& item : all) {
-                    if (matches(*item.server)) {
-                        return item.label;
-                    }
+                if (const ServerList::Server* server = find(blb::to_lower(Ui::trim(HomeWidgets::serverAddress())))) {
+                    return server->name.empty() ? server->address : server->name;
                 }
-                return ServerList::loading() ? "正在读取…" : all.empty() ? "没有保存的服务器" : "选择服务器";
+                return ServerList::loading() ? "正在读取…" : keys.empty() ? "没有保存的服务器" : "选择服务器";
             }
 
             std::string optionLabel(const std::string& option) override {
@@ -806,27 +801,35 @@ namespace SettingsScreen {
             }
 
         private:
-            struct Item {
-                std::string label;
-                const ServerList::Server* server;
-            };
+            bool cached = false;
+            unsigned seenRevision = 0;
+            std::vector<std::string> keys;
+            std::unordered_map<std::string, ServerList::Server> entries;
 
-            static std::vector<Item> items() {
-                std::vector<Item> out;
-                for (const ServerList::Server& server : ServerList::servers()) {
-                    std::string label = server.name.empty() ? server.address : server.name;
-                    out.push_back({label, &server});
+            void sync() {
+                const auto& servers = ServerList::servers();
+                unsigned revision = ServerList::revision();
+                if (cached && seenRevision == revision) {
+                    return;
                 }
-                return out;
-            }
-
-            static const ServerList::Server* find(const std::string& option) {
-                for (const Item& item : items()) {
-                    if (blb::to_lower(item.server->address) == option) {
-                        return item.server;
+                keys.clear();
+                entries.clear();
+                keys.reserve(servers.size());
+                entries.reserve(servers.size());
+                for (const ServerList::Server& server : servers) {
+                    std::string key = blb::to_lower(server.address);
+                    if (entries.emplace(key, server).second) {
+                        keys.push_back(std::move(key));
                     }
                 }
-                return nullptr;
+                seenRevision = revision;
+                cached = true;
+            }
+
+            const ServerList::Server* find(const std::string& option) {
+                sync();
+                auto found = entries.find(option);
+                return found != entries.end() ? &found->second : nullptr;
             }
 
             static bool matches(const ServerList::Server& server) {

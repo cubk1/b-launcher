@@ -15,6 +15,7 @@ namespace ServerList {
     };
 
     const std::vector<Server>& servers();
+    unsigned revision();
     bool loading();
     void poll();
     void shutdown();

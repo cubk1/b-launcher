@@ -48,6 +48,7 @@ namespace ServerList {
 
         AsyncTasks tasks;
         std::vector<Server> list;
+        unsigned listRevision = 0;
         bool scanning = false;
         bool scanned = false;
         Clock::time_point scannedAt;
@@ -297,6 +298,7 @@ namespace ServerList {
                         }
                         return [found = std::move(found)]() mutable {
                             list = std::move(found);
+                            ++listRevision;
                             scanning = false;
                             scanned = true;
                             scannedAt = Clock::now();
@@ -317,6 +319,10 @@ namespace ServerList {
             scan();
         }
         return list;
+    }
+
+    unsigned revision() {
+        return listRevision;
     }
 
     bool loading() {
