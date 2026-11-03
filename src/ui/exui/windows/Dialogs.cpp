@@ -19,6 +19,8 @@
 namespace ForgottenMelody {
 
     namespace {
+        constexpr int BACKGROUND_ALPHA = 200;
+
         // EXUI's own timers use addresses as ids, so a small number never collides with them.
         constexpr UINT_PTR REFRESH_TIMER = 1;
 
@@ -135,7 +137,7 @@ namespace ForgottenMelody {
         }
         window.SetWindowAnimationTypes(exui::WindowAnimationKind::ZoomFade, exui::WindowAnimationKind::ZoomFade);
         window.SetControlAnimationsEnabled(false);
-        window.SetWindowAlpha(230);
+        window.SetWindowAlpha(BACKGROUND_ALPHA);
         return true;
     }
 
@@ -170,6 +172,7 @@ namespace ForgottenMelody {
 
     LiveForm::LiveForm() {
         SetBackgroundMode(exui::SkinBackgroundMode::Cover);
+        SetWindowAlpha(BACKGROUND_ALPHA);
     }
 
     void LiveForm::startRefreshing() {

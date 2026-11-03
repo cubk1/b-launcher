@@ -27,7 +27,7 @@ namespace ForgottenMelody {
                 exui::MsgBoxButtons buttons = exui::MsgBoxButtons::Ok, const std::vector<std::wstring>& labels = {});
 
     // Creates a window with the 2014 dialog skin, preserving its background mode.
-    // Alpha is 230 rather than the original 150, which relied on Windows 7's blur behind the window.
+    // Uses the same background opacity as LiveForm.
     bool createDialog(exui::Window& window, HWND parent, const std::wstring& title, int width, int height,
                       uint32_t captionMask = exui::CaptionButtonMask::Close);
     // Shows window, focused on focus if given, and returns once it is closed. Other windows stay enabled, but their
