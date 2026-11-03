@@ -1,7 +1,9 @@
 #include "ui/imgui/screens/settings/ToolboxTab.h"
 #include "app/system/CustomDownload.h"
 #include "app/system/Notices.h"
+#if defined(_WIN32)
 #include "app/system/PclThemes.h"
+#endif
 #include "app/system/Platform.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -395,8 +397,12 @@ namespace ToolboxTab {
             ensureFolderDefault();
             const int downloadRows = 3;
             const float buttonBlockH = Page::ROW_H + 4.0f;
+#if defined(_WIN32)
             float contentH =
                     2.0f * Page::CAPTION_H + downloadRows * Page::ROW_H + buttonBlockH + Page::ROW_H + Page::GAP;
+#else
+            float contentH = Page::CAPTION_H + downloadRows * Page::ROW_H + buttonBlockH;
+#endif
             Page::Scroll body("settings#tools#home", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -412,6 +418,7 @@ namespace ToolboxTab {
             buttonsRow(y, blocked);
             y += Page::ROW_H + Page::GAP;
 
+#if defined(_WIN32)
             Page::caption("PCL2", y);
             y += Page::CAPTION_H;
             Page::card(y, 1);
@@ -432,6 +439,7 @@ namespace ToolboxTab {
                                  "解锁失败：" + (result.error.empty() ? std::string("未知错误") : result.error), 5000);
                 }
             }
+#endif
 
             body.end();
         }
