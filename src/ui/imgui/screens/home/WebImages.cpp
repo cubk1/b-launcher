@@ -11,6 +11,7 @@
 #include <core/installer/loader.hpp>
 #include <core/network/http_client.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -19,6 +20,9 @@
 #endif
 #include <windows.h>
 #include <wincodec.h>
+#else
+#include "app/system/Pixels.h"
+#endif
 
 #include <algorithm>
 #include <chrono>
@@ -36,7 +40,7 @@ namespace WebImages {
     namespace blb = b_launcher_base;
 
     namespace {
-        constexpr UINT MAX_SIDE = 2048;
+        constexpr unsigned MAX_SIDE = 2048;
         constexpr auto CACHE_AGE = std::chrono::hours(24 * 7);
 
         struct Job {
@@ -183,6 +187,7 @@ namespace WebImages {
             return std::move(*data);
         }
 
+#if defined(_WIN32)
         bool decode(IWICImagingFactory* factory, const std::string& data, Decoded& out) {
             bool ok = false;
             IWICStream* stream = nullptr;
@@ -226,11 +231,32 @@ namespace WebImages {
             if (stream) stream->Release();
             return ok;
         }
+#else
+        bool decode(const std::string& data, Decoded& out) {
+            std::shared_ptr<const Pixels> pixels = Pixels::decode(data.data(), data.size());
+            if (!pixels || pixels->width <= 0 || pixels->height <= 0) {
+                return false;
+            }
+            float fit = std::min(1.0f, (float) MAX_SIDE / (float) std::max(pixels->width, pixels->height));
+            int w = std::max(1, (int) (pixels->width * fit + 0.5f));
+            int h = std::max(1, (int) (pixels->height * fit + 0.5f));
+            if (w == pixels->width && h == pixels->height) {
+                out.rgba = pixels->rgba;
+            } else {
+                out.rgba = Pixels::resized(*pixels, 0, 0, pixels->width, pixels->height, w, h).rgba;
+            }
+            out.width = w;
+            out.height = h;
+            return true;
+        }
+#endif
 
         void run() {
+#if defined(_WIN32)
             HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
             IWICImagingFactory* factory = nullptr;
             CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+#endif
             while (true) {
                 Job job;
                 {
@@ -245,6 +271,7 @@ namespace WebImages {
                 Decoded result;
                 result.key = job.key;
                 bool ok = false;
+#if defined(_WIN32)
                 if (factory != nullptr) {
                     for (const std::string& source : {job.source, job.fallback}) {
                         if (std::optional<std::string> data = bytesOf(source, job.retry); data && decode(factory, *data, result)) {
@@ -253,6 +280,14 @@ namespace WebImages {
                         }
                     }
                 }
+#else
+                for (const std::string& source : {job.source, job.fallback}) {
+                    if (std::optional<std::string> data = bytesOf(source, job.retry); data && decode(*data, result)) {
+                        ok = true;
+                        break;
+                    }
+                }
+#endif
                 if (!ok) {
                     result.rgba.clear();
                     result.width = 0;
@@ -261,12 +296,14 @@ namespace WebImages {
                 std::lock_guard<std::mutex> guard(lock);
                 finished.push_back(std::move(result));
             }
+#if defined(_WIN32)
             if (factory != nullptr) {
                 factory->Release();
             }
             if (SUCCEEDED(com)) {
                 CoUninitialize();
             }
+#endif
         }
     }
 

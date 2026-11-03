@@ -11,6 +11,7 @@
 #include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -19,6 +20,9 @@
 #endif
 #include <windows.h>
 #include <wincodec.h>
+#else
+#include "app/system/Pixels.h"
+#endif
 
 #include "nanosvg.h"
 #include "nanosvgrast.h"
@@ -172,6 +176,7 @@ namespace Logo {
         std::shared_ptr<Custom> finished;
         std::string workingOn;
 
+#if defined(_WIN32)
         bool decodeRaster(const std::wstring& file, Level& out, std::string& error) {
             IWICImagingFactory* factory = nullptr;
             if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
@@ -239,6 +244,29 @@ namespace Logo {
             factory->Release();
             return ok;
         }
+#else
+        bool decodeRaster(const std::filesystem::path& file, Level& out, std::string& error) {
+            std::ifstream in(file, std::ios::binary);
+            std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::shared_ptr<const Pixels> pixels = Pixels::decode(data.data(), data.size());
+            if (!pixels || pixels->width <= 0 || pixels->height <= 0) {
+                error = "无法读取这张图片";
+                return false;
+            }
+            double scale = std::min(1.0, (double) CUSTOM_SIDE / std::max(pixels->width, pixels->height));
+            int w = std::max(1, (int) std::lround(pixels->width * scale));
+            int h = std::max(1, (int) std::lround(pixels->height * scale));
+            Pixels scaled = Pixels::resized(*pixels, 0, 0, pixels->width, pixels->height, w, h);
+            if (scaled.rgba.empty()) {
+                error = "无法处理这张图片";
+                return false;
+            }
+            out.width = w;
+            out.height = h;
+            out.rgba = std::move(scaled.rgba);
+            return true;
+        }
+#endif
 
         bool decodeVector(const std::filesystem::path& file, Level& out, std::string& error) {
             std::ifstream in(file, std::ios::binary);
@@ -345,11 +373,18 @@ namespace Logo {
                 worker.join();
             }
             worker = std::thread([file] {
+#if defined(_WIN32)
                 HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#endif
                 auto result = std::make_shared<Custom>();
                 Level base;
+#if defined(_WIN32)
                 bool ok = vectorFile(file) ? decodeVector(file, base, result->error)
                                            : decodeRaster(file.wstring(), base, result->error);
+#else
+                bool ok = vectorFile(file) ? decodeVector(file, base, result->error)
+                                           : decodeRaster(file, base, result->error);
+#endif
                 if (ok) {
                     result->levels.push_back(std::move(base));
                     while (result->levels.back().width > 1 || result->levels.back().height > 1) {
@@ -357,9 +392,11 @@ namespace Logo {
                     }
                     result->ok = true;
                 }
+#if defined(_WIN32)
                 if (SUCCEEDED(com)) {
                     CoUninitialize();
                 }
+#endif
                 std::lock_guard<std::mutex> guard(lock);
                 finished = result;
             });

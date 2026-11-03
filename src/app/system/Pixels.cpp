@@ -2,9 +2,76 @@
 
 #include "stb_image.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#if !defined(_WIN32)
+namespace {
+    uint32_t little(const unsigned char* p, int bytes) {
+        uint32_t value = 0;
+        for (int i = bytes - 1; i >= 0; i--) {
+            value = (value << 8) | p[i];
+        }
+        return value;
+    }
+
+    std::shared_ptr<const Pixels> decodeIco(const unsigned char* bytes, size_t size) {
+        if (size < 6 || little(bytes, 2) != 0 || little(bytes + 2, 2) != 1) {
+            return nullptr;
+        }
+        size_t count = little(bytes + 4, 2);
+        size_t best = 0;
+        uint64_t bestArea = 0;
+        for (size_t i = 0; i < count && 6 + i * 16 + 16 <= size; i++) {
+            const unsigned char* entry = bytes + 6 + i * 16;
+            uint64_t w = entry[0] == 0 ? 256 : entry[0];
+            uint64_t h = entry[1] == 0 ? 256 : entry[1];
+            if (w * h > bestArea) {
+                bestArea = w * h;
+                best = i + 1;
+            }
+        }
+        if (best == 0) {
+            return nullptr;
+        }
+        const unsigned char* entry = bytes + 6 + (best - 1) * 16;
+        size_t length = little(entry + 8, 4);
+        size_t offset = little(entry + 12, 4);
+        if (offset > size || length > size - offset || length < 40) {
+            return nullptr;
+        }
+        const unsigned char* image = bytes + offset;
+        if (std::memcmp(image, "\x89PNG", 4) == 0) {
+            return Pixels::decode(image, length);
+        }
+        int width = (int) little(image + 4, 4);
+        int height = (int) little(image + 8, 4) / 2;
+        size_t header = little(image, 4);
+        if (little(image + 14, 2) != 32 || width <= 0 || height <= 0 || width > 1024 || height > 1024 ||
+            header > length || (size_t) width * height * 4 > length - header) {
+            return nullptr;
+        }
+        auto pixels = std::make_shared<Pixels>();
+        pixels->width = width;
+        pixels->height = height;
+        pixels->rgba.resize((size_t) width * height * 4);
+        for (int y = 0; y < height; y++) {
+            const unsigned char* row = image + header + (size_t) (height - 1 - y) * width * 4;
+            unsigned char* to = pixels->rgba.data() + (size_t) y * width * 4;
+            for (int x = 0; x < width; x++) {
+                to[x * 4] = row[x * 4 + 2];
+                to[x * 4 + 1] = row[x * 4 + 1];
+                to[x * 4 + 2] = row[x * 4];
+                to[x * 4 + 3] = row[x * 4 + 3];
+            }
+        }
+        return pixels;
+    }
+}
+#endif
 
 std::shared_ptr<const Pixels> Pixels::decode(const void* data, size_t size) {
     int width = 0;
@@ -13,7 +80,11 @@ std::shared_ptr<const Pixels> Pixels::decode(const void* data, size_t size) {
     unsigned char* decoded =
             stbi_load_from_memory((const unsigned char*) data, (int) size, &width, &height, &channels, 4);
     if (decoded == nullptr) {
+#if !defined(_WIN32)
+        return decodeIco((const unsigned char*) data, size);
+#else
         return nullptr;
+#endif
     }
     auto pixels = std::make_shared<Pixels>();
     pixels->width = width;
@@ -73,4 +144,104 @@ std::shared_ptr<const Pixels> Pixels::decodePng(const void* data, size_t size, u
         return nullptr;
     }
     return decode(data, size);
+}
+
+namespace {
+    struct Tap {
+        int first = 0;
+        std::vector<float> weights;
+    };
+
+    std::vector<Tap> taps(int from, int to) {
+        std::vector<Tap> out((size_t) to);
+        float scale = (float) from / (float) to;
+        float radius = std::max(1.0f, scale);
+        for (int i = 0; i < to; i++) {
+            float center = (i + 0.5f) * scale;
+            int first = std::max(0, (int) std::floor(center - radius));
+            int last = std::min(from - 1, (int) std::ceil(center + radius));
+            Tap& tap = out[(size_t) i];
+            tap.first = first;
+            float total = 0.0f;
+            for (int k = first; k <= last; k++) {
+                float weight = std::max(0.0f, 1.0f - std::fabs((k + 0.5f - center) / radius));
+                tap.weights.push_back(weight);
+                total += weight;
+            }
+            if (total <= 0.0f) {
+                tap.first = std::clamp((int) center, 0, from - 1);
+                tap.weights.assign(1, 1.0f);
+                total = 1.0f;
+            }
+            for (float& weight : tap.weights) {
+                weight /= total;
+            }
+        }
+        return out;
+    }
+}
+
+Pixels Pixels::resized(const Pixels& source, int x, int y, int w, int h, int width, int height) {
+    Pixels out;
+    x = std::clamp(x, 0, source.width);
+    y = std::clamp(y, 0, source.height);
+    w = std::clamp(w, 0, source.width - x);
+    h = std::clamp(h, 0, source.height - y);
+    if (w <= 0 || h <= 0 || width <= 0 || height <= 0 ||
+        source.rgba.size() < (size_t) source.width * source.height * 4) {
+        return out;
+    }
+    std::vector<float> premultiplied((size_t) w * h * 4);
+    for (int row = 0; row < h; row++) {
+        const unsigned char* in = source.rgba.data() + ((size_t) (y + row) * source.width + x) * 4;
+        float* to = premultiplied.data() + (size_t) row * w * 4;
+        for (int col = 0; col < w; col++, in += 4, to += 4) {
+            float alpha = in[3] / 255.0f;
+            to[0] = in[0] * alpha;
+            to[1] = in[1] * alpha;
+            to[2] = in[2] * alpha;
+            to[3] = in[3];
+        }
+    }
+    std::vector<Tap> across = taps(w, width);
+    std::vector<Tap> down = taps(h, height);
+    std::vector<float> rows((size_t) width * h * 4);
+    for (int row = 0; row < h; row++) {
+        const float* in = premultiplied.data() + (size_t) row * w * 4;
+        float* to = rows.data() + (size_t) row * width * 4;
+        for (int col = 0; col < width; col++) {
+            const Tap& tap = across[(size_t) col];
+            float sum[4] = {};
+            for (size_t k = 0; k < tap.weights.size(); k++) {
+                const float* pixel = in + (size_t) (tap.first + (int) k) * 4;
+                for (int c = 0; c < 4; c++) {
+                    sum[c] += pixel[c] * tap.weights[k];
+                }
+            }
+            std::copy(sum, sum + 4, to + (size_t) col * 4);
+        }
+    }
+    out.width = width;
+    out.height = height;
+    out.rgba.resize((size_t) width * height * 4);
+    for (int row = 0; row < height; row++) {
+        const Tap& tap = down[(size_t) row];
+        unsigned char* to = out.rgba.data() + (size_t) row * width * 4;
+        for (int col = 0; col < width; col++, to += 4) {
+            float sum[4] = {};
+            for (size_t k = 0; k < tap.weights.size(); k++) {
+                const float* pixel = rows.data() + ((size_t) (tap.first + (int) k) * width + col) * 4;
+                for (int c = 0; c < 4; c++) {
+                    sum[c] += pixel[c] * tap.weights[k];
+                }
+            }
+            float alpha = std::clamp(sum[3], 0.0f, 255.0f);
+            float undo = alpha > 0.0f ? 255.0f / alpha : 0.0f;
+            for (int c = 0; c < 3; c++) {
+                to[c] = (unsigned char) std::lround(std::clamp(sum[c] * undo, 0.0f, 255.0f));
+            }
+            to[3] = (unsigned char) std::lround(alpha);
+        }
+    }
+    return out;
 }
