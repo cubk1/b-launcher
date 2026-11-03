@@ -46,6 +46,10 @@ public:
 
     virtual std::string label();
 
+    virtual std::string optionLabel(const std::string& option) {
+        return option;
+    }
+
     virtual bool reorderable() {
         return false;
     }

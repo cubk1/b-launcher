@@ -763,7 +763,7 @@ namespace SettingsScreen {
             std::vector<std::string> options() override {
                 std::vector<std::string> out;
                 for (const Item& item : items()) {
-                    out.push_back(item.label);
+                    out.push_back(blb::to_lower(item.server->address));
                 }
                 return out;
             }
@@ -790,6 +790,11 @@ namespace SettingsScreen {
                 return ServerList::loading() ? "正在读取…" : all.empty() ? "没有保存的服务器" : "选择服务器";
             }
 
+            std::string optionLabel(const std::string& option) override {
+                const ServerList::Server* server = find(option);
+                return server != nullptr ? (server->name.empty() ? server->address : server->name) : option;
+            }
+
             uint32_t optionImage(const std::string& option) override {
                 const ServerList::Server* server = find(option);
                 return server != nullptr ? Textures::of(server->icon) : 0;
@@ -808,13 +813,8 @@ namespace SettingsScreen {
 
             static std::vector<Item> items() {
                 std::vector<Item> out;
-                std::set<std::string> used;
                 for (const ServerList::Server& server : ServerList::servers()) {
                     std::string label = server.name.empty() ? server.address : server.name;
-                    if (!used.insert(label).second) {
-                        label += "（" + server.address + "）";
-                        used.insert(label);
-                    }
                     out.push_back({label, &server});
                 }
                 return out;
@@ -822,7 +822,7 @@ namespace SettingsScreen {
 
             static const ServerList::Server* find(const std::string& option) {
                 for (const Item& item : items()) {
-                    if (item.label == option) {
+                    if (blb::to_lower(item.server->address) == option) {
                         return item.server;
                     }
                 }

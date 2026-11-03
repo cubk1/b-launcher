@@ -13,7 +13,7 @@ std::string Choice::label() {
     if (!multi()) {
         for (const std::string& option : all) {
             if (selected(option)) {
-                return option;
+                return optionLabel(option);
             }
         }
         return "Select";
@@ -21,7 +21,7 @@ std::string Choice::label() {
     std::vector<std::string> picked;
     for (const std::string& option : all) {
         if (selected(option)) {
-            picked.push_back(option);
+            picked.push_back(optionLabel(option));
         }
     }
     return picked.empty() ? std::string("无") : b_launcher_base::join(picked, "、");

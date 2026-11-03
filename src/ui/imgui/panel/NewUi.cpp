@@ -813,11 +813,12 @@ namespace NewUi {
             measuredScale = scaleNow;
             measuredWidest = 0.0f;
             for (int i = 0; i < count; i++) {
+                std::string label = choice->optionLabel(options[i]);
                 std::string detail = choice->optionDetail(options[i]);
                 float extra =
                         detail.empty() ? 0.0f : 24.0f + UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 measuredWidest = std::max(measuredWidest,
-                                          UiFont::width(options[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + extra);
+                                          UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + extra);
             }
         }
         float widest = measuredWidest;
@@ -1007,6 +1008,7 @@ namespace NewUi {
             UiWidgets::check(rx + 16, ry + 16, UiTheme::textPrimary());
             UiRender::alphaMul = savedCheckAlpha;
         }
+        std::string label = popupChoice != nullptr ? popupChoice->optionLabel(option) : option;
         std::string optionGlyph = popupChoice != nullptr ? popupChoice->optionIcon(option) : std::string();
         uint32_t optionImage = popupChoice != nullptr ? popupChoice->optionImage(option) : 0u;
         float optionTextX = rx + textIndent;
@@ -1019,11 +1021,11 @@ namespace NewUi {
             UiRender::texture(optionImage, optionTextX - 1, ry + 9, 14, 14);
             optionTextX += 18;
         } else if (!optionGlyph.empty()) {
-            UiWidgets::iconBeside(optionGlyph, optionTextX + 6, option, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, ry, 32,
+            UiWidgets::iconBeside(optionGlyph, optionTextX + 6, label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, ry, 32,
                                   optionColor, 10.5f);
             optionTextX += 18;
         }
-        UiRender::textY(option, optionTextX, ry, 32, optionColor, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        UiRender::textY(label, optionTextX, ry, 32, optionColor, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         std::string detail = popupChoice != nullptr ? popupChoice->optionDetail(option) : std::string();
         if (!detail.empty()) {
             float detailW = UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
