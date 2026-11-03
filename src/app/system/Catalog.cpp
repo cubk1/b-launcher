@@ -312,6 +312,11 @@ namespace Catalog {
                                     found.push_back(added);
                                 }
                             }
+                            auto hidden = pathList("javaHidden");
+                            auto manual = pathList("javaPaths");
+                            std::erase_if(found, [&](const blb::java::java_installation& java) {
+                                return listed(hidden, java.executable) && !listed(manual, java.executable);
+                            });
                             sortJava(found);
                             javaList.list = std::move(found);
                             javaList.status = Status::Ready;
