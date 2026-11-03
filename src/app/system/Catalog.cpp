@@ -6,14 +6,18 @@
 
 #include <core/base/strings.hpp>
 #include <core/base/json.hpp>
+#include <core/base/hash.hpp>
+#include <core/base/zip.hpp>
 
 #include <core/base/cancellation.hpp>
 #include <core/meta/game_layout.hpp>
 #include <core/network/mirror_provider.hpp>
+#include <core/network/http_client.hpp>
 
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 namespace Catalog {
@@ -26,6 +30,7 @@ namespace Catalog {
         Versions versions;
         bool versionsStarted = false;
         std::map<std::pair<int, std::string>, LoaderVersions> loaderLists;
+        std::map<std::string, FabricApiRequirements> fabricApis;
         JavaList javaList;
         bool javaStarted = false;
 
@@ -91,6 +96,161 @@ namespace Catalog {
                             loaderLists[key].error = error;
                         };
                     });
+        }
+
+        blb::result<std::string> fabricRange(const nlohmann::json& value) {
+            if (value.is_array()) {
+                std::vector<std::string> alternatives;
+                for (const auto& item : value) {
+                    if (!item.is_string()) {
+                        return blb::make_error(blb::errc::parse, "Fabric Loader 版本要求无效");
+                    }
+                    auto range = fabricRange(item);
+                    if (!range) {
+                        return range.err();
+                    }
+                    alternatives.push_back(std::move(*range));
+                }
+                if (alternatives.empty()) {
+                    return blb::make_error(blb::errc::parse, "Fabric Loader 版本要求为空");
+                }
+                return blb::join(alternatives, " || ");
+            }
+            if (!value.is_string()) {
+                return blb::make_error(blb::errc::parse, "Fabric Loader 版本要求无效");
+            }
+            std::istringstream input(value.get<std::string>());
+            std::vector<std::string> predicates;
+            std::string token;
+            while (input >> token) {
+                if (token == "*" || token == "x" || token == "X") {
+                    predicates.push_back("*");
+                    continue;
+                }
+                std::string op;
+                for (const char* candidate : {">=", "<=", ">", "<", "=", "~", "^"}) {
+                    if (token.starts_with(candidate)) {
+                        op = candidate;
+                        token.erase(0, op.size());
+                        break;
+                    }
+                }
+                if (token.empty() && !(input >> token)) {
+                    return blb::make_error(blb::errc::parse, "Fabric Loader 版本要求不完整");
+                }
+                if (token.empty() || token.front() < '0' || token.front() > '9' ||
+                    token.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-+*") !=
+                            std::string::npos) {
+                    return blb::make_error(blb::errc::parse, "无法识别 Fabric Loader 版本要求");
+                }
+                auto core = std::string_view(token).substr(0, token.find_first_of("-+"));
+                bool wildcard = false;
+                for (std::string_view part : blb::split(core, '.')) {
+                    bool any = part == "*" || part == "x" || part == "X";
+                    if (part.empty() || (wildcard && !any) ||
+                        (!any && part.find_first_not_of("0123456789") != std::string_view::npos)) {
+                        return blb::make_error(blb::errc::parse, "无法识别 Fabric Loader 版本要求");
+                    }
+                    wildcard = wildcard || any;
+                }
+                if (wildcard && !op.empty() && op != "=") {
+                    return blb::make_error(blb::errc::parse, "无法识别 Fabric Loader 通配版本要求");
+                }
+                // Fabric treats a bare version as exact; the shared range parser also accepts Maven ranges.
+                predicates.push_back((op.empty() ? "=" : op) + token);
+            }
+            if (predicates.empty()) {
+                return blb::make_error(blb::errc::parse, "Fabric Loader 版本要求为空");
+            }
+            return blb::join(predicates, " ");
+        }
+
+        blb::result<void> readFabricRequirements(blb::zip_reader& jar, FabricApiRequirements& out,
+                                                 blb::cancellation_token token, int depth = 0) {
+            if (auto checked = token.check(); !checked) {
+                return checked.err();
+            }
+            if (depth > 8) {
+                return blb::make_error(blb::errc::parse, "Fabric API 内嵌模组层级过深");
+            }
+            auto text = jar.read("fabric.mod.json");
+            if (!text) {
+                return text.err();
+            }
+            auto doc = nlohmann::json::parse(*text, nullptr, false);
+            if (!doc.is_object() || blb::json_text(doc, "id").empty() || blb::json_text(doc, "version").empty()) {
+                return blb::make_error(blb::errc::parse, "Fabric API 模组信息无效");
+            }
+            for (const char* field : {"depends", "breaks"}) {
+                auto section = doc.find(field);
+                if (section == doc.end()) {
+                    continue;
+                }
+                if (!section->is_object()) {
+                    return blb::make_error(blb::errc::parse, "Fabric API 依赖信息无效");
+                }
+                auto loader = section->find("fabricloader");
+                if (loader != section->end()) {
+                    auto range = fabricRange(*loader);
+                    if (!range) {
+                        return range.err();
+                    }
+                    auto& into = std::string_view(field) == "depends" ? out.required : out.incompatible;
+                    if (std::find(into.begin(), into.end(), *range) == into.end()) {
+                        into.push_back(std::move(*range));
+                    }
+                }
+            }
+            auto nested = doc.find("jars");
+            if (nested != doc.end()) {
+                if (!nested->is_array()) {
+                    return blb::make_error(blb::errc::parse, "Fabric API 内嵌模组信息无效");
+                }
+                for (const auto& item : *nested) {
+                    std::string path = blb::json_text(item, "file");
+                    if (path.empty()) {
+                        return blb::make_error(blb::errc::parse, "Fabric API 内嵌模组路径为空");
+                    }
+                    auto bytes = jar.read(path);
+                    if (!bytes) {
+                        return bytes.err();
+                    }
+                    auto child = blb::zip_reader::open_memory(std::move(*bytes));
+                    if (!child) {
+                        return child.err();
+                    }
+                    if (auto read = readFabricRequirements(*child, out, token, depth + 1); !read) {
+                        return read.err();
+                    }
+                }
+            }
+            return blb::ok();
+        }
+
+        blb::result<FabricApiRequirements> fetchFabricRequirements(const blb::install::loader_version& version,
+                                                                   blb::cancellation_token token) {
+            auto bytes = blb::net::http_get(version.url, token);
+            if (!bytes) {
+                return bytes.err();
+            }
+            auto file = nlohmann::json::parse(version.extra, nullptr, false);
+            auto hashes = file.is_object() ? file.find("hashes") : file.end();
+            if (hashes != file.end()) {
+                std::string expected = blb::json_text(*hashes, "sha1");
+                if (!expected.empty() && !blb::iequals(blb::to_hex(blb::sha1::digest(*bytes)), expected)) {
+                    return blb::make_error(blb::errc::checksum_mismatch, "Fabric API 校验失败");
+                }
+            }
+            auto jar = blb::zip_reader::open_memory(std::move(*bytes));
+            if (!jar) {
+                return jar.err();
+            }
+            FabricApiRequirements out;
+            if (auto read = readFabricRequirements(*jar, out, token); !read) {
+                return read.err();
+            }
+            out.status = Status::Ready;
+            return out;
         }
 
         bool sameJava(const blb::java::java_installation& a, const blb::java::java_installation& b) {
@@ -339,6 +499,34 @@ namespace Catalog {
         if (found == loaderLists.end() || found->second.status != Status::Loading) {
             fetchLoader(type, minecraft);
         }
+    }
+
+    const FabricApiRequirements& fabricApiRequirements(const blb::install::loader_version& version,
+                                                       bool retryFailed) {
+        std::string key = version.url + "\n" + version.extra;
+        auto [found, inserted] = fabricApis.try_emplace(key);
+        if (inserted || (retryFailed && found->second.status == Status::Failed)) {
+            found->second = FabricApiRequirements{};
+            tasks.run(
+                    [key, version](blb::cancellation_token token) -> Continuation {
+                        auto result = fetchFabricRequirements(version, token);
+                        FabricApiRequirements value;
+                        if (result) {
+                            value = std::move(*result);
+                        } else {
+                            value.status = Status::Failed;
+                            value.error = result.err().message;
+                        }
+                        return [key, value = std::move(value)]() mutable { fabricApis[key] = std::move(value); };
+                    },
+                    [key](const std::string& error) -> Continuation {
+                        return [key, error] {
+                            fabricApis[key].status = Status::Failed;
+                            fabricApis[key].error = error;
+                        };
+                    });
+        }
+        return found->second;
     }
 
     void poll() {

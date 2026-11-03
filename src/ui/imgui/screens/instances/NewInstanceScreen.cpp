@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "app/system/Platform.h"
 #include "app/system/Catalog.h"
+#include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
@@ -28,6 +29,7 @@
 
 #include <core/instance/loader_editor.hpp>
 #include <core/base/strings.hpp>
+#include <core/modpack/mods.hpp>
 
 #include "imgui.h"
 
@@ -78,6 +80,8 @@ namespace NewInstanceScreen {
         unsigned loaderReadGeneration = 0;
         // A Fabric install without Fabric API leaves most modpacks broken, so picking Fabric picks the API too.
         bool autoFabricApi = false;
+        bool fabricApiRequested = false;
+        std::string automaticFabricApi;
 
         std::string kindOf(const blb::meta::manifest_version& version) {
             switch (Catalog::kindOf(version)) {
@@ -217,6 +221,7 @@ namespace NewInstanceScreen {
 
         void chooseVersion(const std::string& id) {
             loaderSelection.reset(id);
+            automaticFabricApi.clear();
             typedName.clear();
             steps.go(STEP_SETUP);
         }
@@ -388,7 +393,7 @@ namespace NewInstanceScreen {
                 UiRender::textY(problem, x - 14.0f - problemW, y, h, UiTheme::danger(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
             } else if (waiting && !installing && morph < 0.01f) {
-                std::string text = "正在获取 Fabric API 版本…";
+                std::string text = fabricApiRequested ? "正在检查 Fabric API 兼容性…" : "正在获取 Fabric API 版本…";
                 float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY(text, x - 14.0f - textW, y, h, UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
@@ -558,21 +563,30 @@ namespace NewInstanceScreen {
 
         void settings(float top, float bottom, float gone, bool blocked);
 
-        // Picking Fabric also picks the newest Fabric API: wait for its list once, then never again unless re-picked.
+        // Check the newest API once per selection, including its embedded mods, before adding it.
         void attachFabricApi() {
             if (!autoFabricApi) {
                 return;
             }
-            if (chosen.count(loader_type::fabric) == 0 || chosen.count(loader_type::fabric_api) != 0) {
+            if (chosen.count(loader_type::fabric) == 0) {
                 autoFabricApi = false;
                 return;
+            }
+            auto selected = chosen.find(loader_type::fabric_api);
+            if (selected != chosen.end()) {
+                if (automaticFabricApi.empty() || selected->second != automaticFabricApi) {
+                    autoFabricApi = false;
+                    return;
+                }
+                loaderSelection.remove(loader_type::fabric_api);
+                automaticFabricApi.clear();
             }
             const Catalog::LoaderVersions& api = Catalog::loader(loader_type::fabric_api, minecraft);
             if (api.status == Catalog::Status::Loading) {
                 return;
             }
-            autoFabricApi = false;
             if (api.status != Catalog::Status::Ready || api.list.empty()) {
+                autoFabricApi = false;
                 return;
             }
             const blb::install::loader_version* latest = nullptr;
@@ -585,7 +599,40 @@ namespace NewInstanceScreen {
             if (latest == nullptr) {
                 latest = &api.list.front();
             }
+            const auto& requirements = Catalog::fabricApiRequirements(*latest, !fabricApiRequested);
+            fabricApiRequested = true;
+            if (requirements.status == Catalog::Status::Loading) {
+                return;
+            }
+            autoFabricApi = false;
+            if (requirements.status == Catalog::Status::Failed) {
+                Notices::add(Notices::Kind::Failed, "未自动选择 Fabric API：无法检查兼容性，" + requirements.error,
+                             5000);
+                return;
+            }
+            const std::string& fabric = chosen.at(loader_type::fabric);
+            std::string problem;
+            for (const std::string& range : requirements.required) {
+                if (!blb::modpack::version_in_range(fabric, range)) {
+                    problem = "需要 Fabric Loader " + range;
+                    break;
+                }
+            }
+            for (const std::string& range : requirements.incompatible) {
+                if (blb::modpack::version_in_range(fabric, range)) {
+                    problem = "不兼容 Fabric Loader " + range;
+                    break;
+                }
+            }
+            if (!problem.empty()) {
+                Notices::add(Notices::Kind::Info,
+                             "未自动选择 Fabric API " + latest->version + "：" + problem +
+                                     "。请调整 Loader 版本或手动选择兼容的 API。",
+                             6000);
+                return;
+            }
             loaderSelection.select(loader_type::fabric_api, latest->version);
+            automaticFabricApi = latest->version;
         }
 
         void setupStep() {
@@ -809,6 +856,10 @@ namespace NewInstanceScreen {
                     steps.go(STEP_LOADER);
                 } else if (action == RowAction::Clear) {
                     loaderSelection.remove(type);
+                    if (type == loader_type::fabric_api) {
+                        autoFabricApi = false;
+                        automaticFabricApi.clear();
+                    }
                 }
                 y += Page::ROW_H;
             }
@@ -879,6 +930,10 @@ namespace NewInstanceScreen {
             if (clicked >= 0) {
                 loaderSelection.select(picking, versions.list[clicked].version);
                 autoFabricApi = editing.empty() && picking == loader_type::fabric;
+                fabricApiRequested = false;
+                if (picking == loader_type::fabric_api) {
+                    automaticFabricApi.clear();
+                }
                 steps.go(STEP_SETUP);
             }
         }
@@ -934,6 +989,8 @@ namespace NewInstanceScreen {
     void reset() {
         loaderSelection.reset();
         autoFabricApi = false;
+        fabricApiRequested = false;
+        automaticFabricApi.clear();
         typedName.clear();
         modpack.reset();
         editing.clear();

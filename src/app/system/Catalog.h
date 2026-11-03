@@ -36,6 +36,17 @@ namespace Catalog {
     const LoaderVersions& loader(blb::install::loader_type type, const std::string& minecraft);
     void refreshLoader(blb::install::loader_type type, const std::string& minecraft);
 
+    struct FabricApiRequirements {
+        Status status = Status::Loading;
+        std::vector<std::string> required;
+        std::vector<std::string> incompatible;
+        std::string error;
+    };
+
+    // Fabric Loader constraints from the API and its embedded mods.
+    const FabricApiRequirements& fabricApiRequirements(const blb::install::loader_version& version,
+                                                       bool retryFailed = false);
+
     struct JavaList {
         Status status = Status::Loading;
         std::vector<blb::java::java_installation> list;
