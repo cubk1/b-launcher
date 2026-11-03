@@ -337,18 +337,21 @@ namespace ModNames {
         }
         const Translation& translation = translate(query);
         out.waiting = translation.status == Addons::Status::Loading;
+        std::string replacement;
         for (const Match& match : translation.matches) {
-            if (han) {
-                if (!match.en.empty()) {
-                    out.text = match.en;
-                    break;
-                }
+            if (!match.exact || match.en.empty()) {
                 continue;
             }
-            if (match.exact && match.by != "en" && !match.en.empty()) {
-                out.text = match.en;
+            if (!han && match.by == "en") {
+                return out;
             }
-            break;
+            if (!replacement.empty() && replacement != match.en) {
+                return out;
+            }
+            replacement = match.en;
+        }
+        if (!replacement.empty()) {
+            out.text = std::move(replacement);
         }
         return out;
     }
