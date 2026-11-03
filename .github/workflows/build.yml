@@ -1,8 +1,6 @@
 name: build
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -10,10 +8,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install UPX
-        run: choco install upx -y --no-progress
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install tools
+        run: choco install upx ninja -y --no-progress
       - name: Configure
-        run: cmake -S . -B build
+        run: cmake -S . -B build -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES="Release;MinSizeRel"
       - name: Build Release
         run: cmake --build build --config Release
       - name: Build MinSizeRel
