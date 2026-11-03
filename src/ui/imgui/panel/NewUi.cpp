@@ -804,21 +804,30 @@ namespace NewUi {
         int count = (int) options.size();
         int maxVisible = 6;
         bool scrollable = count > maxVisible;
-        static std::vector<std::string> measuredOptions;
+        std::vector<std::string> labels;
+        std::vector<std::string> details;
+        labels.reserve(count);
+        details.reserve(count);
+        for (const std::string& option : options) {
+            labels.push_back(choice->optionLabel(option));
+            details.push_back(choice->optionDetail(option));
+        }
+        static std::vector<std::string> measuredLabels;
+        static std::vector<std::string> measuredDetails;
         static float measuredScale = 0.0f;
         static float measuredWidest = 0.0f;
         float scaleNow = UiRender::stableScale();
-        if (options != measuredOptions || scaleNow != measuredScale) {
-            measuredOptions = options;
+        if (labels != measuredLabels || details != measuredDetails || scaleNow != measuredScale) {
+            measuredLabels = std::move(labels);
+            measuredDetails = std::move(details);
             measuredScale = scaleNow;
             measuredWidest = 0.0f;
             for (int i = 0; i < count; i++) {
-                std::string label = choice->optionLabel(options[i]);
-                std::string detail = choice->optionDetail(options[i]);
+                const std::string& detail = measuredDetails[i];
                 float extra =
                         detail.empty() ? 0.0f : 24.0f + UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 measuredWidest = std::max(measuredWidest,
-                                          UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + extra);
+                                          UiFont::width(measuredLabels[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + extra);
             }
         }
         float widest = measuredWidest;
