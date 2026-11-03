@@ -7,6 +7,7 @@
 #include "ui/exui/windows/SettingsWindow.h"
 #include "app/instances/Instances.h"
 #include "app/launch/JavaDownloads.h"
+#include "app/launch/GameOptions.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
 #include "app/system/About.h"
@@ -26,6 +27,7 @@
 #include "ui/exui/widgets/ScrollPanel.h"
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/InstancesWindow.h"
+#include "ui/exui/windows/KeyBindPanel.h"
 
 #include <core/base/format.hpp>
 #include <core/base/fs.hpp>
@@ -70,6 +72,7 @@ namespace ForgottenMelody {
             LOGS,
             PRE_LAUNCH_LABEL,
             PRE_LAUNCH,
+            KEYS, KEYS_SOURCE_LABEL, KEYS_SOURCE,
             // 补丁
             PATCH,
             ENABLE,
@@ -145,7 +148,7 @@ namespace ForgottenMelody {
             LINKS,
         };
 
-        constexpr uint32_t PAGE_IDS[] = {GAME, PATCH, LAUNCHER, JAVA, TOOLS, ABOUT};
+        constexpr uint32_t PAGE_IDS[] = {GAME, KEYS, PATCH, LAUNCHER, JAVA, TOOLS, ABOUT};
 
         struct Isolation {
             blb::instance::isolation_mode mode;
@@ -294,6 +297,8 @@ namespace ForgottenMelody {
                         {LOGS, ControlKind::Check, {}, L"显示游戏日志"},
                         {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
                         {PRE_LAUNCH, ControlKind::Edit, {}},
+                        {KEYS_SOURCE_LABEL, ControlKind::Label, {}, L"游戏目录"},
+                        {KEYS_SOURCE, ControlKind::Combo, {}},
                         // 补丁
                         {ENABLE, ControlKind::Group, {}, L"启用"},
                         {ALL, ControlKind::Check, {}, L"为所有实例启用"},
@@ -395,6 +400,7 @@ namespace ForgottenMelody {
                 };
                 if (!createFrame(parent, L"设置", L"",
                                  {{L"游戏设置", GAME},
+                                  {L"按键绑定", KEYS},
                                   {L"补丁", PATCH},
                                   {L"启动器设置", LAUNCHER},
                                   {L"Java 管理", JAVA},
@@ -404,9 +410,15 @@ namespace ForgottenMelody {
                 }
                 AddControls(CONTROLS);
                 for (uint32_t id : PAGE_IDS) {
+                    if (id == KEYS) continue;
                     auto& panel = *FindControl(id);
                     pages[id] = &panel.Add<exui::ScrollPanel>(0, 0, panel.GetWidth(), panel.GetHeight());
                 }
+                auto& keysPage = *FindControl(KEYS);
+                MoveInto(KEYS, {KEYS_SOURCE_LABEL, KEYS_SOURCE});
+                row(KEYS_SOURCE_LABEL, {cell(KEYS_SOURCE)}, 28, 70).Apply({15, 10, keysPage.GetWidth() - 30, 28});
+                keyEditor = &keysPage.Add<KeyBindPanel>();
+                keyEditor->SetBounds(15, 46, keysPage.GetWidth() - 30, keysPage.GetHeight() - 58);
                 MoveInto(pages.at(GAME)->GetContent(),
                          {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE, LAUNCH,
                           LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS, LOGS,
@@ -451,7 +463,8 @@ namespace ForgottenMelody {
                 }
                 refreshAbout();
                 refreshTools();
-                revealFocus(*pages.at(PAGE_IDS[lastSection]));
+                if (FindControl(KEYS)->IsVisible()) refreshKeys();
+                if (PAGE_IDS[lastSection] != KEYS) revealFocus(*pages.at(PAGE_IDS[lastSection]));
             }
 
             void OnSelection(uint32_t id, int index) override {
@@ -463,6 +476,9 @@ namespace ForgottenMelody {
                     return;
                 }
                 switch (id) {
+                    case KEYS_SOURCE:
+                        if (index < (int) keySources.size()) keySource = keySources[index];
+                        break;
                     case ISOLATION: Instances::setIsolation(ISOLATIONS[index].mode); break;
                     case LANGUAGE: LaunchDefaults::setLanguage(LANGUAGES[index].language); break;
                     case GC: LaunchDefaults::setGc(COLLECTORS[index].mode); break;
@@ -544,6 +560,32 @@ namespace ForgottenMelody {
             }
 
         private:
+            KeyBindPanel* keyEditor = nullptr;
+            std::vector<std::string> keySources;
+            std::string keySource;
+
+            LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override {
+                if (keyEditor && keyEditor->HandleInput(msg, wp, lp)) return 0;
+                return SectionedForm::HandleMessage(msg, wp, lp);
+            }
+
+            void refreshKeys() {
+                std::vector<std::wstring> labels;
+                keySources.clear();
+                for (const auto& source : Instances::sources()) {
+                    keySources.push_back(source.key); labels.push_back(Platform::widen(source.label));
+                }
+                if (std::find(keySources.begin(), keySources.end(), keySource) == keySources.end()) {
+                    const auto* entry = Instances::find(Instances::selected());
+                    const auto* source = Instances::installSource(entry ? entry->source : "");
+                    keySource = source ? source->key : "";
+                }
+                auto at = std::find(keySources.begin(), keySources.end(), keySource);
+                UpdateOptions(KEYS_SOURCE, labels, at == keySources.end() ? -1 : (int) (at - keySources.begin()));
+                keyEditor->SetFile(GameOptions::sharedFile(keySource));
+                keyEditor->Refresh();
+            }
+
             // How 皮肤 is laid out now, so that its rows only move when it changes.
             int skinShape = -1;
             int toolsShape = -1;

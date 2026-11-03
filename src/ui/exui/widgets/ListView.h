@@ -22,6 +22,7 @@ namespace exui {
         ListView(int x, int y, int width, int height);
         ~ListView() override;
         void InsertColumn(std::wstring title, int width);
+        void SetColumnWidth(int column, int width);
         int InsertRow(const std::vector<std::wstring>& cellTexts = {}, const std::vector<int>& images = {});
         void SetImageList(std::shared_ptr<ImageList> images) {
             m_images = std::move(images);

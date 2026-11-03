@@ -5,6 +5,13 @@
 #include <climits>
 
 namespace exui {
+    void ListView::SetColumnWidth(int column, int width) {
+        if (column < 0 || column >= (int) m_columns.size()) return;
+        width = std::max(0, width);
+        if (m_columns[column].width == width) return;
+        m_columns[column].width = width;
+        Invalidate();
+    }
     using namespace Gdiplus;
     ListView::ListView() {
         SetTabStop(true);
