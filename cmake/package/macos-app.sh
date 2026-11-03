@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
-binary=$(realpath "$1")
-output=$(realpath -m "$2")
+binary=$1
+mkdir -p "$2"
+output=$(cd "$2" && pwd)
 version=$3
 app="$output/B Launcher.app"
 rm -rf "$app"
@@ -38,4 +39,6 @@ cat > "$app/Contents/Info.plist" <<PLIST
 PLIST
 if command -v codesign > /dev/null; then
     codesign --force --sign - "$app"
+elif command -v rcodesign > /dev/null; then
+    rcodesign sign "$app"
 fi
