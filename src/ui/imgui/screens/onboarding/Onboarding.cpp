@@ -6,9 +6,9 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
+#include "app/system/Config.h"
 #include "app/system/Platform.h"
 
-#include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
@@ -22,6 +22,7 @@
 
 #include "imgui.h"
 
+#include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
 #include <algorithm>
@@ -48,12 +49,33 @@ namespace Onboarding {
         constexpr float INTRO_OUT = 0.18f;
         constexpr float ENTER_SECONDS = 0.40f;
 
-        constexpr float CONTENT_MAX = 720.0f;
-        constexpr float PROGRESS_Y = 52.0f;
-        constexpr float TITLE_Y = 70.0f;
-        constexpr float HINT_Y = 106.0f;
-        constexpr float PREVIEW_Y = 138.0f;
-        constexpr float BLOCK_H[STEPS] = {34.0f, 36.0f, 80.0f, 78.0f};
+        constexpr float CONTENT_MAX = 880.0f;
+        constexpr float STEPPER_Y = MainWindow::TITLE_HEIGHT + 10.0f;
+        constexpr float STEPPER_H = 28.0f;
+        constexpr float STEP_DOT = 22.0f;
+        constexpr float CONTROL_H = 32.0f;
+        constexpr float FOOTER_MARGIN = 24.0f;
+        constexpr float BODY_MARGIN = 28.0f;
+        constexpr float COLUMN_GAP = 40.0f;
+        constexpr float LEFT_MIN = 280.0f;
+        constexpr float LEFT_MAX = 340.0f;
+        constexpr float PREVIEW_RATIO = 1.6f;
+        constexpr float TITLE_H = 30.0f;
+        constexpr float HINT_H = 20.0f;
+        constexpr float HINT_GAP = 6.0f;
+        constexpr float CONTROLS_GAP = 24.0f;
+        constexpr float ROW_GAP = 12.0f;
+        constexpr float CHIP_GAP = 8.0f;
+        constexpr float SWATCH_R = 13.0f;
+        constexpr float SWATCH_CELL = 40.0f;
+        constexpr int SWATCH_COLUMNS = 5;
+        constexpr int ZOOM_COLUMNS = 3;
+        constexpr float LIST_ROW = 36.0f;
+        constexpr float TOGGLE_W = 34.0f;
+        constexpr float TOGGLE_H = 18.0f;
+        constexpr float ICON_BUTTON = 28.0f;
+
+        const char* const PENDING_KEY = "setupPending";
 
         const char* const TITLES[STEPS] = {"主题色", "界面缩放", "背景", "主页组件"};
         const char* const HINTS[STEPS] = {
@@ -131,41 +153,48 @@ namespace Onboarding {
             UiRender::alphaMul = saved;
         }
 
+        uint32_t withAlpha(uint32_t argb, float alpha) {
+            return (argb & 0x00FFFFFFu) | ((uint32_t) Ui::round(255.0f * clamp01(alpha)) << 24);
+        }
+
         bool action(const std::string& id, const std::string& text, float x, float y, float w, bool primary,
                     int glyph) {
-            const float h = 32.0f;
-            bool hovered = NewUi::hit(x, y, w, h);
+            bool hovered = NewUi::hit(x, y, w, CONTROL_H);
             float lit = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 16.0f);
             float press = NewUi::mouseDown && hovered ? 1.0f : 0.0f;
             float push = UiState::motion(id + "#press", press, 26.0f);
             float dy = push * 1.0f;
             uint32_t ink;
             if (primary) {
-                UiRender::roundRect(x, y + dy, w, h, 9.0f,
+                UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f,
                                     UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * lit + 0.05f * push));
                 ink = UiTheme::onAccent();
             } else {
-                UiRender::roundRect(x, y + dy, w, h, 9.0f, UiTheme::surfaceRaised());
+                UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::surfaceRaised());
                 if (lit > 0.001f) {
-                    UiRender::roundRect(x, y + dy, w, h, 9.0f, UiTheme::overlay(Ui::round(14.0f * lit)));
+                    UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::overlay(Ui::round(14.0f * lit)));
                 }
-                UiRender::outline(x, y + dy, w, h, 9.0f, UiTheme::outlineSoft());
+                UiRender::outline(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::outlineSoft());
                 ink = UiTheme::textPrimary();
             }
             float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             if (glyph != 0) {
-                float contentW = 10.0f + 6.0f + textW;
-                float start = x + (w - contentW) * 0.5f + lit * 1.5f;
-                UiWidgets::icon(Ui::glyph(glyph), start + 5.0f, y + dy + h * 0.5f, ink, 10.0f);
-                UiRender::textY(text, start + 16.0f, y + dy, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float start = x + (w - (16.0f + textW)) * 0.5f;
+                UiWidgets::icon(Ui::glyph(glyph), start + 5.0f, y + dy + CONTROL_H * 0.5f, ink, 10.0f);
+                UiRender::textY(text, start + 16.0f, y + dy, CONTROL_H, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             } else {
-                UiRender::textY(text, x + (w - textW) * 0.5f, y + dy, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(text, x + (w - textW) * 0.5f, y + dy, CONTROL_H, ink, UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
             }
-            if (NewUi::click(x, y, w, h)) {
+            if (NewUi::click(x, y, w, CONTROL_H)) {
                 UiSound::request(primary ? UiSound::RELEASE : UiSound::TICK);
                 return true;
             }
             return false;
+        }
+
+        float actionWidth(const std::string& text, int glyph) {
+            return UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + (glyph != 0 ? 16.0f : 0.0f) + 40.0f;
         }
 
         void complete() {
@@ -195,39 +224,97 @@ namespace Onboarding {
             return binding;
         }
 
-        void progressBar(float x, float y, float w) {
-            float amount = UiState::motion("onboarding#progress", (float) (step + 1) / (float) STEPS, 9.0f);
-            UiRender::roundRect(x, y, w, 3.0f, 1.5f, UiTheme::overlay(16));
-            if (amount <= 0.001f) {
-                return;
+        void stepper(float x, float y, float w) {
+            float progress = UiState::motion("onboarding#progress", (float) step, 10.0f);
+            float widths[STEPS];
+            float total = 0.0f;
+            for (int i = 0; i < STEPS; i++) {
+                widths[i] = STEP_DOT + 8.0f + UiFont::width(TITLES[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                total += widths[i];
             }
-            float fill = w * amount;
-            UiRender::roundRect(x, y, fill, 3.0f, 1.5f, UiTheme::accent());
-            float headX = x + fill - 1.5f;
-            UiRender::circle(headX, y + 1.5f, 6.0f, (UiTheme::accent() & 0x00FFFFFFu) | 0x33000000u);
-            UiRender::circle(headX, y + 1.5f, 2.4f, UiTheme::accent());
+            float link = std::max(0.0f, w - total) / (float) (STEPS - 1);
+            float cy = y + STEPPER_H * 0.5f;
+            float cursor = x;
+            for (int i = 0; i < STEPS; i++) {
+                std::string id = "onboarding#step#" + std::to_string(i);
+                bool hovered = i != step && NewUi::hit(cursor - 4.0f, y, widths[i] + 8.0f, STEPPER_H);
+                float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
+                float done = clamp01(progress - (float) i);
+                float here = std::max(0.0f, 1.0f - std::fabs(progress - (float) i));
+                float reached = std::max(done, here);
+                float dotX = cursor + STEP_DOT * 0.5f;
+                float r = STEP_DOT * 0.5f;
+                UiRender::circle(dotX, cy, r, UiRender::mix(UiTheme::surfaceRaised(), UiTheme::accent(), reached));
+                if (reached < 0.999f) {
+                    UiRender::outline(dotX - r, cy - r, STEP_DOT, STEP_DOT, r,
+                                      withAlpha(UiTheme::outline(), 1.0f - reached));
+                }
+                uint32_t mark = UiRender::mix(UiTheme::textMuted(), UiTheme::onAccent(), reached);
+                if (i < step) {
+                    UiWidgets::check(dotX, cy, mark, 9.0f);
+                } else {
+                    Page::centredText(std::to_string(i + 1), dotX, y, STEPPER_H, mark, UiWidgets::TEXT_SMALL);
+                }
+                uint32_t ink = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), std::max(here, 0.6f * lit));
+                UiRender::textY(TITLES[i], cursor + STEP_DOT + 8.0f, y, STEPPER_H, ink, UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                if (i != step && NewUi::click(cursor - 4.0f, y, widths[i] + 8.0f, STEPPER_H)) {
+                    go(i);
+                }
+                if (i < STEPS - 1) {
+                    float from = cursor + widths[i] + 12.0f;
+                    float to = cursor + widths[i] + link - 12.0f;
+                    if (to > from) {
+                        UiRender::roundRect(from, cy - 1.0f, to - from, 2.0f, 1.0f, UiTheme::overlay(18));
+                        float filled = (to - from) * clamp01(progress - (float) i);
+                        if (filled > 0.5f) {
+                            UiRender::roundRect(from, cy - 1.0f, filled, 2.0f, 1.0f, UiTheme::accent());
+                        }
+                    }
+                }
+                cursor += widths[i] + link;
+            }
+        }
+
+        bool presetAccent() {
+            for (uint32_t preset : ACCENTS) {
+                if ((Appearance::accent() & 0x00FFFFFFu) == (preset & 0x00FFFFFFu)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void swatchFace(const std::string& id, float cx, float cy, uint32_t fill, bool selected, float& lit) {
+            float hit = SWATCH_R + 5.0f;
+            bool hovered = NewUi::hit(cx - hit, cy - hit, hit * 2.0f, hit * 2.0f);
+            lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
+            float sel = UiState::motion(id + "#sel", selected ? 1.0f : 0.0f, 16.0f);
+            if (sel > 0.001f) {
+                float ring = SWATCH_R + 4.0f;
+                UiRender::outline(cx - ring, cy - ring, ring * 2.0f, ring * 2.0f, ring, withAlpha(fill, sel), 0xF,
+                                  2.0f);
+            }
+            UiRender::circle(cx, cy, SWATCH_R + lit, fill);
+        }
+
+        bool swatchClicked(float cx, float cy) {
+            float hit = SWATCH_R + 5.0f;
+            return NewUi::click(cx - hit, cy - hit, hit * 2.0f, hit * 2.0f);
         }
 
         void swatch(float cx, float cy, uint32_t color) {
             std::string id = "onboarding#accent#" + hexOf(color);
-            bool hovered = NewUi::hit(cx - 15.0f, cy - 15.0f, 30.0f, 30.0f);
-            float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
-            float sel = UiState::motion(
-                    id + "#sel", (Appearance::accent() & 0x00FFFFFFu) == (color & 0x00FFFFFFu) ? 1.0f : 0.0f, 16.0f);
-            if (lit > 0.001f) {
-                UiRender::circle(cx, cy, 14.0f + 2.0f * lit, UiTheme::overlay(Ui::round(14.0f * lit)));
+            bool selected = (Appearance::accent() & 0x00FFFFFFu) == (color & 0x00FFFFFFu);
+            float lit = 0.0f;
+            swatchFace(id, cx, cy, 0xFF000000u | (color & 0x00FFFFFFu), selected, lit);
+            if (selected) {
+                UiWidgets::check(cx, cy, inkOn(color), 10.0f);
             }
-            if (sel > 0.001f) {
-                UiRender::circle(cx, cy, 12.0f + 2.5f * sel, (color & 0x00FFFFFFu) | (Ui::round(56.0f * sel) << 24));
+            if (lit > 0.5f) {
+                Page::tooltip(hexOf(color), cx - SWATCH_R, cy + SWATCH_R + 4.0f, SWATCH_R * 2.0f, 0.0f);
             }
-            UiRender::circle(cx, cy, 10.0f, 0xFF000000u | (color & 0x00FFFFFFu));
-            if (sel > 0.5f) {
-                UiWidgets::check(cx, cy, inkOn(color), 9.0f);
-            }
-            if (hovered) {
-                Page::tooltip(hexOf(color), cx - 15.0f, cy + 16.0f, 30.0f, 0.0f);
-            }
-            if (NewUi::click(cx - 15.0f, cy - 15.0f, 30.0f, 30.0f)) {
+            if (swatchClicked(cx, cy)) {
                 UiSound::request(UiSound::TICK);
                 Appearance::setAccent(color);
                 kick(0.6f);
@@ -235,66 +322,64 @@ namespace Onboarding {
         }
 
         void customSwatch(float cx, float cy) {
-            bool hovered = NewUi::hit(cx - 15.0f, cy - 15.0f, 30.0f, 30.0f);
-            float lit = UiState::motion("onboarding#accent#custom", hovered ? 1.0f : 0.0f, 16.0f);
-            if (lit > 0.001f) {
-                UiRender::circle(cx, cy, 14.0f + 2.0f * lit, UiTheme::overlay(Ui::round(14.0f * lit)));
+            bool custom = !presetAccent();
+            uint32_t accent = 0xFF000000u | (Appearance::accent() & 0x00FFFFFFu);
+            float lit = 0.0f;
+            swatchFace("onboarding#accent#custom", cx, cy, custom ? accent : UiTheme::surfaceRaised(), custom, lit);
+            if (custom) {
+                UiWidgets::icon(Ui::glyph(0xf1fb), cx, cy, inkOn(accent), 10.0f);
+            } else {
+                UiRender::outline(cx - SWATCH_R, cy - SWATCH_R, SWATCH_R * 2.0f, SWATCH_R * 2.0f, SWATCH_R,
+                                  UiTheme::outline());
+                UiWidgets::icon(Ui::glyph(0xf1fb), cx, cy,
+                                UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit), 10.0f);
             }
-            UiRender::circle(cx, cy, 10.0f, UiTheme::surfaceRaised());
-            UiRender::outline(cx - 10.0f, cy - 10.0f, 20.0f, 20.0f, 10.0f, UiTheme::outline());
-            UiWidgets::icon(Ui::glyph(0xf1fb), cx, cy, UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit),
-                            9.0f);
-            if (hovered) {
-                Page::tooltip("自定义颜色", cx - 15.0f, cy + 16.0f, 30.0f, 0.0f);
+            if (lit > 0.5f) {
+                Page::tooltip("自定义颜色", cx - SWATCH_R, cy + SWATCH_R + 4.0f, SWATCH_R * 2.0f, 0.0f);
             }
-            if (NewUi::click(cx - 15.0f, cy - 15.0f, 30.0f, 30.0f)) {
+            if (swatchClicked(cx, cy)) {
                 UiSound::request(UiSound::PAGE);
-                NewUi::openPicker(customAccent(), cx + 22.0f, cy - 190.0f);
+                NewUi::openPicker(customAccent(), cx + SWATCH_R + 12.0f,
+                                  std::max(MainWindow::TITLE_HEIGHT + 8.0f, cy - 150.0f));
             }
         }
 
-        void themeStep(float x, float y, float w) {
-            float cy = y + 16.0f;
-            float cx = x + 16.0f;
-            for (uint32_t preset : ACCENTS) {
-                swatch(cx, cy, preset);
-                cx += 38.0f;
-            }
-            if (cx < x + w - 20.0f) {
-                customSwatch(cx, cy);
-            }
-        }
-
-        void zoomStep(float x, float y) {
-            const std::vector<int>& zooms = Appearance::zooms();
-            float segY = y;
-            const float segH = 32.0f;
-            float segW = 56.0f;
-            for (int percent : zooms) {
-                segW = std::max(segW,
-                                UiFont::width(std::to_string(percent) + "%", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) +
-                                        30.0f);
-            }
-            segW = std::min(segW, 84.0f);
-            float total = segW * (float) zooms.size();
-            int selected = 0;
-            for (size_t i = 0; i < zooms.size(); i++) {
-                if (zooms[i] == Appearance::zoom()) {
-                    selected = (int) i;
+        void themeStep(float x, float y) {
+            int presets = (int) (sizeof(ACCENTS) / sizeof(ACCENTS[0]));
+            for (int i = 0; i <= presets; i++) {
+                float cx = x + SWATCH_R + (float) (i % SWATCH_COLUMNS) * SWATCH_CELL;
+                float cy = y + SWATCH_R + (float) (i / SWATCH_COLUMNS) * SWATCH_CELL;
+                if (i < presets) {
+                    swatch(cx, cy, ACCENTS[i]);
+                } else {
+                    customSwatch(cx, cy);
                 }
             }
-            UiRender::roundRect(x, segY, total, segH, segH * 0.5f, UiTheme::surfaceSunken());
-            UiRender::outline(x, segY, total, segH, segH * 0.5f, UiTheme::outlineSoft());
-            float thumb = UiState::motion("onboarding#zoom#thumb", (float) selected, 14.0f);
-            UiRender::roundRect(x + 3.0f + thumb * segW, segY + 3.0f, segW - 6.0f, segH - 6.0f, (segH - 6.0f) * 0.5f,
-                                UiTheme::accent());
+        }
+
+        void zoomStep(float x, float y, float w) {
+            const std::vector<int>& zooms = Appearance::zooms();
+            float cellW = (w - CHIP_GAP * (float) (ZOOM_COLUMNS - 1)) / (float) ZOOM_COLUMNS;
+            float r = CONTROL_H * 0.5f;
             for (size_t i = 0; i < zooms.size(); i++) {
-                float sx = x + segW * (float) i;
-                std::string text = std::to_string(zooms[i]) + "%";
-                float near = std::max(0.0f, 1.0f - std::fabs(thumb - (float) i));
-                uint32_t ink = UiRender::mix(UiTheme::textMuted(), UiTheme::onAccent(), near);
-                Page::centredText(text, sx + segW * 0.5f, segY, segH, ink, UiWidgets::TEXT_CONTROL);
-                if (NewUi::click(sx, segY, segW, segH)) {
+                float cx = x + (float) (i % ZOOM_COLUMNS) * (cellW + CHIP_GAP);
+                float cy = y + (float) (i / ZOOM_COLUMNS) * (CONTROL_H + CHIP_GAP);
+                bool on = zooms[i] == Appearance::zoom();
+                std::string id = "onboarding#zoom#" + std::to_string(zooms[i]);
+                bool hovered = !on && NewUi::hit(cx, cy, cellW, CONTROL_H);
+                float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
+                float sel = UiState::motion(id + "#on", on ? 1.0f : 0.0f, 16.0f);
+                UiRender::roundRect(cx, cy, cellW, CONTROL_H, r,
+                                    UiRender::mix(UiTheme::surfaceRaised(), UiTheme::accent(), sel));
+                if (lit > 0.001f) {
+                    UiRender::roundRect(cx, cy, cellW, CONTROL_H, r, UiTheme::overlay(Ui::round(14.0f * lit)));
+                }
+                UiRender::outline(cx, cy, cellW, CONTROL_H, r,
+                                  UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), sel));
+                uint32_t rest = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
+                Page::centredText(std::to_string(zooms[i]) + "%", cx + cellW * 0.5f, cy, CONTROL_H,
+                                  UiRender::mix(rest, UiTheme::onAccent(), sel), UiWidgets::TEXT_CONTROL);
+                if (!on && NewUi::click(cx, cy, cellW, CONTROL_H)) {
                     UiSound::request(UiSound::TICK);
                     Appearance::setZoom(zooms[i]);
                     kick(0.5f);
@@ -306,30 +391,34 @@ namespace Onboarding {
             auto flag = std::make_shared<FlagBinding>(
                     "onboarding#background", [] { return Appearance::backgroundImage(); },
                     [](bool on) { Appearance::setBackgroundImage(on); });
-            UiRender::textY("显示背景图片", x + 2.0f, y, 24.0f, UiTheme::textSecondary(), UiFont::MEDIUM,
+            UiRender::textY("显示背景图片", x, y, CONTROL_H, UiTheme::textSecondary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             ToggleWidget toggle("onboarding#background", flag, true);
-            toggle.bounds(x + w - 34.0f, y + 3.0f, 34.0f, 18.0f).hitArea(x, y, w, 26.0f);
+            toggle.bounds(x + w - TOGGLE_W, y + (CONTROL_H - TOGGLE_H) * 0.5f, TOGGLE_W, TOGGLE_H)
+                    .hitArea(x, y, w, CONTROL_H);
             toggle.paint();
             if (!Appearance::backgroundImage()) {
                 return;
             }
 
-            float rowY = y + 42.0f;
+            float rowY = y + CONTROL_H + ROW_GAP;
             std::string path = Background::path();
-            UiRender::textY("背景图片", x + 2.0f, rowY, 28.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
-            float pickX = x + w - 28.0f;
-            float right = pickX;
+            float buttonY = rowY + (CONTROL_H - ICON_BUTTON) * 0.5f;
+            float pickX = x + w - ICON_BUTTON;
+            float fieldRight = pickX - 8.0f;
             if (!path.empty()) {
-                if (Page::iconButton("onboarding#bgReset", 0xf2ea, "恢复默认图片", pickX - 32.0f, rowY)) {
+                float resetX = pickX - 4.0f - ICON_BUTTON;
+                if (Page::iconButton("onboarding#bgReset", 0xf2ea, "恢复默认图片", resetX, buttonY)) {
                     Background::setPath(std::string());
                     path.clear();
                     kick(0.4f);
                 }
-                right = pickX - 34.0f;
+                fieldRight = resetX - 8.0f;
             }
-            if (Page::iconButton("onboarding#bgPick", 0xf07c, "选择图片", pickX, rowY)) {
+            UiRender::roundRect(x, rowY, fieldRight - x, CONTROL_H, 9.0f, UiTheme::surfaceSunken());
+            UiRender::outline(x, rowY, fieldRight - x, CONTROL_H, 9.0f, UiTheme::outlineSoft());
+            float textRight = fieldRight - 12.0f;
+            if (Page::iconButton("onboarding#bgPick", 0xf07c, "选择图片", pickX, buttonY)) {
                 std::filesystem::path start =
                         path.empty() ? Platform::exeDirectory() : b_launcher_base::path_from_utf8(path);
                 if (std::optional<std::filesystem::path> picked = Platform::pickImage(start)) {
@@ -340,229 +429,100 @@ namespace Onboarding {
             std::string name =
                     path.empty() ? std::string("默认图片") : Platform::display(b_launcher_base::path_from_utf8(path));
             name = UiFont::fitStart(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
-                                    std::max(0.0f, right - 8.0f - (x + 80.0f)));
-            float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(name, right - 8.0f - nameW, rowY, 28.0f,
-                            path.empty() ? UiTheme::textFaint() : UiTheme::textMuted(), UiFont::MEDIUM,
+                                    std::max(0.0f, textRight - (x + 12.0f)));
+            UiRender::textY(name, x + 12.0f, rowY, CONTROL_H,
+                            path.empty() ? UiTheme::textFaint() : UiTheme::textSecondary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
         }
 
-        void chip(const std::string& widgetId, int glyph, const std::string& text, float x, float y, float w, float h,
-                  bool on) {
-            std::string id = "onboarding#home#" + widgetId;
-            bool hovered = NewUi::hit(x, y, w, h);
+        void widgetRow(const HomeWidgets::WidgetKind& kind, float x, float y, float w, bool last) {
+            std::string id = "onboarding#home#" + std::string(kind.id);
+            std::string widget = kind.id;
+            bool hovered = NewUi::hit(x, y, w, LIST_ROW);
             float lit = UiState::motion(id, hovered ? 1.0f : 0.0f, 16.0f);
-            float sel = UiState::motion(id + "#on", on ? 1.0f : 0.0f, 16.0f);
-            UiRender::roundRect(x, y, w, h, h * 0.5f,
-                                UiRender::mix(UiTheme::surfaceRaised(), UiTheme::accentSoft(34), sel));
-            uint32_t ring = UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), sel);
             if (lit > 0.001f) {
-                ring = UiRender::mix(ring, UiTheme::textSecondary(), 0.3f * lit);
+                UiRender::roundRect(x + 4.0f, y + 2.0f, w - 8.0f, LIST_ROW - 4.0f, 7.0f,
+                                    UiTheme::overlay(Ui::round(12.0f * lit)));
             }
-            UiRender::outline(x, y, w, h, h * 0.5f, ring);
-            uint32_t ink = UiRender::mix(UiTheme::textMuted(), UiTheme::accentText(), sel);
-            UiWidgets::icon(Ui::glyph(glyph), x + 15.0f, y + h * 0.5f, ink, 10.0f);
-            UiRender::textY(text, x + 25.0f, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            if (NewUi::click(x, y, w, h)) {
-                UiSound::request(on ? UiSound::TICK : UiSound::RELEASE);
-                HomeWidgets::setWidgetEnabled(widgetId, !on);
-                kick(0.45f);
+            UiWidgets::icon(Ui::glyph(kind.glyph), x + 22.0f, y + LIST_ROW * 0.5f, UiTheme::textMuted(), 10.0f);
+            UiRender::textY(kind.label, x + 38.0f, y, LIST_ROW, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            auto flag = std::make_shared<FlagBinding>(
+                    id + "#on", [widget] { return HomeWidgets::enabled(widget); },
+                    [widget](bool on) {
+                        HomeWidgets::setWidgetEnabled(widget, on);
+                        kick(0.45f);
+                    });
+            ToggleWidget toggle(id + "#on", flag, true);
+            toggle.bounds(x + w - 12.0f - TOGGLE_W, y + (LIST_ROW - TOGGLE_H) * 0.5f, TOGGLE_W, TOGGLE_H)
+                    .hitArea(x, y, w, LIST_ROW);
+            toggle.paint();
+            if (!last) {
+                UiRender::hLine(x + 12.0f, x + w - 12.0f, y + LIST_ROW, UiTheme::divider());
             }
         }
 
         void homeStep(float x, float y, float w) {
             if (Homepage::source() != Homepage::SOURCE_NONE) {
                 std::string hint = "当前主页：" + Homepage::choice() + "。切换后可使用主页组件。";
-                UiRender::textY(UiFont::fitEnd(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w), x, y, 24.0f,
-                                UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                if (action("onboarding#useWidgets", "使用主页组件", x, y + 38.0f, 160.0f, true, 0xf00a)) {
+                float lineY = y;
+                for (const std::string& line : UiFont::wrap(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w)) {
+                    UiRender::textY(line, x, lineY, HINT_H, UiTheme::textSecondary(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    lineY += HINT_H;
+                }
+                std::string use = "使用主页组件";
+                if (action("onboarding#useWidgets", use, x, lineY + ROW_GAP, actionWidth(use, 0xf00a), true, 0xf00a)) {
                     Homepage::choose("无");
                     kick(0.45f);
                 }
                 return;
             }
-            const float h = 30.0f;
-            float cursor = x;
-            float rowY = y;
-            for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
-                std::string text = kind.label;
-                float cw = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 45.0f;
-                if (cursor > x && cursor + cw > x + w) {
-                    cursor = x;
-                    rowY += h + 8.0f;
-                }
-                chip(kind.id, kind.glyph, text, cursor, rowY, cw, h, HomeWidgets::enabled(kind.id));
-                cursor += cw + 8.0f;
+            const std::vector<HomeWidgets::WidgetKind>& kinds = HomeWidgets::widgetKinds();
+            float cardH = LIST_ROW * (float) kinds.size();
+            UiRender::roundRect(x, y, w, cardH, 10.0f, UiTheme::surfaceRaised());
+            UiRender::outline(x, y, w, cardH, 10.0f, UiTheme::outlineSoft());
+            for (size_t i = 0; i < kinds.size(); i++) {
+                widgetRow(kinds[i], x, y + LIST_ROW * (float) i, w, i + 1 == kinds.size());
             }
-        }
-
-        void mockRow(const HomeWidgets::WidgetKind& kind, float x, float y, float w, float h, float alpha,
-                     bool launch) {
-            float saved = UiRender::alphaMul;
-            UiRender::alphaMul = saved * alpha;
-            UiRender::roundRect(x, y, w, h, 6.0f, launch ? UiTheme::accent() : UiTheme::surfaceRaised());
-            if (!launch) {
-                UiRender::outline(x, y, w, h, 6.0f, UiTheme::outlineSoft());
-            }
-            uint32_t ink = launch ? UiTheme::onAccent() : UiTheme::textSecondary();
-            UiWidgets::icon(Ui::glyph(kind.glyph), x + 14.0f, y + h * 0.5f, ink, 10.0f);
-            UiRender::textY(kind.label, x + 26.0f, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            UiRender::alphaMul = saved;
-        }
-
-        void cover(float w, float h, float textureW, float textureH, float& uSpan, float& vSpan) {
-            float scale = std::max(w / textureW, h / textureH);
-            uSpan = w / (textureW * scale);
-            vSpan = h / (textureH * scale);
         }
 
         void preview(float x, float y, float w, float h, float alpha, float glow) {
-            const float radius = 14.0f;
-            const float inset = 8.0f;
             if (alpha <= 0.002f) {
                 return;
             }
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * alpha;
-
+            float radius = MainWindow::miniatureRadius(w, h);
             UiRender::shadow(x, y, w, h, radius, 10.0f, 4.0f, UiTheme::shadow());
-            UiRender::roundRect(x, y, w, h, radius, UiTheme::surface());
+            MainWindow::miniature(x, y, w, h);
             UiRender::outline(x, y, w, h, radius, UiTheme::outlineSoft());
             if (glow > 0.01f) {
                 UiRender::outline(x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, radius + 2.0f,
-                                  (UiTheme::accent() & 0x00FFFFFFu) | (Ui::round(46.0f * glow) << 24));
+                                  withAlpha(UiTheme::accent(), 0.18f * glow));
             }
-
-            float sx = x + inset;
-            float sy = y + inset;
-            float sw = w - 2.0f * inset;
-            float sh = h - 2.0f * inset;
-            const float cr = 9.0f;
-            float sideW = std::clamp(sw * 0.2f, 70.0f, 104.0f);
-            float panelX = sx + sideW;
-            float panelW = sw - sideW;
-            uint32_t sideFill = UiTheme::sidebar();
-            uint32_t panelFill = UiTheme::panel();
-
-            bool image = Appearance::backgroundImage() && Background::sidebar() != 0 && Background::panel() != 0;
-            if (image) {
-                float uSpan = 1.0f;
-                float vSpan = 1.0f;
-                cover(sw, sh, MainWindow::MIN_WIDTH - MainWindow::SIDEBAR_WIDTH, MainWindow::MIN_HEIGHT, uSpan, vSpan);
-                ShaderUtil::roundTex(UiRender::transformX(sx), UiRender::transformY(sy), UiRender::transformW(sw),
-                                     UiRender::transformW(sh), UiRender::transformW(cr), Background::panel(), 0.0f,
-                                     (1.0f - vSpan) * 0.5f, uSpan, (1.0f + vSpan) * 0.5f, 0xFFFFFFFFu, 0xF);
-                cover(sideW, sh, MainWindow::SIDEBAR_WIDTH + radius, MainWindow::MIN_HEIGHT, uSpan, vSpan);
-                ShaderUtil::roundTex(UiRender::transformX(sx), UiRender::transformY(sy), UiRender::transformW(sideW),
-                                     UiRender::transformW(sh), UiRender::transformW(cr), Background::sidebar(), 0.0f,
-                                     (1.0f - vSpan) * 0.5f, uSpan, (1.0f + vSpan) * 0.5f, 0xFFFFFFFFu, 0xF);
-                UiRender::roundRect(sx, sy, sw, sh, cr, UiTheme::isLight() ? 0x33000000u : 0x59000000u);
-                UiRender::roundRect(sx, sy, sideW, sh, cr, (sideFill & 0x00FFFFFFu) | 0x4D000000u);
-                UiRender::vLine(panelX, sy + 12.0f, sy + sh - 12.0f, UiTheme::divider());
-            } else {
-                UiRender::roundRect(sx, sy, sw, sh, cr, panelFill);
-                UiRender::roundRect(sx, sy, sideW, sh, cr, sideFill);
-            }
-
-            UiRender::scissor(sx, sy, sw, sh);
-            float savedScale = UiRender::scaleFactor;
-            float savedPivotX = UiRender::pivotX;
-            float savedPivotY = UiRender::pivotY;
-            float zoom = std::clamp((float) Appearance::zoom() / 100.0f, 0.8f, 1.3f);
-            UiRender::scaleFactor = savedScale * zoom;
-            UiRender::pivotX = (sx + sw * 0.5f) * UiRender::uiScale;
-            UiRender::pivotY = (sy + sh * 0.5f) * UiRender::uiScale;
-
-            uint32_t faint = (UiTheme::textFaint() & 0x00FFFFFFu) | 0x5A000000u;
-            uint32_t soft = (UiTheme::textSecondary() & 0x00FFFFFFu) | 0xB4000000u;
-            UiRender::circle(sx + 13.0f, sy + 13.0f, 4.0f, UiTheme::accent());
-            float rowH = 12.0f;
-            float navX = sx + 7.0f;
-            float navW = sideW - 14.0f;
-            for (int i = 0; i < 5; i++) {
-                float ry = sy + 26.0f + (float) i * (rowH + 5.0f);
-                if (ry + rowH > sy + sh - 4.0f) {
-                    break;
-                }
-                bool current = i == 1;
-                if (current) {
-                    UiRender::roundRect(navX, ry, navW, rowH, 4.0f, UiTheme::accentSoft(40));
-                }
-                UiRender::circle(navX + 8.0f, ry + rowH * 0.5f, 1.7f, current ? UiTheme::accent() : faint);
-                UiRender::roundRect(navX + 15.0f, ry + rowH * 0.5f - 1.5f, std::max(10.0f, navW * 0.46f), 3.0f, 1.5f,
-                                    current ? soft : faint);
-            }
-
-            float midX = panelX + panelW * 0.5f;
-            float colW = std::min(panelW * 0.68f, 240.0f);
-            float colX = midX - colW * 0.5f;
-            float gap = 6.0f;
-            float avail = sh - 24.0f;
-            float rowH2 = std::clamp((avail - gap * 4.0f) / 5.0f, 15.0f, 24.0f);
-
-            bool widgets = Homepage::source() == Homepage::SOURCE_NONE;
-            std::vector<std::string> active;
-            for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
-                if (widgets && HomeWidgets::enabled(kind.id)) {
-                    active.push_back(kind.id);
-                }
-            }
-            float stack = active.empty() ? 0.0f : (float) active.size() * rowH2 + (float) (active.size() - 1) * gap;
-            float top = sy + (sh - stack) * 0.5f;
-            size_t index = 0;
-            for (const HomeWidgets::WidgetKind& kind : HomeWidgets::widgetKinds()) {
-                std::string id = "onboarding#pv#" + std::string(kind.id);
-                bool on = widgets && HomeWidgets::enabled(kind.id);
-                float vis = UiState::motion(id, on ? 1.0f : 0.0f, 20.0f);
-                if (vis <= 0.01f) {
-                    continue;
-                }
-                float target = on ? top + (float) index * (rowH2 + gap)
-                                  : UiState::getOrDefault(id + "#y", top + (float) index * (rowH2 + gap));
-                float at = UiState::motion(id + "#y", target, 18.0f);
-                mockRow(kind, colX, at, colW, rowH2, vis, std::string(kind.id) == HomeWidgets::LAUNCH);
-                if (on) {
-                    index++;
-                }
-            }
-
-            float empty = UiState::motion("onboarding#pv#empty", active.empty() ? 1.0f : 0.0f, 16.0f);
-            if (empty > 0.01f) {
-                float saved = UiRender::alphaMul;
-                UiRender::alphaMul = saved * empty;
-                UiRender::circle(midX, sy + sh * 0.5f - 8.0f, 12.0f, UiTheme::accentSoft(40));
-                UiWidgets::icon(Ui::glyph(widgets ? 0xf04b : 0xf0ac), midX, sy + sh * 0.5f - 8.0f,
-                                UiTheme::accent(), 10.0f);
-                std::string label = widgets ? "主页不显示组件" : Homepage::choice();
-                Page::centredText(UiFont::fitEnd(label, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, colW),
-                                  midX, sy + sh * 0.5f + 8.0f, 18.0f, UiTheme::textFaint(),
-                                  UiWidgets::TEXT_SMALL);
-                UiRender::alphaMul = saved;
-            }
-
-            UiRender::scaleFactor = savedScale;
-            UiRender::pivotX = savedPivotX;
-            UiRender::pivotY = savedPivotY;
-            UiRender::unscissor();
             UiRender::alphaMul = savedAlpha;
         }
 
         void footer(float x, float right, float y) {
             bool last = step == STEPS - 1;
-            const float nextW = 104.0f;
-            if (action("onboarding#next", last ? "完成" : "下一步", right - nextW, y, nextW, true,
-                       last ? 0xf00c : 0xf061)) {
+            std::string next = last ? "完成" : "下一步";
+            int nextGlyph = last ? 0xf00c : 0xf061;
+            float nextW = std::max(108.0f, actionWidth(next, nextGlyph));
+            if (action("onboarding#next", next, right - nextW, y, nextW, true, nextGlyph)) {
                 if (last) {
                     complete();
                 } else {
                     go(step + 1);
                 }
             }
-            if (step > 0 &&
-                action("onboarding#back", "上一步", right - nextW - 10.0f - 92.0f, y, 92.0f, false, 0xf060)) {
+            std::string back = "上一步";
+            float backW = std::max(96.0f, actionWidth(back, 0xf060));
+            if (step > 0 && action("onboarding#back", back, right - nextW - 10.0f - backW, y, backW, false, 0xf060)) {
                 go(step - 1);
             }
-            if (!last && action("onboarding#skip", "跳过", x, y, 68.0f, false, 0)) {
+            std::string skip = "跳过";
+            if (!last && action("onboarding#skip", skip, x, y, std::max(72.0f, actionWidth(skip, 0)), false, 0)) {
                 complete();
             }
         }
@@ -572,7 +532,27 @@ namespace Onboarding {
         return shown;
     }
 
+    bool suggested() {
+        static bool checked = false;
+        if (!checked) {
+            checked = true;
+            if (Config::fresh() && !b_launcher_base::json_bool(Config::data(), PENDING_KEY)) {
+                Config::data()[PENDING_KEY] = true;
+                Config::save();
+            }
+        }
+        return b_launcher_base::json_bool(Config::data(), PENDING_KEY);
+    }
+
+    void dismiss() {
+        if (b_launcher_base::json_bool(Config::data(), PENDING_KEY)) {
+            Config::data()[PENDING_KEY] = false;
+            Config::save();
+        }
+    }
+
     void start() {
+        dismiss();
         shown = true;
         leaving = false;
         outro = false;
@@ -583,8 +563,6 @@ namespace Onboarding {
         pageMix = 1.0f;
         pulse = 0.0f;
         UiState::remove("onboarding#progress");
-        UiState::remove("onboarding#zoom#thumb");
-        UiState::remove("onboarding#pv#empty");
     }
 
     bool covering() {
@@ -645,16 +623,22 @@ namespace Onboarding {
             UiState::keepAnimating();
         }
 
-        float pad = std::clamp(w * 0.06f, 28.0f, 64.0f);
+        float pad = std::clamp(w * 0.06f, 32.0f, 64.0f);
         float colW = std::min(w - 2.0f * pad, CONTENT_MAX);
         float colX = std::round((w - colW) * 0.5f);
         float right = colX + colW;
+        float leftW = std::round(std::clamp(colW * 0.38f, LEFT_MIN, LEFT_MAX));
+        float previewX = colX + leftW + COLUMN_GAP;
+        float previewW = right - previewX;
 
-        float previewH = std::clamp((h - PREVIEW_Y - 92.0f) * 0.52f, 118.0f, 340.0f);
-        float footerY = h - 48.0f;
-        float areaTop = PREVIEW_Y + previewH + 24.0f;
-        float areaBottom = footerY - 22.0f;
-        float blockY = areaTop + std::clamp((areaBottom - areaTop - BLOCK_H[step]) * 0.5f, 0.0f, 40.0f);
+        float footerY = h - FOOTER_MARGIN - CONTROL_H;
+        float bodyTop = STEPPER_Y + STEPPER_H + BODY_MARGIN;
+        float bodyBottom = footerY - BODY_MARGIN;
+        float previewH = std::max(120.0f, std::min(previewW / PREVIEW_RATIO, bodyBottom - bodyTop));
+        float top = std::round(bodyTop + std::max(0.0f, (bodyBottom - bodyTop - previewH) * 0.5f));
+        float titleY = top - 4.0f;
+        float hintY = titleY + TITLE_H + HINT_GAP;
+        float controlsY = hintY + HINT_H + CONTROLS_GAP;
 
         pageMix = UiRender::approach(pageMix, 1.0f, 16.0f);
         if (pageMix < 0.999f) {
@@ -678,26 +662,22 @@ namespace Onboarding {
             UiRender::offsetY = sy;
         };
 
-        group(0.00f, 1.0f, 0.0f, 0.0f, [&] { progressBar(colX, PROGRESS_Y, colW); });
-        preview(colX, PREVIEW_Y + (1.0f - enter(0.08f)) * 12.0f, colW, previewH, enter(0.08f), pulse);
+        group(0.00f, 1.0f, 0.0f, 0.0f, [&] { stepper(colX, STEPPER_Y, colW); });
+        preview(previewX, top + (1.0f - enter(0.08f)) * 12.0f, previewW, previewH, enter(0.08f), pulse);
 
         group(0.06f, pageMix, pageShift, pageRise, [&] {
-            UiRender::textY(TITLES[step], colX, TITLE_Y, 30.0f, UiTheme::textPrimary(), UiFont::MEDIUM, 22.0f);
-            std::string counter = std::to_string(step + 1) + " / " + std::to_string(STEPS);
-            float counterW = UiFont::width(counter, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(counter, right - counterW, TITLE_Y, 30.0f, UiTheme::textFaint(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
+            UiRender::textY(TITLES[step], colX, titleY, TITLE_H, UiTheme::textPrimary(), UiFont::MEDIUM, 22.0f);
         });
         group(0.11f, pageMix, pageShift, pageRise, [&] {
-            UiRender::textY(HINTS[step], colX, HINT_Y, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_BODY);
+            UiRender::textY(UiFont::fitEnd(HINTS[step], UiFont::MEDIUM, UiWidgets::TEXT_BODY, leftW), colX, hintY,
+                            HINT_H, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         });
         group(0.17f, pageMix, pageShift, pageRise, [&] {
             switch (step) {
-                case STEP_THEME: themeStep(colX, blockY, colW); break;
-                case STEP_ZOOM: zoomStep(colX, blockY); break;
-                case STEP_BACKGROUND: backgroundStep(colX, blockY, colW); break;
-                default: homeStep(colX, blockY, colW); break;
+                case STEP_THEME: themeStep(colX, controlsY); break;
+                case STEP_ZOOM: zoomStep(colX, controlsY, leftW); break;
+                case STEP_BACKGROUND: backgroundStep(colX, controlsY, leftW); break;
+                default: homeStep(colX, controlsY, leftW); break;
             }
         });
         group(0.23f, 1.0f, 0.0f, 0.0f, [&] { footer(colX, right, footerY); });

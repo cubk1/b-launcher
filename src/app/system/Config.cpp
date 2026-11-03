@@ -10,6 +10,7 @@ namespace Config {
     namespace {
         nlohmann::json doc;
         bool loaded = false;
+        bool empty = false;
         // After a reset the old session must not write its state back before restarting.
         bool frozen = false;
 
@@ -19,7 +20,9 @@ namespace Config {
     nlohmann::json& data() {
         if (!loaded) {
             loaded = true;
-            if (std::optional<std::string> stored = Platform::loadValue(VALUE)) {
+            std::optional<std::string> stored = Platform::loadValue(VALUE);
+            empty = !stored.has_value();
+            if (stored) {
                 doc = nlohmann::json::parse(*stored, nullptr, false);
             }
             if (!doc.is_object()) {
@@ -27,6 +30,11 @@ namespace Config {
             }
         }
         return doc;
+    }
+
+    bool fresh() {
+        data();
+        return empty;
     }
 
     bool save() {

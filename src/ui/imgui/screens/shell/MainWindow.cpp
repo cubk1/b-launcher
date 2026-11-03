@@ -1077,18 +1077,61 @@ namespace MainWindow {
     }
 
     static const float LAUNCH_MARGIN = 28.0f;
+    static const float BANNER_H = 48.0f;
+    static const float BANNER_GAP = 12.0f;
+
+    static float setupBanner(float y) {
+        bool visible = Onboarding::suggested() && !Onboarding::drawing();
+        float shown = UiState::motion("home#setupBanner", visible ? 1.0f : 0.0f, 14.0f);
+        if (shown <= 0.001f) {
+            return 0.0f;
+        }
+        float eased = shown * shown * (3.0f - 2.0f * shown);
+        float x = Page::left();
+        float w = Page::width();
+        float saved = UiRender::alphaMul;
+        UiRender::alphaMul = saved * eased;
+        UiRender::scissor(x - 2.0f, y - 2.0f, w + 4.0f, (BANNER_H + 4.0f) * eased);
+        bool blocked = !visible || NewUi::overlayCoversMouse();
+        UiRender::roundRect(x, y, w, BANNER_H, 12.0f, UiTheme::accentSoft(30));
+        UiRender::outline(x, y, w, BANNER_H, 12.0f, (UiTheme::accent() & 0x00FFFFFFu) | 0x59000000u);
+        UiWidgets::icon(Ui::glyph(0xf0d0), x + 22.0f, y + BANNER_H * 0.5f, UiTheme::accentText(), 12.0f);
+        float closeX = x + w - 10.0f - 28.0f;
+        if (Page::iconButton("home#setupBanner#close", 0xf00d, "不再显示", closeX, y + (BANNER_H - 28.0f) * 0.5f,
+                             blocked)) {
+            Onboarding::dismiss();
+        }
+        std::string action = "开始设置";
+        float actionW = std::max(88.0f, Page::buttonWidth(action, 0xf061));
+        float actionX = closeX - 8.0f - actionW;
+        if (Page::button("home#setupBanner#start", action, actionX, y + (BANNER_H - Page::FIELD_H) * 0.5f, actionW,
+                         true, blocked, 0xf061)) {
+            Onboarding::start();
+        }
+        std::string text = UiFont::fitEnd("第一次使用？花一普朗克时间设置主题和主页", UiFont::MEDIUM,
+                                          UiWidgets::TEXT_CONTROL, std::max(0.0f, actionX - 16.0f - (x + 40.0f)));
+        UiRender::textY(text, x + 40.0f, y, BANNER_H, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        UiRender::unscissor();
+        UiRender::alphaMul = saved;
+        return (BANNER_H + BANNER_GAP) * eased;
+    }
+
+    static void home() {
+        bool floating = !Homepage::launchShown();
+        float top = TITLE_HEIGHT + setupBanner(TITLE_HEIGHT);
+        Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, floating ? LaunchButton::SIZE + 22.0f : 0.0f,
+                       NewUi::overlayCoversMouse());
+        if (floating) {
+            float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
+            LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
+            LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
+        }
+    }
 
     static void content() {
         pages.begin();
         if (pages.page == PAGE_HOME) {
-            bool floating = !Homepage::launchShown();
-            Homepage::draw(Page::left(), TITLE_HEIGHT, Page::right(), height() - 14.0f,
-                           floating ? LaunchButton::SIZE + 22.0f : 0.0f, NewUi::overlayCoversMouse());
-            if (floating) {
-                float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
-                LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
-                LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
-            }
+            home();
         } else if (pages.page >= INSTANCE_PAGES) {
             InstancePage::draw(shownInstance());
         } else if (pages.page == PAGE_SETTINGS) {
@@ -1180,7 +1223,7 @@ namespace MainWindow {
         }
     }
 
-    static void shell() {
+    static void frame(float outer) {
         float r = SHELL_RADIUS;
         uint32_t sidebarFill = UiTheme::sidebar();
         uint32_t panelFill = UiTheme::panel();
@@ -1189,20 +1232,31 @@ namespace MainWindow {
             float uSpan = 1.0f;
             float vSpan = 1.0f;
             coverSpan(SIDEBAR_WIDTH + r, height(), SIDEBAR_WIDTH + r, MIN_HEIGHT, uSpan, vSpan);
-            UiRender::texture(Background::sidebar(), 0, 0, sideW + r, height(), 0.0f, (1.0f - vSpan) * 0.5f,
-                              uSpan * (sideW + r) / (SIDEBAR_WIDTH + r), (1.0f + vSpan) * 0.5f);
+            if (outer > 0.0f) {
+                ShaderUtil::roundTex(UiRender::transformX(0), UiRender::transformY(0), UiRender::transformW(sideW + r),
+                                     UiRender::transformW(height()), UiRender::transformW(outer), Background::sidebar(),
+                                     0.0f, (1.0f - vSpan) * 0.5f, uSpan * (sideW + r) / (SIDEBAR_WIDTH + r),
+                                     (1.0f + vSpan) * 0.5f, UiRender::applyAlpha(0xFFFFFFFFu), 0xF);
+            } else {
+                UiRender::texture(Background::sidebar(), 0, 0, sideW + r, height(), 0.0f, (1.0f - vSpan) * 0.5f,
+                                  uSpan * (sideW + r) / (SIDEBAR_WIDTH + r), (1.0f + vSpan) * 0.5f);
+            }
             coverSpan(width() - sideW, height(), MIN_WIDTH - SIDEBAR_WIDTH, MIN_HEIGHT, uSpan, vSpan);
             ShaderUtil::roundTex(UiRender::transformX(sideW), UiRender::transformY(0),
                                  UiRender::transformW(width() - sideW), UiRender::transformW(height()),
                                  UiRender::transformW(r), Background::panel(), 0.0f, (1.0f - vSpan) * 0.5f, uSpan,
-                                 (1.0f + vSpan) * 0.5f, 0xFFFFFFFFu, 1 | 4);
+                                 (1.0f + vSpan) * 0.5f, UiRender::applyAlpha(0xFFFFFFFFu), outer > 0.0f ? 0xF : 1 | 4);
             float sidebarShade = light ? SIDEBAR_SHADE_LIGHT : SIDEBAR_SHADE_DARK;
             float panelShade = light ? PANEL_SHADE_LIGHT : PANEL_SHADE_DARK;
             sidebarFill = (sidebarFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * sidebarShade) << 24);
             panelFill = (panelFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * panelShade) << 24);
         }
-        UiRender::shell(0, 0, width(), height(), sideW, r, sidebarFill, panelFill, 0.0f);
+        UiRender::shell(0, 0, width(), height(), sideW, r, sidebarFill, panelFill, outer);
         UiRender::outlineFade(sideW, 0, width() - sideW, height(), r, UiTheme::outline(), 1.0f, 0.5f);
+    }
+
+    static void shell() {
+        frame(0.0f);
         sidebar();
         content();
 
@@ -1219,6 +1273,62 @@ namespace MainWindow {
         }
 
         Drop::draw(width(), height());
+    }
+
+    float miniatureRadius(float w, float h) {
+        return SHELL_RADIUS * std::min(w / MIN_WIDTH, h / MIN_HEIGHT);
+    }
+
+    void miniature(float x, float y, float w, float h) {
+        float scale = std::min(w / MIN_WIDTH, h / MIN_HEIGHT);
+        if (scale <= 0.0f) {
+            return;
+        }
+        float savedWidth = layoutWidth;
+        float savedHeight = layoutHeight;
+        float savedUi = UiRender::uiScale;
+        float savedX = UiRender::offsetX;
+        float savedY = UiRender::offsetY;
+        float savedMouseX = NewUi::mouseX;
+        float savedMouseY = NewUi::mouseY;
+        bool savedDown = NewUi::mouseDown;
+        float savedScroll = listScroll;
+        float savedSmooth = listSmooth;
+        bool savedRestored = scrollRestored;
+
+        UiRender::scissor(x, y, w, h);
+        layoutWidth = w / scale;
+        layoutHeight = h / scale;
+        UiRender::offsetX = savedX + x * savedUi;
+        UiRender::offsetY = savedY + y * savedUi;
+        UiRender::uiScale = savedUi * scale;
+        NewUi::mouseX = -1.0e6f;
+        NewUi::mouseY = -1.0e6f;
+        NewUi::mouseDown = false;
+
+        unfold();
+        frame(SHELL_RADIUS);
+        sidebar();
+        home();
+        if (!Appearance::systemFrameRunning()) {
+            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
+            windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false);
+            maximizeButton(width() - 14 - 56, buttonY);
+            windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true);
+        }
+
+        layoutWidth = savedWidth;
+        layoutHeight = savedHeight;
+        UiRender::uiScale = savedUi;
+        UiRender::offsetX = savedX;
+        UiRender::offsetY = savedY;
+        NewUi::mouseX = savedMouseX;
+        NewUi::mouseY = savedMouseY;
+        NewUi::mouseDown = savedDown;
+        listScroll = savedScroll;
+        listSmooth = savedSmooth;
+        scrollRestored = savedRestored;
+        UiRender::unscissor();
     }
 
     bool isDragArea(float x, float y) {

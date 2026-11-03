@@ -12,4 +12,7 @@ namespace Onboarding {
 
     // Runs the guide from the first step.
     void start();
+
+    bool suggested();
+    void dismiss();
 }

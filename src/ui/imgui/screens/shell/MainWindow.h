@@ -22,6 +22,8 @@ namespace MainWindow {
     void save();
 
     void draw();
+    float miniatureRadius(float width, float height);
+    void miniature(float x, float y, float width, float height);
     void showHome();
     void showAccounts();
     void showNewInstance();
