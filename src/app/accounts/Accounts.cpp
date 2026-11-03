@@ -15,6 +15,7 @@
 
 #include "stb_image.h"
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -23,6 +24,7 @@
 #endif
 #include <windows.h>
 #include <wincrypt.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -85,6 +87,7 @@ namespace Accounts {
         }
 
         std::optional<std::string> protect(const std::string& plain, bool encrypt) {
+#if defined(_WIN32)
             DATA_BLOB input = {(DWORD) plain.size(), (BYTE*) plain.data()};
             DATA_BLOB output = {};
             BOOL done = encrypt ? CryptProtectData(&input, L"b-launcher accounts", nullptr, nullptr, nullptr,
@@ -97,6 +100,10 @@ namespace Accounts {
             std::string out((const char*) output.pbData, output.cbData);
             LocalFree(output.pbData);
             return out;
+#else
+            (void) encrypt;
+            return plain;
+#endif
         }
 
         void load() {
