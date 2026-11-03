@@ -16,6 +16,7 @@
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -32,6 +33,7 @@ struct install_options
   bool verify_imported = true;
   bool assets = true;
   java::scan_options java_scan;
+  std::optional<std::vector<java::java_installation>> java_candidates;
 };
 
 enum class completion_scope : std::uint8_t

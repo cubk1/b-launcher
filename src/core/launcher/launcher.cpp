@@ -138,6 +138,12 @@ game_launcher::java_candidates (bool rescan, cancellation_token token)
   std::lock_guard lock (m_impl->java_mutex);
   if (token.is_cancelled ())
     return {};
+  const auto &known = m_impl->installer->options ().java_candidates;
+  if (!m_impl->java_cache && !rescan && known)
+    {
+      m_impl->java_cache = *known;
+      java::prune_missing (*m_impl->java_cache);
+    }
   if (!m_impl->java_cache || rescan)
     {
       auto options = m_impl->installer->options ().java_scan;

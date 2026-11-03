@@ -674,9 +674,9 @@ namespace ModGraph {
             UiRender::flush();
             ImDrawList* list = UiRender::drawList();
             float unit = UiRender::unit();
-            ImU32 minor = imColor(withAlpha(accent, 0.07f));
-            ImU32 major = imColor(withAlpha(accent, 0.15f));
-            float thickness = UiRender::transformW(1.0f) * unit;
+            ImU32 minor = imColor(withAlpha(accent, 0.22f));
+            ImU32 major = imColor(withAlpha(accent, 0.4f));
+            float dot = UiRender::transformW(1.0f) * unit;
             float baseX = originX + view.panX;
             float baseY = originY + view.panY;
             float startX = clip.x + std::fmod(baseX - clip.x, step);
@@ -687,30 +687,20 @@ namespace ModGraph {
             if (startY < clip.y) {
                 startY += step;
             }
-            for (float gx = startX; gx <= clip.x + clip.w; gx += step) {
-                float offset = gx - cx;
-                if (std::fabs(offset) >= radius) {
-                    continue;
-                }
-                float half = std::sqrt(radius * radius - offset * offset);
-                float y0 = std::max(clip.y, cy - half);
-                float y1 = std::min(clip.y + clip.h, cy + half);
-                if (y1 > y0) {
-                    long index = std::lround((gx - baseX) / step);
-                    list->AddLine(point(gx, y0), point(gx, y1), index % 5 == 0 ? major : minor, thickness);
-                }
-            }
             for (float gy = startY; gy <= clip.y + clip.h; gy += step) {
-                float offset = gy - cy;
-                if (std::fabs(offset) >= radius) {
+                float offsetY = gy - cy;
+                if (std::fabs(offsetY) >= radius) {
                     continue;
                 }
-                float half = std::sqrt(radius * radius - offset * offset);
-                float x0 = std::max(clip.x, cx - half);
-                float x1 = std::min(clip.x + clip.w, cx + half);
-                if (x1 > x0) {
-                    long index = std::lround((gy - baseY) / step);
-                    list->AddLine(point(x0, gy), point(x1, gy), index % 5 == 0 ? major : minor, thickness);
+                float half = std::sqrt(radius * radius - offsetY * offsetY);
+                long row = std::lround((gy - baseY) / step);
+                for (float gx = startX; gx <= clip.x + clip.w; gx += step) {
+                    if (std::fabs(gx - cx) >= half) {
+                        continue;
+                    }
+                    long column = std::lround((gx - baseX) / step);
+                    bool strong = row % 5 == 0 && column % 5 == 0;
+                    list->AddCircleFilled(point(gx, gy), strong ? dot * 1.5f : dot, strong ? major : minor, 8);
                 }
             }
             if (reveal < 1.0f) {

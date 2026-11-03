@@ -120,6 +120,11 @@ struct loader_installer::impl
     auto requirement = java::requirement_for (vanilla);
     std::lock_guard lock (java_mutex);
     BLB_TRY (token.check ());
+    if (!java_cache && installer->options ().java_candidates)
+      {
+        java_cache = *installer->options ().java_candidates;
+        java::prune_missing (*java_cache);
+      }
     if (!java_cache)
       {
         auto options = installer->options ().java_scan;

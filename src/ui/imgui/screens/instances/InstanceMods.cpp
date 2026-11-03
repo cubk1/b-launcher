@@ -267,7 +267,6 @@ namespace InstanceMods {
         constexpr float UNFOLD_SECONDS = 0.85f;
 
         float unfold = 0.0f;
-        bool leaving = false;
         int lastFrame = -10;
         std::string lastKey;
 
@@ -465,7 +464,7 @@ namespace InstanceMods {
     }
 
     bool graphShown(const std::string& key) {
-        return key == lastKey && ImGui::GetFrameCount() - lastFrame <= 1 && unfold >= 1.0f && graphView() && !leaving;
+        return key == lastKey && ImGui::GetFrameCount() - lastFrame <= 1 && unfold >= 1.0f && graphView();
     }
 
     bool draw(const Instances::Entry& entry) {
@@ -484,11 +483,10 @@ namespace InstanceMods {
         int frameNumber = ImGui::GetFrameCount();
         if (frameNumber - lastFrame > 1 || lastKey != key) {
             unfold = 0.0f;
-            leaving = false;
         }
         lastFrame = frameNumber;
         lastKey = key;
-        float target = graph && !leaving ? 1.0f : 0.0f;
+        float target = graph ? 1.0f : 0.0f;
         float step = io.DeltaTime / UNFOLD_SECONDS;
         unfold = target > unfold ? std::min(target, unfold + step) : std::max(target, unfold - step);
         if (unfold != target) {
@@ -497,7 +495,7 @@ namespace InstanceMods {
         float expand = easeInOut(phase(unfold, 0.0f, 0.45f));
         float lift = easeInOut(phase(unfold, 0.05f, 0.55f));
         bool listReady = unfold <= 0.0f && !graph;
-        bool graphReady = unfold >= 1.0f && graph && !leaving;
+        bool graphReady = unfold >= 1.0f && graph;
         bool still = listReady || graphReady;
 
         float top = barRowY() + Page::FIELD_H + 12.0f;
@@ -505,7 +503,7 @@ namespace InstanceMods {
         float changesH = ModChanges::height(key);
         float listBottom = changesH > 0.0f ? bottom - changesH - 10.0f : bottom;
         bool back = false;
-        if (unfold <= 0.0f && !leaving) {
+        if (unfold <= 0.0f) {
             body(key, list, query, top, listBottom, covered || !listReady);
         }
         if (unfold > 0.0f) {
@@ -533,19 +531,11 @@ namespace InstanceMods {
             }
             ModGraph::draw(entry, query, frame, covered || !graphReady);
         }
-        if (toolbar(entry, list, lift, covered || !still)) {
-            if (graphReady) {
-                leaving = true;
-            } else if (listReady) {
-                back = true;
-            }
+        if (toolbar(entry, list, lift, covered || !still) && still) {
+            back = true;
         }
         if (changesH > 0.0f) {
             ModChanges::draw(key, Page::left(), listBottom + 10.0f, Page::width(), covered || !still);
-        }
-        if (leaving && unfold <= 0.0f) {
-            leaving = false;
-            back = true;
         }
         return back;
     }

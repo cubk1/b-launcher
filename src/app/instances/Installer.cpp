@@ -460,7 +460,8 @@ namespace Installer {
             download.sha1 = blb::parse_sha1(pack.sha1);
         }
         auto javaOptions = Catalog::javaScanOptions();
-        worker = std::thread([root, archive, download, id, token, made, local, javaOptions] {
+        auto javaKnown = Catalog::javaCandidates();
+        worker = std::thread([root, archive, download, id, token, made, local, javaOptions, javaKnown] {
             std::string result;
             std::string error;
             bool wasCancelled = false;
@@ -483,6 +484,7 @@ namespace Installer {
                     blb::install::install_options options;
                     options.mirror = blb::net::make_bmclapi_provider();
                     options.java_scan = javaOptions;
+                    options.java_candidates = javaKnown;
                     blb::install::game_installer installer(blb::meta::game_layout(root), options);
                     blb::modpack::import_options settings;
                     settings.id = id;
@@ -547,7 +549,8 @@ namespace Installer {
         }
         std::vector<std::filesystem::path> made = newFolders(root, {expected});
         auto javaOptions = Catalog::javaScanOptions();
-        worker = std::thread([root, request, token, made, javaOptions] {
+        auto javaKnown = Catalog::javaCandidates();
+        worker = std::thread([root, request, token, made, javaOptions, javaKnown] {
             std::string result;
             std::string error;
             bool wasCancelled = false;
@@ -555,6 +558,7 @@ namespace Installer {
                 blb::install::install_options options;
                 options.mirror = blb::net::make_bmclapi_provider();
                 options.java_scan = javaOptions;
+                options.java_candidates = javaKnown;
                 blb::install::game_installer installer(blb::meta::game_layout(root), options);
                 Progress sink;
                 if (request.loaders.empty() && request.id.empty()) {
@@ -609,7 +613,8 @@ namespace Installer {
         std::string id = entry->info.id;
         blb::instance::isolation_mode mode = Instances::isolation();
         auto javaOptions = Catalog::javaScanOptions();
-        worker = std::thread([root, id, loaders, mode, token, javaOptions] {
+        auto javaKnown = Catalog::javaCandidates();
+        worker = std::thread([root, id, loaders, mode, token, javaOptions, javaKnown] {
             std::string result;
             std::string error;
             bool wasCancelled = false;
@@ -617,6 +622,7 @@ namespace Installer {
                 blb::install::install_options options;
                 options.mirror = blb::net::make_bmclapi_provider();
                 options.java_scan = javaOptions;
+                options.java_candidates = javaKnown;
                 blb::install::game_installer installer(blb::meta::game_layout(root), options);
                 blb::instance::instance_manager manager(blb::meta::game_layout(root), mode);
                 Progress sink;

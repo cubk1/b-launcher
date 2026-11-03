@@ -1,13 +1,18 @@
 #include "app/launch/Game.h"
+#include "app/system/DiskScan.h"
 #include "app/system/Platform.h"
 #include "app/system/UiStyles.h"
 #include "ui/exui/windows/ForgottenMelody.h"
 #include "ui/imgui/screens/shell/ImGuiApp.h"
 
+#include <optional>
 #include <string>
 #include <string_view>
 
 int main() {
+    if (std::optional<DiskScan::Helper> helper = DiskScan::helperArgument()) {
+        return DiskScan::runHelper(*helper);
+    }
     Platform::waitForPrevious();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();

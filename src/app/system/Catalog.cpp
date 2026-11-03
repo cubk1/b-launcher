@@ -144,13 +144,6 @@ namespace Catalog {
                     [options](blb::cancellation_token token) -> Continuation {
                         std::vector<blb::java::java_installation> found = blb::java::scan_java(options, token);
                         return [found = std::move(found)]() mutable {
-                            auto hiddenPaths = pathList("javaHidden");
-                            if (!hiddenPaths.empty()) {
-                                auto addedPaths = pathList("javaPaths");
-                                std::erase_if(found, [&](const blb::java::java_installation& java) {
-                                    return listed(hiddenPaths, java.executable) && !listed(addedPaths, java.executable);
-                                });
-                            }
                             for (const blb::java::java_installation& added : javaList.list) {
                                 if (std::none_of(found.begin(), found.end(),
                                                  [&](const blb::java::java_installation& java) {
@@ -181,10 +174,60 @@ namespace Catalog {
             options.runtime_roots.push_back(blb::meta::game_layout(source.root).runtime());
         }
         options.extra_roots.push_back(JavaDownloads::root());
-        for (const std::string& path : pathList("javaPaths")) {
+        std::vector<std::string> kept = pathList("javaPaths");
+        std::vector<std::string> found = pathList("javaFound");
+        kept.insert(kept.end(), found.begin(), found.end());
+        for (const std::string& path : kept) {
             options.extra_homes.push_back(blb::path_from_utf8(path));
         }
+        for (const std::string& path : pathList("javaHidden")) {
+            if (!listed(kept, blb::path_from_utf8(path))) {
+                options.excluded.push_back(blb::path_from_utf8(path));
+            }
+        }
         return options;
+    }
+
+    std::optional<std::vector<blb::java::java_installation>> javaCandidates() {
+        if (!javaStarted || javaList.status != Status::Ready) {
+            return std::nullopt;
+        }
+        return javaList.list;
+    }
+
+    int addFound(const std::vector<blb::java::java_installation>& found) {
+        std::vector<std::string> hiddenList = pathList("javaHidden");
+        std::vector<std::string> saved = pathList("javaFound");
+        int added = 0;
+        for (const blb::java::java_installation& java : found) {
+            if (listed(hiddenList, java.executable) ||
+                std::any_of(javaList.list.begin(), javaList.list.end(),
+                            [&](const blb::java::java_installation& known) { return sameJava(known, java); })) {
+                continue;
+            }
+            javaList.list.push_back(java);
+            if (!listed(saved, java.executable)) {
+                saved.push_back(blb::path_to_utf8(java.executable));
+            }
+            added++;
+        }
+        if (added > 0) {
+            savePathList("javaFound", saved);
+            sortJava(javaList.list);
+        }
+        return added;
+    }
+
+    void seenJava(const std::filesystem::path& executable) {
+        if (javaList.status != Status::Ready || listed(pathList("javaHidden"), executable) ||
+            std::any_of(javaList.list.begin(), javaList.list.end(), [&](const blb::java::java_installation& known) {
+                std::error_code error;
+                return known.executable == executable ||
+                        std::filesystem::equivalent(known.executable, executable, error);
+            })) {
+            return;
+        }
+        scanJava();
     }
 
     void refreshJava() {
@@ -234,6 +277,11 @@ namespace Catalog {
             unlist(added, executable);
             savePathList("javaPaths", added);
         }
+        std::vector<std::string> found = pathList("javaFound");
+        if (listed(found, executable)) {
+            unlist(found, executable);
+            savePathList("javaFound", found);
+        }
         std::vector<std::string> hiddenList = pathList("javaHidden");
         if (!listed(hiddenList, executable)) {
             hiddenList.push_back(blb::path_to_utf8(executable));
@@ -268,6 +316,7 @@ namespace Catalog {
 
     void preload() {
         minecraft();
+        java();
     }
 
     void refreshMinecraft() {

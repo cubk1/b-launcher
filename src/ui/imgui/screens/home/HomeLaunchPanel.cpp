@@ -91,8 +91,7 @@ namespace HomeLaunchPanel {
             float faceY = y + (ACCOUNT_H - FACE) * 0.5f;
             float faceX = x + PAD;
             float buttonY = y + (ACCOUNT_H - 28.0f) * 0.5f;
-            float moreX = x + w - PAD - 28.0f;
-            float switchX = moreX - 6.0f - 28.0f;
+            float switchX = x + w - PAD - 28.0f;
             float refreshX = switchX - 6.0f - 28.0f;
             float textX = faceX + FACE + 12.0f;
             float textRoom = std::max(0.0f, refreshX - 8.0f - textX);
@@ -142,10 +141,6 @@ namespace HomeLaunchPanel {
             if (Page::iconButton("home#account#switch", 0xf0c0, "切换账号", switchX, buttonY, blocked)) {
                 UiSound::request(UiSound::TICK);
                 accountsMenu(switchX - MENU_W + 28.0f, y + ACCOUNT_H + 6.0f);
-            }
-            if (Page::iconButton("home#account#more", 0xf141, "更多", moreX, buttonY, blocked)) {
-                UiSound::request(UiSound::TICK);
-                accountsMenu(moreX - MENU_W + 28.0f, y + ACCOUNT_H + 6.0f);
             }
         }
 

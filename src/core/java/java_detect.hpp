@@ -4,7 +4,9 @@
 #include <core/base/error.hpp>
 #include <core/base/platform.hpp>
 
+#include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,6 +43,8 @@ struct scan_options
   std::vector<std::filesystem::path> extra_homes;
   std::vector<std::filesystem::path> extra_roots;
   std::vector<std::filesystem::path> runtime_roots;
+  std::vector<std::filesystem::path> excluded;
+  std::function<void (std::size_t done, std::size_t total)> progress;
   bool probe_process = true;
   bool system_locations = true;
 };
@@ -54,5 +58,5 @@ probe_java (const std::filesystem::path &home_or_executable,
             bool allow_process = true, cancellation_token token = {});
 std::vector<java_installation> scan_java (const scan_options &options = {},
                                           cancellation_token token = {});
-
+void prune_missing (std::vector<java_installation> &installs);
 }

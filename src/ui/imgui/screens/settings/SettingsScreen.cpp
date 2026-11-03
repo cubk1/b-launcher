@@ -4,6 +4,7 @@
 #include "ui/imgui/screens/shell/Background.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
+#include "app/system/DiskScan.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
@@ -50,6 +51,8 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -472,13 +475,230 @@ namespace SettingsScreen {
             return std::string();
         }
 
+        constexpr float SCAN_BAR_H = 4.0f;
+        constexpr double SCAN_SWEEP = 1.4;
+
+        bool scanning(DiskScan::Kind kind) {
+            const DiskScan::Status& scan = DiskScan::status();
+            return scan.state == DiskScan::State::Running && scan.kind == kind;
+        }
+
+        void startScan(DiskScan::Kind kind, const std::string& barId) {
+            UiState::remove(barId);
+            DiskScan::start(kind);
+        }
+
+        void scanBar(const std::string& id, float x, float y, float w) {
+            const DiskScan::Status& scan = DiskScan::status();
+            UiRender::roundRect(x, y, w, SCAN_BAR_H, SCAN_BAR_H * 0.5f, UiTheme::outline());
+            if (scan.waiting) {
+                UiState::keepAnimating();
+                float t = (float) (std::fmod(ImGui::GetTime(), SCAN_SWEEP) / SCAN_SWEEP);
+                float segment = w * 0.3f;
+                float head = x - segment + (w + segment) * t;
+                float from = std::max(x, head);
+                float to = std::min(x + w, head + segment);
+                if (to - from > 0.5f) {
+                    float width = std::max(SCAN_BAR_H, to - from);
+                    UiRender::roundRect(std::min(from, x + w - width), y, width, SCAN_BAR_H, SCAN_BAR_H * 0.5f,
+                                        UiTheme::accent());
+                }
+                return;
+            }
+            float shown = UiState::motion(id, scan.progress, 10.0f);
+            if (shown > 0.001f) {
+                UiRender::roundRect(x, y, std::max(SCAN_BAR_H, w * shown), SCAN_BAR_H, SCAN_BAR_H * 0.5f,
+                                    UiTheme::accent());
+            }
+        }
+
+        bool sourceAdded(const std::filesystem::path& folder) {
+            for (const Instances::Source& source : Instances::sources()) {
+                std::error_code error;
+                if (source.root == folder || std::filesystem::equivalent(source.root, folder, error)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        constexpr float DRIVE_W = 120.0f;
+
+        std::string sizeText(uint64_t bytes) {
+            double gigabytes = (double) bytes / 1e9;
+            char text[32];
+            if (gigabytes >= 1000.0) {
+                std::snprintf(text, sizeof(text), "%.1f TB", gigabytes / 1000.0);
+            } else {
+                std::snprintf(text, sizeof(text), "%.0f GB", gigabytes);
+            }
+            return text;
+        }
+
+        class DriveChoice final : public Choice {
+        public:
+            DriveChoice() : Choice("settings#drives") {}
+
+            bool multi() override {
+                return true;
+            }
+
+            std::vector<std::string> options() override {
+                std::vector<std::string> out;
+                for (const DiskScan::Drive& drive : DiskScan::drives()) {
+                    out.push_back(nameOf(drive));
+                }
+                return out;
+            }
+
+            bool selected(const std::string& option) override {
+                const DiskScan::Drive* drive = find(option);
+                return drive != nullptr && DiskScan::driveSelected(drive->letter);
+            }
+
+            void choose(const std::string& option) override {
+                if (const DiskScan::Drive* drive = find(option)) {
+                    DiskScan::selectDrive(drive->letter, !DiskScan::driveSelected(drive->letter));
+                }
+            }
+
+            std::string label() override {
+                const std::vector<DiskScan::Drive>& all = DiskScan::drives();
+                if (all.empty()) {
+                    return DiskScan::drivesReady() ? "没有 NTFS 磁盘" : "正在读取磁盘…";
+                }
+                std::vector<std::string> picked;
+                for (const DiskScan::Drive& drive : all) {
+                    if (DiskScan::driveSelected(drive.letter)) {
+                        picked.push_back(std::string(1, (char) drive.letter) + ":");
+                    }
+                }
+                if (picked.empty()) {
+                    return "未选择磁盘";
+                }
+                return picked.size() == all.size() ? std::string("全部磁盘") : blb::join(picked, "、");
+            }
+
+            std::string optionIcon(const std::string& option) override {
+                const DiskScan::Drive* drive = find(option);
+                return drive != nullptr ? Ui::glyph(drive->removable ? 0xf287 : 0xf0a0) : std::string();
+            }
+
+            std::string optionDetail(const std::string& option) override {
+                const DiskScan::Drive* drive = find(option);
+                return drive != nullptr && drive->size > 0 ? sizeText(drive->size) : std::string();
+            }
+
+        private:
+            static std::string nameOf(const DiskScan::Drive& drive) {
+                std::string name = std::string(1, (char) drive.letter) + ":";
+                return drive.label.empty() ? name : name + " " + drive.label;
+            }
+
+            static const DiskScan::Drive* find(const std::string& option) {
+                for (const DiskScan::Drive& drive : DiskScan::drives()) {
+                    if (nameOf(drive) == option) {
+                        return &drive;
+                    }
+                }
+                return nullptr;
+            }
+        };
+
+        void driveSelect(const std::string& id, float x, float y, bool blocked) {
+            static auto choice = std::make_shared<DriveChoice>();
+            SelectWidget widget(id, choice);
+            widget.bounds(x, y, DRIVE_W, FIELD_H).block(blocked || DiskScan::drives().empty());
+            widget.paint();
+        }
+
+        void folderRows(float y, bool blocked) {
+            const DiskScan::Status& scan = DiskScan::status();
+            const std::string label = "搜索硬盘上的 .minecraft";
+            Page::label(label, y);
+            std::string action = "全盘搜索";
+            float actionW = Page::buttonWidth(action, 0xf0a0);
+            float actionX = Page::controlRight() - actionW;
+            bool running = scan.state == DiskScan::State::Running;
+            if (Page::button("settings#folders#scan", action, actionX, y + Page::FIELD_Y, actionW, false,
+                             blocked || running || !DiskScan::anySelected(), 0xf0a0)) {
+                startScan(DiskScan::Kind::Folders, "settings#folders#bar");
+            }
+            float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 16.0f;
+            float right = actionX - 16.0f;
+            if (!scanning(DiskScan::Kind::Folders)) {
+                float selectX = actionX - 8.0f - DRIVE_W;
+                driveSelect("settings#folders#drives", selectX, y + Page::FIELD_Y, blocked || running);
+                right = selectX - 12.0f;
+            }
+            if (scanning(DiskScan::Kind::Folders)) {
+                float w = std::min(220.0f, right - labelEnd);
+                if (w >= 60.0f) {
+                    float top = y + (Page::ROW_H - 18.0f - 5.0f - SCAN_BAR_H) * 0.5f;
+                    UiRender::textY(UiFont::fitEnd(scan.step, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, w), right - w, top,
+                                    18.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                    scanBar("settings#folders#bar", right - w, top + 23.0f, w);
+                }
+            } else {
+                bool failed = scan.state == DiskScan::State::Failed && scan.kind == DiskScan::Kind::Folders;
+                bool done = scan.state == DiskScan::State::Done && scan.kind == DiskScan::Kind::Folders;
+                std::string note = failed ? scan.error
+                        : done            ? "找到 " + std::to_string(scan.folders.size()) + " 个"
+                                          : std::string("需要管理员权限");
+                note = UiFont::fitEnd(note, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, std::max(0.0f, right - labelEnd));
+                float noteW = UiFont::width(note, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                UiRender::textY(note, right - noteW, y, Page::ROW_H, failed ? UiTheme::danger() : UiTheme::textMuted(),
+                                UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            }
+        }
+
+        void foundRows(float y, bool blocked) {
+            const DiskScan::Status& scan = DiskScan::status();
+            for (size_t i = 0; i < scan.folders.size(); i++) {
+                float rowY = y + (float) i * Page::ROW_H;
+                const std::filesystem::path& folder = scan.folders[i];
+                float textX = mainX() + 16.0f;
+                UiWidgets::icon(Ui::glyph(0xf07b), textX + 6.0f, rowY + Page::ROW_H * 0.5f, UiTheme::textMuted(),
+                                12.0f);
+                float end = Page::controlRight();
+                if (sourceAdded(folder)) {
+                    std::string added = "已添加";
+                    float addedW = UiFont::width(added, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                    UiRender::textY(added, end - addedW, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    UiWidgets::check(end - addedW - 12.0f, rowY + Page::ROW_H * 0.5f, UiTheme::accent(), 9.0f);
+                    end -= addedW + 22.0f;
+                } else {
+                    std::string add = "添加";
+                    float addW = Page::buttonWidth(add, 0xf067);
+                    if (Page::button("settings#folders#add#" + std::to_string(i), add, end - addW, rowY + Page::FIELD_Y,
+                                     addW, false, blocked, 0xf067)) {
+                        std::string problem = Instances::addFolder(folder);
+                        if (!problem.empty()) {
+                            Instances::notify(problem, true);
+                        }
+                    }
+                    end -= addW;
+                }
+                float pathX = textX + 22.0f;
+                std::string where = UiFont::fitStart(Platform::display(folder), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                                     std::max(0.0f, end - 12.0f - pathX));
+                UiRender::textY(where, pathX, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            }
+        }
+
         void gameTab(bool covered) {
-            const int instanceCount = 2;
+            const int instanceCount = 3;
+            const int foundCount = (int) DiskScan::status().folders.size();
             const int launchCount = 6;
             std::string source = optionsSource();
             std::filesystem::path shared = GameOptions::sharedFile(source);
             const int optionCount = shared.empty() ? 0 : GameOptionRows::COUNT;
             float contentH = 2 * Page::CAPTION_H + (instanceCount + launchCount) * Page::ROW_H + Page::GAP;
+            if (foundCount > 0) {
+                contentH += Page::CAPTION_H + foundCount * Page::ROW_H + Page::GAP;
+            }
             if (optionCount > 0) {
                 contentH += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
             }
@@ -491,8 +711,18 @@ namespace SettingsScreen {
                 Page::caption("实例", y);
                 Page::card(y + Page::CAPTION_H, instanceCount);
                 instanceRows(y + Page::CAPTION_H, blocked);
+                folderRows(y + Page::CAPTION_H + 2 * Page::ROW_H, blocked);
             }
             y += Page::CAPTION_H + instanceCount * Page::ROW_H + Page::GAP;
+
+            if (foundCount > 0) {
+                if (Page::shown(y, Page::CAPTION_H + foundCount * Page::ROW_H)) {
+                    Page::caption("找到的游戏目录", y);
+                    Page::card(y + Page::CAPTION_H, foundCount);
+                    foundRows(y + Page::CAPTION_H, blocked);
+                }
+                y += Page::CAPTION_H + foundCount * Page::ROW_H + Page::GAP;
+            }
 
             if (Page::shown(y, Page::CAPTION_H + launchCount * Page::ROW_H)) {
                 Page::caption("启动", y);
@@ -784,9 +1014,22 @@ namespace SettingsScreen {
                            covered || loading)) {
                 Catalog::refreshJava();
             }
+            float searchX = refreshX - 32.0f;
+            bool diskRunning = DiskScan::status().state == DiskScan::State::Running;
+            if (diskRunning) {
+                Page::spinner(searchX + 14.0f, Page::TOP + 15.0f, 6.0f, UiTheme::accent());
+            } else if (Page::iconButton("settings#java#disks", 0xf0a0, "全盘搜索", searchX, Page::TOP + 1.0f,
+                                        covered || !DiskScan::anySelected())) {
+                startScan(DiskScan::Kind::Java, "settings#java#disks#bar");
+            }
+            float drivesX = searchX - 4.0f - DRIVE_W;
+            bool javaScanning = scanning(DiskScan::Kind::Java);
+            if (!javaScanning) {
+                driveSelect("settings#java#drives", drivesX, Page::TOP + 4.0f, covered || diskRunning);
+            }
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
-            float addX = refreshX - 8.0f - addW;
+            float addX = drivesX - 8.0f - addW;
             if (Page::button("settings#java#add", add, addX, Page::TOP + 4.0f, addW, false, covered, 0xf067)) {
                 if (std::optional<std::filesystem::path> picked = Platform::pickJava(std::filesystem::path())) {
                     Catalog::addJava(*picked);
@@ -794,9 +1037,22 @@ namespace SettingsScreen {
             }
             std::string download = "下载";
             float downloadW = Page::buttonWidth(download, 0xf019);
-            if (Page::button("settings#java#download", download, addX - 8.0f - downloadW, Page::TOP + 4.0f, downloadW,
-                             true, covered, 0xf019)) {
+            float downloadX = addX - 8.0f - downloadW;
+            if (Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
+                             0xf019)) {
                 javaViews.go(1);
+            }
+            if (javaScanning) {
+                float barX = drivesX + 8.0f;
+                scanBar("settings#java#disks#bar", barX, Page::TOP + (NAV_ITEM_H - SCAN_BAR_H) * 0.5f, DRIVE_W - 16.0f);
+                const std::string& step = DiskScan::status().step;
+                float stepW = UiFont::width(step, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                float stepX = downloadX - 12.0f - stepW;
+                float countEnd = mainX() + 2.0f + UiFont::width(count, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
+                if (stepX >= countEnd) {
+                    UiRender::textY(step, stepX, Page::TOP, NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_SMALL);
+                }
             }
 
             float top = Page::TOP + 40.0f;

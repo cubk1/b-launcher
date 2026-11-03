@@ -18,6 +18,7 @@
 #include "app/multiplayer/Multiplayer.h"
 #include "app/system/Catalog.h"
 #include "app/system/CustomDownload.h"
+#include "app/system/DiskScan.h"
 #include "app/system/Network.h"
 #include "app/system/ServerStatus.h"
 #include "app/system/Updates.h"
@@ -55,11 +56,13 @@ namespace Services {
         ServerStatus::poll();
         Multiplayer::poll();
         CustomDownload::poll();
+        DiskScan::poll();
     }
 
     void stop() {
         Multiplayer::shutdown();
         CustomDownload::shutdown();
+        DiskScan::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
         Drops::shutdown();

@@ -9,6 +9,7 @@
 #include "core/base/win_util.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <map>
 #include <mutex>
@@ -402,6 +403,14 @@ scan_java (const scan_options &options, cancellation_token token)
   auto candidates = collect_candidates (options);
   std::vector<candidate> unique;
   std::vector<std::string> keys;
+  for (const auto &path : options.excluded)
+    {
+      auto st = fs::stat (path);
+      auto home = st.exists && !st.is_directory
+                      ? java_home_from_executable (path)
+                      : path;
+      keys.push_back (to_lower (path_to_utf8 (fs::real_path (home))));
+    }
   for (auto &c : candidates)
     {
       auto canonical = fs::real_path (c.home);
@@ -412,10 +421,13 @@ scan_java (const scan_options &options, cancellation_token token)
       unique.push_back ({ canonical, c.source });
     }
   std::vector<std::optional<java_installation>> found (unique.size ());
+  std::atomic<std::size_t> probed_count { 0 };
   parallel_for (thread_pool::shared (), unique.size (), [&] (std::size_t i) {
     if (token.is_cancelled ())
       return;
     auto probed = probe_java (unique[i].home, options.probe_process, token);
+    if (options.progress)
+      options.progress (++probed_count, unique.size ());
     if (!probed)
       {
         s_log.debug ("skip {}: {}", path_to_utf8 (unique[i].home),
@@ -433,4 +445,11 @@ scan_java (const scan_options &options, cancellation_token token)
   return out;
 }
 
+void
+prune_missing (std::vector<java_installation> &installs)
+{
+  std::erase_if (installs, [] (const java_installation &install) {
+    return !fs::exists (install.executable);
+  });
+}
 }

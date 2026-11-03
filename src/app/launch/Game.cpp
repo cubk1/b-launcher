@@ -254,6 +254,7 @@ namespace Game {
             std::optional<blb::process> game;
             std::string error;
             bool wasCancelled;
+            std::string javaUsed;
             {
                 std::lock_guard<std::mutex> guard(live.lock);
                 game = std::move(live.started);
@@ -261,9 +262,13 @@ namespace Game {
                 error = live.failure;
                 wasCancelled = live.cancelled;
                 live.prepared = false;
+                javaUsed = live.javaUsed;
                 if (!live.javaUsed.empty()) {
                     live.variables.emplace_back("INST_JAVA", live.javaUsed);
                 }
+            }
+            if (!javaUsed.empty()) {
+                Catalog::seenJava(blb::path_from_utf8(javaUsed));
             }
             takeAccount(live);
             if (game && game->valid()) {
@@ -581,10 +586,11 @@ namespace Game {
         std::filesystem::path directory = live.commandDirectory;
         Live* self = &live;
         auto javaOptions = Catalog::javaScanOptions();
+        auto javaKnown = Catalog::javaCandidates();
         lives.push_back(std::move(made));
         self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
                                       commandVariables, directory, language, minecraft, patchJar, patchPlan,
-                                      javaOptions, optionsFile]() mutable {
+                                      javaOptions, javaKnown, optionsFile]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             bool wasCancelled = false;
@@ -604,6 +610,7 @@ namespace Game {
                 blb::install::install_options options;
                 options.mirror = blb::net::make_bmclapi_provider();
                 options.java_scan = javaOptions;
+                options.java_candidates = javaKnown;
                 auto installer = std::make_shared<blb::install::game_installer>(blb::meta::game_layout(root), options);
                 blb::launch::game_launcher launcher(installer);
                 if (authenticator) {
