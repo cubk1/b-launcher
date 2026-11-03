@@ -20,6 +20,22 @@ if (MSVC)
     endforeach ()
     set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "/LTCG")
     set(CMAKE_STATIC_LINKER_FLAGS_MINSIZEREL "/LTCG")
+else ()
+    if (APPLE)
+        set(BLB_SIZE_FLAGS "-Os -ffunction-sections -fdata-sections -DNDEBUG")
+        set(BLB_DEAD_STRIP "-Wl,-dead_strip -s")
+    else ()
+        set(BLB_SIZE_FLAGS "-Os -ffunction-sections -fdata-sections -flto -DNDEBUG")
+        set(BLB_DEAD_STRIP "-flto -Wl,--gc-sections -s")
+    endif ()
+    foreach (language C CXX OBJC OBJCXX)
+        set(CMAKE_${language}_FLAGS_RELEASE ${BLB_SIZE_FLAGS})
+        set(CMAKE_${language}_FLAGS_MINSIZEREL ${BLB_SIZE_FLAGS})
+    endforeach ()
+    foreach (kind EXE SHARED MODULE)
+        set(CMAKE_${kind}_LINKER_FLAGS_RELEASE ${BLB_DEAD_STRIP})
+        set(CMAKE_${kind}_LINKER_FLAGS_MINSIZEREL ${BLB_DEAD_STRIP})
+    endforeach ()
 endif ()
 
 include(cmake/dependencies.cmake)
@@ -46,6 +62,16 @@ if (MSVC)
             src/core/installer/integrity.cpp
             src/core/meta/asset_index.cpp
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:/O2>)
+else ()
+    set_source_files_properties(
+            src/core/base/hash.cpp
+            src/core/base/sha1_x86.cpp
+            src/core/base/fs.cpp
+            src/core/base/thread_pool.cpp
+            src/core/network/download_client.cpp
+            src/core/installer/integrity.cpp
+            src/core/meta/asset_index.cpp
+            PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
 
 if (MSVC)
