@@ -274,37 +274,6 @@ list_liteloader (std::string_view mc, const net::mirror_provider &mirror,
   return out;
 }
 
-result<std::vector<loader_version>>
-list_optifine (std::string_view mc, cancellation_token token)
-{
-  BLB_TRY_ASSIGN (auto body,
-                  net::http_get (sformat ("https://bmclapi2.bangbang93.com/"
-                                          "optifine/{}",
-                                          mc),
-                                 token));
-  auto doc = detail::json::parse (body, nullptr, false);
-  if (doc.is_discarded () || !doc.is_array ())
-    return make_error (errc::parse, "invalid optifine list");
-  std::vector<loader_version> out;
-  for (const auto &entry : doc)
-    {
-      loader_version v;
-      v.type = loader_type::optifine;
-      v.minecraft = json_text (entry, "mcversion");
-      auto type = json_text (entry, "type");
-      auto patch = json_text (entry, "patch");
-      v.version = type + "_" + patch;
-      v.stable = !patch.starts_with ("pre");
-      v.extra = json_text (entry, "forge");
-      v.url = sformat ("https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
-                       v.minecraft, type, patch);
-      if (!type.empty () && !patch.empty ())
-        out.push_back (std::move (v));
-    }
-  std::reverse (out.begin (), out.end ());
-  return out;
-}
-
 std::string
 modrinth_slug (loader_type type)
 {
@@ -485,10 +454,19 @@ download_file (loader_context &ctx, std::string_view url,
                const std::filesystem::path &target, std::string_view task,
                std::string_view sha1, std::int64_t size)
 {
+  return download_file (ctx, ctx.mirror ().resolve (url), target, task, sha1,
+                         size);
+}
+
+result<void>
+download_file (loader_context &ctx, std::span<const std::string> urls,
+               const std::filesystem::path &target, std::string_view task,
+               std::string_view sha1, std::int64_t size)
+{
   planned_file file;
   file.kind = file_kind::other;
   file.target = target;
-  file.urls = ctx.mirror ().resolve (url);
+  file.urls.assign (urls.begin (), urls.end ());
   if (!sha1.empty ())
     file.sha1 = parse_sha1 (sha1);
   file.size = size;
@@ -731,7 +709,7 @@ list_loader_versions (loader_type type, std::string_view minecraft,
     case loader_type::liteloader:
       return list_liteloader (minecraft, mirror, token);
     case loader_type::optifine:
-      return list_optifine (minecraft, token);
+      return detail::list_optifine (minecraft, mirror, token);
     case loader_type::fabric_api:
     case loader_type::legacy_fabric_api:
     case loader_type::quilt_api:

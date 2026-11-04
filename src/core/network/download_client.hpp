@@ -19,6 +19,7 @@ namespace b_launcher_base::net
 
 struct download_task
 {
+  // Try sources in order, moving on after failures or while a host is unhealthy.
   std::vector<std::string> urls;
   std::filesystem::path target;
   std::optional<sha1_digest> sha1;
@@ -34,6 +35,8 @@ struct download_options
   std::size_t memory_threshold = 4u << 20;
   std::size_t receive_buffer = 128u << 10;
   bool http2 = true;
+  // Explicit opt-in: otherwise source order wins over speed and parallel probes.
+  bool adaptive_sources = false;
 };
 
 struct download_failure

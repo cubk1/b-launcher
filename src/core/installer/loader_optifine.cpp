@@ -38,19 +38,10 @@ public:
   {
     BLB_TRY (resolve_version (ctx));
     m_forge_tweaker = ctx.with_forge && !ctx.modern_forge;
-    auto underscore = m_request.version.rfind ('_');
-    if (underscore == std::string::npos)
-      return make_error (
-          errc::invalid_argument,
-          sformat ("invalid optifine version '{}'", m_request.version));
-    auto type = m_request.version.substr (0, underscore);
-    auto patch = m_request.version.substr (underscore + 1);
     m_full = ctx.minecraft + "_" + m_request.version;
-    auto url = sformat ("https://bmclapi2.bangbang93.com/optifine/{}/{}/{}",
-                        ctx.minecraft, type, patch);
     m_installer = ctx.layout ().library (
         sformat ("optifine/OptiFine/{0}/OptiFine-{0}-installer.jar", m_full));
-    BLB_TRY (download_file (ctx, url, m_installer, "optifine"));
+    BLB_TRY (download_optifine (ctx, m_request.version, m_installer));
     if (ctx.modern_forge)
       {
         m_as_mod = true;

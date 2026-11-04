@@ -98,6 +98,16 @@ result<void> download_file (loader_context &ctx, std::string_view url,
                             const std::filesystem::path &target,
                             std::string_view task, std::string_view sha1 = {},
                             std::int64_t size = -1);
+result<void> download_file (loader_context &ctx,
+                            std::span<const std::string> urls,
+                            const std::filesystem::path &target,
+                            std::string_view task, std::string_view sha1 = {},
+                            std::int64_t size = -1);
+result<std::vector<loader_version>>
+list_optifine (std::string_view minecraft, const net::mirror_provider &mirror,
+               cancellation_token token);
+result<void> download_optifine (loader_context &ctx, std::string_view version,
+                                const std::filesystem::path &target);
 std::string fabric_meta_root (loader_type type);
 std::string neoforge_minecraft (std::string_view version);
 

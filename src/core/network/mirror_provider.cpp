@@ -145,6 +145,8 @@ bmclapi_rules (std::string_view root)
     { "https://meta.fabricmc.net", r + "/fabric-meta" },
     { "https://maven.fabricmc.net", r + "/maven" },
     { "https://maven.quiltmc.org/repository/release", r + "/maven" },
+    // OptiFine resolves the site root before building its HTML/API requests.
+    { "https://optifine.net/", r + "/optifine/" },
     { "http://dl.liteloader.com/versions/versions.json",
       r + "/maven/com/mumfrey/liteloader/versions.json" },
     { "https://dl.liteloader.com/versions/versions.json",
