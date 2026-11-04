@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <utility>
 
 namespace b_launcher_base::install
 {
@@ -23,6 +24,39 @@ same_path (const std::filesystem::path &a, const std::filesystem::path &b)
     return true;
   return to_lower (path_to_utf8 (fs::absolute (a)))
          == to_lower (path_to_utf8 (fs::absolute (b)));
+}
+
+std::filesystem::path
+moved_library (const planned_file &file)
+{
+  if ((file.kind != file_kind::library && file.kind != file_kind::native)
+      || !file.sha1 || file.size < 0 || split (file.relative, '/').size () < 5)
+    return {};
+  std::vector<std::pair<std::filesystem::path, int>> pending {
+    { file.target.parent_path ().parent_path (), 0 }
+  };
+  while (!pending.empty ())
+    {
+      auto [directory, depth] = std::move (pending.back ());
+      pending.pop_back ();
+      for (const auto &[name, st] : fs::list_directory (directory))
+        {
+          auto candidate = directory / path_from_utf8 (name);
+          if (st.is_directory)
+            {
+              if (depth < 2 && !st.is_link)
+                pending.emplace_back (std::move (candidate), depth + 1);
+              continue;
+            }
+          if (st.size != static_cast<std::uint64_t> (file.size)
+              || same_path (candidate, file.target))
+            continue;
+          auto digest = sha1_file (candidate);
+          if (digest && *digest == *file.sha1)
+            return candidate;
+        }
+    }
+  return {};
 }
 
 }
@@ -61,11 +95,8 @@ import_local_objects (std::span<const planned_file> files,
                       cancellation_token token)
 {
   import_report report;
-  if (sources.empty () || missing.empty ())
-    {
-      report.remaining.assign (missing.begin (), missing.end ());
-      return report;
-    }
+  if (missing.empty ())
+    return report;
   auto &workers = pool ? *pool : thread_pool::shared ();
   std::vector<std::filesystem::path> roots;
   const auto &probe = files[missing.front ()];
@@ -89,6 +120,23 @@ import_local_objects (std::span<const planned_file> files,
         const auto &file = files[missing[k]];
         if (file.relative.empty ())
           return;
+        auto take = [&] (const std::filesystem::path &candidate,
+                         std::uint64_t size) {
+          auto result = fs::link_or_copy (candidate, file.target);
+          if (!result)
+            {
+              s_log.debug ("cannot import {}: {}", file.relative,
+                           result.err ().message);
+              return false;
+            }
+          if (*result == fs::link_result::hard_link)
+            ++linked;
+          else
+            ++copied;
+          bytes += size;
+          done[k] = 1;
+          return true;
+        };
         auto relative = path_from_utf8 (file.relative);
         for (const auto &source : roots)
           {
@@ -105,21 +153,11 @@ import_local_objects (std::span<const planned_file> files,
                 if (!digest || *digest != *file.sha1)
                   continue;
               }
-            auto result = fs::link_or_copy (candidate, file.target);
-            if (!result)
-              {
-                s_log.debug ("cannot import {}: {}", file.relative,
-                             result.err ().message);
-                continue;
-              }
-            if (*result == fs::link_result::hard_link)
-              ++linked;
-            else
-              ++copied;
-            bytes += st.size;
-            done[k] = 1;
-            return;
+            if (take (candidate, st.size))
+              return;
           }
+        if (auto moved = moved_library (file); !moved.empty ())
+          take (moved, static_cast<std::uint64_t> (file.size));
       },
       16);
   report.linked = linked.load ();

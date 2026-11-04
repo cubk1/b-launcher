@@ -194,23 +194,19 @@ game_installer::ensure_files (std::vector<planned_file> files,
   if (!missing.empty ())
     {
       auto sources = import_sources ();
-      if (!sources.empty ())
+      auto imported = import_local_objects (files, missing, sources,
+                                            m_impl->options.verify_imported,
+                                            nullptr, token);
+      report.imported = imported.linked + imported.copied;
+      if (report.imported)
         {
-          auto imported = import_local_objects (
-              files, missing, sources, m_impl->options.verify_imported,
-              nullptr, token);
-          report.imported = imported.linked + imported.copied;
-          if (report.imported)
-            {
-              std::vector<std::size_t> linked;
-              std::set_difference (missing.begin (), missing.end (),
-                                   imported.remaining.begin (),
-                                   imported.remaining.end (),
-                                   std::back_inserter (linked));
-              remember_files (files, linked, m_impl->cache);
-            }
-          missing = std::move (imported.remaining);
+          std::vector<std::size_t> linked;
+          std::set_difference (
+              missing.begin (), missing.end (), imported.remaining.begin (),
+              imported.remaining.end (), std::back_inserter (linked));
+          remember_files (files, linked, m_impl->cache);
         }
+      missing = std::move (imported.remaining);
     }
   BLB_TRY (token.check ());
   if (!missing.empty ())

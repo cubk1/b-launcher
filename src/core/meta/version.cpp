@@ -493,7 +493,11 @@ library::is_modern_native () const noexcept
 std::string
 library::merge_key () const
 {
-  return artifact.key () + (is_legacy_native () ? ":natives" : "");
+  std::string key = artifact.key ();
+  const auto &ver = artifact.version;
+  if (!ver.empty () && (ver.front () < '0' || ver.front () > '9'))
+    key += "#" + ver;
+  return key + (is_legacy_native () ? ":natives" : "");
 }
 
 std::optional<std::string>
