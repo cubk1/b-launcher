@@ -33,6 +33,20 @@ namespace Platform {
             return value;
         }
 
+        std::string desktopValue(std::string_view value) {
+            std::string out;
+            for (char c : value) {
+                switch (c) {
+                    case '\\': out += "\\\\"; break;
+                    case '\n': out += "\\n"; break;
+                    case '\r': out += "\\r"; break;
+                    case '\t': out += "\\t"; break;
+                    default: out += c; break;
+                }
+            }
+            return out;
+        }
+
         uint64_t meminfo(const std::string& text, const char* name) {
             size_t at = text.find(name);
             if (at == std::string::npos) {
@@ -165,6 +179,10 @@ namespace Platform {
         auto quoted = [](const std::string& text) {
             std::string out = "\"";
             for (char c : text) {
+                if (c == '%') {
+                    out += "%%";
+                    continue;
+                }
                 if (c == '"' || c == '`' || c == '$' || c == '\\') {
                     out += '\\';
                 }
@@ -172,10 +190,19 @@ namespace Platform {
             }
             return out + "\"";
         };
+        std::string executable = blb::path_to_utf8(exe);
+        std::string command = quoted(executable);
+        // GIO checks the first word before expanding %% in executable paths.
+        if (executable.find('%') != std::string::npos) {
+            command = "/usr/bin/env -- " + command;
+        }
+        for (const std::string& argument : blb::split_arguments(shortcut.arguments)) {
+            command += " " + quoted(argument);
+        }
         std::string name = file.stem().string();
-        std::string text = "[Desktop Entry]\nType=Application\nName=" + name + "\nComment=" + shortcut.description +
-                "\nExec=" + quoted(blb::path_to_utf8(exe)) + " " + shortcut.arguments +
-                "\nIcon=" + blb::path_to_utf8(icon) + "\nTerminal=false\nCategories=Game;\n";
+        std::string text = "[Desktop Entry]\nType=Application\nName=" + desktopValue(name) +
+                "\nComment=" + desktopValue(shortcut.description) + "\nExec=" + desktopValue(command) +
+                "\nIcon=" + desktopValue(blb::path_to_utf8(icon)) + "\nTerminal=false\nCategories=Game;\n";
         auto written = blb::fs::write_file_atomic(file, text);
         if (!written) {
             return "无法创建快捷方式：" + written.err().message;
