@@ -1189,6 +1189,11 @@ namespace LogWindow {
         UiRender::begin(ImGui::GetForegroundDrawList());
         NewUi::render(draw);
         UiRender::end();
+        if (NewUi::caretFrame == NewUi::frameCounter) {
+            window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
+        } else {
+            window.clearTextArea();
+        }
         ImGui::Render();
 #if !defined(_WIN32)
         window.setTyping(!NewUi::textEditing.empty());

@@ -148,6 +148,10 @@ namespace NewUi {
     extern long long pickerOpenedFrame;
     extern long long frameCounter;
     extern float caretTimer;
+    extern float caretScreenX;
+    extern float caretScreenY;
+    extern float caretScreenH;
+    extern long long caretFrame;
     extern std::unordered_map<std::string, float> fieldOffset;
     extern std::string fieldMenuTarget;
     extern float fieldMenuX;

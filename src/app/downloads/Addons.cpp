@@ -1,4 +1,5 @@
 #include "app/downloads/Addons.h"
+#include "app/downloads/Aggregate.h"
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/DownloadSources.h"
 #include "app/downloads/ModNames.h"
@@ -301,6 +302,7 @@ namespace Addons {
     void poll() {
         Modrinth::poll();
         CurseForge::poll();
+        Aggregate::poll();
         ModNames::poll();
         finished.poll();
         // An icon still on its way, or that failed, is only its address.
@@ -322,6 +324,7 @@ namespace Addons {
         iconWorkers.clear();
         Modrinth::shutdown();
         CurseForge::shutdown();
+        Aggregate::shutdown();
         ModNames::shutdown();
     }
 }

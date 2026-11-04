@@ -39,6 +39,7 @@ struct response_body
   std::string &data;
   std::size_t limit;
   bool too_large = false;
+  const std::function<void (std::string_view)> *on_data = nullptr;
 };
 
 std::size_t
@@ -52,6 +53,8 @@ write_body (char *data, std::size_t size, std::size_t count, void *user)
       return 0;
     }
   body.data.append (data, length);
+  if (body.on_data && *body.on_data)
+    (*body.on_data) (std::string_view (data, length));
   return length;
 }
 
@@ -98,7 +101,8 @@ http_send (const http_request &request, cancellation_token token)
     return make_error (errc::network, "cannot create curl handle");
 
   http_response response;
-  response_body body { response.body, request.max_response_size };
+  response_body body { response.body, request.max_response_size, false,
+                       &request.on_data };
   char error_buffer[CURL_ERROR_SIZE] = {};
   curl_slist *headers = nullptr;
   for (const auto &h : request.headers)

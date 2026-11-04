@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -46,6 +47,7 @@ struct http_request
   bool follow_redirects = true;
   // Limit the decoded response body while receiving it; zero leaves it unlimited.
   std::size_t max_response_size = 0;
+  std::function<void (std::string_view)> on_data;
 };
 
 struct http_response

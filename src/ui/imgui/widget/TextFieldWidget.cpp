@@ -9,6 +9,8 @@
 #include "../panel/UiTheme.h"
 #include "../panel/UiWidgets.h"
 
+#include <algorithm>
+
 TextFieldWidget::TextFieldWidget(std::shared_ptr<TextValue> value)
     : Widget(value->owner),
       value(std::move(value)),
@@ -16,10 +18,22 @@ TextFieldWidget::TextFieldWidget(std::shared_ptr<TextValue> value)
       boxY(0.0f),
       boxW(0.0f),
       boxH(0.0f),
-      trail(0.0f) {}
+      trail(0.0f),
+      leading(0.0f),
+      corner(7.0f) {}
 
 TextFieldWidget& TextFieldWidget::room(float right) {
     trail = right;
+    return *this;
+}
+
+TextFieldWidget& TextFieldWidget::lead(float left) {
+    leading = left;
+    return *this;
+}
+
+TextFieldWidget& TextFieldWidget::radius(float value) {
+    corner = value;
     return *this;
 }
 
@@ -41,27 +55,27 @@ void TextFieldWidget::paint() {
         NewUi::tabStop(value);
     }
     bool isHovered = !blocked && NewUi::hit(boxX, boxY, boxW, boxH);
-    UiRender::roundRect(boxX, boxY, boxW, boxH, 7.0f, UiTheme::surfaceRaised());
+    UiRender::roundRect(boxX, boxY, boxW, boxH, corner, UiTheme::surfaceRaised());
     if (isEditing) {
-        UiRender::outline(boxX, boxY, boxW, boxH, 7.0f, UiTheme::accent());
+        UiRender::outline(boxX, boxY, boxW, boxH, corner, UiTheme::accent());
     } else if (isHovered) {
-        UiRender::outline(boxX, boxY, boxW, boxH, 7.0f, UiTheme::outlineSoft());
+        UiRender::outline(boxX, boxY, boxW, boxH, corner, UiTheme::outlineSoft());
     }
     if (isEditing) {
         InputWidget(NewUi::INPUT_TEXT)
-                .area(boxX + 9, boxW - 18 - trail, UiWidgets::TEXT_CONTROL, 14)
+                .area(boxX + 9 + leading, boxW - 18 - trail - leading, UiWidgets::TEXT_CONTROL, 14)
                 .limit(value->maxLength())
-                .bounds(boxX, boxY, boxW, boxH)
+                .bounds(boxX, boxY, std::min(boxW, hitX + hitW - boxX), boxH)
                 .block(blocked)
                 .paint();
         return;
     }
     std::string text = value->secret() ? UiInput::masked(value->get()) : value->get();
     bool empty = text.empty();
-    UiRender::textClipped(empty ? value->hint() : text, boxX + 9, boxY, boxH, boxW - 18 - trail,
+    UiRender::textClipped(empty ? value->hint() : text, boxX + 9 + leading, boxY, boxH, boxW - 18 - trail - leading,
                           empty ? UiTheme::textFaint() : UiTheme::textPrimary(), UiFont::MEDIUM,
                           UiWidgets::TEXT_CONTROL, UiTheme::surfaceRaised());
-    if (isHovered) {
+    if (hovered()) {
         UiCursor::text();
     }
     if (clicked()) {

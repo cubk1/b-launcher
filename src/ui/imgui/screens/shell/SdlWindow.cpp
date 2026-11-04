@@ -358,6 +358,30 @@ void SdlWindow::setTyping(bool typing) {
     }
 }
 
+void SdlWindow::setTextArea(float x, float y, float h) {
+    if (window == nullptr) {
+        return;
+    }
+    float scale = density();
+    int areaX = (int) (x / scale);
+    int areaY = (int) (y / scale);
+    int areaH = std::max(1, (int) (h / scale + 0.5f));
+    if (areaX == textAreaX && areaY == textAreaY && areaH == textAreaH) {
+        return;
+    }
+    textAreaX = areaX;
+    textAreaY = areaY;
+    textAreaH = areaH;
+    SDL_Rect area{areaX, areaY, 1, areaH};
+    SDL_SetTextInputArea(window, &area, 0);
+}
+
+void SdlWindow::clearTextArea() {
+    textAreaX = -1;
+    textAreaY = -1;
+    textAreaH = -1;
+}
+
 void SdlWindow::makeCurrent() {
     if (window != nullptr && glContext != nullptr) {
         SDL_GL_MakeCurrent(window, glContext);

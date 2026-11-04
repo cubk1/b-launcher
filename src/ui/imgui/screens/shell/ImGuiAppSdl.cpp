@@ -256,6 +256,11 @@ namespace ImGuiApp {
 
             ImGui::Render();
             window.setTyping(!NewUi::textEditing.empty() || !UiInput::focused.empty());
+            if (NewUi::caretFrame == NewUi::frameCounter) {
+                window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
+            } else {
+                window.clearTextArea();
+            }
             UiGL::Viewport(0, 0, window.width, window.height);
             UiGL::ClearColor(0.0f, 0.0f, 0.0f, window.framed || window.maximized() ? 1.0f : 0.0f);
             UiGL::Clear(UGL_COLOR_BUFFER_BIT);

@@ -176,6 +176,10 @@ namespace NewUi {
     long long pickerOpenedFrame;
     long long frameCounter;
     float caretTimer;
+    float caretScreenX;
+    float caretScreenY;
+    float caretScreenH;
+    long long caretFrame = -1;
     std::unordered_map<std::string, float> fieldOffset;
     std::string fieldMenuTarget;
     float fieldMenuX;
@@ -2025,10 +2029,15 @@ namespace NewUi {
     }
 
     void drawCaret(const std::string& id, float x, float y, float h, int family, float size) {
+        float at = UiFont::width(Ui::substring(UiInput::shown(id), 0, UiInput::caret(id)), family, size);
+        float unit = UiRender::unit();
+        caretScreenX = UiRender::transformX(x + at) * unit;
+        caretScreenY = UiRender::transformY(y) * unit;
+        caretScreenH = UiRender::transformW(h) * unit;
+        caretFrame = frameCounter;
         if (((long long) (caretTimer * 1.6f)) % 2 != 0) {
             return;
         }
-        float at = UiFont::width(Ui::substring(UiInput::shown(id), 0, UiInput::caret(id)), family, size);
         UiRender::roundRect(x + at, y, 1.2f, h, 0, UiTheme::textPrimary());
     }
 

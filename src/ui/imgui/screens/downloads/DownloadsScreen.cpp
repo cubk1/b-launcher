@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
 #include "app/system/Catalog.h"
+#include "app/downloads/Aggregate.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Instances.h"
@@ -17,6 +18,7 @@
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiPageTransition.h"
@@ -39,6 +41,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -69,12 +72,20 @@ namespace DownloadsScreen {
         constexpr float CARD_RADIUS = 12.0f;
         constexpr size_t LOADERS_SHOWN = 3;
         constexpr double TYPING_PAUSE = 0.4;
+        constexpr float SEARCH_H = NAV_ITEM_H;
+        constexpr float SEARCH_RADIUS = 8.0f;
+        constexpr float SEARCH_INSET = 3.0f;
+        constexpr float FOUND_H = 76.0f;
+        constexpr float FOUND_ICON = 40.0f;
+        constexpr float STEP_H = 30.0f;
 
         float mainW() {
             return Page::right() - mainX();
         }
 
         const char* const NAME_OWNER = "downloads#name";
+        const char* const ASK_OWNER = "downloads#ask";
+        const char* const FOUND_SCROLL = "downloads#aggregate#results";
         const char* const ANY_INSTANCE = "不指定实例";
         const char* const ANY_VERSION = "全部版本";
         const char* const ANY_LOADER = "全部加载器";
@@ -111,7 +122,13 @@ namespace DownloadsScreen {
         std::set<std::string> folded;
         bool allLoaders = false;
         Source source = Source::Modrinth;
-        PageTransition sourceViews(0);
+        constexpr int AGGREGATE_PAGE = 2;
+        PageTransition sourceViews(AGGREGATE_PAGE);
+        bool aggregate = true;
+        Source browsing = Source::Modrinth;
+        Source aggregateSource = Source::Modrinth;
+        std::string asking;
+        std::string asked;
 
         struct Tab {
             bool ready = false;
@@ -126,6 +143,7 @@ namespace DownloadsScreen {
             int view = VIEW_RESULTS;
         };
         Tab tabs[2];
+        Tab aggregateTab;
 
         std::string fitEnd(const std::string& text, float available, float size) {
             return UiFont::fitEnd(text, UiFont::MEDIUM, size, available);
@@ -172,7 +190,7 @@ namespace DownloadsScreen {
             UiRender::textY(text, x + lead, y, 24.0f, color, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         }
 
-        void projectIcon(const std::string& url, float x, float y, float size) {
+        void projectIcon(const std::string& url, float x, float y, float size, Kind kind) {
             float radius = size * 0.22f;
             if (uint32_t texture = Textures::of(Addons::icon(url))) {
                 UiRender::texture(texture, x, y, size, size);
@@ -180,11 +198,15 @@ namespace DownloadsScreen {
             }
             UiRender::roundRect(x, y, size, size, radius, UiTheme::surfaceRaised());
             for (const KindInfo& info : KINDS) {
-                if (info.kind == query.kind) {
+                if (info.kind == kind) {
                     UiWidgets::icon(Ui::glyph(info.glyph), x + size * 0.5f, y + size * 0.5f, UiTheme::textFaint(),
                                     size * 0.36f);
                 }
             }
+        }
+
+        void projectIcon(const std::string& url, float x, float y, float size) {
+            projectIcon(url, x, y, size, query.kind);
         }
 
         void progressRing(const std::string& id, float cx, float cy, float fraction) {
@@ -247,6 +269,8 @@ namespace DownloadsScreen {
                     });
         }
 
+        void instanceMenu(float x, float y, float menuY, float w);
+
         void instancePicker(float x, float y, float w, bool blocked) {
             const Instances::Entry* entry = Instances::find(target);
             std::string label = ANY_INSTANCE;
@@ -265,6 +289,10 @@ namespace DownloadsScreen {
                 NewUi::closeMenu();
                 return;
             }
+            instanceMenu(x, y, y + Page::FIELD_H + 4.0f, w);
+        }
+
+        void instanceMenu(float x, float y, float menuY, float w) {
             NewUi::openMenu(
                     PICKER,
                     [x, y, w] {
@@ -289,7 +317,7 @@ namespace DownloadsScreen {
                         }
                         return items;
                     },
-                    x, y + Page::FIELD_H + 4.0f, w);
+                    x, menuY, w);
         }
 
         std::vector<std::string> gameVersions(const std::string& keep) {
@@ -822,15 +850,7 @@ namespace DownloadsScreen {
             views.go(VIEW_RESULTS);
         }
 
-        void switchSource(Source next) {
-            if (next == source) {
-                views.go(VIEW_RESULTS);
-                return;
-            }
-            if (NewUi::textEditing == NAME_OWNER) {
-                NewUi::cancelTextEdit();
-            }
-            Tab& out = tabs[(int) source];
+        void keep(Tab& out) {
             out.ready = true;
             out.query = query;
             out.typed = typed;
@@ -841,19 +861,64 @@ namespace DownloadsScreen {
             out.folded = folded;
             out.allLoaders = allLoaders;
             out.view = views.page;
+        }
+
+        void resume(const Tab& in) {
+            query = in.query;
+            typed = in.typed;
+            shown = in.shown;
+            project = in.project;
+            versionFilter = in.versionFilter;
+            loaderFilter = in.loaderFilter;
+            folded = in.folded;
+            allLoaders = in.allLoaders;
+            views.page = in.view;
+        }
+
+        void stopEditing() {
+            if (NewUi::textEditing == NAME_OWNER || NewUi::textEditing == ASK_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+        }
+
+        void enterAggregate() {
+            if (aggregate) {
+                views.go(VIEW_RESULTS);
+                return;
+            }
+            stopEditing();
+            keep(tabs[(int) source]);
+            browsing = source;
+            aggregate = true;
+            if (aggregateTab.ready) {
+                source = aggregateSource;
+                resume(aggregateTab);
+            } else {
+                views.page = VIEW_RESULTS;
+            }
+            views.mix = 1.0f;
+            sourceViews.go(AGGREGATE_PAGE);
+        }
+
+        void switchSource(Source next) {
+            if (!aggregate && next == source) {
+                views.go(VIEW_RESULTS);
+                return;
+            }
+            stopEditing();
             Kind kind = query.kind == Kind::World && next != Source::CurseForge ? Kind::Mod : query.kind;
+            if (aggregate) {
+                keep(aggregateTab);
+                aggregateSource = source;
+                aggregate = false;
+                kind = Kind::Mod;
+            } else {
+                keep(tabs[(int) source]);
+            }
             source = next;
             Tab& in = tabs[(int) next];
             if (in.ready) {
-                query = in.query;
-                typed = in.typed;
-                shown = in.shown;
-                project = in.project;
-                versionFilter = in.versionFilter;
-                loaderFilter = in.loaderFilter;
-                folded = in.folded;
-                allLoaders = in.allLoaders;
-                views.page = in.view;
+                resume(in);
             } else {
                 query = Addons::Query();
                 query.kind = kind;
@@ -875,7 +940,7 @@ namespace DownloadsScreen {
         bool sourceRow(Source each, float y, bool blocked) {
             std::string id = std::string("downloads#source#") + Addons::sourceName(each);
             float x = Page::left();
-            bool active = source == each;
+            bool active = !aggregate && source == each;
             bool hovered = !blocked && NewUi::hit(x, y, SIDE_W, NAV_ITEM_H);
             float r = UiState::motion(id, active ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
             if (r > 0.001f) {
@@ -897,11 +962,21 @@ namespace DownloadsScreen {
 
         void side(bool covered) {
             float y = Page::TOP;
+            NavItemWidget search("downloads#aggregate", Ui::glyph(0xf002), "搜索");
+            search.selected(aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            search.paint();
+            if (search.pressed && (!aggregate || views.page != VIEW_RESULTS)) {
+                enterAggregate();
+            }
+            y += NAV_STEP;
             for (Source each : {Source::Modrinth, Source::CurseForge}) {
                 if (sourceRow(each, y, covered)) {
                     switchSource(each);
                 }
                 y += NAV_STEP;
+            }
+            if (aggregate) {
+                return;
             }
             y += 4.0f;
             UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
@@ -1154,6 +1229,476 @@ namespace DownloadsScreen {
                 Page::spinner(mainX() + mainW() * 0.5f, (listTop + listBottom) * 0.5f, 9.0f, UiTheme::accent());
             }
             pages(pagesY, shown.total, covered || loading);
+        }
+
+        std::optional<Kind> kindOf(const std::string& type) {
+            if (type == "mod") {
+                return Kind::Mod;
+            }
+            if (type == "modpack") {
+                return Kind::Modpack;
+            }
+            if (type == "resourcepack") {
+                return Kind::ResourcePack;
+            }
+            if (type == "shader") {
+                return Kind::Shader;
+            }
+            if (type == "datapack") {
+                return Kind::Datapack;
+            }
+            return std::nullopt;
+        }
+
+        const char* typeLabel(const std::string& type) {
+            if (type == "mod") {
+                return "模组";
+            }
+            if (type == "modpack") {
+                return "整合包";
+            }
+            if (type == "resourcepack") {
+                return "资源包";
+            }
+            if (type == "shader") {
+                return "光影";
+            }
+            if (type == "datapack") {
+                return "数据包";
+            }
+            if (type == "plugin") {
+                return "插件";
+            }
+            return "";
+        }
+
+        Aggregate::Request askedRequest() {
+            Aggregate::Request request;
+            request.text = asked;
+            if (const Instances::Entry* entry = Instances::find(target)) {
+                request.gameVersion = entry->info.minecraft_version;
+                std::string loader = ProjectInstaller::loaderOf(target);
+                if (loader == "forge" || loader == "neoforge" || loader == "fabric" || loader == "quilt") {
+                    request.loader = loader;
+                }
+            }
+            return request;
+        }
+
+        void ask(const std::string& text) {
+            std::string trimmed = Ui::trim(text);
+            if (trimmed.empty()) {
+                return;
+            }
+            if (trimmed == asked) {
+                Aggregate::Request request = askedRequest();
+                if (Aggregate::search(request).status == Addons::Status::Failed) {
+                    Aggregate::refresh(request);
+                }
+            }
+            asked = trimmed;
+            Page::scrollTo(FOUND_SCROLL, 0.0f);
+        }
+
+        std::shared_ptr<TextBinding> askValue() {
+            static std::shared_ptr<TextBinding> value = [] {
+                auto binding = std::make_shared<TextBinding>(
+                        ASK_OWNER, [] { return asking; },
+                        [](const std::string& text) {
+                            asking = text;
+                            if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
+                                ask(text);
+                            }
+                        },
+                        "搜索模组或整合包");
+                binding->limit = 200;
+                return binding;
+            }();
+            return value;
+        }
+
+        std::string scopeLabel() {
+            const Instances::Entry* entry = Instances::find(target);
+            if (entry == nullptr) {
+                return ANY_VERSION;
+            }
+            std::string label = entry->info.minecraft_version;
+            std::string loader = ProjectInstaller::loaderOf(target);
+            if (!loader.empty()) {
+                label += " " + Modrinth::label(loader);
+            }
+            return label;
+        }
+
+        void searchBar(float x, float y, float w, bool blocked) {
+            const float inner = SEARCH_H - SEARCH_INSET * 2.0f;
+            float innerY = y + SEARCH_INSET;
+            float buttonX = x + w - SEARCH_INSET - inner;
+            std::string scope = scopeLabel();
+            float scopeW = 12.0f + UiFont::width(scope, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22.0f;
+            float scopeX = buttonX - 4.0f - scopeW;
+            bool open = NewUi::menuOwner == PICKER || (NewUi::popupOpen && NewUi::popupSource == PICKER);
+            bool scopePressed = !blocked && NewUi::click(scopeX, innerY, scopeW, inner);
+            bool searchPressed = !blocked && NewUi::click(buttonX, innerY, inner, inner);
+
+            TextFieldWidget field(askValue());
+            field.box(x, y, w, SEARCH_H).lead(4.0f).radius(SEARCH_RADIUS).room(x + w - scopeX);
+            field.bounds(x, y, scopeX - x, SEARCH_H).block(blocked);
+            field.paint();
+
+            bool scopeHovered = !blocked && NewUi::hit(scopeX, innerY, scopeW, inner);
+            float scopeLit = UiState::motion("downloads#scope#hover", scopeHovered || open ? 1.0f : 0.0f, 18.0f);
+            if (scopeLit > 0.001f) {
+                UiRender::roundRect(scopeX, innerY, scopeW, inner, SEARCH_RADIUS - SEARCH_INSET,
+                                    UiTheme::overlay(Ui::round(14 * scopeLit)));
+            }
+            UiRender::textY(scope, scopeX + 12.0f, innerY, inner,
+                            UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), scopeLit), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            UiWidgets::icon(Ui::glyph(0xf078), scopeX + scopeW - 15.0f, innerY + inner * 0.5f, UiTheme::textMuted(),
+                            8.0f);
+            if (scopeHovered && !open) {
+                if (const Instances::Entry* entry = Instances::find(target)) {
+                    Page::tooltip(entry->info.id, scopeX, innerY, scopeW, inner);
+                }
+            }
+
+            bool searchHovered = !blocked && NewUi::hit(buttonX, innerY, inner, inner);
+            float searchLit = UiState::motion("downloads#ask#hover", searchHovered ? 1.0f : 0.0f, 18.0f);
+            UiRender::roundRect(buttonX, innerY, inner, inner, SEARCH_RADIUS - SEARCH_INSET,
+                                UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * searchLit));
+            UiWidgets::icon(Ui::glyph(0xf002), buttonX + inner * 0.5f, innerY + inner * 0.5f, UiTheme::onAccent(),
+                            11.0f);
+
+            if (scopePressed) {
+                UiSound::request(UiSound::TICK);
+                if (open) {
+                    NewUi::closeMenu();
+                } else {
+                    float menuW = std::max(scopeW, 220.0f);
+                    instanceMenu(scopeX + scopeW - menuW, innerY + (inner - Page::FIELD_H) * 0.5f,
+                                 innerY + inner + 6.0f, menuW);
+                }
+            }
+            if (searchPressed) {
+                UiSound::request(UiSound::TICK);
+                std::string current = asking;
+                if (NewUi::textEditing == ASK_OWNER) {
+                    current = UiInput::get(NewUi::INPUT_TEXT);
+                    NewUi::commitTextEdit();
+                }
+                ask(current);
+            }
+        }
+
+        void openLink(const Aggregate::Item& item, const Aggregate::Link& link) {
+            std::optional<Kind> kind = kindOf(item.type);
+            if (!kind) {
+                Platform::openUrl(link.url);
+                return;
+            }
+            source = link.source;
+            query = Addons::Query();
+            query.kind = *kind;
+            followInstance();
+            folded.clear();
+            allLoaders = false;
+            Addons::Hit hit;
+            hit.id = link.id;
+            hit.slug = link.slug;
+            hit.title = item.title;
+            hit.description = item.summary;
+            hit.iconUrl = item.iconUrl;
+            hit.pageUrl = link.url;
+            hit.loaders = item.loaders;
+            hit.downloads = link.downloads;
+            openProject(hit);
+        }
+
+        void openItem(const Aggregate::Item& item) {
+            if (!item.links.empty()) {
+                openLink(item, item.links.front());
+            } else if (!item.mcmodUrl.empty()) {
+                Platform::openUrl(item.mcmodUrl);
+            }
+        }
+
+        std::string versionRange(const std::vector<std::string>& versions) {
+            if (versions.empty()) {
+                return std::string();
+            }
+            return versions.size() == 1 ? versions.front() : versions.back() + "–" + versions.front();
+        }
+
+        std::string loaderNames(const std::vector<std::string>& loaders) {
+            std::string out;
+            for (size_t i = 0; i < loaders.size() && i < LOADERS_SHOWN; i++) {
+                out += (out.empty() ? "" : " / ") + Modrinth::label(loaders[i]);
+            }
+            return out;
+        }
+
+        float foundLinks(const Aggregate::Item& item, const std::string& id, float right, float y, bool blocked,
+                         bool& over) {
+            struct Entry {
+                std::string label;
+                const Aggregate::Link* link;
+            };
+            std::vector<Entry> entries;
+            for (const Aggregate::Link& link : item.links) {
+                entries.push_back(Entry{Addons::sourceName(link.source), &link});
+            }
+            if (!item.mcmodUrl.empty()) {
+                entries.push_back(Entry{"MC百科", nullptr});
+            }
+            const float mark = 11.0f;
+            float x = right;
+            for (size_t i = entries.size(); i-- > 0;) {
+                const Entry& entry = entries[i];
+                float w = mark + 4.0f + UiFont::width(entry.label, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                x -= w;
+                bool hovered = !blocked && NewUi::hit(x - 3.0f, y, w + 6.0f, 18.0f);
+                float lit = UiState::motion(id + "#link#" + entry.label, hovered ? 1.0f : 0.0f, 20.0f);
+                uint32_t ink = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
+                if (entry.link != nullptr) {
+                    SourceMarks::draw(entry.link->source, x, y + (18.0f - mark) * 0.5f, mark, ink);
+                } else {
+                    UiWidgets::icon(Ui::glyph(0xf02d), x + mark * 0.5f, y + 9.0f, ink, 9.5f);
+                }
+                UiRender::textY(entry.label, x + mark + 4.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                if (hovered) {
+                    over = true;
+                    UiCursor::hand();
+                }
+                if (hovered && NewUi::click(x - 3.0f, y, w + 6.0f, 18.0f)) {
+                    UiSound::request(UiSound::PAGE);
+                    if (entry.link != nullptr) {
+                        openLink(item, *entry.link);
+                    } else {
+                        Platform::openUrl(item.mcmodUrl);
+                    }
+                }
+                x -= 12.0f;
+            }
+            return x;
+        }
+
+        void foundRow(const Aggregate::Item& item, size_t index, size_t count, float x, float y, float w,
+                      bool blocked) {
+            std::string id = "downloads#found#" + std::to_string(index) + "#" + item.title;
+            bool hovered = !blocked && NewUi::hit(x, y, w, FOUND_H);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            if (hover > 0.001f) {
+                UiRender::roundRect(x, y, w, FOUND_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
+                                    Page::rowCorners((int) index, (int) count));
+            }
+            std::optional<Kind> kind = kindOf(item.type);
+            projectIcon(item.iconUrl, x + 14.0f, y + (FOUND_H - FOUND_ICON) * 0.5f, FOUND_ICON,
+                        kind.value_or(Kind::Mod));
+            float textX = x + 14.0f + FOUND_ICON + 14.0f;
+            float right = x + w - 16.0f;
+
+            float metaY = y + 50.0f;
+            bool overLink = false;
+            float metaLimit = foundLinks(item, id, right, metaY, blocked, overLink);
+            float metaX = textX;
+            std::string type = typeLabel(item.type);
+            if (!type.empty()) {
+                float typeW =
+                        tag(type, metaX, metaY + 9.0f, metaLimit, UiTheme::surfaceRaised(), UiTheme::textSecondary());
+                if (typeW > 0.0f) {
+                    metaX += typeW + 10.0f;
+                }
+            }
+            for (const std::string& part : {loaderNames(item.loaders), versionRange(item.gameVersions)}) {
+                float partW = UiFont::width(part, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                if (part.empty() || metaX + partW > metaLimit) {
+                    continue;
+                }
+                UiRender::textY(part, metaX, metaY, 18.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                metaX += partW + 12.0f;
+            }
+
+            float titleY = y + 10.0f;
+            std::string downloads = Addons::count(item.downloads);
+            float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float downloadsX = right - downloadsW;
+            UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_SMALL);
+            UiWidgets::iconBeside(Ui::glyph(0xf019), downloadsX - 9.0f, downloads, UiFont::MEDIUM,
+                                  UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
+            float limit = downloadsX - 22.0f;
+            bool original = item.zh.empty() || ModNames::original();
+            std::string name = fitEnd(original ? item.title : item.zh, limit - textX, UiWidgets::TEXT_BODY);
+            uint32_t link = UiTheme::accentText();
+            UiRender::textY(name, textX, titleY, 20.0f, link, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+            float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+            if (hovered && !overLink) {
+                UiRender::hLine(textX, textX + nameW, titleY + 18.0f, link);
+            }
+            float otherX = textX + nameW + 8.0f;
+            if (!item.zh.empty() && otherX < limit) {
+                UiRender::textY(fitEnd(original ? item.zh : item.title, limit - otherX, UiWidgets::TEXT_SMALL), otherX,
+                                titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            }
+            UiRender::textY(fitEnd(item.summary, right - textX, UiWidgets::TEXT_SMALL), textX, y + 31.0f, 16.0f,
+                            UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (!blocked && !overLink && NewUi::click(x, y, w, FOUND_H)) {
+                UiSound::request(UiSound::PAGE);
+                openItem(item);
+            }
+        }
+
+        void foundSummary(const Aggregate::Results& results, float x, float y, float right, bool blocked) {
+            std::string count = std::to_string(results.items.size()) + " 个结果";
+            float countW = UiFont::width(count, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiRender::textY(count, right - countW, y, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_SMALL);
+            float limit = right - countW - 12.0f;
+            if (results.partial) {
+                uint32_t ink = UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+                float tagW = tag("结果可能不完整", x, y + Page::FIELD_H * 0.5f, limit,
+                                 (ink & 0x00FFFFFFu) | 0x2E000000u, ink);
+                if (tagW > 0.0f) {
+                    if (!blocked && NewUi::hit(x, y, tagW, Page::FIELD_H)) {
+                        Page::tooltip("部分平台没有响应", x, y, tagW, Page::FIELD_H);
+                    }
+                    x += tagW + 8.0f;
+                }
+            }
+            if (!results.summary.empty() && x < limit) {
+                UiRender::textY(fitEnd(results.summary, limit - x, UiWidgets::TEXT_SMALL), x, y, Page::FIELD_H,
+                                UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            }
+        }
+
+        std::string targetName(const std::string& target) {
+            if (target == "mcmod") {
+                return "MC百科";
+            }
+            if (target == "modrinth") {
+                return "Modrinth";
+            }
+            if (target == "curseforge") {
+                return "CurseForge";
+            }
+            if (target == "modrinth+curseforge") {
+                return "Modrinth 和 CurseForge";
+            }
+            return target;
+        }
+
+        void searchProgress(const Aggregate::Results& results, float top) {
+            enum class Mark { Running, Found, Empty };
+            struct Row {
+                Mark mark;
+                std::string text;
+                std::string detail;
+            };
+            std::vector<Row> rows;
+            if (!results.thought.empty()) {
+                rows.push_back(Row{Mark::Found, results.thought, std::string()});
+            }
+            bool running = false;
+            for (const Aggregate::Step& step : results.steps) {
+                Row row{Mark::Running, "在 " + targetName(step.target) + " 搜索“" + step.keyword + "”", std::string()};
+                if (!step.done) {
+                    running = true;
+                } else if (step.count > 0) {
+                    row.mark = Mark::Found;
+                    row.detail = "找到 " + std::to_string(step.count) + " 个";
+                    for (size_t i = 0; i < step.titles.size(); i++) {
+                        row.detail += (i == 0 ? "：" : "、") + step.titles[i];
+                    }
+                } else {
+                    row.mark = Mark::Empty;
+                    row.detail = "没有结果";
+                }
+                rows.push_back(std::move(row));
+            }
+            if (!running) {
+                rows.push_back(Row{Mark::Running, results.steps.empty() ? "正在搜索" : "正在整理结果", std::string()});
+            }
+            float x = mainX();
+            float w = mainW();
+            Page::listCard(x, top, w, STEP_H, (int) rows.size());
+            for (size_t i = 0; i < rows.size(); i++) {
+                const Row& row = rows[i];
+                float rowY = top + i * STEP_H;
+                float centreY = rowY + STEP_H * 0.5f;
+                switch (row.mark) {
+                    case Mark::Running: Page::spinner(x + 20.0f, centreY, 6.0f, UiTheme::accent()); break;
+                    case Mark::Found: UiWidgets::check(x + 20.0f, centreY, UiTheme::accent(), 9.0f); break;
+                    case Mark::Empty:
+                        UiWidgets::icon(Ui::glyph(0xf068), x + 20.0f, centreY, UiTheme::textFaint(), 8.5f);
+                        break;
+                }
+                float textX = x + 36.0f;
+                float right = x + w - 14.0f;
+                std::string text = fitEnd(row.text, right - textX, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(text, textX, rowY, STEP_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                float detailX = textX + UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 10.0f;
+                if (!row.detail.empty() && detailX < right) {
+                    UiRender::textY(fitEnd(row.detail, right - detailX, UiWidgets::TEXT_SMALL), detailX, rowY, STEP_H,
+                                    UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                }
+            }
+        }
+
+        void aggregateView(bool covered) {
+            float barX = mainX();
+            float barW = mainW();
+            float bottom = MainWindow::height() - 14.0f;
+            searchBar(barX, Page::TOP, barW, covered);
+            if (asked.empty()) {
+                return;
+            }
+            float toolsY = Page::TOP + SEARCH_H + 6.0f;
+            float listTop = toolsY + Page::FIELD_H + 4.0f;
+            Aggregate::Request request = askedRequest();
+            const Aggregate::Results& results = Aggregate::search(request);
+            if (results.status == Addons::Status::Loading) {
+                searchProgress(results, toolsY + 4.0f);
+                return;
+            }
+            if (results.status == Addons::Status::Failed) {
+                message("搜索失败：" + results.error, UiTheme::danger(), listTop, bottom, false);
+                std::string retry = "重试";
+                float w = Page::buttonWidth(retry);
+                if (Page::button("downloads#aggregate#retry", retry, mainX() + (mainW() - w) * 0.5f,
+                                 (listTop + bottom) * 0.5f + 20.0f, w, false, covered)) {
+                    Aggregate::refresh(request);
+                }
+                return;
+            }
+            if (results.items.empty()) {
+                message("没有找到相关内容", UiTheme::textMuted(), listTop, bottom, false);
+                if (!request.gameVersion.empty()) {
+                    std::string wider = "搜索全部版本";
+                    float w = Page::buttonWidth(wider);
+                    if (Page::button("downloads#aggregate#wider", wider, mainX() + (mainW() - w) * 0.5f,
+                                     (listTop + bottom) * 0.5f + 20.0f, w, false, covered)) {
+                        chooseTarget(std::string());
+                    }
+                }
+                return;
+            }
+            foundSummary(results, barX + 4.0f, toolsY, barX + barW - 4.0f, covered);
+            float contentH = results.items.size() * FOUND_H;
+            Page::Scroll body(FOUND_SCROLL, listTop, bottom, contentH, mainX(), mainW());
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float rowsY = body.top - body.offset;
+            Page::listCard(mainX(), rowsY, mainW(), FOUND_H, (int) results.items.size());
+            for (size_t i = 0; i < results.items.size(); i++) {
+                float rowY = rowsY + i * FOUND_H;
+                if (rowY + FOUND_H < listTop || rowY > bottom) {
+                    continue;
+                }
+                foundRow(results.items[i], i, results.items.size(), mainX(), rowY, mainW(), blocked);
+            }
+            body.end();
         }
 
         const char* versionTypeLabel(const std::string& type) {
@@ -1435,6 +1980,8 @@ namespace DownloadsScreen {
         views.begin();
         if (views.page == VIEW_PROJECT) {
             projectView(covered);
+        } else if (aggregate) {
+            aggregateView(covered);
         } else {
             resultsView(covered);
         }
@@ -1455,6 +2002,9 @@ namespace DownloadsScreen {
 
     void open(Addons::Kind kind) {
         openFor(Instances::selected());
+        if (aggregate) {
+            switchSource(browsing);
+        }
         switchKind(kind);
         MainWindow::showDownloads();
     }

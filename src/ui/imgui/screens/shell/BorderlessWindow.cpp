@@ -5,6 +5,7 @@
 #include "imgui.h"
 
 #include <dwmapi.h>
+#include <imm.h>
 
 #include <algorithm>
 
@@ -303,6 +304,40 @@ void BorderlessWindow::destroy() {
 void BorderlessWindow::show(bool maximized) {
     ShowWindow(hwnd, maximized && resizable ? SW_SHOWMAXIMIZED : SW_SHOW);
     UpdateWindow(hwnd);
+}
+
+void BorderlessWindow::setTextArea(float x, float y, float h) {
+    if (hwnd == nullptr) {
+        return;
+    }
+    int areaX = (int) x;
+    int areaY = (int) y;
+    int areaH = std::max(1, (int) (h + 0.5f));
+    if (areaX == textAreaX && areaY == textAreaY && areaH == textAreaH) {
+        return;
+    }
+    HIMC context = ImmGetContext(hwnd);
+    if (context == nullptr) {
+        return;
+    }
+    textAreaX = areaX;
+    textAreaY = areaY;
+    textAreaH = areaH;
+    COMPOSITIONFORM composition{};
+    composition.dwStyle = CFS_POINT;
+    composition.ptCurrentPos = {areaX, areaY};
+    ImmSetCompositionWindow(context, &composition);
+    CANDIDATEFORM candidate{};
+    candidate.dwStyle = CFS_CANDIDATEPOS;
+    candidate.ptCurrentPos = {areaX, areaY + areaH};
+    ImmSetCandidateWindow(context, &candidate);
+    ImmReleaseContext(hwnd, context);
+}
+
+void BorderlessWindow::clearTextArea() {
+    textAreaX = -1;
+    textAreaY = -1;
+    textAreaH = -1;
 }
 
 void BorderlessWindow::minimize() {

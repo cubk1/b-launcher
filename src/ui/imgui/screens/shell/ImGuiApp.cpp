@@ -344,6 +344,11 @@ namespace ImGuiApp {
             UiRender::begin(ImGui::GetForegroundDrawList());
             NewUi::render(MainWindow::draw);
             UiRender::end();
+            if (NewUi::caretFrame == NewUi::frameCounter) {
+                window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
+            } else {
+                window.clearTextArea();
+            }
 
             ImGui::Render();
             glViewport(0, 0, window.width, window.height);

@@ -26,6 +26,9 @@ public:
     HGLRC glContext = nullptr;
     int width = 0;
     int height = 0;
+    int textAreaX = -1;
+    int textAreaY = -1;
+    int textAreaH = -1;
     std::function<bool(int x, int y)> isDragArea;
     bool resizable = false;
     bool framed = false;
@@ -43,6 +46,8 @@ public:
     void destroy();
     void show(bool maximized = false);
     void minimize();
+    void setTextArea(float x, float y, float h);
+    void clearTextArea();
     void toggleMaximize();
     bool maximized() const;
     bool sizing() const;

@@ -20,6 +20,9 @@ public:
     SDL_GLContextState* glContext = nullptr;
     int width = 0;
     int height = 0;
+    int textAreaX = -1;
+    int textAreaY = -1;
+    int textAreaH = -1;
     std::function<bool(int x, int y)> isDragArea;
     bool resizable = false;
     bool framed = false;
@@ -53,6 +56,8 @@ public:
     void swap();
     void setVsync(bool on);
     void setTyping(bool typing);
+    void setTextArea(float x, float y, float h);
+    void clearTextArea();
     void makeCurrent();
     float density() const;
     float displayScale() const;
