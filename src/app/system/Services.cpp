@@ -2,6 +2,7 @@
 #include "app/accounts/Accounts.h"
 #include "app/accounts/Profiles.h"
 #include "app/downloads/Addons.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Exports.h"
@@ -27,6 +28,7 @@ namespace Services {
 
     void start() {
         Network::apply();
+        DownloadSources::apply();
         Instances::init();
         Accounts::init();
         Catalog::preload();

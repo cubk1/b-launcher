@@ -1,4 +1,5 @@
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/system/AsyncTasks.h"
 #include "app/downloads/Recent.h"
 
@@ -35,7 +36,6 @@ namespace CurseForge {
         using Continuation = AsyncTasks::Continuation;
 
         const char* const API = "https://api.curseforge.com/v1";
-        const char* const API_MIRROR = "https://mod.mcimirror.top/curseforge/v1";
         const char* const KEY = "JDJhJDEwJDdXV1YxV0VMY3dYOFhwN2Q2OE1Icy41Z3JUeVpWYTZTeW55ZVN5TWgxcnNFODluSWEwOXpP";
         const int GAME = 432;
         const int FILE_PAGE = 50;
@@ -61,11 +61,11 @@ namespace CurseForge {
 
         blb::result<json> api(const std::string& path, const std::string& body, blb::cancellation_token token) {
             blb::error last = blb::make_error(blb::errc::network, "无法连接 CurseForge");
-            for (const char* root : {API, API_MIRROR}) {
+            for (const std::string& url : DownloadSources::provider()->resolve(std::string(API) + path)) {
                 blb::net::http_request request;
-                request.url = std::string(root) + path;
+                request.url = url;
                 request.headers.push_back({"Accept", "application/json"});
-                if (root == API) {
+                if (url.starts_with(API)) {
                     request.headers.push_back({"x-api-key", apiKey()});
                 }
                 if (!body.empty()) {

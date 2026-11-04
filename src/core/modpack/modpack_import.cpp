@@ -112,7 +112,8 @@ import_modpack (install::game_installer &installer,
   });
   auto resolve = graph.add (
       "modpack:resolve", [&] (cancellation_token t) -> result<void> {
-        return detail::resolve_curseforge (files, options.curseforge, t);
+        return detail::resolve_curseforge (files, options.curseforge,
+                                           installer.mirror (), t);
       });
   auto download = graph.add (
       "modpack:files",
@@ -126,11 +127,7 @@ import_modpack (install::game_installer &installer,
             p.kind = install::file_kind::other;
             p.target = game_dir / path_from_utf8 (f.path);
             p.relative = "versions/" + id + "/" + f.path;
-            p.urls = f.urls;
-            for (const auto &url : f.urls)
-              if (auto mirror = detail::modrinth_mirror (url);
-                  !mirror.empty ())
-                p.urls.push_back (mirror);
+            p.urls = installer.mirror ().resolve_all (f.urls);
             if (!f.sha1.empty ())
               p.sha1 = parse_sha1 (f.sha1);
             p.size = f.size;

@@ -1,6 +1,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/GameOptions.h"
 #include "app/accounts/Accounts.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/launch/GameLog.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
@@ -18,7 +19,6 @@
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/launcher/launcher.hpp>
-#include <core/network/mirror_provider.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -608,7 +608,7 @@ namespace Game {
                     settings.jvm_args.insert(settings.jvm_args.begin(), agent.begin(), agent.end());
                 }
                 blb::install::install_options options;
-                options.mirror = blb::net::make_bmclapi_provider();
+                options.mirror = DownloadSources::provider();
                 options.java_scan = javaOptions;
                 options.java_candidates = javaKnown;
                 auto installer = std::make_shared<blb::install::game_installer>(blb::meta::game_layout(root), options);

@@ -1,4 +1,6 @@
 #include "app/instances/Exports.h"
+#include "app/downloads/CurseForge.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/system/AsyncTasks.h"
 #include "app/accounts/Accounts.h"
 #include "app/instances/Instances.h"
@@ -12,7 +14,6 @@
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/meta/game_layout.hpp>
-#include <core/network/mirror_provider.hpp>
 
 #include <cstdio>
 #include <map>
@@ -128,6 +129,7 @@ namespace Exports {
         if (!picked || busy) {
             return;
         }
+        chosen.curseforge.api_key = CurseForge::apiKey();
         std::filesystem::path output = *picked;
         busy = true;
         busyKey = instanceKey;
@@ -155,7 +157,7 @@ namespace Exports {
                 progress = text;
             });
             blb::install::install_options installOptions;
-            installOptions.mirror = blb::net::make_bmclapi_provider();
+            installOptions.mirror = DownloadSources::provider();
             blb::install::game_installer installer(blb::meta::game_layout(root), installOptions);
             auto report = blb::modpack::export_modpack(installer, id, gameDirectory, output, chosen, &sink, token);
             if (!report) {

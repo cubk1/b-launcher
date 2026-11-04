@@ -6,6 +6,7 @@
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
 #include "app/system/Config.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/downloads/ModNames.h"
 #include "app/system/DiskScan.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
@@ -996,6 +997,39 @@ namespace SettingsScreen {
             }
         }
 
+        void downloadRows(float y, bool blocked) {
+            struct Row {
+                DownloadSources::Kind kind;
+                const char* id;
+                const char* label;
+                const char* doc;
+            };
+            const Row rows[] = {
+                    {DownloadSources::Kind::Minecraft, "settings#sourceMinecraft", "Minecraft",
+                     "版本列表、游戏本体、支持库、模组加载器和 Java 运行时，镜像源是 BMCLAPI。"},
+                    {DownloadSources::Kind::Assets, "settings#sourceAssets", "资源文件",
+                     "游戏的声音、语言等资源文件，镜像源是 BMCLAPI。"},
+                    {DownloadSources::Kind::Modrinth, "settings#sourceModrinth", "Modrinth",
+                     "Modrinth 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+                    {DownloadSources::Kind::CurseForge, "settings#sourceCurseForge", "CurseForge",
+                     "CurseForge 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+            };
+            for (const Row& row : rows) {
+                DownloadSources::Kind kind = row.kind;
+                Page::label(row.label, y);
+                select(row.id,
+                       ModeBinding::mapped<blb::net::source_order>(
+                               row.id, [kind] { return DownloadSources::order(kind); },
+                               [kind](blb::net::source_order value) { DownloadSources::setOrder(kind, value); },
+                               {{blb::net::source_order::mirror_first, "镜像源优先"},
+                                {blb::net::source_order::official_first, "官方源优先"},
+                                {blb::net::source_order::official_only, "仅官方源"}}),
+                       y, blocked);
+                explain(row.id, row.doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
+                y += Page::ROW_H;
+            }
+        }
+
         void networkRows(float y, bool blocked) {
             Page::label("使用系统代理", y);
             toggle(
@@ -1074,8 +1108,8 @@ namespace SettingsScreen {
             int lookCount = appearanceCount();
             int homeCount = homepageCount();
             float contentH = Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H +
-                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + Page::ROW_H + Page::GAP +
-                    Page::CAPTION_H + 2 * Page::ROW_H;
+                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP +
+                    Page::CAPTION_H + Page::ROW_H + Page::GAP + Page::CAPTION_H + 2 * Page::ROW_H;
             Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -1088,6 +1122,10 @@ namespace SettingsScreen {
             Page::card(y + Page::CAPTION_H, homeCount);
             homepageRows(y + Page::CAPTION_H, blocked);
             y += Page::CAPTION_H + homeCount * Page::ROW_H + Page::GAP;
+            Page::caption("下载", y);
+            Page::card(y + Page::CAPTION_H, 4);
+            downloadRows(y + Page::CAPTION_H, blocked);
+            y += Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP;
             Page::caption("网络", y);
             Page::card(y + Page::CAPTION_H, 1);
             networkRows(y + Page::CAPTION_H, blocked);

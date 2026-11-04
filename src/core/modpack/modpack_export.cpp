@@ -213,7 +213,7 @@ export_modpack (const install::game_installer &installer,
   std::map<std::string, detail::remote_file> modrinth;
   if (!sha1s.empty ())
     {
-      auto found = detail::lookup_modrinth (sha1s, token);
+      auto found = detail::lookup_modrinth (sha1s, installer.mirror (), token);
       if (found)
         modrinth = std::move (*found);
       else
@@ -229,8 +229,8 @@ export_modpack (const install::game_installer &installer,
           prints.push_back (d.fingerprint);
       if (!prints.empty ())
         {
-          auto found = detail::lookup_curseforge (
-              prints, curseforge_settings {}, token);
+          auto found = detail::lookup_curseforge (prints, options.curseforge,
+                                                  installer.mirror (), token);
           if (found)
             curseforge = std::move (*found);
           else

@@ -1,5 +1,6 @@
 #include "app/instances/Installer.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/instances/Instances.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -15,7 +16,6 @@
 #include <core/meta/game_layout.hpp>
 #include <core/modpack/modpack.hpp>
 #include <core/network/download_client.hpp>
-#include <core/network/mirror_provider.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -482,7 +482,7 @@ namespace Installer {
                         sink.on_stage("pack", "done");
                     }
                     blb::install::install_options options;
-                    options.mirror = blb::net::make_bmclapi_provider();
+                    options.mirror = DownloadSources::provider();
                     options.java_scan = javaOptions;
                     options.java_candidates = javaKnown;
                     blb::install::game_installer installer(blb::meta::game_layout(root), options);
@@ -556,7 +556,7 @@ namespace Installer {
             bool wasCancelled = false;
             try {
                 blb::install::install_options options;
-                options.mirror = blb::net::make_bmclapi_provider();
+                options.mirror = DownloadSources::provider();
                 options.java_scan = javaOptions;
                 options.java_candidates = javaKnown;
                 blb::install::game_installer installer(blb::meta::game_layout(root), options);
@@ -620,7 +620,7 @@ namespace Installer {
             bool wasCancelled = false;
             try {
                 blb::install::install_options options;
-                options.mirror = blb::net::make_bmclapi_provider();
+                options.mirror = DownloadSources::provider();
                 options.java_scan = javaOptions;
                 options.java_candidates = javaKnown;
                 blb::install::game_installer installer(blb::meta::game_layout(root), options);

@@ -55,9 +55,6 @@ struct pack_manifest
 
 struct curseforge_settings
 {
-  std::vector<std::string> api_roots
-      = { "https://mod.mcimirror.top/curseforge",
-          "https://api.curseforge.com" };
   std::string api_key;
 };
 
@@ -89,6 +86,7 @@ struct export_options
   std::vector<std::string> include;
   std::vector<std::string> exclude;
   std::vector<std::pair<std::filesystem::path, std::string>> extra_files;
+  curseforge_settings curseforge;
 };
 
 struct export_report

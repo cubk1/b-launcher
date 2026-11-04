@@ -1,4 +1,5 @@
 #include "app/downloads/Modrinth.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/system/AsyncTasks.h"
 #include "app/downloads/Recent.h"
 
@@ -39,7 +40,6 @@ namespace Modrinth {
         using Continuation = AsyncTasks::Continuation;
 
         const char* const API = "https://api.modrinth.com/v2";
-        const char* const API_MIRROR = "https://mod.mcimirror.top/modrinth/v2";
 
         AsyncTasks tasks;
 
@@ -55,8 +55,7 @@ namespace Modrinth {
         }
 
         blb::result<json> api(const std::string& path, blb::cancellation_token token) {
-            std::vector<std::string> urls = {std::string(API) + path, std::string(API_MIRROR) + path};
-            auto body = blb::net::http_get(urls, token);
+            auto body = blb::net::http_get(DownloadSources::provider()->resolve(std::string(API) + path), token);
             if (!body) {
                 return body.err();
             }

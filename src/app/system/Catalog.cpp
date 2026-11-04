@@ -1,4 +1,5 @@
 #include "app/system/Catalog.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Config.h"
 #include "app/instances/Instances.h"
@@ -35,8 +36,7 @@ namespace Catalog {
         bool javaStarted = false;
 
         std::shared_ptr<blb::net::mirror_provider> mirror() {
-            static std::shared_ptr<blb::net::mirror_provider> provider = blb::net::make_bmclapi_provider();
-            return provider;
+            return DownloadSources::provider();
         }
 
         void fetchMinecraft() {

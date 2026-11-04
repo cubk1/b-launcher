@@ -19,6 +19,7 @@ using json = nlohmann::json;
 
 constexpr log::logger s_log ("modpack");
 constexpr std::string_view modrinth_api = "https://api.modrinth.com/v2";
+constexpr std::string_view curseforge_api = "https://api.curseforge.com";
 
 std::int64_t
 int_of (const json &node, const char *key, std::int64_t fallback = 0)
@@ -48,27 +49,47 @@ post_json (std::string_view url, const json &body,
 }
 
 result<json>
-curseforge_post (const curseforge_settings &settings, std::string_view path,
+curseforge_post (const curseforge_settings &settings,
+                 const net::mirror_provider &mirror, std::string_view path,
                  const json &body, cancellation_token token)
 {
   error last = make_error (errc::network, "no curseforge api configured");
-  for (const auto &root : settings.api_roots)
+  for (const auto &url :
+       mirror.resolve (std::string (curseforge_api) + std::string (path)))
     {
       std::vector<net::http_header> headers;
-      bool official = root.find ("api.curseforge.com") != std::string::npos;
-      if (official)
+      if (url.starts_with (curseforge_api))
         {
           if (settings.api_key.empty ())
             continue;
           headers.push_back ({ "x-api-key", settings.api_key });
         }
-      auto doc = post_json (root + std::string (path), body, headers, token);
+      auto doc = post_json (url, body, headers, token);
       if (doc)
         return doc;
       last = std::move (doc).err ();
       if (last.code == errc::cancelled)
         return last;
-      s_log.warn ("curseforge api {} failed: {}", root, last.message);
+      s_log.warn ("curseforge api {} failed: {}", url, last.message);
+    }
+  return last;
+}
+
+result<json>
+modrinth_post (const net::mirror_provider &mirror, std::string_view path,
+               const json &body, cancellation_token token)
+{
+  error last = make_error (errc::network, "no modrinth api configured");
+  for (const auto &url :
+       mirror.resolve (std::string (modrinth_api) + std::string (path)))
+    {
+      auto doc = post_json (url, body, {}, token);
+      if (doc)
+        return doc;
+      last = std::move (doc).err ();
+      if (last.code == errc::cancelled)
+        return last;
+      s_log.warn ("modrinth api {} failed: {}", url, last.message);
     }
   return last;
 }
@@ -97,16 +118,11 @@ curseforge_file (const json &f)
 std::vector<std::string>
 curseforge_urls (const std::string &url)
 {
+  constexpr std::string_view edge = "https://edge.forgecdn.net";
   std::vector<std::string> out { url };
-  for (std::string_view host :
-       { "https://edge.forgecdn.net", "https://mediafilez.forgecdn.net" })
-    if (url.starts_with (host))
-      {
-        auto rest = url.substr (host.size ());
-        if (host != "https://mediafilez.forgecdn.net")
-          out.push_back ("https://mediafilez.forgecdn.net" + rest);
-        out.push_back ("https://mod.mcimirror.top" + rest);
-      }
+  if (url.starts_with (edge))
+    out.push_back ("https://mediafilez.forgecdn.net"
+                   + url.substr (edge.size ()));
   return out;
 }
 
@@ -193,19 +209,10 @@ curseforge_fingerprint (std::string_view data)
   return h;
 }
 
-std::string
-modrinth_mirror (std::string_view url)
-{
-  constexpr std::string_view host = "https://cdn.modrinth.com";
-  if (url.starts_with (host))
-    return "https://mod.mcimirror.top"
-           + std::string (url.substr (host.size ()));
-  return {};
-}
-
 result<void>
 resolve_curseforge (std::vector<pack_file> &files,
                     const curseforge_settings &settings,
+                    const net::mirror_provider &mirror,
                     cancellation_token token)
 {
   json file_ids = json::array ();
@@ -221,7 +228,7 @@ resolve_curseforge (std::vector<pack_file> &files,
   if (file_ids.empty ())
     return ok ();
   BLB_TRY_ASSIGN (auto file_doc,
-                  curseforge_post (settings, "/v1/mods/files",
+                  curseforge_post (settings, mirror, "/v1/mods/files",
                                    { { "fileIds", file_ids } }, token));
   std::map<std::int64_t, json> by_file;
   if (auto data = file_doc.find ("data");
@@ -229,7 +236,7 @@ resolve_curseforge (std::vector<pack_file> &files,
     for (const auto &f : *data)
       by_file[int_of (f, "id")] = f;
   std::map<std::int64_t, std::int64_t> class_of;
-  if (auto mod_doc = curseforge_post (settings, "/v1/mods",
+  if (auto mod_doc = curseforge_post (settings, mirror, "/v1/mods",
                                       { { "modIds", mod_ids } }, token))
     if (auto data = mod_doc->find ("data");
         data != mod_doc->end () && data->is_array ())
@@ -269,7 +276,8 @@ resolve_curseforge (std::vector<pack_file> &files,
 }
 
 result<std::map<std::string, remote_file>>
-lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
+lookup_modrinth (std::span<const std::string> sha1s,
+                 const net::mirror_provider &mirror, cancellation_token token)
 {
   std::map<std::string, remote_file> out;
   std::map<std::string, std::vector<std::string>> by_project;
@@ -279,11 +287,10 @@ lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
       for (std::size_t i = start; i < std::min (sha1s.size (), start + 500);
            ++i)
         hashes.push_back (sha1s[i]);
-      BLB_TRY_ASSIGN (
-          auto doc,
-          post_json (std::string (modrinth_api) + "/version_files",
-                     { { "hashes", hashes }, { "algorithm", "sha1" } }, {},
-                     token));
+      BLB_TRY_ASSIGN (auto doc, modrinth_post (mirror, "/version_files",
+                                               { { "hashes", hashes },
+                                                 { "algorithm", "sha1" } },
+                                               token));
       for (auto it = doc.begin (); it != doc.end (); ++it)
         {
           auto files = it->find ("files");
@@ -315,9 +322,10 @@ lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
       json chunk = json::array ();
       for (std::size_t i = start; i < std::min (ids.size (), start + 200); ++i)
         chunk.push_back (ids[i]);
-      auto body = net::http_get (sformat ("{}/projects?ids={}", modrinth_api,
-                                          url_encode (chunk.dump ())),
-                                 token);
+      auto body = net::http_get (
+          mirror.resolve (sformat ("{}/projects?ids={}", modrinth_api,
+                                   url_encode (chunk.dump ()))),
+          token);
       if (!body)
         continue;
       auto doc = json::parse (*body, nullptr, false);
@@ -336,6 +344,7 @@ lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token)
 result<std::map<std::uint32_t, remote_file>>
 lookup_curseforge (std::span<const std::uint32_t> fingerprints,
                    const curseforge_settings &settings,
+                   const net::mirror_provider &mirror,
                    cancellation_token token)
 {
   std::map<std::uint32_t, remote_file> out;
@@ -345,7 +354,7 @@ lookup_curseforge (std::span<const std::uint32_t> fingerprints,
   for (auto f : fingerprints)
     list.push_back (f);
   BLB_TRY_ASSIGN (auto doc,
-                  curseforge_post (settings, "/v1/fingerprints/432",
+                  curseforge_post (settings, mirror, "/v1/fingerprints/432",
                                    { { "fingerprints", list } }, token));
   auto data = doc.find ("data");
   if (data == doc.end ())

@@ -7,6 +7,30 @@ namespace b_launcher_base::net
 
 mirror_provider::~mirror_provider () = default;
 
+std::vector<std::string>
+mirror_provider::resolve_all (std::span<const std::string> urls) const
+{
+  std::vector<std::string> front;
+  std::vector<std::string> middle;
+  std::vector<std::string> back;
+  for (const auto &url : urls)
+    {
+      auto resolved = resolve (url);
+      auto self = std::find (resolved.begin (), resolved.end (), url);
+      front.insert (front.end (), resolved.begin (), self);
+      if (self == resolved.end ())
+        continue;
+      middle.push_back (*self);
+      back.insert (back.end (), self + 1, resolved.end ());
+    }
+  std::vector<std::string> out;
+  for (auto *part : { &front, &middle, &back })
+    for (auto &url : *part)
+      if (std::find (out.begin (), out.end (), url) == out.end ())
+        out.push_back (std::move (url));
+  return out;
+}
+
 rewrite_mirror_provider::rewrite_mirror_provider (
     std::string name, std::vector<rewrite_rule> rules, bool keep_original,
     bool original_first)
@@ -58,6 +82,38 @@ rewrite_mirror_provider::resolve (std::string_view url) const
   return out;
 }
 
+routed_mirror_provider::routed_mirror_provider (std::vector<routed_rule> rules)
+    : m_rules (std::move (rules))
+{
+  std::stable_sort (m_rules.begin (), m_rules.end (),
+                    [] (const routed_rule &a, const routed_rule &b) {
+                      return a.rule.from.size () > b.rule.from.size ();
+                    });
+}
+
+std::string_view
+routed_mirror_provider::name () const
+{
+  return "routed";
+}
+
+std::vector<std::string>
+routed_mirror_provider::resolve (std::string_view url) const
+{
+  for (const auto &[rule, order] : m_rules)
+    {
+      if (!url.starts_with (rule.from))
+        continue;
+      if (order == source_order::official_only)
+        break;
+      auto mirrored = rule.to + std::string (url.substr (rule.from.size ()));
+      if (order == source_order::official_first)
+        return { std::string (url), std::move (mirrored) };
+      return { std::move (mirrored), std::string (url) };
+    }
+  return { std::string (url) };
+}
+
 std::string_view
 official_mirror_provider::name () const
 {
@@ -98,6 +154,27 @@ bmclapi_rules (std::string_view root)
   };
 }
 
+std::vector<rewrite_rule>
+mcim_modrinth_rules (std::string_view root)
+{
+  std::string r (root);
+  return {
+    { "https://api.modrinth.com", r + "/modrinth" },
+    { "https://cdn.modrinth.com", r },
+  };
+}
+
+std::vector<rewrite_rule>
+mcim_curseforge_rules (std::string_view root)
+{
+  std::string r (root);
+  return {
+    { "https://api.curseforge.com", r + "/curseforge" },
+    { "https://edge.forgecdn.net", r },
+    { "https://mediafilez.forgecdn.net", r },
+  };
+}
+
 std::shared_ptr<mirror_provider>
 make_official_provider ()
 {
@@ -118,4 +195,21 @@ make_official_first_provider ()
       "official+bmclapi", bmclapi_rules (), true, true);
 }
 
+std::shared_ptr<mirror_provider>
+make_source_provider (const source_orders &orders)
+{
+  std::vector<routed_rule> rules;
+  for (auto &rule : bmclapi_rules ())
+    {
+      bool asset = rule.from.find ("resources.download.minecraft.net")
+                   != std::string::npos;
+      rules.push_back (
+          { std::move (rule), asset ? orders.assets : orders.game });
+    }
+  for (auto &rule : mcim_modrinth_rules ())
+    rules.push_back ({ std::move (rule), orders.modrinth });
+  for (auto &rule : mcim_curseforge_rules ())
+    rules.push_back ({ std::move (rule), orders.curseforge });
+  return std::make_shared<routed_mirror_provider> (std::move (rules));
+}
 }

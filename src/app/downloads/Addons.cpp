@@ -1,5 +1,6 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/Recent.h"
@@ -39,7 +40,6 @@ namespace Addons {
         // 16 KB each: the icons used last, the categories' and a few pages of results.
         constexpr size_t KEPT_ICONS = 100;
         constexpr int ICON_WORKERS = 4;
-        const char* const MIRROR = "https://mod.mcimirror.top";
 
         CallbackQueue finished;
         blb::cancellation_source stopping;
@@ -285,22 +285,12 @@ namespace Addons {
     }
 
     std::vector<std::string> fileUrls(const std::string& url) {
-        std::vector<std::string> out = {url};
-        const char* const modrinth = "https://cdn.modrinth.com";
-        if (url.starts_with(modrinth)) {
-            out.push_back(std::string(MIRROR) + url.substr(std::strlen(modrinth)));
+        std::vector<std::string> official = {url};
+        const char* const edge = "https://edge.forgecdn.net";
+        if (url.starts_with(edge)) {
+            official.push_back("https://mediafilez.forgecdn.net" + url.substr(std::strlen(edge)));
         }
-        for (const char* host : {"https://edge.forgecdn.net", "https://mediafilez.forgecdn.net"}) {
-            if (!url.starts_with(host)) {
-                continue;
-            }
-            std::string rest = url.substr(std::strlen(host));
-            if (std::strcmp(host, "https://edge.forgecdn.net") == 0) {
-                out.push_back("https://mediafilez.forgecdn.net" + rest);
-            }
-            out.push_back(std::string(MIRROR) + rest);
-        }
-        return out;
+        return DownloadSources::provider()->resolve_all(official);
     }
 
     void preload() {

@@ -336,14 +336,15 @@ modrinth_loader (loader_type type)
 }
 
 result<std::vector<loader_version>>
-list_mod (loader_type type, std::string_view mc, cancellation_token token)
+list_mod (loader_type type, std::string_view mc,
+          const net::mirror_provider &mirror, cancellation_token token)
 {
   auto url = sformat (
       "https://api.modrinth.com/v2/project/{}/version?game_versions={}"
       "&loaders={}",
       modrinth_slug (type), url_encode (sformat ("[\"{}\"]", mc)),
       url_encode (sformat ("[\"{}\"]", modrinth_loader (type))));
-  BLB_TRY_ASSIGN (auto body, net::http_get (url, token));
+  BLB_TRY_ASSIGN (auto body, net::http_get (mirror.resolve (url), token));
   auto doc = detail::json::parse (body, nullptr, false);
   if (doc.is_discarded () || !doc.is_array ())
     return make_error (errc::parse, "invalid modrinth response");
@@ -734,7 +735,7 @@ list_loader_versions (loader_type type, std::string_view minecraft,
     case loader_type::fabric_api:
     case loader_type::legacy_fabric_api:
     case loader_type::quilt_api:
-      return list_mod (type, minecraft, token);
+      return list_mod (type, minecraft, mirror, token);
     }
   return make_error (errc::unsupported, "unknown loader");
 }

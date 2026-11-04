@@ -1,5 +1,6 @@
 #include "app/instances/ModManager.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
 #include "app/downloads/ProjectInstaller.h"
@@ -42,7 +43,6 @@ namespace ModManager {
         using Clock = std::chrono::steady_clock;
 
         const char* const API = "https://api.modrinth.com/v2";
-        const char* const API_MIRROR = "https://mod.mcimirror.top/modrinth/v2";
         constexpr size_t BATCH = 80;
         const char* const BUILTIN[] = {"minecraft", "java",     "fabricloader", "fabric-loader", "quilt_loader",
                                        "forge",     "neoforge", "javafml",      "lowcodefml",    "mixinextras"};
@@ -216,10 +216,10 @@ namespace ModManager {
         blb::result<json> request(const std::string& method, const std::string& path, const std::string& body,
                                   blb::cancellation_token token) {
             std::string problem = "无法连接 Modrinth";
-            for (const char* base : {API, API_MIRROR}) {
+            for (const std::string& url : DownloadSources::provider()->resolve(std::string(API) + path)) {
                 blb::net::http_request call;
                 call.method = method;
-                call.url = std::string(base) + path;
+                call.url = url;
                 call.headers.push_back({"User-Agent", Platform::USER_AGENT});
                 call.headers.push_back({"Accept", "application/json"});
                 if (!body.empty()) {

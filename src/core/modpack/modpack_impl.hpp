@@ -3,6 +3,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/base/error.hpp>
 #include <core/modpack/modpack.hpp>
+#include <core/network/mirror_provider.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -29,15 +30,16 @@ struct remote_file
 
 bool glob_match (std::string_view pattern, std::string_view path);
 std::uint32_t curseforge_fingerprint (std::string_view data);
-std::string modrinth_mirror (std::string_view url);
 result<void> resolve_curseforge (std::vector<pack_file> &files,
                                  const curseforge_settings &settings,
+                                 const net::mirror_provider &mirror,
                                  cancellation_token token);
 result<std::map<std::string, remote_file>>
-lookup_modrinth (std::span<const std::string> sha1s, cancellation_token token);
+lookup_modrinth (std::span<const std::string> sha1s,
+                 const net::mirror_provider &mirror, cancellation_token token);
 result<std::map<std::uint32_t, remote_file>>
 lookup_curseforge (std::span<const std::uint32_t> fingerprints,
                    const curseforge_settings &settings,
+                   const net::mirror_provider &mirror,
                    cancellation_token token);
-
 }
