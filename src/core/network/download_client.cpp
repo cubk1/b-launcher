@@ -232,7 +232,7 @@ struct download_client::impl
       }
     if (healthy.empty ())
       return attempt % count;
-    if (attempt > 0 || healthy.size () == 1)
+    if (!options.adaptive_sources || attempt > 0 || healthy.size () == 1)
       return healthy.front ();
     std::lock_guard lock (stats_mutex);
     auto turn = assignments++;
@@ -1230,7 +1230,8 @@ struct download_client::impl
             active.emplace (easy, std::move (t));
           }
 
-        if (!cancelled && !backlogged && pending.empty () && !active.empty ()
+        if (options.adaptive_sources && !cancelled && !backlogged
+            && pending.empty () && !active.empty ()
             && active.size () < options.concurrency)
           {
             auto now = std::chrono::steady_clock::now ();
