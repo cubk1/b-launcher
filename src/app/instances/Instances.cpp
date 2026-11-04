@@ -124,7 +124,7 @@ namespace Instances {
             }
             std::vector<std::wstring> parts;
             for (size_t start = 0;;) {
-                size_t slash = path.find(L'\\', start);
+                size_t slash = path.find_first_of(L"\\/", start);
                 parts.push_back(path.substr(start, slash - start));
                 if (slash == std::wstring::npos) {
                     break;
