@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
 project(b-launcher VERSION 0.3.0 LANGUAGES C CXX)
+if (APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif ()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,6 +26,22 @@ if (MSVC)
     endforeach ()
     set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "/LTCG")
     set(CMAKE_STATIC_LINKER_FLAGS_MINSIZEREL "/LTCG")
+else ()
+    if (APPLE)
+        set(BLB_SIZE_FLAGS "-Os -ffunction-sections -fdata-sections -DNDEBUG")
+        set(BLB_DEAD_STRIP "-Wl,-dead_strip -s")
+    else ()
+        set(BLB_SIZE_FLAGS "-Os -ffunction-sections -fdata-sections -flto -DNDEBUG")
+        set(BLB_DEAD_STRIP "-flto -Wl,--gc-sections -s")
+    endif ()
+    foreach (language C CXX OBJC OBJCXX)
+        set(CMAKE_${language}_FLAGS_RELEASE ${BLB_SIZE_FLAGS})
+        set(CMAKE_${language}_FLAGS_MINSIZEREL ${BLB_SIZE_FLAGS})
+    endforeach ()
+    foreach (kind EXE SHARED MODULE)
+        set(CMAKE_${kind}_LINKER_FLAGS_RELEASE ${BLB_DEAD_STRIP})
+        set(CMAKE_${kind}_LINKER_FLAGS_MINSIZEREL ${BLB_DEAD_STRIP})
+    endforeach ()
 endif ()
 
 include(cmake/dependencies.cmake)
@@ -32,6 +54,8 @@ target_link_libraries(core PUBLIC ${BLB_CURL_TARGET} ${BLB_MINIZIP_TARGET} repro
 if (WIN32)
     target_compile_definitions(core PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE _WIN32_WINNT=0x0A00)
     target_link_libraries(core PUBLIC ws2_32 dnsapi)
+else ()
+    target_link_libraries(core PUBLIC resolv)
 endif ()
 if (MSVC)
     target_compile_options(core PRIVATE /W4 /utf-8 /permissive- /Zc:__cplusplus)
@@ -44,6 +68,16 @@ if (MSVC)
             src/core/installer/integrity.cpp
             src/core/meta/asset_index.cpp
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:/O2>)
+else ()
+    set_source_files_properties(
+            src/core/base/hash.cpp
+            src/core/base/sha1_x86.cpp
+            src/core/base/fs.cpp
+            src/core/base/thread_pool.cpp
+            src/core/network/download_client.cpp
+            src/core/installer/integrity.cpp
+            src/core/meta/asset_index.cpp
+            PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
 
 if (MSVC)
@@ -52,6 +86,13 @@ if (MSVC)
 endif ()
 
 set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
+if (WIN32)
+    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+else ()
+    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
+            ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
+            ${FREETYPE_DIR}/src/psnames/psnames.c)
+endif ()
 add_library(freetype STATIC
         ${FREETYPE_DIR}/src/base/ftbase.c
         ${FREETYPE_DIR}/src/base/ftbbox.c
@@ -59,8 +100,7 @@ add_library(freetype STATIC
         ${FREETYPE_DIR}/src/base/ftinit.c
         ${FREETYPE_DIR}/src/base/ftmm.c
         ${FREETYPE_DIR}/src/base/ftsynth.c
-        ${FREETYPE_DIR}/builds/windows/ftsystem.c
-        ${FREETYPE_DIR}/builds/windows/ftdebug.c
+        ${FREETYPE_SYSTEM_SOURCES}
         ${FREETYPE_DIR}/src/autofit/autofit.c
         ${FREETYPE_DIR}/src/gzip/ftgzip.c
         ${FREETYPE_DIR}/src/sfnt/sfnt.c
@@ -71,17 +111,25 @@ target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_S
         "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
+if (WIN32)
+    set(IMGUI_PLATFORM_SOURCES ${IMGUI_DIR}/backends/imgui_impl_win32.cpp)
+else ()
+    set(IMGUI_PLATFORM_SOURCES ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp)
+endif ()
 add_library(imgui STATIC
         ${IMGUI_DIR}/imgui.cpp
         ${IMGUI_DIR}/imgui_draw.cpp
         ${IMGUI_DIR}/imgui_tables.cpp
         ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp
-        ${IMGUI_DIR}/backends/imgui_impl_win32.cpp
+        ${IMGUI_PLATFORM_SOURCES}
         ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
 target_link_libraries(imgui PUBLIC freetype)
+if (NOT WIN32)
+    target_link_libraries(imgui PUBLIC SDL3::SDL3-static)
+endif ()
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
 list(FILTER UI_SOURCES EXCLUDE REGEX "/src/ui/imgui/screens/")
@@ -123,6 +171,11 @@ target_include_directories(ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CUR
 target_link_libraries(ui PUBLIC imgui)
 if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
+else ()
+    target_link_libraries(ui PUBLIC SDL3::SDL3-static)
+    if (APPLE)
+        target_link_libraries(ui PUBLIC "-framework CoreText" "-framework CoreFoundation")
+    endif ()
 endif ()
 
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/system/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
@@ -153,43 +206,69 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp HEAD
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADER app/launch/EmbeddedAgent.h NAMESPACE EmbeddedAgent FILES
         launcherAgent assets/launcher-agent.jar)
 
-embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp HEADER ui/exui/EmbeddedSkins.h NAMESPACE EmbeddedSkins FILES
-        mainBackground assets/exui/main_background.jpg
-        dialogBackground assets/exui/dialog_background.jpg
-        msgBoxBorder assets/exui/msgbox_border.png
-        msgBoxSkin assets/exui/msgbox_skin.png
-        downloadCenterBackground assets/exui/download_center_background.png
-        frameAtlas assets/exui/frame_atlas.png
-        comboButtonNormal assets/exui/combo_button_normal.png
-        comboButtonHover assets/exui/combo_button_hover.png
-        radioSprites assets/exui/radio_sprites.png
-        checkSprites assets/exui/check_sprites.png
-        menuCheckmark assets/exui/menu_checkmark.png)
-file(GLOB_RECURSE EXUI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/*.cpp)
-list(FILTER EXUI_SOURCES EXCLUDE REGEX "/src/ui/exui/(gallery|windows)/")
-add_library(exui STATIC ${EXUI_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp)
-target_include_directories(exui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(exui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-target_link_libraries(exui PUBLIC gdiplus msimg32 dwmapi uxtheme shlwapi shcore comctl32 imm32 comdlg32 ole32 oleaut32 uuid)
-if (MSVC)
-    target_compile_options(exui PRIVATE /W4)
-endif ()
-option(BLB_EXUI_GALLERY "Build exui_gallery, which renders the EXUI widgets and windows to PNG files" OFF)
-if (BLB_EXUI_GALLERY)
-    add_executable(exui_gallery src/ui/exui/gallery/Gallery.cpp)
-    target_compile_definitions(exui_gallery PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
-    target_link_libraries(exui_gallery PRIVATE exui)
+if (WIN32)
+    embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp HEADER ui/exui/EmbeddedSkins.h NAMESPACE EmbeddedSkins FILES
+            mainBackground assets/exui/main_background.jpg
+            dialogBackground assets/exui/dialog_background.jpg
+            msgBoxBorder assets/exui/msgbox_border.png
+            msgBoxSkin assets/exui/msgbox_skin.png
+            downloadCenterBackground assets/exui/download_center_background.png
+            frameAtlas assets/exui/frame_atlas.png
+            comboButtonNormal assets/exui/combo_button_normal.png
+            comboButtonHover assets/exui/combo_button_hover.png
+            radioSprites assets/exui/radio_sprites.png
+            checkSprites assets/exui/check_sprites.png
+            menuCheckmark assets/exui/menu_checkmark.png)
+    file(GLOB_RECURSE EXUI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/*.cpp)
+    list(FILTER EXUI_SOURCES EXCLUDE REGEX "/src/ui/exui/(gallery|windows)/")
+    add_library(exui STATIC ${EXUI_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSkins.cpp)
+    target_include_directories(exui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(exui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    target_link_libraries(exui PUBLIC gdiplus msimg32 dwmapi uxtheme shlwapi shcore comctl32 imm32 comdlg32 ole32 oleaut32 uuid)
+    if (MSVC)
+        target_compile_options(exui PRIVATE /W4)
+    endif ()
+    option(BLB_EXUI_GALLERY "Build exui_gallery, which renders the EXUI widgets and windows to PNG files" OFF)
+    if (BLB_EXUI_GALLERY)
+        add_executable(exui_gallery src/ui/exui/gallery/Gallery.cpp)
+        target_compile_definitions(exui_gallery PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+        target_link_libraries(exui_gallery PRIVATE exui)
+    endif ()
 endif ()
 
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/app/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/windows/*.cpp)
-add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} src/app.rc
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/screens/*.cpp)
+if (WIN32)
+    file(GLOB_RECURSE EXUI_WINDOW_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/exui/windows/*.cpp)
+    list(APPEND APP_SOURCES ${EXUI_WINDOW_SOURCES})
+    list(SORT APP_SOURCES)
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/src/app/system/(Platform(Posix|Linux|Mac)|FolderWatch(Linux|Mac)|DiskScanPosix)\\.cpp$")
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/src/ui/imgui/screens/shell/(SdlWindow|ImGuiAppSdl)\\.cpp$")
+    set(APP_RESOURCES src/app.rc)
+else ()
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/src/app/system/(PclThemes|PlatformWindows|FolderWatch|DiskScan)\\.cpp$")
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/src/ui/imgui/screens/shell/(BorderlessWindow|ResizeSurface|ImGuiApp)\\.cpp$")
+    if (APPLE)
+        list(FILTER APP_SOURCES EXCLUDE REGEX "/src/app/system/(PlatformLinux|FolderWatchLinux)\\.cpp$")
+        list(APPEND APP_SOURCES src/app/system/TrashMac.mm)
+    else ()
+        list(FILTER APP_SOURCES EXCLUDE REGEX "/src/app/system/(PlatformMac|FolderWatchMac)\\.cpp$")
+    endif ()
+    set(APP_RESOURCES "")
+endif ()
+add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} ${APP_RESOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedSounds.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
-target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
+if (WIN32)
+    target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
+else ()
+    target_link_libraries(b-launcher PRIVATE ui imgui core nlohmann_json::nlohmann_json ZLIB::ZLIB)
+    if (APPLE)
+        target_link_libraries(b-launcher PRIVATE "-framework CoreServices" "-framework Foundation")
+    endif ()
+endif ()
 set(ZEROTIER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libzt)
 if (WIN32)
     target_link_libraries(b-launcher PRIVATE iphlpapi)
@@ -200,12 +279,18 @@ if (WIN32)
     else ()
         message(STATUS "No ZeroTier library in ${ZEROTIER_DIR}: multiplayer is left out")
     endif ()
+elseif (TARGET zt-static)
+    target_include_directories(b-launcher PRIVATE ${libzt_SOURCE_DIR}/include)
+    target_link_libraries(b-launcher PRIVATE zt-static)
+    target_compile_definitions(b-launcher PRIVATE BLB_ZEROTIER)
 endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif ()
-find_program(UPX_EXECUTABLE upx)
-add_custom_command(TARGET b-launcher POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DUPX=${UPX_EXECUTABLE} -DFILE=$<TARGET_FILE:b-launcher>
-                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/upx.cmake
-        VERBATIM)
+if (WIN32)
+    find_program(UPX_EXECUTABLE upx)
+    add_custom_command(TARGET b-launcher POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DUPX=${UPX_EXECUTABLE} -DFILE=$<TARGET_FILE:b-launcher>
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/upx.cmake
+            VERBATIM)
+endif ()

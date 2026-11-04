@@ -1299,7 +1299,9 @@ namespace InstancePage {
                     items.push_back(ActionMenuItem::make("测试游戏", 0xf188, [id] {
                                         Game::launch(id, true);
                                     })->enabledIf([id] { return Game::state(id) != Game::State::Preparing; }));
+#if !defined(__APPLE__)
                     items.push_back(ActionMenuItem::make("生成快捷方式", 0xf108, [id] { openShortcut(id); }));
+#endif
                     items.push_back(ActionMenuItem::make("打开游戏目录", 0xf07c, [id] {
                         if (const Instances::Entry* entry = Instances::find(id)) {
                             Platform::open(entry->gameDirectory);

@@ -24,7 +24,9 @@ namespace Shortcuts {
 
     namespace {
         constexpr int BASE_PIXELS = 256;
+#if defined(_WIN32)
         const int ICON_SIZES[] = {16, 20, 24, 32, 40, 48, 64, 96, 128, 256};
+#endif
 
         struct Image {
             int width = 0;
@@ -126,6 +128,7 @@ namespace Shortcuts {
             return out;
         }
 
+#if defined(_WIN32)
         void put16(std::string& out, uint32_t value) {
             out.push_back((char) (value & 0xFF));
             out.push_back((char) ((value >> 8) & 0xFF));
@@ -196,6 +199,7 @@ namespace Shortcuts {
             }
             return out;
         }
+#endif
 
         Encoded loaderIcon(blb::install::loader_type type) {
             using blb::install::loader_type;
@@ -234,6 +238,17 @@ namespace Shortcuts {
         }
 
         std::string iconBytes(const Instances::Entry& entry, const Draft& draft) {
+#if !defined(_WIN32)
+            std::shared_ptr<const Pixels> picked;
+            if (draft.icon == Icon::Custom) {
+                auto read = blb::fs::read_file(draft.custom);
+                picked = read ? Pixels::decode(read->data(), read->size()) : nullptr;
+            } else {
+                Encoded encoded = instanceIcon(entry);
+                picked = Pixels::decode(encoded.data, encoded.size);
+            }
+            return picked ? Pixels::encodePng(*picked) : std::string();
+#else
             if (draft.icon == Icon::Custom && isIco(draft.custom)) {
                 auto read = blb::fs::read_file(draft.custom);
                 return read ? std::move(*read) : std::string();
@@ -246,6 +261,7 @@ namespace Shortcuts {
                 image = decode(encoded.data, encoded.size);
             }
             return image.rgba.empty() ? std::string() : ico(image);
+#endif
         }
 
         std::optional<std::filesystem::path> storeIcon(const Instances::Entry& entry, const std::string& bytes,
@@ -256,7 +272,11 @@ namespace Shortcuts {
                 return std::nullopt;
             }
             std::filesystem::path folder = blb::meta::game_layout(source->root).cache() / L"shortcuts";
+#if defined(_WIN32)
             std::string name = blb::to_hex(blb::sha1::digest(bytes)).substr(0, 16) + ".ico";
+#else
+            std::string name = blb::to_hex(blb::sha1::digest(bytes)).substr(0, 16) + ".png";
+#endif
             std::filesystem::path file = folder / blb::path_from_utf8(name);
             if (blb::fs::exists(file)) {
                 return file;

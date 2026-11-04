@@ -80,15 +80,41 @@ if(WIN32)
   blb_force(CURL_USE_SCHANNEL ON)
   blb_force(CURL_USE_OPENSSL OFF)
   blb_force(CURL_WINDOWS_SSPI ON)
-else()
-  blb_force(CURL_USE_OPENSSL ON)
+elseif(NOT APPLE)
+  blb_force(ENABLE_PROGRAMS OFF)
+  blb_force(ENABLE_TESTING OFF)
+  blb_force(GEN_FILES OFF)
+  blb_force(MBEDTLS_FATAL_WARNINGS OFF)
+  blb_force(USE_STATIC_MBEDTLS_LIBRARY ON)
+  blb_force(USE_SHARED_MBEDTLS_LIBRARY OFF)
+  blb_force(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON)
+
+  FetchContent_Declare(mbedtls
+    URL ${BLB_DEP_BASE}/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+    URL_HASH SHA256=a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(mbedtls)
+
+  blb_force(CURL_USE_OPENSSL OFF)
+  blb_force(CURL_USE_MBEDTLS ON)
+  blb_force(CURL_CA_BUNDLE none)
+  blb_force(CURL_CA_PATH none)
+  blb_force(HAVE_MBEDTLS_DES_CRYPT_ECB 0)
+  blb_force(MBEDTLS_INCLUDE_DIR "${mbedtls_SOURCE_DIR}/include")
+  blb_force(MBEDTLS_LIBRARY mbedtls)
+  blb_force(MBEDX509_LIBRARY mbedx509)
+  blb_force(MBEDCRYPTO_LIBRARY mbedcrypto)
 endif()
 
-FetchContent_Declare(curl
-  URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
-  URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(curl)
+if(APPLE)
+  find_package(CURL REQUIRED)
+else()
+  FetchContent_Declare(curl
+    URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
+    URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(curl)
+endif()
 
 blb_force(MZ_COMPAT OFF)
 blb_force(MZ_ZLIB ON)
@@ -166,6 +192,43 @@ target_compile_definitions(blb_simdjson PUBLIC
   SIMDJSON_IMPLEMENTATION_ICELAKE=0
   SIMDJSON_IMPLEMENTATION_WESTMERE=0
   SIMDJSON_DISABLE_DEPRECATED_API=1)
+
+if(NOT WIN32)
+  blb_force(SDL_SHARED OFF)
+  blb_force(SDL_STATIC ON)
+  blb_force(SDL_TEST_LIBRARY OFF)
+  blb_force(SDL_EXAMPLES OFF)
+  blb_force(SDL_INSTALL OFF)
+  foreach(subsystem CAMERA JOYSTICK HAPTIC HIDAPI SENSOR POWER GPU RENDER VULKAN METAL)
+    blb_force(SDL_${subsystem} OFF)
+  endforeach()
+
+  FetchContent_Declare(sdl3
+    URL ${BLB_DEP_BASE}/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(sdl3)
+endif()
+
+if(NOT WIN32)
+  blb_force(BUILD_STATIC_LIB ON)
+  blb_force(BUILD_SHARED_LIB OFF)
+  blb_force(BUILD_HOST_SELFTEST OFF)
+  blb_force(ALLOW_INSTALL_TARGET OFF)
+  blb_force(ZTS_DISABLE_CENTRAL_API ON)
+  set(BLB_SAVED_POLICY_MINIMUM ${CMAKE_POLICY_VERSION_MINIMUM})
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+  FetchContent_Declare(libzt
+    GIT_REPOSITORY ${BLB_DEP_BASE}/zerotier/libzt.git
+    GIT_TAG a707ea6ae0910efdc1125d04758c411e2e9ea4f9
+    GIT_SUBMODULES_RECURSE TRUE
+    PATCH_COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR> -DCOMPILER_ID=${CMAKE_CXX_COMPILER_ID}
+      -DCOMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION} -P ${CMAKE_CURRENT_LIST_DIR}/patch_libzt.cmake
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(libzt)
+  set(CMAKE_POLICY_VERSION_MINIMUM ${BLB_SAVED_POLICY_MINIMUM})
+endif()
 
 set(BUILD_SHARED_LIBS ${BLB_SAVED_BUILD_SHARED_LIBS})
 

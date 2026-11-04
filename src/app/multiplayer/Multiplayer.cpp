@@ -416,7 +416,11 @@ namespace Multiplayer {
             RoomApi::Service ignored;
             RoomApi::Reply probe = RoomApi::service(ignored, token);
             std::string why = probe.ok ? "联机服务器可以访问，说明网络本身是通的，多半是 UDP 连接被防火墙或所在网络"
+#if defined(_WIN32)
                                          "（校园网、公司网络常见）拦截了。可以在 Windows 防火墙里允许 b-launcher "
+#else
+                                         "（校园网、公司网络常见）拦截了。可以在防火墙里允许 b-launcher "
+#endif
                                          "通信，或者换一个网络后重试。"
                                        : "联机服务器也连不上，请先检查网络连接、代理或 VPN 设置。";
             return failure("ZeroTier 连不上网络",

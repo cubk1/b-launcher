@@ -8,6 +8,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/network/http_client.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -16,6 +17,7 @@
 #endif
 #include <windows.h>
 #include <wincodec.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -72,6 +74,7 @@ namespace Addons {
             }
         }
 
+#if defined(_WIN32)
         bool decodeIcon(const std::string& data, std::vector<unsigned char>& rgba) {
             IWICImagingFactory* factory = nullptr;
             if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
@@ -124,10 +127,50 @@ namespace Addons {
             factory->Release();
             return ok;
         }
+#else
+        bool decodeIcon(const std::string& data, std::vector<unsigned char>& rgba) {
+            std::shared_ptr<const Pixels> source = Pixels::decode(data.data(), data.size());
+            if (!source || source->width <= 0 || source->height <= 0) {
+                return false;
+            }
+            int w = source->width;
+            int h = source->height;
+            float fit = (float) ICON_SIZE / (float) std::max(w, h);
+            int sw = std::max(1, (int) (w * fit + 0.5f));
+            int sh = std::max(1, (int) (h * fit + 0.5f));
+            std::vector<unsigned char> scaled;
+            if (std::max(w, h) <= 32) {
+                scaled.resize((size_t) sw * sh * 4);
+                for (int y = 0; y < sh; y++) {
+                    for (int x = 0; x < sw; x++) {
+                        const unsigned char* from =
+                                source->rgba.data() + ((size_t) (y * h / sh) * w + (size_t) (x * w / sw)) * 4;
+                        std::copy(from, from + 4, scaled.begin() + ((size_t) y * sw + x) * 4);
+                    }
+                }
+            } else {
+                scaled = Pixels::resized(*source, 0, 0, w, h, sw, sh).rgba;
+            }
+            if (scaled.size() != (size_t) sw * sh * 4) {
+                return false;
+            }
+            rgba.assign((size_t) ICON_SIZE * ICON_SIZE * 4, 0);
+            int ox = (ICON_SIZE - sw) / 2;
+            int oy = (ICON_SIZE - sh) / 2;
+            for (int row = 0; row < sh; row++) {
+                std::copy(scaled.begin() + (size_t) row * sw * 4, scaled.begin() + (size_t) (row + 1) * sw * 4,
+                          rgba.begin() + ((size_t) (oy + row) * ICON_SIZE + ox) * 4);
+            }
+            roundCorners(rgba);
+            return true;
+        }
+#endif
 
         void iconWorker() {
+#if defined(_WIN32)
             SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
             HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#endif
             blb::cancellation_token token = stopping.token();
             while (true) {
                 std::string url;
@@ -148,9 +191,11 @@ namespace Addons {
                     });
                 }
             }
+#if defined(_WIN32)
             if (SUCCEEDED(com)) {
                 CoUninitialize();
             }
+#endif
         }
 
     }

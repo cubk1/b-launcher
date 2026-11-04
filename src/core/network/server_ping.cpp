@@ -31,6 +31,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+#if defined(__linux__) || defined(__APPLE__)
+#include <arpa/nameser.h>
+#include <resolv.h>
+#endif
 
 namespace b_launcher_base::net
 {
@@ -391,6 +395,52 @@ lookup_srv (const std::string &host)
       best = std::move (target);
     }
   DnsFree (records, DnsFreeRecordList);
+  if (best)
+    {
+      while (!best->host.empty () && best->host.back () == '.')
+        best->host.pop_back ();
+      if (best->host.empty () || best->port == 0)
+        best.reset ();
+    }
+  return best;
+#elif defined(__linux__) || defined(__APPLE__)
+  std::string name = "_minecraft._tcp." + host;
+  unsigned char answer[4096];
+  int length
+      = res_query (name.c_str (), ns_c_in, ns_t_srv, answer, sizeof (answer));
+  ns_msg message;
+  if (length <= 0 || length > static_cast<int> (sizeof (answer))
+      || ns_initparse (answer, length, &message) != 0)
+    return std::nullopt;
+  std::optional<server_address> best;
+  unsigned priority = 0;
+  unsigned weight = 0;
+  for (int i = 0; i < ns_msg_count (message, ns_s_an); i++)
+    {
+      ns_rr record;
+      if (ns_parserr (&message, ns_s_an, i, &record) != 0
+          || ns_rr_type (record) != ns_t_srv || ns_rr_rdlen (record) < 7)
+        continue;
+      const unsigned char *data = ns_rr_rdata (record);
+      unsigned record_priority = ns_get16 (data);
+      unsigned record_weight = ns_get16 (data + 2);
+      char target[NS_MAXDNAME];
+      if (dn_expand (ns_msg_base (message), ns_msg_end (message), data + 6,
+                     target, sizeof (target))
+          < 0)
+        continue;
+      if (best
+          && (record_priority > priority
+              || (record_priority == priority && record_weight <= weight)))
+        continue;
+      server_address found;
+      found.host = target;
+      found.port = static_cast<std::uint16_t> (ns_get16 (data + 4));
+      found.explicit_port = true;
+      priority = record_priority;
+      weight = record_weight;
+      best = std::move (found);
+    }
   if (best)
     {
       while (!best->host.empty () && best->host.back () == '.')

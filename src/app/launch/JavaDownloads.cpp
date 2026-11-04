@@ -8,6 +8,7 @@
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
+#include <core/base/platform.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
@@ -16,10 +17,16 @@
 
 #include <core/base/json.hpp>
 
+#if !defined(_WIN32)
+#include <zlib.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <map>
@@ -35,6 +42,20 @@ namespace JavaDownloads {
         using Continuation = AsyncTasks::Continuation;
 
         const std::string LIST_URL = Server::file("jdks.json");
+#if !defined(_WIN32)
+
+        const char* systemName() {
+#if defined(__APPLE__)
+            return "macOS";
+#else
+            return "linux";
+#endif
+        }
+
+        const char* archName() {
+            return blb::current_platform().arch == blb::cpu_arch::arm64 ? "aarch64" : "x86_64";
+        }
+#endif
         constexpr float DOWNLOAD_SHARE = 0.85f;
 
         struct Job {
@@ -87,10 +108,17 @@ namespace JavaDownloads {
                     continue;
                 }
                 for (const nlohmann::json& item : *packages) {
+#if defined(_WIN32)
                     if (!item.is_object() || blb::json_text(item, "os") != "windows" || blb::json_text(item, "arch") != "x86_64" ||
                         blb::json_text(item, "package_type") != "zip") {
                         continue;
                     }
+#else
+                    if (!item.is_object() || blb::json_text(item, "os") != systemName() ||
+                        blb::json_text(item, "arch") != archName() || blb::json_text(item, "package_type") != "targz") {
+                        continue;
+                    }
+#endif
                     Package package;
                     package.folder = blb::json_text(item, "install_folder_name");
                     package.url = blb::json_text(item, "url");
@@ -105,6 +133,7 @@ namespace JavaDownloads {
                     package.preview = blb::json_bool(jdk, "preview");
                     package.sha256 = blb::json_text(item, "sha256");
                     package.prefix = blb::json_text(item, "unpack_prefix_filter");
+                    package.rootPrefix = blb::json_text(item, "package_root_prefix");
                     package.homePrefix = blb::json_text(item, "package_to_java_home_prefix");
                     auto archiveSize = count(item, "archive_size", std::numeric_limits<int64_t>::max());
                     auto unpackedSize = count(item, "unpacked_size");
@@ -151,6 +180,212 @@ namespace JavaDownloads {
             }
             return true;
         }
+
+#if !defined(_WIN32)
+        uint64_t octal(const unsigned char* field, size_t length) {
+            if (field[0] & 0x80) {
+                uint64_t value = field[0] & 0x7F;
+                for (size_t i = 1; i < length; i++) {
+                    value = (value << 8) | field[i];
+                }
+                return value;
+            }
+            uint64_t value = 0;
+            for (size_t i = 0; i < length && field[i] >= '0' && field[i] <= '7'; i++) {
+                value = value * 8 + (uint64_t) (field[i] - '0');
+            }
+            return value;
+        }
+
+        std::string text(const unsigned char* field, size_t length) {
+            size_t end = 0;
+            while (end < length && field[end] != 0) {
+                end++;
+            }
+            return std::string((const char*) field, end);
+        }
+
+        void paxField(const std::string& records, const char* key, std::string& out) {
+            size_t at = 0;
+            while (at < records.size()) {
+                size_t space = records.find(' ', at);
+                if (space == std::string::npos) {
+                    return;
+                }
+                size_t length = (size_t) std::strtoull(records.c_str() + at, nullptr, 10);
+                if (length == 0 || at + length > records.size()) {
+                    return;
+                }
+                std::string record = records.substr(space + 1, at + length - space - 2);
+                size_t equals = record.find('=');
+                if (equals != std::string::npos && record.compare(0, equals, key) == 0) {
+                    out = record.substr(equals + 1);
+                }
+                at += length;
+            }
+        }
+
+        bool readFully(gzFile file, void* data, size_t size) {
+            auto* bytes = (unsigned char*) data;
+            while (size > 0) {
+                int chunk = gzread(file, bytes, (unsigned) std::min<size_t>(size, 1 << 20));
+                if (chunk <= 0) {
+                    return false;
+                }
+                bytes += chunk;
+                size -= (size_t) chunk;
+            }
+            return true;
+        }
+
+        std::string extractTar(const std::filesystem::path& archive, const Package& package,
+                               const std::filesystem::path& target, Job& job, blb::cancellation_token token) {
+            gzFile file = gzopen(archive.c_str(), "rb");
+            if (file == nullptr) {
+                return "无法打开 Java 压缩包";
+            }
+            gzbuffer(file, 1 << 17);
+            std::string filter = normalize(package.prefix);
+            std::string root = normalize(package.rootPrefix.empty() ? package.prefix : package.rootPrefix);
+            while (!root.empty() && root.back() == '/') {
+                root.pop_back();
+            }
+            while (!filter.empty() && filter.back() == '/') {
+                filter.pop_back();
+            }
+            auto destinationRoot = blb::fs::absolute(target);
+            std::string failure;
+            std::string longName;
+            std::string longLink;
+            uint64_t done = 0;
+            std::vector<char> buffer(1 << 16);
+            unsigned char header[512];
+            while (failure.empty()) {
+                if (token.is_cancelled()) {
+                    failure = "已取消";
+                    break;
+                }
+                if (!readFully(file, header, sizeof(header))) {
+                    failure = "Java 压缩包不完整";
+                    break;
+                }
+                if (std::all_of(header, header + sizeof(header), [](unsigned char c) { return c == 0; })) {
+                    break;
+                }
+                uint64_t size = octal(header + 124, 12);
+                char type = (char) header[156];
+                uint64_t padded = (size + 511) / 512 * 512;
+                if (type == 'L' || type == 'K' || type == 'x' || type == 'g') {
+                    if (size > (1 << 20)) {
+                        failure = "Java 压缩包格式无效";
+                        break;
+                    }
+                    std::string data((size_t) padded, '\0');
+                    if (!readFully(file, data.data(), data.size())) {
+                        failure = "Java 压缩包不完整";
+                        break;
+                    }
+                    data.resize((size_t) size);
+                    if (type == 'L') {
+                        longName = text((const unsigned char*) data.data(), data.size());
+                    } else if (type == 'K') {
+                        longLink = text((const unsigned char*) data.data(), data.size());
+                    } else if (type == 'x') {
+                        paxField(data, "path", longName);
+                        paxField(data, "linkpath", longLink);
+                    }
+                    continue;
+                }
+                std::string name = longName.empty() ? text(header, 100) : longName;
+                std::string link = longLink.empty() ? text(header + 157, 100) : longLink;
+                if (longName.empty() && std::memcmp(header + 257, "ustar", 5) == 0 && header[345] != 0) {
+                    name = text(header + 345, 155) + "/" + name;
+                }
+                longName.clear();
+                longLink.clear();
+                name = normalize(name);
+                while (!name.empty() && name.back() == '/') {
+                    name.pop_back();
+                }
+                bool wanted = filter.empty() || name == filter || name.rfind(filter + "/", 0) == 0;
+                if (wanted && !root.empty()) {
+                    wanted = name == root || name.rfind(root + "/", 0) == 0;
+                    name = name == root ? std::string() : name.substr(std::min(name.size(), root.size() + 1));
+                }
+                bool regular = type == '0' || type == '\0' || type == '7';
+                std::filesystem::path out = target / blb::path_from_utf8(name);
+                if (wanted && !name.empty()) {
+                    if (!safePath(name) || !blb::fs::is_inside(target, out)) {
+                        failure = "Java 压缩包包含不安全的路径";
+                        break;
+                    }
+                    for (auto part = blb::fs::absolute(out).parent_path(); !part.empty(); part = part.parent_path()) {
+                        if (blb::fs::stat(part).is_link) {
+                            failure = "Java 解压路径包含链接";
+                            break;
+                        }
+                        if (part == destinationRoot || part == part.root_path()) break;
+                    }
+                    if (!failure.empty()) {
+                        break;
+                    }
+                }
+                std::error_code error;
+                if (!wanted || name.empty() || !regular) {
+                    if (wanted && !name.empty() && type == '5') {
+                        std::filesystem::create_directories(out, error);
+                    } else if (wanted && !name.empty() && type == '2') {
+                        std::filesystem::path resolved = (out.parent_path() / link).lexically_normal();
+                        if (!link.empty() && link[0] != '/' && blb::fs::is_inside(target, resolved)) {
+                            std::filesystem::create_directories(out.parent_path(), error);
+                            std::filesystem::remove(out, error);
+                            std::filesystem::create_symlink(link, out, error);
+                        }
+                    }
+                    for (uint64_t left = padded; left > 0;) {
+                        size_t chunk = (size_t) std::min<uint64_t>(left, buffer.size());
+                        if (!readFully(file, buffer.data(), chunk)) {
+                            failure = "Java 压缩包不完整";
+                            break;
+                        }
+                        left -= chunk;
+                    }
+                    continue;
+                }
+                std::filesystem::create_directories(out.parent_path(), error);
+                std::FILE* written = std::fopen(out.c_str(), "wb");
+                if (written == nullptr) {
+                    failure = "无法写入 Java 文件";
+                    break;
+                }
+                for (uint64_t left = padded; left > 0 && failure.empty();) {
+                    size_t chunk = (size_t) std::min<uint64_t>(left, buffer.size());
+                    if (!readFully(file, buffer.data(), chunk)) {
+                        failure = "Java 压缩包不完整";
+                        break;
+                    }
+                    uint64_t used = padded - left;
+                    size_t keep = used >= size ? 0 : (size_t) std::min<uint64_t>(chunk, size - used);
+                    if (keep > 0 && std::fwrite(buffer.data(), 1, keep, written) != keep) {
+                        failure = "无法写入 Java 文件";
+                    }
+                    left -= chunk;
+                }
+                if (std::fclose(written) != 0 && failure.empty()) {
+                    failure = "无法写入 Java 文件";
+                }
+                std::filesystem::permissions(out, (std::filesystem::perms)(octal(header + 100, 8) & 0755),
+                                             std::filesystem::perm_options::replace, error);
+                done += size;
+                if (package.unpackedSize > 0) {
+                    float share = std::min(1.0f, (float) ((double) done / (double) package.unpackedSize));
+                    job.fraction = DOWNLOAD_SHARE + (1.0f - DOWNLOAD_SHARE) * share;
+                }
+            }
+            gzclose(file);
+            return failure;
+        }
+#endif
 
         std::string extract(const std::filesystem::path& archive, const Package& package,
                             const std::filesystem::path& target, Job& job, blb::cancellation_token token) {
@@ -282,7 +517,11 @@ namespace JavaDownloads {
 
     bool installed(const Package& package) {
         std::error_code error;
+#if defined(_WIN32)
         return std::filesystem::exists(homeOf(package) / "bin" / "java.exe", error);
+#else
+        return std::filesystem::exists(homeOf(package) / "bin" / "java", error);
+#endif
     }
 
     bool busy() {
@@ -305,9 +544,13 @@ namespace JavaDownloads {
     }
 
     std::filesystem::path root() {
+#if defined(_WIN32)
         const wchar_t* local = _wgetenv(L"LOCALAPPDATA");
         std::filesystem::path base =
                 local != nullptr && *local != 0 ? std::filesystem::path(local) : Platform::exeDirectory();
+#else
+        std::filesystem::path base = blb::app_data_directory();
+#endif
         return base / L"b-launcher" / L"java";
     }
 
@@ -361,7 +604,11 @@ namespace JavaDownloads {
             }
             if (error.empty()) {
                 job->fraction = DOWNLOAD_SHARE;
+#if defined(_WIN32)
                 error = extract(archive, package, temp, *job, token);
+#else
+                error = extractTar(archive, package, temp, *job, token);
+#endif
             }
             std::filesystem::remove(archive, ec);
             if (error.empty()) {
@@ -370,9 +617,15 @@ namespace JavaDownloads {
                 if (!prefix.empty()) {
                     home /= blb::path_from_utf8(prefix);
                 }
+#if defined(_WIN32)
                 if (!std::filesystem::exists(home / "bin" / "java.exe", ec)) {
                     error = "解压后没有找到 java.exe";
                 }
+#else
+                if (!std::filesystem::exists(home / "bin" / "java", ec)) {
+                    error = "解压后没有找到 java";
+                }
+#endif
             }
             if (error.empty()) {
                 std::filesystem::remove_all(target, ec);
@@ -384,7 +637,11 @@ namespace JavaDownloads {
             if (!error.empty()) {
                 std::filesystem::remove_all(temp, ec);
             }
+#if defined(_WIN32)
             std::filesystem::path java = homeOf(package) / "bin" / "java.exe";
+#else
+            std::filesystem::path java = homeOf(package) / "bin" / "java";
+#endif
             std::string label = name(package) + " " + package.version;
             return [job, error, java, label] {
                 job->state = error.empty() ? State::Done : State::Failed;

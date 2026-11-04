@@ -1,11 +1,3 @@
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
 #include "ShaderUtil.h"
 #include "UiGL.h"
 #include "IconShader.inl"
@@ -30,7 +22,7 @@ namespace ShaderUtil {
     static std::vector<Prim> pendingPrims;
     static bool captureValid = false;
     static int captureFrame = -1;
-    static HGLRC captureContext = nullptr;
+    static void* captureContext = nullptr;
 
     struct Shader {
         GLuint program = 0;
@@ -1038,7 +1030,7 @@ void main() {
 
     static GLuint contextVertexArray() {
         static std::unordered_map<void*, GLuint> arrays;
-        void* context = (void*) wglGetCurrentContext();
+        void* context = currentContext();
         GLuint& array = arrays[context];
         if (array == 0) {
             GenVertexArrays(1, &array);
@@ -1086,7 +1078,7 @@ void main() {
     }
 
     static void captureScreen(int frame) {
-        HGLRC context = wglGetCurrentContext();
+        void* context = currentContext();
         if (captureValid && captureFrame == frame && captureContext == context) {
             return;
         }

@@ -4,6 +4,7 @@
 #include <core/base/win_util.hpp>
 #include <core/base/strings.hpp>
 
+#include <chrono>
 #include <optional>
 
 #if defined(_WIN32)
@@ -129,11 +130,22 @@ namespace UiHttp {
         WinHttpCloseHandle(session);
         return ok && !stop.stop_requested();
 #else
-        (void) url;
-        (void) headers;
-        (void) timeoutMs;
-        (void) maxBytes;
-        return false;
+        b_launcher_base::net::http_request request;
+        request.url = url;
+        for (const auto& header : headers) {
+            request.headers.push_back({header.first, header.second});
+        }
+        request.timeout = std::chrono::milliseconds(timeoutMs);
+        request.max_response_size = maxBytes;
+        b_launcher_base::cancellation_source source;
+        std::stop_callback cancel(stop, [&source] { source.cancel(); });
+        auto response = b_launcher_base::net::http_send(request, source.token());
+        if (!response) {
+            return false;
+        }
+        status = (int) response->status;
+        out.assign(response->body.begin(), response->body.end());
+        return !stop.stop_requested();
 #endif
     }
 

@@ -124,7 +124,7 @@ namespace Instances {
             }
             std::vector<std::wstring> parts;
             for (size_t start = 0;;) {
-                size_t slash = path.find(L'\\', start);
+                size_t slash = path.find_first_of(L"\\/", start);
                 parts.push_back(path.substr(start, slash - start));
                 if (slash == std::wstring::npos) {
                     break;
@@ -742,7 +742,11 @@ namespace Instances {
             roots.push_back(Source{"local", "当前目录", local, false});
         }
         if (!appData.empty()) {
+#if defined(_WIN32)
             roots.push_back(Source{"appdata", "APPDATA", appData, false});
+#else
+            roots.push_back(Source{"appdata", "默认目录", appData, false});
+#endif
         }
         loadFolders();
         loadPrefs();

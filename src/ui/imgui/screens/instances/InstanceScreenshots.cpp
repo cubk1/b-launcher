@@ -66,7 +66,11 @@ namespace InstanceScreenshots {
                 std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::duration<double>(diff));
         auto seconds = std::chrono::system_clock::to_time_t(changed);
         std::tm local{};
+#if defined(_WIN32)
         if (localtime_s(&local, &seconds) != 0) {
+#else
+        if (localtime_r(&seconds, &local) == nullptr) {
+#endif
             return {};
         }
         std::snprintf(text, sizeof(text), "%04d-%02d-%02d", local.tm_year + 1900, local.tm_mon + 1, local.tm_mday);

@@ -1,5 +1,6 @@
 #include "app/launch/GameLog.h"
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -7,8 +8,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -94,6 +97,7 @@ namespace GameLog {
             if (validUtf8(text)) {
                 return std::string(text);
             }
+#if defined(_WIN32)
             int wide = MultiByteToWideChar(CP_ACP, 0, text.data(), (int) text.size(), nullptr, 0);
             if (wide <= 0) {
                 return std::string(text);
@@ -104,6 +108,9 @@ namespace GameLog {
             std::string out(size, '\0');
             WideCharToMultiByte(CP_UTF8, 0, buffer.data(), wide, out.data(), size, nullptr, nullptr);
             return out;
+#else
+            return std::string(text);
+#endif
         }
 
         bool levelIn(std::string_view text, Level& level) {
@@ -154,7 +161,10 @@ namespace GameLog {
 
         void push(Log& log, std::string text, Level level) {
             bool trace = stackLine(text);
-            log.pending.push_back(Line{std::move(text), level, trace, GetTickCount64()});
+            uint64_t at = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  std::chrono::steady_clock::now().time_since_epoch())
+                                  .count();
+            log.pending.push_back(Line{std::move(text), level, trace, at});
             if (log.pending.size() > MAX_LINES + MAX_LINES / 4) {
                 size_t extra = log.pending.size() - MAX_LINES;
                 log.pending.erase(log.pending.begin(), log.pending.begin() + (ptrdiff_t) extra);
@@ -231,7 +241,11 @@ namespace GameLog {
                 long long millis = std::atoll(stamp.c_str());
                 time_t seconds = (time_t) (millis / 1000);
                 tm local = {};
+#if defined(_WIN32)
                 localtime_s(&local, &seconds);
+#else
+                localtime_r(&seconds, &local);
+#endif
                 char clock[16];
                 std::snprintf(clock, sizeof(clock), "%02d:%02d:%02d", local.tm_hour, local.tm_min, local.tm_sec);
                 time = clock;

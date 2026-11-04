@@ -291,7 +291,11 @@ namespace SettingsScreen {
         }
 
         int appearanceCount() {
+#if defined(_WIN32)
             return Appearance::backgroundImage() ? 12 : 11;
+#else
+            return Appearance::backgroundImage() ? 11 : 10;
+#endif
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -330,6 +334,7 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setSystemFrame(on); }, y, blocked);
         }
 
+#if defined(_WIN32)
         void uiStyleRow(float y, bool blocked) {
             const std::string label = "界面风格";
             Page::label(label, y);
@@ -362,10 +367,13 @@ namespace SettingsScreen {
             }
             explain("settings#uiStyle", doc, y, std::max(labelEnd - 12.0f, labelRight), blocked);
         }
+#endif
 
         void appearanceRows(float y, bool blocked) {
+#if defined(_WIN32)
             uiStyleRow(y, blocked);
             y += Page::ROW_H;
+#endif
 
             Page::label("主题", y);
             auto theme = std::make_shared<ModeBinding>(
@@ -517,6 +525,7 @@ namespace SettingsScreen {
         constexpr float SCAN_BAR_H = 4.0f;
         constexpr double SCAN_SWEEP = 1.4;
 
+#if defined(_WIN32)
         bool scanning(DiskScan::Kind kind) {
             const DiskScan::Status& scan = DiskScan::status();
             return scan.state == DiskScan::State::Running && scan.kind == kind;
@@ -526,6 +535,7 @@ namespace SettingsScreen {
             UiState::remove(barId);
             DiskScan::start(kind);
         }
+#endif
 
         void scanBar(const std::string& id, float x, float y, float w) {
             const DiskScan::Status& scan = DiskScan::status();
@@ -563,6 +573,7 @@ namespace SettingsScreen {
 
         constexpr float DRIVE_W = 120.0f;
 
+#if defined(_WIN32)
         std::string sizeText(uint64_t bytes) {
             double gigabytes = (double) bytes / 1e9;
             char text[32];
@@ -690,6 +701,7 @@ namespace SettingsScreen {
                                 UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             }
         }
+#endif
 
         void foundRows(float y, bool blocked) {
             const DiskScan::Status& scan = DiskScan::status();
@@ -728,7 +740,11 @@ namespace SettingsScreen {
         }
 
         void gameTab(bool covered) {
+#if defined(_WIN32)
             const int instanceCount = 3;
+#else
+            const int instanceCount = 2;
+#endif
             const int foundCount = (int) DiskScan::status().folders.size();
             const int launchCount = 6;
             std::string source = optionsSource();
@@ -750,7 +766,9 @@ namespace SettingsScreen {
                 Page::caption("实例", y);
                 Page::card(y + Page::CAPTION_H, instanceCount);
                 instanceRows(y + Page::CAPTION_H, blocked);
+#if defined(_WIN32)
                 folderRows(y + Page::CAPTION_H + 2 * Page::ROW_H, blocked);
+#endif
             }
             y += Page::CAPTION_H + instanceCount * Page::ROW_H + Page::GAP;
 
@@ -983,10 +1001,17 @@ namespace SettingsScreen {
             toggle(
                     "settings#systemProxy", [] { return Network::systemProxy(); },
                     [](bool on) { Network::setSystemProxy(on); }, y, blocked);
+#if defined(_WIN32)
             explain("settings#systemProxy",
                     "开启后，下载和其他网络请求会走 Windows 系统代理，例如 Clash、v2rayN 设置的代理。"
                     "代理软件没有运行时请关闭。",
                     y, Page::controlRight() - 40.0f, blocked);
+#else
+            explain("settings#systemProxy",
+                    "开启后，下载和其他网络请求会使用 http_proxy、https_proxy 环境变量里的代理。"
+                    "代理软件没有运行时请关闭。",
+                    y, Page::controlRight() - 40.0f, blocked);
+#endif
         }
 
         void confirmReset() {
@@ -1117,6 +1142,7 @@ namespace SettingsScreen {
                            covered || loading)) {
                 Catalog::refreshJava();
             }
+#if defined(_WIN32)
             float searchX = refreshX - 32.0f;
             bool diskRunning = DiskScan::status().state == DiskScan::State::Running;
             if (diskRunning) {
@@ -1130,6 +1156,10 @@ namespace SettingsScreen {
             if (!javaScanning) {
                 driveSelect("settings#java#drives", drivesX, Page::TOP + 4.0f, covered || diskRunning);
             }
+#else
+            float drivesX = refreshX;
+            bool javaScanning = false;
+#endif
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
             float addX = drivesX - 8.0f - addW;
@@ -1161,7 +1191,11 @@ namespace SettingsScreen {
             float top = Page::TOP + 40.0f;
             float bottom = MainWindow::height() - 14.0f;
             if (javas.list.empty()) {
+#if defined(_WIN32)
                 std::string text = loading ? "正在查找 Java…" : "没有找到 Java，点击“添加”选择 java.exe";
+#else
+                std::string text = loading ? "正在查找 Java…" : "没有找到 Java，点击“添加”选择 java";
+#endif
                 float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float lead = loading ? 24.0f : 0.0f;
                 float x = mainX() + (mainW() - w - lead) * 0.5f;

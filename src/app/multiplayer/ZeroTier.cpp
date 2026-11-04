@@ -1,16 +1,9 @@
 #include "app/multiplayer/ZeroTier.h"
 #include "app/system/Platform.h"
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
 #if defined(BLB_ZEROTIER)
+#include "app/system/Sockets.h"
+
 #define ADD_EXPORTS
 #include <ZeroTierSockets.h>
 #endif
@@ -71,11 +64,13 @@ namespace ZeroTier {
         std::thread acceptor;
 
         void startSockets() {
+#if defined(_WIN32)
             static std::once_flag once;
             std::call_once(once, [] {
                 WSADATA data;
                 WSAStartup(MAKEWORD(2, 2), &data);
             });
+#endif
         }
 
         uint64_t hexValue(const std::string& text) {
@@ -142,8 +137,15 @@ namespace ZeroTier {
         }
 
         void setNonBlocking(SOCKET socket) {
+#if defined(_WIN32)
             u_long on = 1;
             ioctlsocket(socket, FIONBIO, &on);
+#else
+            int flags = fcntl(socket, F_GETFL, 0);
+            if (flags >= 0) {
+                fcntl(socket, F_SETFL, flags | O_NONBLOCK);
+            }
+#endif
         }
 
         void setNoDelay(SOCKET socket) {
@@ -159,7 +161,7 @@ namespace ZeroTier {
             FD_SET(socket, &ready);
             FD_SET(socket, &failed);
             timeval limit{ms / 1000, (ms % 1000) * 1000};
-            return select(0, write ? nullptr : &ready, write ? &ready : nullptr, &failed, &limit) > 0;
+            return select((int) socket + 1, write ? nullptr : &ready, write ? &ready : nullptr, &failed, &limit) > 0;
         }
 
         short waitRemote(int fd, short events, int ms) {
@@ -323,7 +325,11 @@ namespace ZeroTier {
             bool connected = false;
             if (connect(socket, (const sockaddr*) &target, sizeof(target)) == 0) {
                 connected = true;
+#if defined(_WIN32)
             } else if (WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
+            } else if (errno == EINPROGRESS) {
+#endif
                 fd_set writable;
                 fd_set failed;
                 FD_ZERO(&writable);
@@ -331,9 +337,9 @@ namespace ZeroTier {
                 FD_SET(socket, &writable);
                 FD_SET(socket, &failed);
                 timeval limit{LOCAL_CONNECT_LIMIT / 1000, (LOCAL_CONNECT_LIMIT % 1000) * 1000};
-                if (select(0, nullptr, &writable, &failed, &limit) > 0 && !FD_ISSET(socket, &failed)) {
+                if (select((int) socket + 1, nullptr, &writable, &failed, &limit) > 0 && !FD_ISSET(socket, &failed)) {
                     int error = 0;
-                    int length = sizeof(error);
+                    socklen_t length = sizeof(error);
                     connected = getsockopt(socket, SOL_SOCKET, SO_ERROR, (char*) &error, &length) == 0 && error == 0;
                 }
             }
@@ -583,8 +589,10 @@ namespace ZeroTier {
         if (listener == INVALID_SOCKET) {
             return 0;
         }
+#if defined(_WIN32)
         BOOL exclusive = TRUE;
         setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*) &exclusive, sizeof(exclusive));
+#endif
         sockaddr_in local{};
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -597,7 +605,7 @@ namespace ZeroTier {
             }
         }
         sockaddr_in bound{};
-        int length = sizeof(bound);
+        socklen_t length = sizeof(bound);
         if (listen(listener, 16) == SOCKET_ERROR ||
             getsockname(listener, (sockaddr*) &bound, &length) == SOCKET_ERROR) {
             closesocket(listener);

@@ -1,0 +1,86 @@
+name: build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install tools
+        run: choco install upx ninja -y --no-progress
+      - name: Configure
+        run: cmake -S . -B build -G "Ninja Multi-Config" -DCMAKE_CONFIGURATION_TYPES=MinSizeRel
+      - name: Build
+        run: cmake --build build --config MinSizeRel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-launcher-windows-x86_64
+          path: build/MinSizeRel/b-launcher.exe
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libwayland-bin
+          curl -sSfL -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig.tar.xz" | sha256sum -c
+          tar xJf zig.tar.xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-0.16.0" >> "$GITHUB_PATH"
+          curl -sSfL -o "$RUNNER_TEMP/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+      - name: Prepare sysroot
+        run: cmake/package/linux-sysroot.sh "$RUNNER_TEMP/sysroot"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/zig-linux-x86_64.cmake -DBLB_SYSROOT="$RUNNER_TEMP/sysroot"
+      - name: Build
+        run: cmake --build build --target b-launcher
+      - name: Package
+        run: cmake/package/appimage.sh build/b-launcher build/B_Launcher-x86_64.AppImage "$RUNNER_TEMP/appimagetool"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-launcher-linux-x86_64
+          path: build/B_Launcher-x86_64.AppImage
+
+  macos:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build zip
+          curl -sSfL -o zig.tar.xz https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig.tar.xz" | sha256sum -c
+          tar xJf zig.tar.xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-0.16.0" >> "$GITHUB_PATH"
+          curl -sSfL -o rcodesign.tar.gz https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F0.29.0/apple-codesign-0.29.0-x86_64-unknown-linux-musl.tar.gz
+          echo "dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002  rcodesign.tar.gz" | sha256sum -c
+          tar xzf rcodesign.tar.gz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apple-codesign-0.29.0-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+      - name: Prepare SDK
+        run: |
+          curl -sSfL -o sdk.tar.xz https://github.com/joseluisq/macosx-sdks/releases/download/14.5/MacOSX14.5.sdk.tar.xz
+          echo "6e146275d19f027faa2e8354da5e0267513abf013b8f16ad65a231653a2b1c5d  sdk.tar.xz" | sha256sum -c
+          tar xJf sdk.tar.xz -C "$RUNNER_TEMP"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/zig-macos-aarch64.cmake -DBLB_SYSROOT="$RUNNER_TEMP/MacOSX14.5.sdk"
+      - name: Build
+        run: cmake --build build --target b-launcher
+      - name: Package
+        run: |
+          cmake/package/macos-app.sh build/b-launcher build/app "$(sed -n 's/^project(b-launcher VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          cd build/app && zip -qry ../B_Launcher-macos-arm64.zip "B Launcher.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: b-launcher-macos-arm64
+          path: build/B_Launcher-macos-arm64.zip

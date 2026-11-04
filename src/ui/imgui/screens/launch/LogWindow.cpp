@@ -1,7 +1,13 @@
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
+#if defined(_WIN32)
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
+#else
+#include "ui/imgui/screens/shell/SdlWindow.h"
+
+#include <SDL3/SDL_timer.h>
+#endif
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "app/launch/LogViewModel.h"
@@ -30,9 +36,15 @@
 
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
+#if defined(_WIN32)
 #include "imgui_impl_win32.h"
+#endif
 
+#if defined(_WIN32)
 #include <GL/gl.h>
+#else
+#include "ui/imgui/gl/UiGL.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -67,10 +79,17 @@ namespace LogWindow {
 
         const char* const SEARCH_OWNER = "log#search";
 
+#if defined(_WIN32)
         BorderlessWindow* mainWindow = nullptr;
         BorderlessWindow window;
         ULONGLONG hiddenAt = 0;
         constexpr ULONGLONG RELEASE_AFTER = 10000;
+#else
+        SdlWindow* mainWindow = nullptr;
+        SdlWindow window;
+        uint64_t hiddenAt = 0;
+        constexpr uint64_t RELEASE_AFTER = 10000;
+#endif
         std::wstring logTitle = L"游戏日志 - " + Platform::widen(About::NAME);
         ImGuiContext* context = nullptr;
         bool created = false;
@@ -365,7 +384,11 @@ namespace LogWindow {
             std::string name = GameLog::title().empty() ? std::string("game") : GameLog::title();
             std::optional<std::filesystem::path> target =
                     Platform::pickSaveFile(Platform::exeDirectory() / b_launcher_base::path_from_utf8(name + ".log"),
+#if defined(_WIN32)
                                            L"导出游戏日志", window.hwnd);
+#else
+                                           L"导出游戏日志", window.window);
+#endif
             if (!target) {
                 return;
             }
@@ -528,6 +551,7 @@ namespace LogWindow {
                 close();
             }
             bx -= size + 4.0f;
+#if defined(_WIN32)
             bool zoomed = IsZoomed(window.hwnd) != FALSE;
             if (iconButton("log#maximize", zoomed ? 0xf2d2 : 0xf2d0, zoomed ? "还原" : "最大化", bx, y, size)) {
                 ShowWindow(window.hwnd, zoomed ? SW_RESTORE : SW_MAXIMIZE);
@@ -536,6 +560,16 @@ namespace LogWindow {
             if (iconButton("log#minimize", 0xf068, "最小化", bx, y, size)) {
                 ShowWindow(window.hwnd, SW_MINIMIZE);
             }
+#else
+            bool zoomed = window.maximized();
+            if (iconButton("log#maximize", zoomed ? 0xf2d2 : 0xf2d0, zoomed ? "还原" : "最大化", bx, y, size)) {
+                window.toggleMaximize();
+            }
+            bx -= size + 4.0f;
+            if (iconButton("log#minimize", 0xf068, "最小化", bx, y, size)) {
+                window.minimize();
+            }
+#endif
         }
 
         void openSearch() {
@@ -982,37 +1016,65 @@ namespace LogWindow {
             };
             int w = (int) (START_W * layoutScale + 0.5f);
             int h = (int) (START_H * layoutScale + 0.5f);
+#if defined(_WIN32)
             if (!window.create(logTitle, w, h, mainWindow->glContext)) {
                 wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
                 return;
             }
+#else
+            if (!window.create(Platform::narrow(logTitle), w, h, mainWindow)) {
+                mainWindow->makeCurrent();
+                return;
+            }
+#endif
             mergeRepeats = LaunchDefaults::mergeLogRepeats();
             context = ImGui::CreateContext(ImGui::GetIO().Fonts);
             ImFont* font = ImGui::GetIO().FontDefault;
             ImGui::SetCurrentContext(context);
             ImGui::GetIO().IniFilename = nullptr;
             ImGui::GetIO().FontDefault = font;
+#if defined(_WIN32)
             ImGui_ImplWin32_InitForOpenGL(window.hwnd);
             ImGui_ImplOpenGL3_Init("#version 130");
+#else
+            window.initImGui();
+#endif
             window.imguiContext = context;
             window.setVsync(false);
             ImGui::SetCurrentContext(main);
+#if defined(_WIN32)
             wglMakeCurrent(mainWindow->deviceContext, mainWindow->glContext);
+#else
+            mainWindow->makeCurrent();
+#endif
             created = true;
+#if !defined(_WIN32)
+            window.setIcon(Logo::pixels(64), 64);
+#endif
             window.onModalFrame = [] { frame(layoutScale); };
         }
     }
 
     void setIcons(void* large, void* compact) {
+#if defined(_WIN32)
         window.setIcons((HICON) large, (HICON) compact);
+#else
+        (void) large;
+        (void) compact;
+        window.setIcon(Logo::pixels(64), 64);
+#endif
     }
 
     void setTitle(const std::wstring& title) {
         logTitle = L"游戏日志 - " + title;
+#if defined(_WIN32)
         window.setTitle(logTitle);
+#else
+        window.setTitle(Platform::narrow(logTitle));
+#endif
     }
 
-    void init(BorderlessWindow* main) {
+    void init(ShellWindow* main) {
         mainWindow = main;
     }
 
@@ -1028,6 +1090,7 @@ namespace LogWindow {
         }
         hiddenAt = 0;
         shown = true;
+#if defined(_WIN32)
         if (IsIconic(window.hwnd)) {
             ShowWindow(window.hwnd, SW_RESTORE);
             SetForegroundWindow(window.hwnd);
@@ -1036,6 +1099,13 @@ namespace LogWindow {
         } else {
             SetForegroundWindow(window.hwnd);
         }
+#else
+        if (!window.visible()) {
+            revealing = true;
+        } else {
+            window.raise();
+        }
+#endif
     }
 
     void close() {
@@ -1047,8 +1117,13 @@ namespace LogWindow {
         if (NewUi::textEditing == SEARCH_OWNER) {
             NewUi::cancelTextEdit();
         }
+#if defined(_WIN32)
         ShowWindow(window.hwnd, SW_HIDE);
         hiddenAt = GetTickCount64();
+#else
+        window.hide();
+        hiddenAt = SDL_GetTicks();
+#endif
     }
 
     bool isOpen() {
@@ -1057,6 +1132,7 @@ namespace LogWindow {
 
     void frame(float scale) {
         layoutScale = scale;
+#if defined(_WIN32)
         if (created && !shown && hiddenAt != 0 && GetTickCount64() - hiddenAt > RELEASE_AFTER) {
             hiddenAt = 0;
             shutdown();
@@ -1068,22 +1144,41 @@ namespace LogWindow {
         ImGuiContext* previous = ImGui::GetCurrentContext();
         HGLRC previousGl = wglGetCurrentContext();
         HDC previousDc = wglGetCurrentDC();
+#else
+        if (created && !shown && hiddenAt != 0 && SDL_GetTicks() - hiddenAt > RELEASE_AFTER) {
+            hiddenAt = 0;
+            shutdown();
+            return;
+        }
+        if (!created || !shown || window.minimized()) {
+            return;
+        }
+        ImGuiContext* previous = ImGui::GetCurrentContext();
+#endif
         NewUi::FrameState mainState = NewUi::saveFrameState();
         NewUi::restoreFrameState(state);
         NewUi::overlaysEnabled = false;
         float savedUiScale = UiRender::uiScale;
 
         ImGui::SetCurrentContext(context);
+#if defined(_WIN32)
         wglMakeCurrent(window.deviceContext, window.glContext);
+#else
+        window.makeCurrent();
+#endif
         if (UiTheme::isLight() == darkChrome) {
             darkChrome = !UiTheme::isLight();
             window.setDarkMode(darkChrome);
         }
+#if defined(_WIN32)
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         if (window.preparingResize()) {
             ImGui::GetIO().DisplaySize = ImVec2((float) window.width, (float) window.height);
         }
+#else
+        window.newFrame();
+#endif
         ImGui::NewFrame();
         ImGuiIO& logIo = ImGui::GetIO();
         if (logIo.MouseDelta.x != 0.0f || logIo.MouseDelta.y != 0.0f || logIo.MouseWheel != 0.0f ||
@@ -1095,16 +1190,30 @@ namespace LogWindow {
         NewUi::render(draw);
         UiRender::end();
         ImGui::Render();
-        glViewport(0, 0, window.width, window.height);
+#if !defined(_WIN32)
+        window.setTyping(!NewUi::textEditing.empty());
+#endif
         uint32_t clear = UiTheme::panel();
+#if defined(_WIN32)
+        glViewport(0, 0, window.width, window.height);
         glClearColor(((clear >> 16) & 0xFF) / 255.0f, ((clear >> 8) & 0xFF) / 255.0f, (clear & 0xFF) / 255.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+#else
+        UiGL::Viewport(0, 0, window.width, window.height);
+        UiGL::ClearColor(((clear >> 16) & 0xFF) / 255.0f, ((clear >> 8) & 0xFF) / 255.0f, (clear & 0xFF) / 255.0f,
+                         1.0f);
+        UiGL::Clear(UGL_COLOR_BUFFER_BIT);
+#endif
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         window.swap();
         if (revealing && !window.preparingResize()) {
             revealing = false;
+#if defined(_WIN32)
             ShowWindow(window.hwnd, SW_SHOW);
             SetForegroundWindow(window.hwnd);
+#else
+            window.raise();
+#endif
         }
 
         UiRender::uiScale = savedUiScale;
@@ -1112,7 +1221,11 @@ namespace LogWindow {
         NewUi::restoreFrameState(mainState);
         NewUi::overlaysEnabled = true;
         ImGui::SetCurrentContext(previous);
+#if defined(_WIN32)
         wglMakeCurrent(previousDc, previousGl);
+#else
+        mainWindow->makeCurrent();
+#endif
     }
 
     void shutdown() {
@@ -1121,17 +1234,27 @@ namespace LogWindow {
         }
         window.onModalFrame = nullptr;
         ImGuiContext* previous = ImGui::GetCurrentContext();
+#if defined(_WIN32)
         HGLRC previousGl = wglGetCurrentContext();
         HDC previousDc = wglGetCurrentDC();
         ImGui::SetCurrentContext(context);
         wglMakeCurrent(window.deviceContext, window.glContext);
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplWin32_Shutdown();
+#else
+        ImGui::SetCurrentContext(context);
+        window.makeCurrent();
+        window.shutdownImGui();
+#endif
         ImGui::DestroyContext(context);
         context = nullptr;
         window.imguiContext = nullptr;
         ImGui::SetCurrentContext(previous);
+#if defined(_WIN32)
         wglMakeCurrent(previousDc, previousGl);
+#else
+        mainWindow->makeCurrent();
+#endif
         window.destroy();
         created = false;
         shown = false;

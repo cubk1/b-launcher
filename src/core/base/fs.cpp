@@ -4,6 +4,7 @@
 
 #include "core/base/win_util.hpp"
 
+#include <cwctype>
 #include <system_error>
 
 #if defined(_WIN32)
@@ -699,6 +700,17 @@ absolute (const path &target)
     return target.lexically_normal ();
   return (current_directory () / target).lexically_normal ();
 #endif
+}
+
+path
+path_key (const path &target)
+{
+  auto text = fs::absolute (target).lexically_normal ().native ();
+#if defined(_WIN32)
+  for (auto &c : text)
+    c = static_cast<wchar_t> (std::towlower (c));
+#endif
+  return path (std::move (text));
 }
 
 path

@@ -9,6 +9,7 @@
 #include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
+#if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -17,6 +18,11 @@
 #endif
 #include <windows.h>
 #include <wincodec.h>
+#else
+#include "app/system/Pixels.h"
+
+#include <core/base/fs.hpp>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -60,6 +66,7 @@ namespace Background {
         std::shared_ptr<Prepared> finished;
         std::string workingOn;
 
+#if defined(_WIN32)
         bool decode(const std::wstring& file, int w, int h, Image& out, std::string& error) {
             IWICImagingFactory* factory = nullptr;
             if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
@@ -112,6 +119,39 @@ namespace Background {
             factory->Release();
             return ok;
         }
+#else
+        bool decode(const std::filesystem::path& file, int w, int h, Image& out, std::string& error) {
+            b_launcher_base::result<std::string> data = b_launcher_base::fs::read_file(file);
+            std::shared_ptr<const Pixels> pixels = data ? Pixels::decode(data->data(), data->size()) : nullptr;
+            if (!pixels || pixels->width <= 0 || pixels->height <= 0) {
+                error = "无法读取这张图片";
+                return false;
+            }
+            int sw = pixels->width;
+            int sh = pixels->height;
+            double wanted = (double) w / h;
+            int x = 0;
+            int y = 0;
+            int cw = sw;
+            int ch = sh;
+            if ((double) sw / sh > wanted) {
+                cw = (int) std::lround(sh * wanted);
+                x = (sw - cw) / 2;
+            } else {
+                ch = (int) std::lround(sw / wanted);
+                y = (sh - ch) / 2;
+            }
+            Pixels scaled = Pixels::resized(*pixels, x, y, cw, ch, w, h);
+            if (scaled.rgba.empty()) {
+                error = "无法处理这张图片";
+                return false;
+            }
+            out.width = w;
+            out.height = h;
+            out.rgba = std::move(scaled.rgba);
+            return true;
+        }
+#endif
 
         std::vector<int> boxes(float sigma) {
             const int n = 3;
@@ -202,12 +242,18 @@ namespace Background {
             }
             working = true;
             workingOn = chosen;
+#if defined(_WIN32)
             std::wstring file = b_launcher_base::path_from_utf8(chosen).wstring();
+#else
+            std::filesystem::path file = b_launcher_base::path_from_utf8(chosen);
+#endif
             if (worker.joinable()) {
                 worker.join();
             }
             worker = std::thread([file] {
+#if defined(_WIN32)
                 HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+#endif
                 auto result = std::make_shared<Prepared>();
                 Image image;
                 if (decode(file, WINDOW_W * SCALE, WINDOW_H * SCALE, image, result->error)) {
@@ -216,9 +262,11 @@ namespace Background {
                     result->panel = crop(blur(image, PANEL_BLUR), split, image.width);
                     result->ok = true;
                 }
+#if defined(_WIN32)
                 if (SUCCEEDED(com)) {
                     CoUninitialize();
                 }
+#endif
                 std::lock_guard<std::mutex> guard(lock);
                 finished = result;
             });

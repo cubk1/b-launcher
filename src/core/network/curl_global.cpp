@@ -1,7 +1,9 @@
 #include "core/network/curl_global.hpp"
 
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/log.hpp>
+#include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
 #include "core/base/win_util.hpp"
@@ -124,6 +126,29 @@ system_proxy ()
 
 #endif
 
+#if defined(__linux__)
+
+const std::string &
+ca_bundle ()
+{
+  static const std::string bundle = [] {
+    if (auto file = environment ("SSL_CERT_FILE"); file && fs::exists (*file))
+      return *file;
+    for (const char *candidate :
+         { "/etc/ssl/certs/ca-certificates.crt",
+           "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
+           "/etc/pki/tls/cacert.pem",
+           "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+           "/etc/ssl/cert.pem" })
+      if (fs::exists (candidate))
+        return std::string (candidate);
+    return std::string ();
+  }();
+  return bundle;
+}
+
+#endif
+
 }
 
 void
@@ -204,6 +229,9 @@ apply_common_options (CURL *easy, const network_settings &settings,
 #if defined(_WIN32)
   curl_easy_setopt (easy, CURLOPT_SSL_OPTIONS,
                     static_cast<long> (CURLSSLOPT_REVOKE_BEST_EFFORT));
+#elif defined(__linux__)
+  if (!ca_bundle ().empty ())
+    curl_easy_setopt (easy, CURLOPT_CAINFO, ca_bundle ().c_str ());
 #endif
   if (!settings.verify_tls)
     {

@@ -5,19 +5,11 @@
 #include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
-#include <cwctype>
 #include <map>
 #include <string_view>
 #include <vector>
@@ -38,17 +30,17 @@ namespace GameOptions {
     }};
 
     namespace {
-        constexpr ULONGLONG RECHECK_MS = 1000;
+        constexpr uint64_t RECHECK_MS = 1000;
 
         struct Cached {
-            ULONGLONG checked = 0;
+            uint64_t checked = 0;
             std::filesystem::file_time_type stamp{};
             bool exists = false;
             unsigned revision = 0;
             std::map<std::string, std::string> values;
         };
 
-        std::unordered_map<std::wstring, Cached> cache;
+        std::unordered_map<std::filesystem::path, Cached> cache;
         unsigned revisions = 0;
 
         std::optional<double> number(const std::optional<std::string>& text) {
@@ -74,14 +66,6 @@ namespace GameOptions {
             return text;
         }
 
-        std::wstring keyOf(const std::filesystem::path& file) {
-            std::wstring text = blb::fs::absolute(file).lexically_normal().wstring();
-            for (wchar_t& c : text) {
-                c = (wchar_t) std::towlower(c);
-            }
-            return text;
-        }
-
         std::map<std::string, std::string> parse(const std::string& content) {
             std::map<std::string, std::string> out;
             size_t from = 0;
@@ -104,8 +88,10 @@ namespace GameOptions {
         }
 
         const Cached& load(const std::filesystem::path& file) {
-            Cached& entry = cache[keyOf(file)];
-            ULONGLONG now = GetTickCount64();
+            Cached& entry = cache[blb::fs::path_key(file)];
+            uint64_t now = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch())
+                                   .count();
             if (entry.checked != 0 && now - entry.checked < RECHECK_MS) {
                 return entry;
             }
@@ -180,10 +166,10 @@ namespace GameOptions {
     }
 
     bool inUse(const std::filesystem::path& file) {
-        std::wstring wanted = keyOf(file);
+        std::filesystem::path wanted = blb::fs::path_key(file);
         return std::ranges::any_of(Game::sessions(), [&](const Game::Session& session) {
             return !session.optionsFile.empty() &&
-                    (keyOf(session.optionsFile) == wanted || blb::fs::same_file(file, session.optionsFile));
+                    (blb::fs::path_key(session.optionsFile) == wanted || blb::fs::same_file(file, session.optionsFile));
         });
     }
 
@@ -259,7 +245,7 @@ namespace GameOptions {
         if (auto written = blb::fs::write_file_atomic(file, out); !written) {
             return written.err().message;
         }
-        cache.erase(keyOf(file));
+        cache.erase(blb::fs::path_key(file));
         return {};
     }
 }

@@ -12,7 +12,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <cwctype>
 #include <map>
 #include <set>
 #include <string_view>
@@ -224,18 +223,10 @@ namespace KeyBinds {
         };
 
         AsyncTasks tasks;
-        std::map<std::wstring, Cached> tables;
-        std::map<std::wstring, Names> folders;
+        std::map<std::filesystem::path, Cached> tables;
+        std::map<std::filesystem::path, Names> folders;
         unsigned nameVersions = 0;
         const Table EMPTY;
-
-        std::wstring keyOf(const std::filesystem::path& file) {
-            std::wstring text = blb::fs::absolute(file).lexically_normal().wstring();
-            for (wchar_t& c : text) {
-                c = (wchar_t) std::towlower(c);
-            }
-            return text;
-        }
 
         const KeyDef* byName(const std::string& name) {
             static const std::unordered_map<std::string, const KeyDef*> index = [] {
@@ -411,7 +402,7 @@ namespace KeyBinds {
             }
         }
 
-        void loadNames(const std::wstring& folderKey, const std::filesystem::path& folder,
+        void loadNames(const std::filesystem::path& folderKey, const std::filesystem::path& folder,
                        const std::set<std::string>& wanted, const std::string& signature) {
             Names& names = folders[folderKey];
             names.loading = true;
@@ -536,11 +527,11 @@ namespace KeyBinds {
         if (file.empty()) {
             return EMPTY;
         }
-        Cached& cached = tables[keyOf(file)];
+        Cached& cached = tables[blb::fs::path_key(file)];
         unsigned revision = GameOptions::revision(file);
         const std::map<std::string, std::string>& values = GameOptions::all(file);
         std::filesystem::path folder = file.parent_path();
-        std::wstring folderKey = keyOf(folder);
+        std::filesystem::path folderKey = blb::fs::path_key(folder);
         Names& names = folders[folderKey];
         if (cached.built && cached.revision == revision && cached.names == names.version) {
             cached.table.naming = names.loading;
