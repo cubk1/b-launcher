@@ -6,6 +6,7 @@
 #endif
 #include "ui/exui/windows/SettingsWindow.h"
 #include "app/instances/Instances.h"
+#include "app/downloads/DownloadSources.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/GameOptions.h"
 #include "app/launch/LaunchDefaults.h"
@@ -120,6 +121,10 @@ namespace ForgottenMelody {
             RESTART,
             NETWORK_GROUP,
             SYSTEM_PROXY,
+            SOURCE_MINECRAFT_LABEL, SOURCE_MINECRAFT,
+            SOURCE_ASSETS_LABEL, SOURCE_ASSETS,
+            SOURCE_MODRINTH_LABEL, SOURCE_MODRINTH,
+            SOURCE_CURSEFORGE_LABEL, SOURCE_CURSEFORGE,
             RESET_GROUP,
             RESET_LABEL,
             RESET_SETTINGS,
@@ -160,6 +165,26 @@ namespace ForgottenMelody {
         };
 
         constexpr uint32_t PAGE_IDS[] = {GAME, KEYS, PATCH, LAUNCHER, JAVA, TOOLS, ABOUT};
+
+        struct DownloadSourceRow {
+            uint32_t label, control;
+            DownloadSources::Kind kind;
+            const wchar_t* explanation;
+        };
+        const DownloadSourceRow DOWNLOAD_SOURCES[] = {
+                {SOURCE_MINECRAFT_LABEL, SOURCE_MINECRAFT, DownloadSources::Kind::Minecraft,
+                 L"版本列表、游戏本体、支持库、模组加载器和 Java 运行时，镜像源是 BMCLAPI。"},
+                {SOURCE_ASSETS_LABEL, SOURCE_ASSETS, DownloadSources::Kind::Assets,
+                 L"游戏的声音、语言等资源文件，镜像源是 BMCLAPI。"},
+                {SOURCE_MODRINTH_LABEL, SOURCE_MODRINTH, DownloadSources::Kind::Modrinth,
+                 L"Modrinth 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+                {SOURCE_CURSEFORGE_LABEL, SOURCE_CURSEFORGE, DownloadSources::Kind::CurseForge,
+                 L"CurseForge 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+        };
+        const blb::net::source_order SOURCE_ORDERS[] = {
+                blb::net::source_order::mirror_first, blb::net::source_order::official_first, blb::net::source_order::official_only,
+        };
+        const std::vector<std::wstring> SOURCE_ORDER_LABELS = {L"镜像源优先", L"官方源优先", L"仅官方源"};
 
         struct Isolation {
             blb::instance::isolation_mode mode;
@@ -356,6 +381,14 @@ namespace ForgottenMelody {
                         {RESTART, ControlKind::Button, {}, L"立即重启"},
                         {NETWORK_GROUP, ControlKind::Group, {}, L"网络"},
                         {SYSTEM_PROXY, ControlKind::Check, {}, L"使用系统代理"},
+                        {SOURCE_MINECRAFT_LABEL, ControlKind::Label, {}, L"Minecraft"},
+                        {SOURCE_MINECRAFT, ControlKind::Combo, {}},
+                        {SOURCE_ASSETS_LABEL, ControlKind::Label, {}, L"资源文件"},
+                        {SOURCE_ASSETS, ControlKind::Combo, {}},
+                        {SOURCE_MODRINTH_LABEL, ControlKind::Label, {}, L"Modrinth"},
+                        {SOURCE_MODRINTH, ControlKind::Combo, {}},
+                        {SOURCE_CURSEFORGE_LABEL, ControlKind::Label, {}, L"CurseForge"},
+                        {SOURCE_CURSEFORGE, ControlKind::Combo, {}},
                         {RESET_GROUP, ControlKind::Group, {}, L"重置"},
                         {RESET_LABEL, ControlKind::Label, {}, L"恢复默认启动器设置"},
                         {RESET_SETTINGS, ControlKind::Button, {}, L"重置并重启"},
@@ -456,6 +489,7 @@ namespace ForgottenMelody {
                 }
                 MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART,
                                                          NETWORK_GROUP, SYSTEM_PROXY, RESET_GROUP, RESET_LABEL, RESET_SETTINGS});
+                for (const auto& source : DOWNLOAD_SOURCES) MoveInto(pages.at(LAUNCHER)->GetContent(), {source.label, source.control});
                 MoveInto(pages.at(JAVA)->GetContent(),
                          {INSTALLED, JAVA_LIST, ADD_JAVA, REMOVE_JAVA, JAVA_FOLDER, JAVA_COUNT, RESCAN, DOWNLOADS,
                           DOWNLOAD_LIST, MAJOR_LABEL, MAJOR, DOWNLOAD_STATUS, RELOAD, INSTALL});
@@ -500,6 +534,13 @@ namespace ForgottenMelody {
                 }
                 if (index < 0) {
                     return;
+                }
+                for (const auto& source : DOWNLOAD_SOURCES) {
+                    if (id == source.control) {
+                        if (index < (int) std::size(SOURCE_ORDERS)) DownloadSources::setOrder(source.kind, SOURCE_ORDERS[index]);
+                        refresh();
+                        return;
+                    }
                 }
                 switch (id) {
                     case GAME_SOURCE:
@@ -704,6 +745,8 @@ namespace ForgottenMelody {
 
             void layoutLauncher() {
                 using exui::Layout;
+                std::vector<Layout> network{toggle(SYSTEM_PROXY)};
+                for (const auto& source : DOWNLOAD_SOURCES) network.push_back(setting(source.label, {field(source.control, 200, 28)}));
                 setPageLayout(LAUNCHER, Layout::Column({group(LOOK, {
                         row(STYLE_LABEL, {
                                 Layout::Column({Layout::Inset(Layout::Row({field(STYLE, 200, 28)}, 0, 28),
@@ -712,7 +755,7 @@ namespace ForgottenMelody {
                                 field(RESTART, 90, 30),
                         }, 34, 95, Layout::Align::Center),
                 }, {20, 23, 20, 18}),
-                        formGroup(NETWORK_GROUP, {toggle(SYSTEM_PROXY)}),
+                        formGroup(NETWORK_GROUP, std::move(network)),
                         formGroup(RESET_GROUP, {Layout::Row({cell(RESET_LABEL), cell(RESET_SETTINGS, 110)}, 10, 30)}),
                 }, 15));
             }
@@ -1075,6 +1118,10 @@ namespace ForgottenMelody {
                 FindControl(SYSTEM_PROXY)->SetTooltipText(L"下载和其他网络请求会使用 Windows 系统代理。代理软件未运行时请关闭。");
                 FindControl(RESET_SETTINGS)->SetTooltipText(L"恢复默认启动器设置并重启；保留账户、已添加的游戏目录和下载的文件。");
                 FindControl(RESET_SETTINGS)->SetTextColor(0xD2C00000);
+                for (const auto& source : DOWNLOAD_SOURCES) {
+                    FindControl(source.label)->SetTooltipText(source.explanation);
+                    FindControl(source.control)->SetTooltipText(source.explanation);
+                }
             }
 
             void refreshLauncher() {
@@ -1086,6 +1133,11 @@ namespace ForgottenMelody {
                 FindControl(RESTART)->SetEnabled(!busy);
                 FindControl(RESET_SETTINGS)->SetEnabled(!busy);
                 SetChecked(SYSTEM_PROXY, Network::systemProxy());
+                for (const auto& source : DOWNLOAD_SOURCES) {
+                    auto order = DownloadSources::order(source.kind);
+                    auto at = std::find(std::begin(SOURCE_ORDERS), std::end(SOURCE_ORDERS), order);
+                    UpdateOptions(source.control, SOURCE_ORDER_LABELS, at == std::end(SOURCE_ORDERS) ? 0 : (int) (at - std::begin(SOURCE_ORDERS)));
+                }
             }
 
             void fillJava() {
