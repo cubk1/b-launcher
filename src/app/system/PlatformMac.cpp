@@ -83,10 +83,6 @@ namespace Platform {
         return "这个系统不支持创建快捷方式";
     }
 
-    bool recycle(const std::filesystem::path&) {
-        return false;
-    }
-
     Memory memory() {
         Memory out;
         uint64_t total = blb::current_platform().total_memory;
