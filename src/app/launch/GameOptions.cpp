@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cwctype>
 #include <map>
 #include <string_view>
 #include <vector>
@@ -29,16 +28,8 @@ namespace GameOptions {
             std::map<std::string, std::string> values;
         };
 
-        std::unordered_map<std::wstring, Cached> cache;
+        std::unordered_map<std::filesystem::path, Cached> cache;
         unsigned revisions = 0;
-
-        std::wstring keyOf(const std::filesystem::path& file) {
-            std::wstring text = blb::fs::absolute(file).lexically_normal().wstring();
-            for (wchar_t& c : text) {
-                c = (wchar_t) std::towlower(c);
-            }
-            return text;
-        }
 
         std::map<std::string, std::string> parse(const std::string& content) {
             std::map<std::string, std::string> out;
@@ -62,7 +53,7 @@ namespace GameOptions {
         }
 
         const Cached& load(const std::filesystem::path& file) {
-            Cached& entry = cache[keyOf(file)];
+            Cached& entry = cache[blb::fs::path_key(file)];
             uint64_t now = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
                                    std::chrono::steady_clock::now().time_since_epoch())
                                    .count();
@@ -107,10 +98,10 @@ namespace GameOptions {
     }
 
     bool inUse(const std::filesystem::path& file) {
-        std::wstring wanted = keyOf(file);
+        std::filesystem::path wanted = blb::fs::path_key(file);
         return std::ranges::any_of(Game::sessions(), [&](const Game::Session& session) {
             return !session.optionsFile.empty() &&
-                    (keyOf(session.optionsFile) == wanted || blb::fs::same_file(file, session.optionsFile));
+                    (blb::fs::path_key(session.optionsFile) == wanted || blb::fs::same_file(file, session.optionsFile));
         });
     }
 
@@ -186,7 +177,7 @@ namespace GameOptions {
         if (auto written = blb::fs::write_file_atomic(file, out); !written) {
             return written.err().message;
         }
-        cache.erase(keyOf(file));
+        cache.erase(blb::fs::path_key(file));
         return {};
     }
 }

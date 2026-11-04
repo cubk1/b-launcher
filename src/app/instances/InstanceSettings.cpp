@@ -5,7 +5,6 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
-#include <cwctype>
 
 namespace InstanceSettings {
 
@@ -26,11 +25,7 @@ namespace InstanceSettings {
             if (a.empty() || b.empty()) {
                 return false;
             }
-            std::wstring left = a.lexically_normal().wstring();
-            std::wstring right = b.lexically_normal().wstring();
-            return left.size() == right.size() &&
-                    std::equal(left.begin(), left.end(), right.begin(),
-                               [](wchar_t x, wchar_t y) { return std::towlower(x) == std::towlower(y); });
+            return blb::fs::path_key(a) == blb::fs::path_key(b) || blb::fs::same_file(a, b);
         }
     }
 

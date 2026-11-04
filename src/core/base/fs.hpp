@@ -50,6 +50,8 @@ path temp_sibling (const path &target);
 bool same_volume (const path &a, const path &b) noexcept;
 bool same_file (const path &a, const path &b) noexcept;
 path absolute (const path &target);
+// Absolute lexical key for paths; folds case on Windows and preserves it elsewhere.
+path path_key (const path &target);
 // Reject traversal and null bytes; allows '.' and empty path components.
 bool safe_relative (std::string_view relative) noexcept;
 
