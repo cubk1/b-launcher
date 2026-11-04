@@ -10,7 +10,7 @@
 
 namespace {
     struct Stream {
-        std::vector<std::filesystem::path> folders;
+        std::vector<std::pair<std::filesystem::path, std::filesystem::path>> folders;
         FolderWatch::Changed changed;
         std::atomic<bool>* restartRequired = nullptr;
         FSEventStreamRef stream = nullptr;
@@ -19,10 +19,10 @@ namespace {
 
     void report(Stream& self, const std::string& path, FSEventStreamEventFlags flags) {
         std::filesystem::path changed = b_launcher_base::path_from_utf8(path).lexically_normal();
-        for (const std::filesystem::path& folder : self.folders) {
-            std::filesystem::path relative = changed.lexically_relative(folder);
+        for (const auto& [folder, real] : self.folders) {
+            std::filesystem::path relative = changed.lexically_relative(real);
             std::string text = relative.string();
-            if (relative.empty() || text.starts_with("..")) {
+            if (relative.empty() || *relative.begin() == "..") {
                 continue;
             }
             if (flags & (kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged)) {
@@ -70,11 +70,13 @@ void FolderWatch::start(std::vector<std::filesystem::path> folders, Changed chan
             restartRequired = true;
             continue;
         }
-        self->folders.push_back(real);
         CFStringRef text = CFStringCreateWithCString(nullptr, real.c_str(), kCFStringEncodingUTF8);
         if (text != nullptr) {
+            self->folders.emplace_back(folder, std::move(real));
             CFArrayAppendValue(paths, text);
             CFRelease(text);
+        } else {
+            restartRequired = true;
         }
     }
     if (CFArrayGetCount(paths) == 0) {
