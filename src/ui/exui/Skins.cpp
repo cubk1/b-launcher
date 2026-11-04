@@ -9,8 +9,6 @@ namespace exui {
             case Skin::DialogBackground: return {EmbeddedSkins::dialogBackground, EmbeddedSkins::dialogBackgroundSize};
             case Skin::MsgBoxBorder: return {EmbeddedSkins::msgBoxBorder, EmbeddedSkins::msgBoxBorderSize};
             case Skin::MsgBoxSkin: return {EmbeddedSkins::msgBoxSkin, EmbeddedSkins::msgBoxSkinSize};
-            case Skin::DownloadCenterBackground:
-                return {EmbeddedSkins::downloadCenterBackground, EmbeddedSkins::downloadCenterBackgroundSize};
             case Skin::FrameAtlas: return {EmbeddedSkins::frameAtlas, EmbeddedSkins::frameAtlasSize};
             case Skin::ComboButtonNormal:
                 return {EmbeddedSkins::comboButtonNormal, EmbeddedSkins::comboButtonNormalSize};

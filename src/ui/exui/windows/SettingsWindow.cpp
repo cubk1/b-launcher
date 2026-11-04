@@ -12,8 +12,10 @@
 #include "app/launch/Patches.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
+#include "app/system/Config.h"
 #include "app/system/CustomDownload.h"
 #include "app/system/Notices.h"
+#include "app/system/Network.h"
 #include "app/system/PclThemes.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
@@ -105,6 +107,8 @@ namespace ForgottenMelody {
             WINDOW_ICON_LABEL,
             WINDOW_ICON,
             WINDOW_ICON_PICK,
+            LAN_GROUP,
+            LAN_OFFLINE_JOIN,
             DEBUGGING,
             DEBUG_LOG,
             // 启动器设置
@@ -114,6 +118,11 @@ namespace ForgottenMelody {
             STYLE,
             STYLE_HINT,
             RESTART,
+            NETWORK_GROUP,
+            SYSTEM_PROXY,
+            RESET_GROUP,
+            RESET_LABEL,
+            RESET_SETTINGS,
             // Java 管理
             JAVA,
             INSTALLED,
@@ -217,6 +226,8 @@ namespace ForgottenMelody {
                  L"在 Java 25 以上运行 LWJGL 3 时，让 MemoryUtil 改用 jdk.internal.misc.Unsafe，避开 sun.misc.Unsafe "
                  L"的弃用路径；LWJGL 3.4 会启用自带的对应后端。"},
                 {DEBUG_LOG, "debug", L"在游戏日志里输出每个被修改的类和每次皮肤查询。"},
+                {LAN_OFFLINE_JOIN, "lan.offlineJoin",
+                 L"在加入方的游戏中启用，允许离线账号在认证失败后继续尝试连接局域网世界。服务器仍按自身规则验证玩家。"},
         };
 
         struct Value {
@@ -333,6 +344,8 @@ namespace ForgottenMelody {
                         {WINDOW_ICON_LABEL, ControlKind::Label, {}, L"窗口图标"},
                         {WINDOW_ICON, ControlKind::Edit, {}},
                         {WINDOW_ICON_PICK, ControlKind::Button, {}, L"浏览"},
+                        {LAN_GROUP, ControlKind::Group, {}, L"联机"},
+                        {LAN_OFFLINE_JOIN, ControlKind::Check, {}, L"离线加入局域网"},
                         {DEBUGGING, ControlKind::Group, {}, L"调试"},
                         {DEBUG_LOG, ControlKind::Check, {}, L"输出调试日志"},
                         // 启动器设置
@@ -341,6 +354,11 @@ namespace ForgottenMelody {
                         {STYLE, ControlKind::Combo, {}},
                         {STYLE_HINT, ControlKind::Label, {}},
                         {RESTART, ControlKind::Button, {}, L"立即重启"},
+                        {NETWORK_GROUP, ControlKind::Group, {}, L"网络"},
+                        {SYSTEM_PROXY, ControlKind::Check, {}, L"使用系统代理"},
+                        {RESET_GROUP, ControlKind::Group, {}, L"重置"},
+                        {RESET_LABEL, ControlKind::Label, {}, L"恢复默认启动器设置"},
+                        {RESET_SETTINGS, ControlKind::Button, {}, L"重置并重启"},
                         // Java 管理: the Java found on this computer above, the Java to download below.
                         {INSTALLED, ControlKind::Group, {}, L"本机 Java"},
                         {JAVA_LIST, ControlKind::List, {}},
@@ -432,11 +450,12 @@ namespace ForgottenMelody {
                 MoveInto(pages.at(GAME)->GetContent(), {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL});
                 MoveInto(pages.at(PATCH)->GetContent(),
                          {ENABLE, ALL, SKINS, FIXES, LOG4J, IME, LWJGL, GAME_WINDOW, WINDOW_TITLE_LABEL, WINDOW_TITLE,
-                          WINDOW_ICON_LABEL, WINDOW_ICON, WINDOW_ICON_PICK, DEBUGGING, DEBUG_LOG});
+                          WINDOW_ICON_LABEL, WINDOW_ICON, WINDOW_ICON_PICK, LAN_GROUP, LAN_OFFLINE_JOIN, DEBUGGING, DEBUG_LOG});
                 for (uint32_t id : SKIN_CONTROLS) {
                     MoveInto(pages.at(PATCH)->GetContent(), {id});
                 }
-                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART});
+                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART,
+                                                         NETWORK_GROUP, SYSTEM_PROXY, RESET_GROUP, RESET_LABEL, RESET_SETTINGS});
                 MoveInto(pages.at(JAVA)->GetContent(),
                          {INSTALLED, JAVA_LIST, ADD_JAVA, REMOVE_JAVA, JAVA_FOLDER, JAVA_COUNT, RESCAN, DOWNLOADS,
                           DOWNLOAD_LIST, MAJOR_LABEL, MAJOR, DOWNLOAD_STATUS, RELOAD, INSTALL});
@@ -517,10 +536,13 @@ namespace ForgottenMelody {
                     case UNLOCK_PCL: toolAction(id); break;
                     case LOGS: LaunchDefaults::setShowLogs(Checked(LOGS)); break;
                     case ALL: Patches::setAll(Checked(ALL)); break;
+                    case SYSTEM_PROXY: Network::setSystemProxy(Checked(SYSTEM_PROXY)); break;
+                    case RESET_SETTINGS: resetSettings(); return;
                     case SKIN_IMAGE_PICK: pickImage(SKIN_IMAGE, true); break;
                     case CAPE_IMAGE_PICK: pickImage(CAPE_IMAGE, true); break;
                     case WINDOW_ICON_PICK: pickImage(WINDOW_ICON, false); break;
                     case RESTART:
+                        if (Services::busy()) break;
                         if (!Platform::restart()) {
                             message(GetHwnd(), L"重启失败，请手动重新打开启动器", L"设置");
                         }
@@ -568,6 +590,25 @@ namespace ForgottenMelody {
             }
 
         private:
+            void resetSettings() {
+                if (Services::busy()) return;
+                if (message(GetHwnd(), L"启动器设置将恢复默认，随后重启。\n账户、已添加的游戏目录和下载的文件会保留。",
+                            L"重置启动器设置", exui::MsgBoxButtons::OkCancel, {L"取消", L"重置并重启"}) != 0) return;
+                if (!GetHwnd()) return;
+                if (Services::busy()) {
+                    message(GetHwnd(), L"当前有任务进行中，未重置设置。请等待任务结束后重试。", L"重置启动器设置");
+                    return;
+                }
+                if (!Config::reset()) {
+                    message(GetHwnd(), L"无法保存重置后的设置，请稍后重试。", L"重置启动器设置");
+                    return;
+                }
+                if (!Platform::restart()) {
+                    message(GetHwnd(), L"重置已保存，但重启失败。请关闭启动器后重新打开。", L"重置启动器设置");
+                }
+                CloseWindow();
+            }
+
             KeyBindPanel* keyEditor = nullptr;
             GameOptionsPanel* gameOptions = nullptr;
             int gameOptionsHeight = -1;
@@ -663,14 +704,17 @@ namespace ForgottenMelody {
 
             void layoutLauncher() {
                 using exui::Layout;
-                setPageLayout(LAUNCHER, group(LOOK, {
+                setPageLayout(LAUNCHER, Layout::Column({group(LOOK, {
                         row(STYLE_LABEL, {
                                 Layout::Column({Layout::Inset(Layout::Row({field(STYLE, 200, 28)}, 0, 28),
                                                                     {0, 2, 0, 4})}, 0, 205),
                                 Layout::Row({cell(STYLE_HINT, 195, 26)}, 0, 200),
                                 field(RESTART, 90, 30),
                         }, 34, 95, Layout::Align::Center),
-                }, {20, 23, 20, 18}));
+                }, {20, 23, 20, 18}),
+                        formGroup(NETWORK_GROUP, {toggle(SYSTEM_PROXY)}),
+                        formGroup(RESET_GROUP, {Layout::Row({cell(RESET_LABEL), cell(RESET_SETTINGS, 110)}, 10, 30)}),
+                }, 15));
             }
 
             void fillTools() {
@@ -987,6 +1031,7 @@ namespace ForgottenMelody {
                                         setting(WINDOW_TITLE_LABEL, {field(WINDOW_TITLE, 195)}, 75),
                                         setting(WINDOW_ICON_LABEL, {field(WINDOW_ICON, 140), field(WINDOW_ICON_PICK, 50)}, 75),
                                 }),
+                                formGroup(LAN_GROUP, {toggle(LAN_OFFLINE_JOIN)}),
                                 formGroup(DEBUGGING, {toggle(DEBUG_LOG)}),
                         }, 15),
                 }, 15));
@@ -1026,6 +1071,10 @@ namespace ForgottenMelody {
                 }
                 choose(STYLE, options, selected);
                 FindControl(STYLE_LABEL)->SetTooltipText(L"整个启动器的界面，重启后生效。");
+                SetChecked(SYSTEM_PROXY, Network::systemProxy());
+                FindControl(SYSTEM_PROXY)->SetTooltipText(L"下载和其他网络请求会使用 Windows 系统代理。代理软件未运行时请关闭。");
+                FindControl(RESET_SETTINGS)->SetTooltipText(L"恢复默认启动器设置并重启；保留账户、已添加的游戏目录和下载的文件。");
+                FindControl(RESET_SETTINGS)->SetTextColor(0xD2C00000);
             }
 
             void refreshLauncher() {
@@ -1035,6 +1084,8 @@ namespace ForgottenMelody {
                 UpdateText(STYLE_HINT, !pending ? L"" : busy ? L"任务进行中，暂不能重启" : L"重启后生效");
                 FindControl(RESTART)->SetVisible(pending);
                 FindControl(RESTART)->SetEnabled(!busy);
+                FindControl(RESET_SETTINGS)->SetEnabled(!busy);
+                SetChecked(SYSTEM_PROXY, Network::systemProxy());
             }
 
             void fillJava() {

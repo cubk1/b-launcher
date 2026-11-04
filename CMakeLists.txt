@@ -212,7 +212,6 @@ if (WIN32)
             dialogBackground assets/exui/dialog_background.jpg
             msgBoxBorder assets/exui/msgbox_border.png
             msgBoxSkin assets/exui/msgbox_skin.png
-            downloadCenterBackground assets/exui/download_center_background.png
             frameAtlas assets/exui/frame_atlas.png
             comboButtonNormal assets/exui/combo_button_normal.png
             comboButtonHover assets/exui/combo_button_hover.png

@@ -10,8 +10,6 @@ namespace EmbeddedSkins {
     extern const unsigned int msgBoxBorderSize;
     extern const unsigned char msgBoxSkin[];
     extern const unsigned int msgBoxSkinSize;
-    extern const unsigned char downloadCenterBackground[];
-    extern const unsigned int downloadCenterBackgroundSize;
     extern const unsigned char frameAtlas[];
     extern const unsigned int frameAtlasSize;
     extern const unsigned char comboButtonNormal[];
