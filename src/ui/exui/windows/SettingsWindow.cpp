@@ -28,6 +28,7 @@
 #include "ui/exui/windows/Dialogs.h"
 #include "ui/exui/windows/InstancesWindow.h"
 #include "ui/exui/windows/KeyBindPanel.h"
+#include "ui/exui/windows/GameOptionsPanel.h"
 
 #include <core/base/format.hpp>
 #include <core/base/fs.hpp>
@@ -72,6 +73,7 @@ namespace ForgottenMelody {
             LOGS,
             PRE_LAUNCH_LABEL,
             PRE_LAUNCH,
+            GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL,
             KEYS, KEYS_SOURCE_LABEL, KEYS_SOURCE,
             // 补丁
             PATCH,
@@ -297,6 +299,9 @@ namespace ForgottenMelody {
                         {LOGS, ControlKind::Check, {}, L"显示游戏日志"},
                         {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
                         {PRE_LAUNCH, ControlKind::Edit, {}},
+                        {GAME_OPTIONS_GROUP, ControlKind::Group, {}, L"游戏选项"},
+                        {GAME_SOURCE_LABEL, ControlKind::Label, {}, L"游戏目录"},
+                        {GAME_SOURCE, ControlKind::Combo, {}},
                         {KEYS_SOURCE_LABEL, ControlKind::Label, {}, L"游戏目录"},
                         {KEYS_SOURCE, ControlKind::Combo, {}},
                         // 补丁
@@ -409,6 +414,7 @@ namespace ForgottenMelody {
                     return false;
                 }
                 AddControls(CONTROLS);
+                gameOptions = &static_cast<GameOptionsPanel&>(AddControl(GAME_OPTIONS_PANEL, std::make_shared<GameOptionsPanel>()));
                 for (uint32_t id : PAGE_IDS) {
                     if (id == KEYS) continue;
                     auto& panel = *FindControl(id);
@@ -423,6 +429,7 @@ namespace ForgottenMelody {
                          {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE, LAUNCH,
                           LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS, LOGS,
                           PRE_LAUNCH_LABEL, PRE_LAUNCH});
+                MoveInto(pages.at(GAME)->GetContent(), {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL});
                 MoveInto(pages.at(PATCH)->GetContent(),
                          {ENABLE, ALL, SKINS, FIXES, LOG4J, IME, LWJGL, GAME_WINDOW, WINDOW_TITLE_LABEL, WINDOW_TITLE,
                           WINDOW_ICON_LABEL, WINDOW_ICON, WINDOW_ICON_PICK, DEBUGGING, DEBUG_LOG});
@@ -463,7 +470,7 @@ namespace ForgottenMelody {
                 }
                 refreshAbout();
                 refreshTools();
-                if (FindControl(KEYS)->IsVisible()) refreshKeys();
+                if (FindControl(KEYS)->IsVisible() || FindControl(GAME)->IsVisible()) refreshSources();
                 if (PAGE_IDS[lastSection] != KEYS) revealFocus(*pages.at(PAGE_IDS[lastSection]));
             }
 
@@ -476,8 +483,9 @@ namespace ForgottenMelody {
                     return;
                 }
                 switch (id) {
+                    case GAME_SOURCE:
                     case KEYS_SOURCE:
-                        if (index < (int) keySources.size()) keySource = keySources[index];
+                        if (index < (int) sharedSources.size()) sharedSource = sharedSources[index];
                         break;
                     case ISOLATION: Instances::setIsolation(ISOLATIONS[index].mode); break;
                     case LANGUAGE: LaunchDefaults::setLanguage(LANGUAGES[index].language); break;
@@ -561,29 +569,38 @@ namespace ForgottenMelody {
 
         private:
             KeyBindPanel* keyEditor = nullptr;
-            std::vector<std::string> keySources;
-            std::string keySource;
+            GameOptionsPanel* gameOptions = nullptr;
+            int gameOptionsHeight = -1;
+            std::vector<std::string> sharedSources;
+            std::string sharedSource;
 
             LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override {
                 if (keyEditor && keyEditor->HandleInput(msg, wp, lp)) return 0;
                 return SectionedForm::HandleMessage(msg, wp, lp);
             }
 
-            void refreshKeys() {
+            void refreshSources() {
                 std::vector<std::wstring> labels;
-                keySources.clear();
+                sharedSources.clear();
                 for (const auto& source : Instances::sources()) {
-                    keySources.push_back(source.key); labels.push_back(Platform::widen(source.label));
+                    sharedSources.push_back(source.key); labels.push_back(Platform::widen(source.label));
                 }
-                if (std::find(keySources.begin(), keySources.end(), keySource) == keySources.end()) {
+                if (std::find(sharedSources.begin(), sharedSources.end(), sharedSource) == sharedSources.end()) {
                     const auto* entry = Instances::find(Instances::selected());
                     const auto* source = Instances::installSource(entry ? entry->source : "");
-                    keySource = source ? source->key : "";
+                    sharedSource = source ? source->key : "";
                 }
-                auto at = std::find(keySources.begin(), keySources.end(), keySource);
-                UpdateOptions(KEYS_SOURCE, labels, at == keySources.end() ? -1 : (int) (at - keySources.begin()));
-                keyEditor->SetFile(GameOptions::sharedFile(keySource));
+                auto at = std::find(sharedSources.begin(), sharedSources.end(), sharedSource);
+                UpdateOptions(KEYS_SOURCE, labels, at == sharedSources.end() ? -1 : (int) (at - sharedSources.begin()));
+                UpdateOptions(GAME_SOURCE, labels, at == sharedSources.end() ? -1 : (int) (at - sharedSources.begin()));
+                auto file = GameOptions::sharedFile(sharedSource);
+                keyEditor->SetFile(file);
                 keyEditor->Refresh();
+                gameOptions->SetVisible(!file.empty());
+                gameOptions->SetFile(std::move(file));
+                gameOptions->Refresh();
+                int height = gameOptions->IsVisible() ? gameOptions->PreferredHeight() : 0;
+                if (height != gameOptionsHeight) { gameOptionsHeight = height; layoutGame(); }
             }
 
             // How 皮肤 is laid out now, so that its rows only move when it changes.
@@ -621,7 +638,7 @@ namespace ForgottenMelody {
 
             void layoutGame() {
                 using exui::Layout;
-                setPageLayout(GAME, Layout::Column({
+                std::vector<Layout> groups{
                         formGroup(INSTANCES, {
                                 setting(ISOLATION_LABEL, {field(ISOLATION, 200, 28)}),
                                 setting(COUNT_LABEL, {cell(COUNT, 110, 26),
@@ -635,7 +652,13 @@ namespace ForgottenMelody {
                                 toggle(LOGS, 200),
                                 setting(PRE_LAUNCH_LABEL, {field(PRE_LAUNCH, 505)}),
                         }),
-                }, 15));
+                };
+                bool options = gameOptionsHeight > 0;
+                for (uint32_t id : {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE}) FindControl(id)->SetVisible(options);
+                if (options) groups.push_back(formGroup(GAME_OPTIONS_GROUP, {
+                        setting(GAME_SOURCE_LABEL, {field(GAME_SOURCE, 300, 28)}), cell(GAME_OPTIONS_PANEL, gameOptionsHeight),
+                }));
+                setPageLayout(GAME, Layout::Column(std::move(groups), 15));
             }
 
             void layoutLauncher() {

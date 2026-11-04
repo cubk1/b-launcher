@@ -6,7 +6,10 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <string_view>
 #include <vector>
@@ -16,6 +19,15 @@
 namespace GameOptions {
 
     namespace blb = b_launcher_base;
+
+    const std::array<OptionSpec, 5> OPTIONS{{
+            {Option::Brightness, "gamma", "亮度", "游戏里的亮度，0% 是昏暗，100% 是明亮。", 0, 100, 50, "%"},
+            {Option::Fov, "fov", "视野", "视野范围（FOV），默认 70，越大看到的范围越广。", 30, 110, 70, ""},
+            {Option::Sensitivity, "mouseSensitivity", "鼠标灵敏度", "鼠标转动视角的快慢，默认 100%。", 0, 200, 100, "%"},
+            {Option::RenderDistance, "renderDistance", "渲染距离", "能看到多远的区块，默认 12，越大越占用性能。", 2, 32, 12, " 区块"},
+            {Option::GuiScale, "guiScale", "界面尺寸", "游戏界面的缩放倍数，自动时随窗口大小变化；超过窗口能容纳的倍数时游戏会自动调小。",
+             0, std::numeric_limits<int>::max(), 0, "x"},
+    }};
 
     namespace {
         constexpr uint64_t RECHECK_MS = 1000;
@@ -30,6 +42,29 @@ namespace GameOptions {
 
         std::unordered_map<std::filesystem::path, Cached> cache;
         unsigned revisions = 0;
+
+        std::optional<double> number(const std::optional<std::string>& text) {
+            if (!text) return std::nullopt;
+            std::string_view input(*text);
+            auto first = input.find_first_not_of(" \t\r\n");
+            if (first == std::string_view::npos) return std::nullopt;
+            input = input.substr(first, input.find_last_not_of(" \t\r\n") - first + 1);
+            double value = 0;
+            auto [end, error] = std::from_chars(input.data(), input.data() + input.size(), value);
+            if (error != std::errc() || end != input.data() + input.size() || !std::isfinite(value)) return std::nullopt;
+            return value;
+        }
+
+        // These options use exact thousandths in [-1, 1]. Keep their storage
+        // locale-independent without pulling in a general floating-point formatter.
+        std::string decimalThousandths(int value) {
+            int magnitude = value < 0 ? -value : value;
+            std::string text = std::to_string(magnitude / 1000) + "." +
+                    std::to_string(1000 + magnitude % 1000).substr(1);
+            while (text.back() == '0' && text[text.size() - 2] != '.') text.pop_back();
+            if (value < 0) text.insert(text.begin(), '-');
+            return text;
+        }
 
         std::map<std::string, std::string> parse(const std::string& content) {
             std::map<std::string, std::string> out;
@@ -78,6 +113,39 @@ namespace GameOptions {
             }
             return entry;
         }
+    }
+
+    int value(const std::filesystem::path& file, Option option) {
+        const auto& spec = OPTIONS.at((size_t) option);
+        if (file.empty()) return spec.fallback;
+        auto stored = number(get(file, spec.key));
+        if (!stored) return spec.fallback;
+        double value = *stored;
+        switch (option) {
+            case Option::Brightness: value = std::clamp(value, 0.0, 1.0) * 100; break;
+            case Option::Sensitivity: value = std::clamp(value, 0.0, 1.0) * 200; break;
+            case Option::Fov:
+                if (std::abs(value) <= 1.0001) value = 70 + value * 40;
+                break;
+            default: break;
+        }
+        return (int) std::lround(std::clamp(value, (double) spec.low, (double) spec.high));
+    }
+
+    std::string setValue(const std::filesystem::path& file, Option option, double value) {
+        if (file.empty()) return "没有可修改的游戏设置文件";
+        if (!std::isfinite(value)) return "游戏选项数值无效";
+        const auto& spec = OPTIONS.at((size_t) option);
+        int picked = (int) std::lround(std::clamp(value, (double) spec.low, (double) spec.high));
+        std::string encoded;
+        switch (option) {
+            case Option::Brightness: encoded = decimalThousandths(picked * 10); break;
+            case Option::Fov: encoded = decimalThousandths((picked - 70) * 25); break;
+            case Option::Sensitivity: encoded = decimalThousandths(picked * 5); break;
+            default: encoded = std::to_string(picked); break;
+        }
+        if (encoded.empty()) return "游戏选项数值无效";
+        return set(file, spec.key, encoded);
     }
 
     std::filesystem::path fileOf(const Instances::Entry& entry) {
