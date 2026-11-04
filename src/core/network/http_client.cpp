@@ -34,11 +34,25 @@ thread_easy ()
   return holder.handle;
 }
 
+struct response_body
+{
+  std::string &data;
+  std::size_t limit;
+  bool too_large = false;
+};
+
 std::size_t
 write_body (char *data, std::size_t size, std::size_t count, void *user)
 {
-  static_cast<std::string *> (user)->append (data, size * count);
-  return size * count;
+  auto &body = *static_cast<response_body *> (user);
+  std::size_t length = size * count;
+  if (body.limit > 0 && length > body.limit - body.data.size ())
+    {
+      body.too_large = true;
+      return 0;
+    }
+  body.data.append (data, length);
+  return length;
 }
 
 std::size_t
@@ -84,6 +98,7 @@ http_send (const http_request &request, cancellation_token token)
     return make_error (errc::network, "cannot create curl handle");
 
   http_response response;
+  response_body body { response.body, request.max_response_size };
   char error_buffer[CURL_ERROR_SIZE] = {};
   curl_slist *headers = nullptr;
   for (const auto &h : request.headers)
@@ -100,7 +115,7 @@ http_send (const http_request &request, cancellation_token token)
   curl_easy_setopt (easy, CURLOPT_TIMEOUT_MS,
                     static_cast<long> (request.timeout.count ()));
   curl_easy_setopt (easy, CURLOPT_WRITEFUNCTION, write_body);
-  curl_easy_setopt (easy, CURLOPT_WRITEDATA, &response.body);
+  curl_easy_setopt (easy, CURLOPT_WRITEDATA, &body);
   curl_easy_setopt (easy, CURLOPT_HEADERFUNCTION, write_header);
   curl_easy_setopt (easy, CURLOPT_HEADERDATA, &response.headers);
   curl_easy_setopt (easy, CURLOPT_NOPROGRESS, 0L);
@@ -139,6 +154,10 @@ http_send (const http_request &request, cancellation_token token)
   curl_easy_setopt (easy, CURLOPT_HTTPHEADER, nullptr);
   curl_easy_setopt (easy, CURLOPT_ERRORBUFFER, nullptr);
   curl_slist_free_all (headers);
+  if (body.too_large)
+    return make_error (errc::size_mismatch,
+                       sformat ("HTTP response exceeds size limit ({})",
+                                  request.url));
   if (code != CURLE_OK)
     return detail::curl_failure (code, error_buffer, request.url);
   curl_easy_getinfo (easy, CURLINFO_RESPONSE_CODE, &response.status);

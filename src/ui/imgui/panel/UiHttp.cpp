@@ -136,6 +136,7 @@ namespace UiHttp {
             request.headers.push_back({header.first, header.second});
         }
         request.timeout = std::chrono::milliseconds(timeoutMs);
+        request.max_response_size = maxBytes;
         b_launcher_base::cancellation_source source;
         std::stop_callback cancel(stop, [&source] { source.cancel(); });
         auto response = b_launcher_base::net::http_send(request, source.token());
@@ -143,9 +144,6 @@ namespace UiHttp {
             return false;
         }
         status = (int) response->status;
-        if (maxBytes > 0 && response->body.size() > maxBytes) {
-            return false;
-        }
         out.assign(response->body.begin(), response->body.end());
         return !stop.stop_requested();
 #endif
