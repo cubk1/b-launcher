@@ -132,6 +132,7 @@ namespace DownloadsScreen {
 
         struct Tab {
             bool ready = false;
+            std::string target;
             Addons::Query query;
             std::string typed;
             Addons::Results shown;
@@ -236,15 +237,24 @@ namespace DownloadsScreen {
         }
 
         void followInstance() {
+            if (Instances::find(target) == nullptr) {
+                if (ProjectBrowser::usesInstance(query.kind)) {
+                    query.gameVersion.clear();
+                }
+                if (query.kind == Kind::Mod) {
+                    query.loaders.clear();
+                }
+                query.page = 0;
+            }
             ProjectBrowser::followInstance(query, target);
+            versionFilter = query.gameVersion;
+            loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
         }
 
         void chooseTarget(const std::string& key) {
             target = key;
             saveTarget();
             followInstance();
-            versionFilter = query.gameVersion;
-            loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
         }
 
         const char* const PICKER = "downloads#instancePicker";
@@ -852,6 +862,7 @@ namespace DownloadsScreen {
 
         void keep(Tab& out) {
             out.ready = true;
+            out.target = target;
             out.query = query;
             out.typed = typed;
             out.shown = shown;
@@ -873,6 +884,10 @@ namespace DownloadsScreen {
             folded = in.folded;
             allLoaders = in.allLoaders;
             views.page = in.view;
+            if (in.target != target && ProjectBrowser::usesInstance(query.kind)) {
+                followInstance();
+                shown = Addons::Results();
+            }
         }
 
         void stopEditing() {
@@ -929,8 +944,6 @@ namespace DownloadsScreen {
                 folded.clear();
                 allLoaders = false;
                 followInstance();
-                versionFilter = query.gameVersion;
-                loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
                 views.page = VIEW_RESULTS;
             }
             views.mix = 1.0f;
@@ -1971,8 +1984,7 @@ namespace DownloadsScreen {
             followInstance();
         }
         if (!target.empty() && Instances::find(target) == nullptr && !Instances::loading()) {
-            target.clear();
-            saveTarget();
+            chooseTarget(std::string());
         }
         bool covered = NewUi::overlayCoversMouse();
         side(covered);
