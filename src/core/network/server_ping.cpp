@@ -409,7 +409,8 @@ lookup_srv (const std::string &host)
   int length
       = res_query (name.c_str (), ns_c_in, ns_t_srv, answer, sizeof (answer));
   ns_msg message;
-  if (length <= 0 || ns_initparse (answer, length, &message) != 0)
+  if (length <= 0 || length > static_cast<int> (sizeof (answer))
+      || ns_initparse (answer, length, &message) != 0)
     return std::nullopt;
   std::optional<server_address> best;
   unsigned priority = 0;
