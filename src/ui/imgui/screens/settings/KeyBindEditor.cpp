@@ -26,6 +26,7 @@
 
 #include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
+#include <core/installer/loader.hpp>
 
 #include "imgui.h"
 
@@ -530,7 +531,9 @@ namespace KeyBindEditor {
         }
 
         void groupIcon(const KeyBinds::Group& group, float x, float y, float size) {
-            uint32_t texture = group.id == KeyBinds::VANILLA_GROUP ? Icons::vanilla() : Textures::of(group.icon);
+            uint32_t texture = group.id == KeyBinds::VANILLA_GROUP ? Icons::vanilla()
+                    : group.id == KeyBinds::OPTIFINE_GROUP         ? Icons::loader(blb::install::loader_type::optifine)
+                                                                   : Textures::of(group.icon);
             if (texture != 0) {
                 ShaderUtil::roundTex(UiRender::transformX(x), UiRender::transformY(y), UiRender::transformW(size),
                                      UiRender::transformW(size), UiRender::transformW(size * 0.25f), texture, 0.0f,

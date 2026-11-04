@@ -590,6 +590,8 @@ namespace KeyBinds {
                     group.label = "Minecraft";
                 } else if (binding.group == DEBUG_GROUP) {
                     group.label = "调试";
+                } else if (binding.group == OPTIFINE_GROUP) {
+                    group.label = "OptiFine";
                 } else {
                     auto mod = names.mods.find(binding.group);
                     group.label = mod != names.mods.end()  ? mod->second

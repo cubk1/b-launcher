@@ -13,6 +13,7 @@ namespace KeyBinds {
     constexpr const char* VANILLA_GROUP = "minecraft";
     constexpr const char* DEBUG_GROUP = "debug";
     constexpr const char* OTHER_GROUP = "other";
+    constexpr const char* OPTIFINE_GROUP = "of";
 
     struct Binding {
         std::string id;
