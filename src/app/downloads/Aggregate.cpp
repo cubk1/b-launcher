@@ -98,12 +98,14 @@ namespace Aggregate {
                 pending.erase(0, start);
             }
 
-            Results finish() {
-                if (!pending.empty()) {
-                    line(pending);
-                    pending.clear();
+            Results finish(bool flushPending) {
+                if (flushPending) {
+                    if (!pending.empty()) {
+                        line(pending);
+                        pending.clear();
+                    }
+                    dispatch();
                 }
-                dispatch();
                 return std::move(out);
             }
 
@@ -236,19 +238,20 @@ namespace Aggregate {
                         call.timeout = std::chrono::seconds(90);
                         call.on_data = [&stream](std::string_view chunk) { stream.feed(chunk); };
                         auto response = blb::net::http_send(call, token);
-                        Results results;
+                        if (token.is_cancelled() || (!response && response.err().code == blb::errc::cancelled)) {
+                            return [] {};
+                        }
+                        // On a broken response, only events dispatched before the error are complete.
+                        Results results = stream.finish(response && response->ok());
                         if (!response) {
-                            if (response.err().code == blb::errc::cancelled) {
-                                return [] {};
+                            if (results.status != Status::Ready) {
+                                results = failed("无法连接聚合搜索服务");
                             }
-                            results = failed("无法连接聚合搜索服务");
                         } else if (!response->ok()) {
                             json doc = json::parse(response->body, nullptr, false);
                             std::string message = doc.is_object() ? blb::json_text(doc, "message") : std::string();
                             results = failed(message.empty() ? "聚合搜索服务返回 " + std::to_string(response->status)
                                                              : message);
-                        } else {
-                            results = stream.finish();
                         }
                         return [key, progress, results = std::move(results)]() mutable {
                             auto current = live.find(key);
