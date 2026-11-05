@@ -13,6 +13,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+extern char **environ;
 #endif
 
 namespace b_launcher_base
@@ -301,6 +303,22 @@ process::start (const process_options &options, output_callback on_output)
 
   std::vector<std::string> env_storage;
   std::vector<const char *> env;
+#if !defined(_WIN32)
+  // reproc puts the extra variables after environ, and getenv finds the first
+  // one, so copy environ without the variables that options.environment sets.
+  auto replaced = [&] (std::string_view name) {
+    return std::any_of (options.environment.begin (),
+                        options.environment.end (),
+                        [&] (const auto &entry) { return entry.first == name; });
+  };
+  if (!options.environment.empty ())
+    for (char **entry = environ; entry && *entry; ++entry)
+      {
+        std::string_view text (*entry);
+        if (!replaced (text.substr (0, text.find ('='))))
+          env_storage.emplace_back (text);
+      }
+#endif
   for (const auto &[key, value] : options.environment)
     env_storage.push_back (key + "=" + value);
   for (const auto &entry : env_storage)
@@ -312,7 +330,12 @@ process::start (const process_options &options, output_callback on_output)
   reproc_options opts {};
   opts.working_directory
       = options.working_directory.empty () ? nullptr : working.c_str ();
+#if defined(_WIN32)
   opts.env.behavior = REPROC_ENV_EXTEND;
+#else
+  opts.env.behavior = options.environment.empty () ? REPROC_ENV_EXTEND
+                                                   : REPROC_ENV_EMPTY;
+#endif
   opts.env.extra = env_storage.empty () ? nullptr : env.data ();
   opts.redirect.in.type = REPROC_REDIRECT_DISCARD;
   opts.redirect.out.type = options.capture_output ? REPROC_REDIRECT_PIPE
