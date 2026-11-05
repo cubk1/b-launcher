@@ -93,6 +93,26 @@ namespace Platform {
             }
             return S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_uid == getuid();
         }
+
+        // A /nix/store path breaks after an update and garbage collection, so a shortcut uses
+        // the profile link on PATH (e.g. /run/current-system/sw/bin) that points to the same file.
+        std::filesystem::path stableExecutable(const std::filesystem::path& exe) {
+            if (!blb::path_to_utf8(exe).starts_with("/nix/store/")) {
+                return exe;
+            }
+            std::string path = blb::environment("PATH").value_or("");
+            for (std::string_view entry : blb::split(path, ':')) {
+                if (!entry.starts_with('/') || entry.starts_with("/nix/store/")) {
+                    continue;
+                }
+                std::filesystem::path link = blb::path_from_utf8(entry) / exe.filename();
+                std::error_code error;
+                if (std::filesystem::equivalent(link, exe, error)) {
+                    return link;
+                }
+            }
+            return exe;
+        }
     }
 
     std::vector<std::string> commandLine() {
@@ -165,7 +185,7 @@ namespace Platform {
         if (file.extension() != ".desktop") {
             file += ".desktop";
         }
-        std::filesystem::path exe = executablePath();
+        std::filesystem::path exe = stableExecutable(executablePath());
         std::filesystem::path icon = shortcut.icon;
         if (icon.empty()) {
             icon = configDirectory() / "b-launcher.svg";
