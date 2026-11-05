@@ -262,7 +262,7 @@ namespace SettingsScreen {
             }
             if (Page::iconButton(id + "Pick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start =
-                        file.path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(file.path);
+                        file.path.empty() ? Platform::userDirectory() : blb::path_from_utf8(file.path);
                 if (std::optional<std::filesystem::path> picked = file.pick(start)) {
                     file.apply(blb::path_to_utf8(*picked));
                 }
@@ -917,7 +917,7 @@ namespace SettingsScreen {
             float pickX = Page::controlRight() - 27.0f;
             if (Page::iconButton("settings#homepagePick", 0xf07c, "选择 XAML 文件", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start =
-                        path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path).parent_path();
+                        path.empty() ? Platform::userDirectory() : blb::path_from_utf8(path).parent_path();
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(start, L"选择主页文件", L"XAML 文件", L"*.xaml;*.xml;*.txt");
                 if (!picked.empty()) {
@@ -1616,7 +1616,8 @@ namespace SettingsScreen {
             std::string current = Patches::value(key);
             bool local = !current.empty() && current.find(',') == std::string::npos &&
                     current.find("://") == std::string::npos;
-            std::filesystem::path start = local ? blb::path_from_utf8(current).parent_path() : Platform::exeDirectory();
+            std::filesystem::path start =
+                    local ? blb::path_from_utf8(current).parent_path() : Platform::userDirectory();
             std::optional<std::filesystem::path> picked;
             if (png) {
                 std::vector<std::filesystem::path> files =

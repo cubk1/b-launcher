@@ -738,7 +738,9 @@ namespace Instances {
         std::filesystem::path appData = Platform::defaultMinecraft();
         std::filesystem::path local = Platform::exeDirectory() / L".minecraft";
         std::error_code error;
-        if (appData.empty() || !std::filesystem::equivalent(appData, local, error)) {
+        bool writable = Platform::userDirectory() == Platform::exeDirectory();
+        if ((writable || std::filesystem::is_directory(local, error)) &&
+            (appData.empty() || !std::filesystem::equivalent(appData, local, error))) {
             roots.push_back(Source{"local", "当前目录", local, false});
         }
         if (!appData.empty()) {
