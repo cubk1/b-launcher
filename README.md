@@ -19,7 +19,7 @@ QQ交流群：858714745
 - 修复1.7、1.8版本Minecraft中文输入
 - 由提示词水平和审美都健在的开发者维护
 
-## 构建
+## 构建与安装
 
 ```bash
 pip install fonttools
@@ -28,6 +28,10 @@ scoop install upx
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 cmake --build build --config MinSizeRel
+
+# For NixOS:
+nix run github:cubk1/b-launcher
+# or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
 ```
 
 ## 截图
