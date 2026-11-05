@@ -7,6 +7,8 @@
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
+#include <SDL3/SDL_misc.h>
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -140,16 +142,18 @@ namespace Platform {
         return blb::home_directory() / "Desktop";
     }
 
+    // SDL asks the desktop portal first and runs xdg-open only when there is no portal.
     bool open(const std::filesystem::path& path) {
         std::error_code error;
         if (!std::filesystem::exists(path, error)) {
             return false;
         }
-        return spawnDetached({"xdg-open", path.string()});
+        std::filesystem::path target = std::filesystem::absolute(path, error);
+        return !error && SDL_OpenURL(target.c_str());
     }
 
     bool openUrl(const std::string& url) {
-        return webUrl(url) && spawnDetached({"xdg-open", url});
+        return webUrl(url) && SDL_OpenURL(url.c_str());
     }
 
     void reveal(const std::filesystem::path& path) {
