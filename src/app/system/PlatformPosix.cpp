@@ -26,6 +26,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <thread>
 
 extern char** environ;
