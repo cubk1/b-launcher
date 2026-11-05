@@ -29,6 +29,24 @@
   libpulseaudio,
   ibus,
   fontconfig,
+  addDriverRunpath,
+  libxxf86vm,
+  vulkan-loader,
+  flite,
+  xrandr,
+  pciutils,
+  temurin-jre-bin-8,
+  temurin-jre-bin-17,
+  temurin-jre-bin-21,
+  temurin-jre-bin-25,
+  # Java for the games. With [ ], the games use Mojang's Java, which needs
+  # programs.nix-ld.enable = true on NixOS. Some JREs do not exist on i686 and riscv64.
+  jdks ? lib.filter (lib.meta.availableOn stdenv.hostPlatform) [
+    temurin-jre-bin-25
+    temurin-jre-bin-21
+    temurin-jre-bin-17
+    temurin-jre-bin-8
+  ],
 }:
 
 let
@@ -110,6 +128,17 @@ let
     fontconfig
   ];
 
+  # Libraries that the game opens with dlopen. SDL3 (Minecraft 26.3 and later) and GLFW
+  # need the same ones as the launcher. Then LWJGL 2 (libxxf86vm), OpenAL (libstdc++),
+  # Vulkan and the narrator (flite). On NixOS the launcher puts them in LD_LIBRARY_PATH
+  # of the game, after the GPU driver in /run/opengl-driver/lib.
+  gameLibs = runtimeLibs ++ [
+    (lib.getLib stdenv.cc.cc)
+    libxxf86vm
+    vulkan-loader
+    flite
+  ];
+
   compilerId = if stdenv.cc.isClang then "Clang" else "GNU";
 
   # FetchContent skips URL_HASH and GIT_TAG once FETCHCONTENT_SOURCE_DIR_<NAME> is set,
@@ -182,7 +211,18 @@ stdenv.mkDerivation {
     done
   '';
 
-  cmakeFlags = [ (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true) ];
+  cmakeFlags = [
+    (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
+    (lib.cmakeFeature "BLB_NIXOS_JAVA" (lib.concatMapStringsSep ":" (jdk: jdk.home) jdks))
+    (lib.cmakeFeature "BLB_NIXOS_LIBRARY_PATH" "${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath gameLibs}")
+    # LWJGL 2 (Minecraft 1.12.2 and older) runs xrandr. OSHI runs lspci.
+    (lib.cmakeFeature "BLB_NIXOS_PATH" (
+      lib.makeBinPath [
+        xrandr
+        pciutils
+      ]
+    ))
+  ];
 
   ninjaFlags = [ "b-launcher" ];
 
@@ -208,7 +248,7 @@ stdenv.mkDerivation {
     patchelf --add-rpath ${lib.makeLibraryPath runtimeLibs} $out/bin/b-launcher
   '';
 
-  passthru = { inherit runtimeLibs; };
+  passthru = { inherit runtimeLibs gameLibs jdks; };
 
   meta = {
     description = "Lightweight Minecraft launcher written in C++";
