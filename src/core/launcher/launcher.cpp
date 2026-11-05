@@ -83,6 +83,29 @@ forget_argument_files (const std::filesystem::path &directory)
       (void)fs::remove_file (directory / path_from_utf8 (name));
 }
 
+// The value from the instance settings stays first. Else the entries go
+// before the launcher's own value.
+void
+prepend_list (std::vector<std::pair<std::string, std::string>> &variables,
+              std::string_view name, std::string_view entries)
+{
+  if (entries.empty ())
+    return;
+  auto set = std::find_if (variables.rbegin (), variables.rend (),
+                           [&] (const auto &v) { return v.first == name; });
+  if (set != variables.rend ())
+    {
+      if (!set->second.empty ())
+        set->second += ":";
+      set->second += entries;
+      return;
+    }
+  std::string value (entries);
+  if (auto current = environment (name); current && !current->empty ())
+    value += ":" + *current;
+  variables.emplace_back (std::string (name), std::move (value));
+}
+
 std::vector<install::planned_file>
 split_natives (std::vector<install::planned_file> &files)
 {
@@ -171,7 +194,8 @@ game_launcher::resolve_java (const meta::version &resolved,
   BLB_TRY (token.check ());
   if (settings.java)
     {
-      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true, token));
+      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true,
+                                                      token, settings.wrapper));
       install.source = java::java_source::user;
       return install;
     }
@@ -193,14 +217,20 @@ game_launcher::resolve_java (const meta::version &resolved,
       if (auto chosen = java::select_java (candidates, requirement))
         return *chosen;
     }
+  // A wrapper such as steam-run can start Mojang's Java without nix-ld.
+  if (settings.wrapper.empty ())
+    if (auto blocked = java::runtime_blocked (requirement.min_major))
+      return *blocked;
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,
                        sformat ("no java {}+ found", requirement.min_major));
   s_log.info ("no suitable java, installing runtime {}",
               requirement.component);
-  BLB_TRY_ASSIGN (auto installed, java::install_runtime (*m_impl->installer,
-                                                         requirement.component,
-                                                         progress, token));
+  BLB_TRY_ASSIGN (auto installed,
+                  java::install_runtime (*m_impl->installer,
+                                         requirement.component, progress,
+                                         token, std::nullopt,
+                                         settings.wrapper));
   {
     std::lock_guard lock (m_impl->java_mutex);
     if (m_impl->java_cache)
@@ -365,6 +395,10 @@ game_launcher::prepare (const launch_settings &settings,
               }
         }
     }
+  const auto &nixos = packaged_nixos_paths ();
+  prepend_list (out.command.environment, "LD_LIBRARY_PATH",
+                nixos.library_path);
+  prepend_list (out.command.environment, "PATH", nixos.program_path);
   out.timings.total = since (started);
   s_log.info ("prepared {} in {} ms (resolve {}, auth {}, integrity {}, "
               "java {}, natives {})",

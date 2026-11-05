@@ -85,6 +85,13 @@ else ()
             src/core/meta/asset_index.cpp
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
+# nix/package.nix fills these in. The launcher uses them only on NixOS.
+set(BLB_NIXOS_JAVA "" CACHE STRING "Java homes for the games on NixOS, separated by colons")
+set(BLB_NIXOS_LIBRARY_PATH "" CACHE STRING "LD_LIBRARY_PATH entries for the games on NixOS")
+set(BLB_NIXOS_PATH "" CACHE STRING "PATH entries for the games on NixOS")
+set_property(SOURCE src/core/base/platform.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+        "BLB_NIXOS_JAVA=\"${BLB_NIXOS_JAVA}\"" "BLB_NIXOS_LIBRARY_PATH=\"${BLB_NIXOS_LIBRARY_PATH}\""
+        "BLB_NIXOS_PATH=\"${BLB_NIXOS_PATH}\"")
 
 if (MSVC)
     add_compile_options(/utf-8 /W3 /permissive- /Zc:__cplusplus)

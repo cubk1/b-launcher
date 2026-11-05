@@ -18,6 +18,16 @@
 #endif
 #endif
 
+#if !defined(BLB_NIXOS_JAVA)
+#define BLB_NIXOS_JAVA ""
+#endif
+#if !defined(BLB_NIXOS_LIBRARY_PATH)
+#define BLB_NIXOS_LIBRARY_PATH ""
+#endif
+#if !defined(BLB_NIXOS_PATH)
+#define BLB_NIXOS_PATH ""
+#endif
+
 namespace b_launcher_base
 {
 
@@ -314,6 +324,71 @@ path_list_separator () noexcept
 #else
   return ':';
 #endif
+}
+
+bool
+is_nixos ()
+{
+#if defined(__linux__)
+  static const bool nixos = [] {
+    // system.etc.overlay skips /etc/NIXOS, so os-release decides too.
+    if (fs::exists ("/etc/NIXOS"))
+      return true;
+    auto text = fs::read_file ("/etc/os-release");
+    if (!text)
+      return false;
+    for (auto line : split (*text, '\n'))
+      {
+        auto eq = line.find ('=');
+        if (eq == std::string_view::npos)
+          continue;
+        auto key = trim (line.substr (0, eq));
+        auto value = trim (line.substr (eq + 1));
+        if (value.size () >= 2 && (value.front () == '"' || value.front () == '\'')
+            && value.back () == value.front ())
+          value = value.substr (1, value.size () - 2);
+        if (key == "ID" && value == "nixos")
+          return true;
+        if (key == "ID_LIKE")
+          for (auto like : split (value, ' '))
+            if (like == "nixos")
+              return true;
+      }
+    return false;
+  }();
+  return nixos;
+#else
+  return false;
+#endif
+}
+
+bool
+runs_generic_binaries ()
+{
+  if (!is_nixos ())
+    return true;
+#if defined(__aarch64__)
+  std::filesystem::path loader = "/lib/ld-linux-aarch64.so.1";
+#elif defined(__i386__)
+  std::filesystem::path loader = "/lib/ld-linux.so.2";
+#else
+  std::filesystem::path loader = "/lib64/ld-linux-x86-64.so.2";
+#endif
+  // environment.ldso links the loader to nix-ld, or else to the stub-ld program,
+  // /nix/store/<hash>-stub-ld-<host triple>.
+  if (!fs::exists (loader))
+    return false;
+  auto name = path_to_utf8 (fs::real_path (loader).filename ());
+  return name.find ("-stub-ld") != 32;
+}
+
+const nixos_paths &
+packaged_nixos_paths ()
+{
+  static const nixos_paths none;
+  static const nixos_paths paths { BLB_NIXOS_JAVA, BLB_NIXOS_LIBRARY_PATH,
+                                   BLB_NIXOS_PATH };
+  return is_nixos () ? paths : none;
 }
 
 }

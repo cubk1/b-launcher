@@ -184,10 +184,23 @@ runtime_home (const meta::game_layout &layout, std::string_view component,
   return base;
 }
 
+std::optional<error>
+runtime_blocked (int major)
+{
+  if (runs_generic_binaries ())
+    return std::nullopt;
+  return make_error (
+      errc::java_not_found,
+      sformat ("找不到 Java {}。NixOS 需要 programs.nix-ld.enable = true "
+               "才能运行 Mojang 的 Java，也可以安装 JDK {}",
+               major, major));
+}
+
 result<java_installation>
 install_runtime (install::game_installer &installer,
                  std::string_view component, progress_sink *sink,
-                 cancellation_token token, std::optional<cpu_arch> arch)
+                 cancellation_token token, std::optional<cpu_arch> arch,
+                 const std::vector<std::string> &wrapper)
 {
   if (!fs::safe_component (component))
     return make_error (errc::invalid_argument, "invalid runtime component");
@@ -269,7 +282,7 @@ install_runtime (install::game_installer &installer,
       fs::write_file_atomic (layout.runtime () / path_from_utf8 (component)
                                  / path_from_utf8 (platform) / ".version",
                              entry->version));
-  BLB_TRY_ASSIGN (auto install, probe_java (home, true, token));
+  BLB_TRY_ASSIGN (auto install, probe_java (home, true, token, wrapper));
   install.source = java_source::managed;
   return install;
 }

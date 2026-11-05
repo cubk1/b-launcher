@@ -52,4 +52,20 @@ std::filesystem::path default_minecraft_directory ();
 std::string_view executable_suffix () noexcept;
 char path_list_separator () noexcept;
 
+// NixOS starts generic Linux programs, such as Mojang's Java, only with nix-ld.
+bool is_nixos ();
+// False on NixOS without nix-ld: the ELF loader is missing or is the stub-ld program.
+bool runs_generic_binaries ();
+
+// Lists that nix/package.nix builds in, separated by ':'. All empty when not on NixOS.
+struct nixos_paths
+{
+  std::string_view java_homes;
+  // For LD_LIBRARY_PATH of the game: the GPU driver and the libraries that the game opens.
+  std::string_view library_path;
+  // For PATH of the game: xrandr for LWJGL 2 and lspci for OSHI.
+  std::string_view program_path;
+};
+const nixos_paths &packaged_nixos_paths ();
+
 }
