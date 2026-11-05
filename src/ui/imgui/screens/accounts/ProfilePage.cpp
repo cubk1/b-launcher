@@ -58,7 +58,7 @@ namespace ProfilePage {
 
         void pickSkin(const std::string& account) {
             std::vector<std::filesystem::path> files =
-                    Platform::pickFiles(Platform::exeDirectory(), L"选择皮肤图片", L"PNG 图片", L"*.png");
+                    Platform::pickFiles(Platform::userDirectory(), L"选择皮肤图片", L"PNG 图片", L"*.png");
             if (!files.empty()) {
                 Profiles::uploadSkin(account, files.front());
             }

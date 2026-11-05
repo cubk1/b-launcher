@@ -420,7 +420,7 @@ namespace Onboarding {
             float textRight = fieldRight - 12.0f;
             if (Page::iconButton("onboarding#bgPick", 0xf07c, "选择图片", pickX, buttonY)) {
                 std::filesystem::path start =
-                        path.empty() ? Platform::exeDirectory() : b_launcher_base::path_from_utf8(path);
+                        path.empty() ? Platform::userDirectory() : b_launcher_base::path_from_utf8(path);
                 if (std::optional<std::filesystem::path> picked = Platform::pickImage(start)) {
                     Background::setPath(b_launcher_base::path_to_utf8(*picked));
                     path = Background::path();

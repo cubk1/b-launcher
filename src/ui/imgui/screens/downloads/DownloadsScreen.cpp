@@ -1775,7 +1775,7 @@ namespace DownloadsScreen {
                 case Kind::Datapack: {
                     const Instances::Entry* entry = Instances::find(target);
                     std::filesystem::path start =
-                            entry != nullptr ? entry->gameDirectory / "saves" : Platform::exeDirectory();
+                            entry != nullptr ? entry->gameDirectory / "saves" : Platform::userDirectory();
                     if (std::optional<std::filesystem::path> folder = Platform::pickFolder(start)) {
                         ProjectInstaller::saveTo(version, *folder, project.title);
                     }

@@ -19,6 +19,8 @@ namespace Platform {
             "Safari/537.36";
 
     std::filesystem::path exeDirectory();
+    // exeDirectory() when it is writable, else the home folder (e.g. a package in /nix/store or /usr/bin).
+    std::filesystem::path userDirectory();
     std::filesystem::path defaultMinecraft();
     std::filesystem::path cacheDirectory();
     bool open(const std::filesystem::path& path);

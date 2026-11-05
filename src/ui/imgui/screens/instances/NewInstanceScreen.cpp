@@ -265,7 +265,7 @@ namespace NewInstanceScreen {
             float importX = refreshX - 32.0f;
             if (Page::iconButton("new#import", 0xf56f, "导入整合包", importX, Page::TOP - 2.0f, blocked)) {
                 std::vector<std::filesystem::path> picked =
-                        Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
+                        Platform::pickFiles(Platform::userDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
                     Drops::importPack(picked.front());
                 }
