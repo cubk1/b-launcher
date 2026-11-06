@@ -46,5 +46,5 @@ namespace UiWidgets {
     float subModeWidth(const std::string& value);
     void subSlider(const std::string& id, float x, float y, float trackWidth, float amount, bool hovered, bool active,
                    const std::string& valueText);
-    void subToggle(const std::string& id, float x, float y, bool value);
+    void subToggle(const std::string& id, float x, float y, bool value, bool hovered);
 }
