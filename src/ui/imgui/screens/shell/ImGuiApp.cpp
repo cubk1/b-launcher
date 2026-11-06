@@ -39,7 +39,7 @@
 namespace {
 
     HICON iconOf(int size) {
-        std::vector<unsigned char> rgba = Logo::pixels(size);
+        std::vector<unsigned char> rgba = Logo::iconPixels(size, Appearance::systemFrameRunning());
         if (rgba.empty()) {
             return nullptr;
         }
@@ -79,14 +79,16 @@ namespace {
 
     struct WindowIcons {
         uint32_t accent = 0;
+        int revision = -1;
         HICON big = nullptr;
         HICON compact = nullptr;
 
         void follow(BorderlessWindow& window) {
             uint32_t current = UiTheme::accent() | 0xFF000000u;
-            if (current == accent && big != nullptr) {
+            if (current == accent && revision == Logo::iconRevision() && big != nullptr) {
                 return;
             }
+            revision = Logo::iconRevision();
             HICON nextBig = iconOf(GetSystemMetrics(SM_CXICON));
             HICON nextSmall = iconOf(GetSystemMetrics(SM_CXSMICON));
             if (nextBig == nullptr || nextSmall == nullptr) {

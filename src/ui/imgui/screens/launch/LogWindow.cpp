@@ -1049,7 +1049,7 @@ namespace LogWindow {
 #endif
             created = true;
 #if !defined(_WIN32)
-            window.setIcon(Logo::pixels(64), 64);
+            window.setIcon(Logo::iconPixels(64, Appearance::systemFrameRunning()), 64);
 #endif
             window.onModalFrame = [] { frame(layoutScale); };
         }
@@ -1061,7 +1061,7 @@ namespace LogWindow {
 #else
         (void) large;
         (void) compact;
-        window.setIcon(Logo::pixels(64), 64);
+        window.setIcon(Logo::iconPixels(64, Appearance::systemFrameRunning()), 64);
 #endif
     }
 

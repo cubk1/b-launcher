@@ -907,6 +907,20 @@ namespace Instances {
         return roots.empty() ? nullptr : &roots.front();
     }
 
+    const Source* soleSource() {
+        const Source* only = nullptr;
+        for (const Source& entry : roots) {
+            if (!entry.exists || entry.hidden) {
+                continue;
+            }
+            if (only != nullptr) {
+                return nullptr;
+            }
+            only = &entry;
+        }
+        return only;
+    }
+
     const std::vector<Entry>& list() {
         return entries;
     }

@@ -77,9 +77,10 @@ namespace MainWindow {
     static bool foldLoaded = false;
     static const float ITEM_H = 30.0f;
     static const float ITEM_STEP = 32.0f;
-    static const float SEARCH_Y = 50.0f;
     static const float SEARCH_H = 28.0f;
-    static const float LIST_TOP = SEARCH_Y + SEARCH_H + 8.0f;
+    static const float SEARCH_GAP = 6.0f;
+    static float searchY = 50.0f;
+    static float listTop = searchY + SEARCH_H + 8.0f;
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
@@ -381,20 +382,12 @@ namespace MainWindow {
         return b_launcher_base::replace_all(Appearance::brandTitle(), "{FPS}", std::to_string(fpsShown));
     }
 
-    static void brand() {
-        float logo = 20.0f;
-        float logoY = (TITLE_HEIGHT - logo) * 0.5f;
-        float cx = ITEM_X + ICON_CENTER;
-        float cy = TITLE_HEIGHT * 0.5f;
-        const float size = 28.0f;
-        float x = cx - size * 0.5f;
-        float y = cy - size * 0.5f;
+    static float foldToggle(float x, float y, float size, float radius) {
         bool rail = fold > 0.5f;
         bool hovered = NewUi::hit(x, y, size, size);
         float wake = UiState::motion("sidebar#expand", hovered ? 1.0f : 0.0f, 18.0f);
-        titleControls.push_back({x, y, size, size});
         if (wake > 0.001f) {
-            UiRender::roundRect(x, y, size, size, 7.0f, UiTheme::overlay(Ui::round(16 * wake)));
+            UiRender::roundRect(x, y, size, size, radius, UiTheme::overlay(Ui::round(16 * wake)));
         }
         if (hovered) {
             if (rail) {
@@ -407,11 +400,35 @@ namespace MainWindow {
             UiSound::request(UiSound::TICK);
             setFolded(!folded);
         }
+        return wake;
+    }
+
+    static float foldButtonX() {
+        return UiRender::lerp(ITEM_X + itemW - SEARCH_H, (sideW - SEARCH_H) * 0.5f, fold);
+    }
+
+    static void foldButton() {
+        float x = foldButtonX();
+        float wake = foldToggle(x, searchY, SEARCH_H, 8.0f);
+        UiWidgets::icon(Ui::glyph(folded ? 0xf101 : 0xf100), x + SEARCH_H * 0.5f, searchY + SEARCH_H * 0.5f,
+                        UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), wake), 11.0f);
+    }
+
+    static void brand() {
+        float logo = 20.0f;
+        float logoY = (TITLE_HEIGHT - logo) * 0.5f;
+        float cx = ITEM_X + ICON_CENTER;
+        float cy = TITLE_HEIGHT * 0.5f;
+        const float size = 28.0f;
+        float x = cx - size * 0.5f;
+        float y = cy - size * 0.5f;
+        titleControls.push_back({x, y, size, size});
+        float wake = foldToggle(x, y, size, 7.0f);
         Logo::brand(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
         fadeGlyph(folded ? 0xf101 : 0xf100, cx, cy, UiTheme::textPrimary(), wake, 11.0f);
         float savedAlpha = UiRender::alphaMul;
         UiRender::alphaMul = savedAlpha * fading();
-        float room = SIDEBAR_WIDTH - ITEM_X - LABEL_X - (ITEM_X + ICON_CENTER + 20.0f);
+        float room = ITEM_W - LABEL_X;
         std::string title = UiFont::fitEnd(brandText(), UiFont::MEDIUM, 15.0f, room);
         UiRender::textY(title, ITEM_X + LABEL_X, logoY, logo, UiTheme::textPrimary(), UiFont::MEDIUM, 15.0f);
         UiRender::alphaMul = savedAlpha;
@@ -434,28 +451,6 @@ namespace MainWindow {
         UiRender::scaleFactor = savedScale;
         UiRender::pivotX = savedPivotX;
         UiRender::pivotY = savedPivotY;
-    }
-
-    static void themeSwitch() {
-        if (fold > 0.5f) {
-            return;
-        }
-        const float size = 28.0f;
-        float cx = sideW - ITEM_X - ICON_CENTER;
-        float cy = TITLE_HEIGHT * 0.5f;
-        float x = cx - size * 0.5f;
-        float y = cy - size * 0.5f;
-        titleControls.push_back({x, y, size, size});
-        bool light = UiTheme::isLight();
-        float lit = UiState::motion("theme#hover", NewUi::hit(x, y, size, size) ? 1.0f : 0.0f, 18.0f);
-        float sun = UiState::motionFrom("theme#sun", light ? 1.0f : 0.0f, 14.0f, light ? 1.0f : 0.0f);
-        uint32_t tint = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
-        fadeGlyph(0xf185, cx, cy, tint, sun * fading(), 13.0f);
-        fadeGlyph(0xf186, cx, cy, tint, (1.0f - sun) * fading(), 13.0f);
-        if (NewUi::click(x, y, size, size)) {
-            UiSound::request(UiSound::TICK);
-            Appearance::toggleLight();
-        }
     }
 
     static bool isCollapsed(const std::string& source) {
@@ -488,11 +483,15 @@ namespace MainWindow {
     }
 
     static void searchBox() {
+        bool framed = Appearance::systemFrameRunning();
         float x = ITEM_X;
-        float y = SEARCH_Y;
-        float w = itemW;
+        float y = searchY;
+        float w = framed ? foldButtonX() - SEARCH_GAP - ITEM_X : itemW;
         float h = SEARCH_H;
         if (fold > 0.5f) {
+            if (framed) {
+                return;
+            }
             bool over = NewUi::hit(x, y, w, h);
             float lit = UiState::motion("search#ring", over ? 0.5f : 0.0f, 18.0f);
             UiRender::roundRect(x, y, w, h, 8.0f, UiTheme::overlay(10));
@@ -508,6 +507,10 @@ namespace MainWindow {
                 focusSearch();
             }
             return;
+        }
+        float savedAlpha = UiRender::alphaMul;
+        if (framed) {
+            UiRender::alphaMul = savedAlpha * fading();
         }
         bool focused = UiInput::isFocused(SEARCH_ID);
         bool hasText = !UiInput::get(SEARCH_ID).empty();
@@ -537,6 +540,7 @@ namespace MainWindow {
                 UiInput::set(SEARCH_ID, "");
             }
         }
+        UiRender::alphaMul = savedAlpha;
     }
 
     static int groupRows(const std::vector<const Instances::Entry*>& rows) {
@@ -795,7 +799,7 @@ namespace MainWindow {
         int last = (int) rows.size() - 1;
         float y = UiRender::clamp(NewUi::mouseY - dragGrab, top - 6.0f, top + last * ITEM_STEP + 6.0f);
         UiState::put("sidebar#lift", 1.0f);
-        UiRender::scissor(0, LIST_TOP, sideW, viewH);
+        UiRender::scissor(0, listTop, sideW, viewH);
         raised(y, 1.0f);
         instanceRow(*rows[from], y, true);
         UiRender::unscissor();
@@ -861,9 +865,13 @@ namespace MainWindow {
 
     static void sidebar() {
         UiRender::scissor(0, 0, sideW, height());
-        brand();
-        themeSwitch();
-        searchBox();
+        if (Appearance::systemFrameRunning()) {
+            searchBox();
+            foldButton();
+        } else {
+            brand();
+            searchBox();
+        }
 
         std::string query = searchQuery();
         bool searching = !query.empty();
@@ -895,7 +903,7 @@ namespace MainWindow {
         }
 
         float listBottom = height() - FOOTER_H - 10.0f;
-        float viewH = listBottom - LIST_TOP;
+        float viewH = listBottom - listTop;
         float maxScroll = std::max(0.0f, contentH - viewH);
         if (searching) {
             holdKey.clear();
@@ -919,13 +927,13 @@ namespace MainWindow {
                 listSmooth = listScroll;
             }
         }
-        if (NewUi::hit(0, LIST_TOP, sideW, viewH) && NewUi::wheel() != 0.0f) {
+        if (NewUi::hit(0, listTop, sideW, viewH) && NewUi::wheel() != 0.0f) {
             listScroll -= NewUi::wheel() * ITEM_STEP;
         }
         if (dragging) {
             float step = 10.0f * ImGui::GetIO().DeltaTime;
-            if (NewUi::mouseY < LIST_TOP + DRAG_EDGE) {
-                listScroll -= std::min(60.0f, LIST_TOP + DRAG_EDGE - NewUi::mouseY) * step;
+            if (NewUi::mouseY < listTop + DRAG_EDGE) {
+                listScroll -= std::min(60.0f, listTop + DRAG_EDGE - NewUi::mouseY) * step;
             } else if (NewUi::mouseY > listBottom - DRAG_EDGE) {
                 listScroll += std::min(60.0f, NewUi::mouseY - (listBottom - DRAG_EDGE)) * step;
             }
@@ -933,16 +941,16 @@ namespace MainWindow {
         listScroll = UiRender::clamp(listScroll, 0, maxScroll);
         listSmooth = UiRender::clamp(UiRender::approach(listSmooth, listScroll, 18.0f), 0, maxScroll);
 
-        float cursor = LIST_TOP - UiRender::snapLayout(listSmooth);
+        float cursor = listTop - UiRender::snapLayout(listSmooth);
         bool carried = false;
         for (size_t i = 0; i < sources.size(); i++) {
             const Instances::Source& source = sources[i];
             if (source.hidden) {
                 continue;
             }
-            UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            bool headerBlocked = !NewUi::rawHit(0, std::max(LIST_TOP, cursor), sideW,
-                                                std::min(listBottom, cursor + GROUP_H) - std::max(LIST_TOP, cursor));
+            UiRender::scissor(0, listTop, sideW, viewH);
+            bool headerBlocked = !NewUi::rawHit(0, std::max(listTop, cursor), sideW,
+                                                std::min(listBottom, cursor + GROUP_H) - std::max(listTop, cursor));
             groupHeader(source, grouped[i].size(), cursor, opens[i], headerBlocked || dragging);
             UiRender::unscissor();
             cursor += GROUP_H;
@@ -959,7 +967,7 @@ namespace MainWindow {
                                     (int) entries.size() - 1);
                 }
             }
-            float clipTop = std::max(LIST_TOP, cursor);
+            float clipTop = std::max(listTop, cursor);
             float clipBottom = std::min(listBottom, cursor + shownH);
             if (clipBottom > clipTop + 0.5f) {
                 UiRender::scissor(0, clipTop, sideW, clipBottom - clipTop);
@@ -1021,9 +1029,9 @@ namespace MainWindow {
             arrangeSource.clear();
             arrangeKeys.clear();
         }
-        if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
-            UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            bool blocked = dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH);
+        if (cursor + ITEM_H >= listTop && cursor <= listBottom) {
+            UiRender::scissor(0, listTop, sideW, viewH);
+            bool blocked = dragging || !NewUi::rawHit(0, listTop, sideW, viewH);
             addFolderRow(cursor, blocked);
             if (hiddenCount() > 0) {
                 hiddenFolderRow(cursor + ITEM_STEP, blocked);
@@ -1034,8 +1042,8 @@ namespace MainWindow {
         if (maxScroll > 0.5f && fold < 0.5f) {
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * fading();
-            float dragged = NewUi::listScrollbar("sidebar#scrollbar", sideW - 7.0f, LIST_TOP + 2.0f, viewH - 4.0f,
-                                                 viewH, maxScroll, listSmooth, listScroll);
+            float dragged = NewUi::listScrollbar("sidebar#scrollbar", sideW - 7.0f, listTop + 2.0f, viewH - 4.0f, viewH,
+                                                 maxScroll, listSmooth, listScroll);
             UiRender::alphaMul = savedAlpha;
             if (dragged != listScroll) {
                 listScroll = dragged;
@@ -1186,6 +1194,8 @@ namespace MainWindow {
         fold = UiState::motionFrom("sidebar#fold", folded ? 1.0f : 0.0f, 12.0f, folded ? 1.0f : 0.0f);
         sideW = UiRender::snapLayout(UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold));
         itemW = sideW - 2.0f * ITEM_X;
+        searchY = Appearance::systemFrameRunning() ? 10.0f : 50.0f;
+        listTop = searchY + SEARCH_H + 8.0f;
     }
 
     void draw() {
@@ -1340,6 +1350,9 @@ namespace MainWindow {
             return false;
         }
         if (y < 0 || y >= TITLE_HEIGHT) {
+            return false;
+        }
+        if (Appearance::systemFrameRunning() && x < sideW) {
             return false;
         }
         for (const Rect& rect : titleControls) {

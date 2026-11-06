@@ -1228,6 +1228,9 @@ namespace ForgottenMelody {
 
             // The game directory chosen, else the launcher's own one, else the first.
             const Instances::Source* targetSource() const {
+                if (const Instances::Source* only = Instances::soleSource()) {
+                    return only;
+                }
                 return Instances::installSource(placeKey);
             }
 
@@ -1247,6 +1250,14 @@ namespace ForgottenMelody {
                     selected = target != nullptr && source.key == target->key ? (int) placeKeys.size() - 1 : selected;
                 }
                 UpdateOptions(PLACE, places, selected);
+                bool choosePlace = Instances::soleSource() == nullptr;
+                FindControl(PLACE_LABEL)->SetVisible(choosePlace);
+                FindControl(PLACE)->SetVisible(choosePlace);
+                int nameY = FindControl(PLACE_LABEL)->GetY() - (choosePlace ? 34 : 0);
+                for (uint32_t id : {(uint32_t) NAME_LABEL, (uint32_t) NAME}) {
+                    exui::Widget* control = FindControl(id);
+                    control->SetBounds(control->GetX(), nameY, control->GetWidth(), control->GetHeight());
+                }
 
                 std::vector<std::pair<std::wstring, std::wstring>> info;
                 if (pack) {

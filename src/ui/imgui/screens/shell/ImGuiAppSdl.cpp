@@ -210,6 +210,7 @@ namespace ImGuiApp {
         Drop::attach(window.window);
         bool shown = false;
         uint32_t iconAccent = 0;
+        int iconRevision = -1;
         auto lastInput = std::chrono::steady_clock::now();
         auto lastCompact = std::chrono::steady_clock::now();
         bool released = false;
@@ -275,9 +276,10 @@ namespace ImGuiApp {
             LogWindow::frame(scale);
 
             uint32_t accent = UiTheme::accent() | 0xFF000000u;
-            if (accent != iconAccent) {
+            if (accent != iconAccent || Logo::iconRevision() != iconRevision) {
                 iconAccent = accent;
-                window.setIcon(Logo::pixels(ICON_SIZE), ICON_SIZE);
+                iconRevision = Logo::iconRevision();
+                window.setIcon(Logo::iconPixels(ICON_SIZE, Appearance::systemFrameRunning()), ICON_SIZE);
                 LogWindow::setIcons(nullptr, nullptr);
             }
             if (std::string title = Appearance::windowTitle(); title != shownTitle) {

@@ -216,6 +216,9 @@ namespace NewInstanceScreen {
         }
 
         const Instances::Source* targetSource() {
+            if (const Instances::Source* only = Instances::soleSource()) {
+                return only;
+            }
             return Instances::installSource(target);
         }
 
@@ -737,8 +740,10 @@ namespace NewInstanceScreen {
                     : loaderSelection.choices();
             int loaderRows = modpack ? 4 : 1 + (int) choices.size();
             bool edit = !editing.empty();
+            bool choosePlace = Instances::soleSource() == nullptr;
+            int instanceRows = choosePlace ? 2 : 1;
             float contentH = edit ? Page::CAPTION_H + loaderRows * Page::ROW_H
-                                  : 2 * Page::CAPTION_H + (2 + loaderRows) * Page::ROW_H + Page::GAP;
+                                  : 2 * Page::CAPTION_H + (instanceRows + loaderRows) * Page::ROW_H + Page::GAP;
             float savedAlpha = UiRender::alphaMul;
             float savedOffsetY = UiRender::offsetY;
             UiRender::alphaMul = savedAlpha * (1.0f - gone);
@@ -751,7 +756,7 @@ namespace NewInstanceScreen {
             if (!edit) {
                 Page::caption("实例", y);
                 y += Page::CAPTION_H;
-                Page::card(y, 2);
+                Page::card(y, instanceRows);
                 Page::label("名称", y);
                 std::string generated = generatedName();
                 auto nameValue = std::make_shared<TextBinding>(
@@ -769,32 +774,35 @@ namespace NewInstanceScreen {
                 field.paint();
                 y += Page::ROW_H;
 
-                Page::label("安装位置", y);
-                auto place = std::make_shared<ModeBinding>(
-                        "new#place",
-                        [] {
-                            const Instances::Source* source = targetSource();
-                            return source != nullptr ? sourceLabel(*source) : std::string();
-                        },
-                        [](const std::string& option) {
-                            for (const Instances::Source& source : Instances::sources()) {
-                                if (sourceLabel(source) == option) {
-                                    target = source.key;
-                                    return;
+                if (choosePlace) {
+                    Page::label("安装位置", y);
+                    auto place = std::make_shared<ModeBinding>(
+                            "new#place",
+                            [] {
+                                const Instances::Source* source = targetSource();
+                                return source != nullptr ? sourceLabel(*source) : std::string();
+                            },
+                            [](const std::string& option) {
+                                for (const Instances::Source& source : Instances::sources()) {
+                                    if (sourceLabel(source) == option) {
+                                        target = source.key;
+                                        return;
+                                    }
                                 }
-                            }
-                        },
-                        [] {
-                            std::vector<std::string> options;
-                            for (const Instances::Source& source : Instances::sources()) {
-                                options.push_back(sourceLabel(source));
-                            }
-                            return options;
-                        });
-                SelectWidget select("new#place", place);
-                select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
-                select.paint();
-                y += Page::ROW_H + Page::GAP;
+                            },
+                            [] {
+                                std::vector<std::string> options;
+                                for (const Instances::Source& source : Instances::sources()) {
+                                    options.push_back(sourceLabel(source));
+                                }
+                                return options;
+                            });
+                    SelectWidget select("new#place", place);
+                    select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
+                    select.paint();
+                    y += Page::ROW_H;
+                }
+                y += Page::GAP;
             }
 
             if (modpack) {

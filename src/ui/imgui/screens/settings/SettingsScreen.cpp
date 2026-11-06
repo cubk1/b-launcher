@@ -293,10 +293,11 @@ namespace SettingsScreen {
 
         int appearanceCount() {
 #if defined(_WIN32)
-            return Appearance::backgroundImage() ? 12 : 11;
+            int count = Appearance::backgroundImage() ? 12 : 11;
 #else
-            return Appearance::backgroundImage() ? 11 : 10;
+            int count = Appearance::backgroundImage() ? 11 : 10;
 #endif
+            return Appearance::systemFrameRunning() ? count - 1 : count;
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -468,11 +469,13 @@ namespace SettingsScreen {
             logoFileRow(y, blocked);
             y += Page::ROW_H;
 
-            textRow(
-                    "settings#brandTitle", "左上角标题", "侧栏左上角标志旁边的文字，留空使用默认标题；",
-                    [] { return Appearance::customBrandTitle(); },
-                    [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
-                    Appearance::defaultBrandTitle());
+            if (!Appearance::systemFrameRunning()) {
+                textRow(
+                        "settings#brandTitle", "左上角标题", "侧栏左上角标志旁边的文字，留空使用默认标题；",
+                        [] { return Appearance::customBrandTitle(); },
+                        [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
+                        Appearance::defaultBrandTitle());
+            }
         }
     }
 
