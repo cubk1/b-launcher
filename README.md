@@ -32,8 +32,8 @@ cmake --build build --config MinSizeRel
 # For NixOS:
 nix run github:cubk1/b-launcher
 # or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
-# The package includes Java 8, 17, 21 and 25 (Temurin JRE) for the games. To use Mojang's Java instead,
-# set programs.nix-ld.enable = true and use b-launcher.packages.${system}.default.override { jdks = [ ]; }.
+# The package does not include Java. Set programs.nix-ld.enable = true to use Mojang's Java,
+# or put a JDK on PATH, for example environment.systemPackages = [ pkgs.jdk21 ].
 ```
 
 ## 截图

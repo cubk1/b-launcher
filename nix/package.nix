@@ -35,18 +35,10 @@
   flite,
   xrandr,
   pciutils,
-  temurin-jre-bin-8,
-  temurin-jre-bin-17,
-  temurin-jre-bin-21,
-  temurin-jre-bin-25,
-  # Java for the games. With [ ], the games use Mojang's Java, which needs
-  # programs.nix-ld.enable = true on NixOS. Some JREs do not exist on i686 and riscv64.
-  jdks ? lib.filter (lib.meta.availableOn stdenv.hostPlatform) [
-    temurin-jre-bin-25
-    temurin-jre-bin-21
-    temurin-jre-bin-17
-    temurin-jre-bin-8
-  ],
+  # The package includes no Java. Users put a JDK on PATH, or set
+  # programs.nix-ld.enable = true for Mojang's Java. Java homes listed here
+  # (e.g. [ jdk21 ]) are found too.
+  jdks ? [ ],
 }:
 
 let
