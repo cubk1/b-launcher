@@ -919,8 +919,8 @@ namespace MainWindow {
                 listSmooth = listScroll;
             }
         }
-        if (NewUi::hit(0, LIST_TOP, sideW, viewH) && ImGui::GetIO().MouseWheel != 0.0f) {
-            listScroll -= ImGui::GetIO().MouseWheel * ITEM_STEP;
+        if (NewUi::hit(0, LIST_TOP, sideW, viewH) && NewUi::wheel() != 0.0f) {
+            listScroll -= NewUi::wheel() * ITEM_STEP;
         }
         if (dragging) {
             float step = 10.0f * ImGui::GetIO().DeltaTime;

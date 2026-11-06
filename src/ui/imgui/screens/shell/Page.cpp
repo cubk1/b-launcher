@@ -297,8 +297,8 @@ namespace Page {
           width(width) {
         ScrollState& state = scrolls[this->id];
         maxScroll = std::max(0.0f, contentHeight - (bottom - top));
-        if (NewUi::hit(left - 16.0f, top, width + 32.0f, bottom - top) && ImGui::GetIO().MouseWheel != 0.0f) {
-            state.target -= ImGui::GetIO().MouseWheel * ROW_H * 1.5f;
+        if (NewUi::hit(left - 16.0f, top, width + 32.0f, bottom - top) && NewUi::wheel() != 0.0f) {
+            state.target -= NewUi::wheel() * ROW_H * 1.5f;
         }
         state.target = UiRender::clamp(state.target, 0.0f, maxScroll);
         state.shown = UiRender::clamp(UiRender::approach(state.shown, state.target, 18.0f), 0.0f, maxScroll);

@@ -1741,8 +1741,8 @@ namespace ModGraph {
         }
         UiRender::unscissor();
 
-        if (canvasHover && ImGui::GetIO().MouseWheel != 0.0f) {
-            zoomAt(view, view.zoomTarget * std::pow(1.15f, ImGui::GetIO().MouseWheel), mx - originX, my - originY);
+        if (canvasHover && NewUi::wheel() != 0.0f) {
+            zoomAt(view, view.zoomTarget * std::pow(1.15f, NewUi::wheel()), mx - originX, my - originY);
         }
         if (canvasHover && NewUi::pendingClick && !NewUi::clickConsumed) {
             NewUi::clickConsumed = true;

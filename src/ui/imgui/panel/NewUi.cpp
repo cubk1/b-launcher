@@ -68,6 +68,7 @@ namespace NewUi {
     long long subOpenedFrame;
     bool drawingOverlay;
     bool drawingDialog;
+    bool wheelTaken;
     bool overlayActive;
     float overlayX;
     float overlayY;
@@ -238,6 +239,7 @@ namespace NewUi {
                 onCharTyped((char32_t) c);
             }
         }
+        wheelTaken = false;
         if (io.MouseWheel != 0.0f) {
             onMouseScroll(io.MouseWheel);
         }
@@ -245,6 +247,7 @@ namespace NewUi {
 
     bool onMouseScroll(double amount) {
         if (UiOverlays::scroll(amount)) {
+            wheelTaken = true;
             return true;
         }
         if (hoveredSlider != nullptr) {
@@ -252,6 +255,10 @@ namespace NewUi {
             return true;
         }
         return false;
+    }
+
+    float wheel() {
+        return wheelTaken && !drawingOverlay && !drawingDialog ? 0.0f : ImGui::GetIO().MouseWheel;
     }
 
     void beginFrame() {
