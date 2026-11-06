@@ -2,6 +2,7 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
@@ -275,7 +276,7 @@ namespace SettingsScreen {
         }
 
         int windowCount() {
-            return Appearance::systemFrameRunning() ? 4 : 5;
+            return Appearance::systemFrameRunning() ? 5 : 6;
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -423,7 +424,23 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setUiSounds(on); }, y, blocked);
         }
 
+        void compactRow(float y, bool blocked) {
+            const std::string label = "紧凑模式";
+            Page::label(label, y);
+            float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 10.0f;
+            Page::tag("Ctrl+M", labelEnd, y, UiTheme::surfaceRaised(), UiTheme::textSecondary(), 7.0f);
+            std::string text = "切换";
+            float w = Page::buttonWidth(text, 0xf422);
+            if (Page::button("settings#compact", text, Page::controlRight() - w, y + Page::FIELD_Y, w, false, blocked,
+                             0xf422)) {
+                Compact::request(true);
+            }
+        }
+
         void windowSettingRows(float y, bool blocked) {
+            compactRow(y, blocked);
+            y += Page::ROW_H;
+
             Page::label("记住窗口大小", y);
             toggle(
                     "settings#rememberWindow", [] { return Appearance::rememberWindow(); },
@@ -581,6 +598,7 @@ namespace SettingsScreen {
                 {SECTION_LOOK, "背景图片", nullptr},
                 {SECTION_LOOK, "背景图片文件", nullptr},
                 {SECTION_LOOK, "界面音效", "声音"},
+                {SECTION_WINDOW, "紧凑模式", "托盘 迷你 小窗 Ctrl+M"},
                 {SECTION_WINDOW, "记住窗口大小", nullptr},
                 {SECTION_WINDOW, "使用系统窗口边框", "标题栏 边框"},
                 {SECTION_WINDOW, "窗口标题", "任务栏"},

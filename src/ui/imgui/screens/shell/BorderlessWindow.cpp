@@ -12,6 +12,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
+    constexpr DWORD DWMWA_CLOAK_ = 13;
     constexpr DWORD DWMWA_USE_IMMERSIVE_DARK_MODE_ = 20;
     constexpr DWORD DWMWA_WINDOW_CORNER_PREFERENCE_ = 33;
     constexpr DWORD DWMWA_BORDER_COLOR_ = 34;
@@ -150,6 +151,47 @@ void BorderlessWindow::resize(int clientWidth, int clientHeight) {
     height = clientHeight;
     SetWindowPos(hwnd, nullptr, x, y, outerWidth, outerHeight, SWP_NOZORDER | SWP_NOACTIVATE);
     applyRegion();
+}
+
+void BorderlessWindow::place(int x, int y, int clientWidth, int clientHeight) {
+    if (hwnd == nullptr) {
+        return;
+    }
+    SIZE extra = frameSize();
+    width = clientWidth;
+    height = clientHeight;
+    SetWindowPos(hwnd, nullptr, x, y, clientWidth + (int) extra.cx, clientHeight + (int) extra.cy,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    applyRegion();
+}
+
+void BorderlessWindow::setFramed(bool on) {
+    bool changed = framed != on;
+    framed = on;
+    if (hwnd == nullptr) {
+        return;
+    }
+    LONG_PTR current = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    SetWindowLongPtrW(hwnd, GWL_STYLE, (LONG_PTR) style() | (current & WS_VISIBLE));
+    if (changed && on) {
+        MARGINS margins = {0, 0, 0, 0};
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+        if (regionCorners) {
+            regionCorners = false;
+            SetWindowRgn(hwnd, nullptr, TRUE);
+        }
+    }
+    if (changed) {
+        applyFrame();
+    }
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void BorderlessWindow::cloak(bool on) {
+    if (hwnd != nullptr) {
+        BOOL value = on ? TRUE : FALSE;
+        DwmSetWindowAttribute(hwnd, DWMWA_CLOAK_, &value, sizeof(value));
+    }
 }
 
 void BorderlessWindow::applyRegion() {
@@ -493,6 +535,10 @@ LRESULT WINAPI BorderlessWindow::windowProc(HWND hwnd, UINT msg, WPARAM wParam, 
 }
 
 LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
+    LRESULT answered = 0;
+    if (onMessage && onMessage(msg, wParam, lParam, answered)) {
+        return answered;
+    }
     switch (msg) {
         case WM_SIZING: {
             const auto* proposed = reinterpret_cast<const RECT*>(lParam);

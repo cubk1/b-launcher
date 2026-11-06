@@ -5,6 +5,7 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
@@ -118,6 +119,8 @@ namespace MainWindow {
     static const float DRAG_EDGE = 28.0f;
     static std::string holdKey;
     static double holdAt = 0.0;
+    static std::string pressKey;
+    static long long pressAt = 0;
     static float holdX = 0.0f;
     static float holdY = 0.0f;
     static std::string dragKey;
@@ -229,8 +232,9 @@ namespace MainWindow {
     }
 
     void setSize(float w, float h, bool isMaximized) {
-        layoutWidth = std::max(MIN_WIDTH, w);
-        layoutHeight = std::max(MIN_HEIGHT, h);
+        bool compact = Compact::active();
+        layoutWidth = compact ? w : std::max(MIN_WIDTH, w);
+        layoutHeight = compact ? h : std::max(MIN_HEIGHT, h);
         layoutMaximized = isMaximized;
     }
 
@@ -271,27 +275,33 @@ namespace MainWindow {
     }
 
     void showAccounts() {
+        Compact::request(false);
         pages.go(PAGE_ACCOUNTS);
     }
 
     void showNewInstance() {
+        Compact::request(false);
         pages.go(PAGE_NEW_INSTANCE);
     }
 
     void showDownloads() {
+        Compact::request(false);
         pages.go(PAGE_DOWNLOADS);
     }
 
     void showVersions() {
+        Compact::request(false);
         VersionsScreen::open();
         pages.go(PAGE_VERSIONS);
     }
 
     void showLoaderEdit() {
+        Compact::request(false);
         pages.go(PAGE_EDIT_LOADERS);
     }
 
     void openVersionSettings(const std::string& id) {
+        Compact::request(false);
         Instances::select(id);
         pages.go(pageOf(id));
     }
@@ -453,7 +463,7 @@ namespace MainWindow {
         UiRender::pivotY = savedPivotY;
     }
 
-    static bool isCollapsed(const std::string& source) {
+    bool isCollapsed(const std::string& source) {
         if (!collapsedLoaded) {
             collapsedLoaded = true;
             for (const std::string& group : b_launcher_base::json_strings(Config::data(), "collapsedGroups")) {
@@ -463,7 +473,7 @@ namespace MainWindow {
         return collapsed.count(source) != 0;
     }
 
-    static void toggleGroup(const std::string& source) {
+    void toggleGroup(const std::string& source) {
         if (isCollapsed(source)) {
             collapsed.erase(source);
         } else {
@@ -764,12 +774,19 @@ namespace MainWindow {
         item.paint();
         playing(key, y);
         if (item.pressed) {
+            long long now = Ui::millis();
+            bool twice = pressKey == key && now - pressAt < 400;
+            pressKey = twice ? std::string() : key;
+            pressAt = now;
             Instances::select(key);
             pages.go(PAGE_HOME);
-            holdKey = key;
+            holdKey = twice ? std::string() : key;
             holdAt = ImGui::GetTime();
             holdX = NewUi::mouseX;
             holdY = NewUi::mouseY;
+            if (twice) {
+                LaunchButton::start(key);
+            }
         }
     }
 
@@ -1206,6 +1223,7 @@ namespace MainWindow {
             unfold();
             followList();
             searchShortcut();
+            Compact::shortcut();
             shell();
         }
         if (Onboarding::drawing()) {
@@ -1346,7 +1364,7 @@ namespace MainWindow {
     }
 
     bool isDragArea(float x, float y) {
-        if (NewUi::popupOpen || !UiOverlays::isEmpty()) {
+        if (Compact::active() || NewUi::popupOpen || !UiOverlays::isEmpty()) {
             return false;
         }
         if (y < 0 || y >= TITLE_HEIGHT) {

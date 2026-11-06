@@ -88,9 +88,12 @@ namespace Drop {
         UiRender::dashedOutline(inset, inset, width - inset * 2.0f, height - inset * 2.0f, 14.0f, accent, 8.0f, 6.0f);
         std::string text = Drops::promise();
         bool usable = text.rfind("松开", 0) == 0;
+        bool login = text.rfind("松开以登录", 0) == 0;
         float cy = height * 0.5f;
-        UiWidgets::icon(Ui::glyph(usable ? 0xf56f : 0xf05e), width * 0.5f, cy - 22.0f,
-                        usable ? accent : UiTheme::textMuted(), 26.0f);
+        UiWidgets::icon(Ui::glyph(login            ? 0xf090
+                                          : usable ? 0xf56f
+                                                   : 0xf05e),
+                        width * 0.5f, cy - 22.0f, usable ? accent : UiTheme::textMuted(), 26.0f);
         float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         UiRender::textY(text, (width - textW) * 0.5f, cy + 8.0f, 24.0f,
                         usable ? UiTheme::textPrimary() : UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);

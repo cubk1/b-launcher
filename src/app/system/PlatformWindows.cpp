@@ -858,7 +858,8 @@ namespace Platform {
 
     void minimizeWindow() {
         if (window != nullptr) {
-            ShowWindow((HWND) window, SW_MINIMIZE);
+            bool tool = (GetWindowLongPtrW((HWND) window, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) != 0;
+            ShowWindow((HWND) window, tool ? SW_HIDE : SW_MINIMIZE);
         }
     }
 

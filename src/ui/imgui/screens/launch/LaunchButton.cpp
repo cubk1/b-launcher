@@ -262,6 +262,20 @@ namespace LaunchButton {
         launchMenu(key, left, top, bottom);
     }
 
+    void start(const std::string& key) {
+        const Instances::Entry* entry = Instances::find(key);
+        if (entry == nullptr || !entry->info.valid || Game::state(key) != Game::State::Idle) {
+            return;
+        }
+        if (Accounts::current() == nullptr) {
+            UiSound::request(UiSound::PAGE);
+            MainWindow::showAccounts();
+            return;
+        }
+        UiSound::request(UiSound::PULSE);
+        Game::launch(key);
+    }
+
     void drawStatus(float right, float bottom) {
         static std::vector<Game::Step> shown;
         std::string key = Instances::selected();
