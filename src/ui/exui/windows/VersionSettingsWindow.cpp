@@ -142,11 +142,6 @@ namespace ForgottenMelody {
                 {L"第三方登录：统一通行证", "nide8"},
         };
 
-        const wchar_t* const COMMAND_VARIABLES =
-                L"可用的环境变量：%INST_NAME%（实例名）、%INST_DIR%（版本文件夹）、%INST_MC_DIR%（游戏目录）、"
-                L"%INST_JAVA%（Java 路径），装有对应加载器时 %INST_FORGE%、%INST_NEOFORGE%、%INST_FABRIC%、"
-                L"%INST_QUILT%、%INST_OPTIFINE% 等为 1。";
-
         int optionOf(const Option* options, size_t count, const std::string& key) {
             for (size_t i = 0; i < count; i++) {
                 if (key == options[i].key) {
@@ -255,7 +250,7 @@ namespace ForgottenMelody {
             bool create(HWND parent) {
                 const Instances::Entry* entry = Instances::find(key);
                 if (entry == nullptr ||
-                    !createFrame(parent, L"版本设置", Platform::widen(entry->info.id), {{L"版本设置", PAGE}}, FRAME)) {
+                    !createFrame(parent, L"实例设置", Platform::widen(entry->info.id), {{L"实例设置", PAGE}}, FRAME)) {
                     return false;
                 }
                 const RECT backing = FindControl(PAGE)->GetBounds();
@@ -451,18 +446,13 @@ namespace ForgottenMelody {
                 return InstanceSettings::automaticMemory(Platform::memory().totalMb);
             }
 
-            // A text setting, applied as it is typed, with the explanation of the default interface on its label.
-            void text(uint32_t label, uint32_t id, const std::string& value,
-                      std::function<void(Settings&, const std::wstring&)> apply, const std::wstring& explanation = {}) {
+            void text(uint32_t id, const std::string& value,
+                      std::function<void(Settings&, const std::wstring&)> apply) {
                 auto& box = Control<exui::EditBox>(id);
                 box.SetText(Platform::widen(value));
                 box.OnTextChanged = [this, apply](const std::wstring& typed) {
                     edit([&](Settings& s) { apply(s, typed); });
                 };
-                if (!explanation.empty()) {
-                    FindControl(label)->SetTooltipText(explanation);
-                    box.SetTooltipText(explanation);
-                }
             }
 
             std::vector<std::wstring> javaLabels() const {
@@ -549,24 +539,21 @@ namespace ForgottenMelody {
                        {std::wstring(L"跟随全局（") + (Patches::all() ? L"启用" : L"不启用") + L"）", L"启用",
                         L"不启用"},
                        tristate(settings.patch));
-                text(
-                        OPTIONS_LABEL, OPTIONS, settings.options_file,
-                        [](Settings& s, const std::wstring& typed) {
-                            s.options_file = InstanceSettings::optionsFile(Platform::narrow(typed));
-                        },
-                        L"游戏的按键、视频、语言等设置改存到这个文件，留空则使用 options.txt；需要启用启动器补丁。");
+                text(OPTIONS, settings.options_file, [](Settings& s, const std::wstring& typed) {
+                    s.options_file = InstanceSettings::optionsFile(Platform::narrow(typed));
+                });
 
                 SetChecked(AUTO_MEMORY, settings.max_memory_mb == 0);
-                text(MAX_LABEL, MAX, settings.max_memory_mb != 0 ? std::to_string(settings.max_memory_mb) : "",
+                text(MAX, settings.max_memory_mb != 0 ? std::to_string(settings.max_memory_mb) : "",
                      [](Settings& s, const std::wstring& typed) {
                          s.max_memory_mb = InstanceSettings::parseMegabytes(Platform::narrow(typed));
                      });
 
-                text(SIZE_LABEL, WIDTH, settings.width ? std::to_string(*settings.width) : "",
+                text(WIDTH, settings.width ? std::to_string(*settings.width) : "",
                      [](Settings& s, const std::wstring& typed) {
                          s.width = InstanceSettings::parseSize(trimmed(typed));
                      });
-                text(SIZE_LABEL, HEIGHT, settings.height ? std::to_string(*settings.height) : "",
+                text(HEIGHT, settings.height ? std::to_string(*settings.height) : "",
                      [](Settings& s, const std::wstring& typed) {
                          s.height = InstanceSettings::parseSize(trimmed(typed));
                      });
@@ -577,60 +564,36 @@ namespace ForgottenMelody {
                     options.push_back(option.label);
                 }
                 choose(LOGIN, options, optionOf(LOGINS, std::size(LOGINS), settings.login));
-                text(AUTH_LABEL, AUTH, settings.auth_server,
+                text(AUTH, settings.auth_server,
                      [](Settings& s, const std::wstring& typed) { s.auth_server = trimmed(typed); });
-                text(JOIN_LABEL, JOIN, settings.server,
-                     [](Settings& s, const std::wstring& typed) { s.server = trimmed(typed); });
+                text(JOIN, settings.server, [](Settings& s, const std::wstring& typed) { s.server = trimmed(typed); });
 
                 Control<exui::EditBox>(NOTES).SetMultiline(true);
-                text(NOTES_LABEL, NOTES, settings.notes,
+                text(NOTES, settings.notes,
                      [](Settings& s, const std::wstring& typed) { s.notes = Platform::narrow(typed); });
 
-                text(
-                        GAME_ARGS_LABEL, GAME_ARGS, blb::join_arguments(settings.game_args),
-                        [](Settings& s, const std::wstring& typed) {
-                            s.game_args = blb::split_arguments(Platform::narrow(typed));
-                        },
-                        L"加在游戏参数的最后，空格分隔；含空格的参数用双引号括起来。");
-                text(
-                        PRE_LAUNCH_LABEL, PRE_LAUNCH, settings.pre_launch,
-                        [](Settings& s, const std::wstring& typed) { s.pre_launch = trimmed(typed); },
-                        std::wstring(
-                                L"游戏准备好后、启动前通过 cmd 运行，启动器等它结束再启动游戏；工作目录是游戏目录。") +
-                                COMMAND_VARIABLES);
-                text(
-                        WRAPPER_LABEL, WRAPPER, settings.wrapper,
-                        [](Settings& s, const std::wstring& typed) { s.wrapper = trimmed(typed); },
-                        L"放在 java 前面，由它来运行游戏，例如性能分析工具。游戏同样能读到 INST_* 环境变量。");
-                text(
-                        POST_EXIT_LABEL, POST_EXIT, settings.post_exit,
-                        [](Settings& s, const std::wstring& typed) { s.post_exit = trimmed(typed); },
-                        std::wstring(L"游戏退出后通过 cmd 运行，不等它结束；工作目录是游戏目录。") + COMMAND_VARIABLES);
-                text(
-                        JVM_LABEL, JVM, blb::join_arguments(settings.jvm_args),
-                        [](Settings& s, const std::wstring& typed) {
-                            s.jvm_args = blb::split_arguments(Platform::narrow(typed));
-                        },
-                        L"加在启动器默认的 JVM 参数之后，空格分隔；含空格的参数用双引号括起来。");
-                text(
-                        MIN_LABEL, MIN, settings.min_memory_mb != 0 ? std::to_string(settings.min_memory_mb) : "",
-                        [](Settings& s, const std::wstring& typed) {
-                            s.min_memory_mb = InstanceSettings::parseMegabytes(Platform::narrow(typed));
-                        },
-                        L"Java 一开始就占用的内存（-Xms），不超过最大内存；留空则由 Java 决定。");
-                text(
-                        ENVIRONMENT_LABEL, ENVIRONMENT, InstanceSettings::joinEnvironment(settings.environment),
-                        [](Settings& s, const std::wstring& typed) {
-                            s.environment = InstanceSettings::splitEnvironment(Platform::narrow(typed));
-                        },
-                        L"游戏进程额外的环境变量，写成 名称=值，空格分隔；值里有空格时把整项用双引号括起来。");
+                text(GAME_ARGS, blb::join_arguments(settings.game_args), [](Settings& s, const std::wstring& typed) {
+                    s.game_args = blb::split_arguments(Platform::narrow(typed));
+                });
+                text(PRE_LAUNCH, settings.pre_launch,
+                     [](Settings& s, const std::wstring& typed) { s.pre_launch = trimmed(typed); });
+                text(WRAPPER, settings.wrapper,
+                     [](Settings& s, const std::wstring& typed) { s.wrapper = trimmed(typed); });
+                text(POST_EXIT, settings.post_exit,
+                     [](Settings& s, const std::wstring& typed) { s.post_exit = trimmed(typed); });
+                text(JVM, blb::join_arguments(settings.jvm_args), [](Settings& s, const std::wstring& typed) {
+                    s.jvm_args = blb::split_arguments(Platform::narrow(typed));
+                });
+                text(MIN, settings.min_memory_mb != 0 ? std::to_string(settings.min_memory_mb) : "",
+                     [](Settings& s, const std::wstring& typed) {
+                         s.min_memory_mb = InstanceSettings::parseMegabytes(Platform::narrow(typed));
+                     });
+                text(ENVIRONMENT, InstanceSettings::joinEnvironment(settings.environment),
+                     [](Settings& s, const std::wstring& typed) {
+                         s.environment = InstanceSettings::splitEnvironment(Platform::narrow(typed));
+                     });
                 SetChecked(NO_DEFAULT_JVM_ARGS, !settings.default_jvm_args);
-                FindControl(NO_DEFAULT_JVM_ARGS)
-                        ->SetTooltipText(L"不加启动器默认的 G1 "
-                                         L"垃圾回收、日志安全和输出编码等参数，只用版本自带的和上面填写的。");
                 SetChecked(NO_INTEGRITY_CHECK, !settings.check_integrity);
-                FindControl(NO_INTEGRITY_CHECK)
-                        ->SetTooltipText(L"启动前不校验也不补全游戏文件，启动更快；文件缺失或损坏时游戏会启动失败。");
 
                 FindControl(MODS)->SetEnabled(Instances::hasModLoader(entry));
                 // Like the default interface, an instance that cannot be read is not exported.

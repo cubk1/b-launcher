@@ -2,7 +2,6 @@
 #include "app/launch/GameOptions.h"
 #include "ui/imgui/screens/shell/Page.h"
 
-#include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiRender.h"
@@ -34,13 +33,6 @@ namespace GameOptionRows {
             }
         }
 
-        void explain(const std::string& id, const char* text, float rowY, float labelRight, bool blocked) {
-            float left = Page::columnLeft();
-            if (!blocked && NewUi::hit(left, rowY, labelRight - left, Page::ROW_H)) {
-                NewUi::markDoc(id, text, left + 6.0f, rowY + Page::ROW_H + 10.0f);
-            }
-        }
-
         void slider(const std::string& id, const std::filesystem::path& file, const Option& option, float rowY,
                     bool blocked) {
             Page::label(option.label, rowY);
@@ -57,7 +49,6 @@ namespace GameOptionRows {
             widget.compactTrack(trackX, rowY + (Page::ROW_H - BAR_H) * 0.5f, TRACK_W);
             widget.block(blocked);
             widget.paint();
-            explain(name, option.description, rowY, trackX - 16.0f, blocked);
         }
 
         void scale(const std::string& id, const std::filesystem::path& file, float rowY, bool blocked) {
@@ -84,7 +75,6 @@ namespace GameOptionRows {
             SelectWidget widget(name, choice);
             widget.bounds(x, rowY + Page::FIELD_Y, SELECT_W, Page::FIELD_H).block(blocked);
             widget.paint();
-            explain(name, option.description, rowY, x - 8.0f, blocked);
         }
     }
 

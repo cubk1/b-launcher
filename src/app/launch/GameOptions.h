@@ -17,7 +17,6 @@ namespace GameOptions {
         Option id;
         const char* key;
         const char* label;
-        const char* description;
         int low, high, fallback;
         const char* unit;
     };

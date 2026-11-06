@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Page {
 
@@ -41,6 +42,8 @@ namespace Page {
     void listCard(float x, float y, float w, float rowHeight, int rows);
     void card(float y, int rows);
     void label(const std::string& text, float y);
+    void reveal(const std::string& text);
+    void collect(std::vector<std::string>* sink);
     float tag(const std::string& text, float x, float rowY, uint32_t fill, uint32_t ink, float padding = 6.0f);
     // Paint the supplied fraction; callers own animation and unknown-progress state.
     void progressRing(float cx, float cy, float fraction);

@@ -80,6 +80,7 @@ namespace ForgottenMelody {
         struct Section {
             std::wstring name;
             uint32_t panel;
+            std::wstring group = {};
         };
 
         // 下载中心's own measures by default, the backing reaching further down over the room its big button took: the
@@ -119,7 +120,13 @@ namespace ForgottenMelody {
     private:
         enum : uint32_t { SECTIONS = 1, DONE, TITLE, BACKING };
 
+        void listSections(int current);
+
         std::vector<Section> sections;
+        std::vector<int> rowSections;
+        std::vector<int> rowTargets;
+        std::vector<std::wstring> shownRows;
+        int currentSection = 0;
         std::wstring subject;
         int footerButtonWidth = 80;
         exui::Widget* focused = nullptr;

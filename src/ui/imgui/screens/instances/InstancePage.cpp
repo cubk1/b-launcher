@@ -127,11 +127,6 @@ namespace InstancePage {
                 {"第三方登录：统一通行证", "nide8"},
         };
 
-        const char* const COMMAND_VARIABLES =
-                "可用的环境变量：%INST_NAME%（实例名）、%INST_DIR%（版本文件夹）、%INST_MC_DIR%（游戏目录）、%INST_"
-                "JAVA%（Java 路径），"
-                "装有对应加载器时 %INST_FORGE%、%INST_NEOFORGE%、%INST_FABRIC%、%INST_QUILT%、%INST_OPTIFINE% 等为 1。";
-
         std::string fitEnd(const std::string& text, float available, float size) {
             return UiFont::fitEnd(text, UiFont::MEDIUM, size, available);
         }
@@ -295,13 +290,6 @@ namespace InstancePage {
                     .hitArea(Page::left(), rowY, Page::width(), Page::ROW_H)
                     .block(blocked);
             widget.paint();
-        }
-
-        void explain(const std::string& id, const char* field, const char* text, float rowY, float labelRight,
-                     bool blocked) {
-            if (!blocked && NewUi::hit(Page::left(), rowY, labelRight - Page::left(), Page::ROW_H)) {
-                NewUi::markDoc(owner(id, field), text, Page::left() + 6.0f, rowY + Page::ROW_H + 10.0f);
-            }
         }
 
         std::shared_ptr<ModeBinding> optionSetting(const std::string& id, const char* field,
@@ -659,7 +647,7 @@ namespace InstancePage {
             float shade = UiState::motion(owner(id, "optionsFile#shade"), usable ? 1.0f : 0.4f, 16.0f);
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * shade;
-            Page::label("游戏设置文件", rowY);
+            Page::label(usable ? "游戏设置文件" : "游戏设置文件（需启用补丁）", rowY);
             float fieldX = Page::controlRight() - SELECT_W;
             textField(textSetting(
                               id, "optionsFile", "options.txt", [](const Settings& s) { return s.options_file; },
@@ -679,11 +667,6 @@ namespace InstancePage {
                 edit(id, [named](Settings& s) { s.options_file = named; });
             }
             UiRender::alphaMul = savedAlpha;
-            explain(id, "optionsFile",
-                    usable ? "游戏的按键、视频、语言等设置改存到这个文件，留空则使用 options.txt。多个实例共用一个游戏"
-                             "目录时，可以各自保留一份设置。"
-                           : "需要为这个实例启用启动器补丁，这项设置才能使用。",
-                    rowY, presetX - 8.0f, blocked);
         }
 
         void gameRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -928,7 +911,7 @@ namespace InstancePage {
                 UiRender::roundRect(Page::left(), rowY, Page::width(), Page::ROW_H, 12.0f,
                                     UiTheme::overlay(Ui::round(14 * hover)), 4 | 8);
             }
-            Page::label("高级设置", rowY);
+            Page::label("高级", rowY);
             UiWidgets::icon(Ui::glyph(0xf054), Page::controlRight() - 6.0f, rowY + Page::ROW_H * 0.5f,
                             UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), hover), 9.0f);
             if (!blocked && NewUi::click(Page::left(), rowY, Page::width(), Page::ROW_H)) {
@@ -1071,47 +1054,37 @@ namespace InstancePage {
         }
 
         void wideTextRow(const std::string& id, const char* field, const char* label, const char* placeholder,
-                         const char* doc, std::function<std::string(const Settings&)> read,
+                         std::function<std::string(const Settings&)> read,
                          std::function<void(Settings&, const std::string&)> write, float rowY, bool blocked) {
             Page::label(label, rowY);
             float fieldX = Page::controlRight() - WIDE_FIELD;
             textField(textSetting(id, field, placeholder, std::move(read), std::move(write)), fieldX, rowY, WIDE_FIELD,
                       blocked);
-            explain(id, field, doc, rowY, fieldX - 8.0f, blocked);
         }
 
         void commandRows(const Instances::Entry& entry, float y, bool blocked) {
             const std::string& id = entry.key;
             float rowY = y;
-            static const std::string preLaunchDoc =
-                    std::string("游戏准备好后、启动前通过 cmd 运行，启动器等它结束再启动游戏；工作目录是游戏目录。") +
-                    COMMAND_VARIABLES;
-            static const std::string postExitDoc =
-                    std::string("游戏退出后通过 cmd 运行，不等它结束；工作目录是游戏目录。") + COMMAND_VARIABLES;
 
             wideTextRow(
-                    id, "gameArgs", "游戏参数", "无", "加在游戏参数的最后，空格分隔；含空格的参数用双引号括起来。",
+                    id, "gameArgs", "游戏参数", "无",
                     [](const Settings& s) { return blb::join_arguments(s.game_args); },
                     [](Settings& s, const std::string& value) { s.game_args = blb::split_arguments(value); }, rowY,
                     blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
-                    id, "preLaunch", "启动前命令", "无", preLaunchDoc.c_str(),
-                    [](const Settings& s) { return s.pre_launch; },
+                    id, "preLaunch", "启动前命令", "无", [](const Settings& s) { return s.pre_launch; },
                     [](Settings& s, const std::string& value) { s.pre_launch = Ui::trim(value); }, rowY, blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
-                    id, "wrapper", "包装命令", "无",
-                    "放在 java 前面，由它来运行游戏，例如性能分析工具。游戏同样能读到 INST_* 环境变量。",
-                    [](const Settings& s) { return s.wrapper; },
+                    id, "wrapper", "包装命令", "无", [](const Settings& s) { return s.wrapper; },
                     [](Settings& s, const std::string& value) { s.wrapper = Ui::trim(value); }, rowY, blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
-                    id, "postExit", "退出后命令", "无", postExitDoc.c_str(),
-                    [](const Settings& s) { return s.post_exit; },
+                    id, "postExit", "退出后命令", "无", [](const Settings& s) { return s.post_exit; },
                     [](Settings& s, const std::string& value) { s.post_exit = Ui::trim(value); }, rowY, blocked);
         }
 
@@ -1120,9 +1093,7 @@ namespace InstancePage {
             float rowY = y;
 
             wideTextRow(
-                    id, "jvmArgs", "JVM 参数", "无",
-                    "加在启动器默认的 JVM 参数之后，空格分隔；含空格的参数用双引号括起来。",
-                    [](const Settings& s) { return blb::join_arguments(s.jvm_args); },
+                    id, "jvmArgs", "JVM 参数", "无", [](const Settings& s) { return blb::join_arguments(s.jvm_args); },
                     [](Settings& s, const std::string& value) { s.jvm_args = blb::split_arguments(value); }, rowY,
                     blocked);
             rowY += Page::ROW_H;
@@ -1140,13 +1111,10 @@ namespace InstancePage {
                               },
                               [](Settings& s, const std::string& value) { s.min_memory_mb = parseMegabytes(value); }),
                       fieldX, rowY, 64.0f, blocked);
-            explain(id, "minMemory", "Java 一开始就占用的内存（-Xms），不超过最大内存；留空则由 Java 决定。", rowY,
-                    fieldX - 8.0f, blocked);
             rowY += Page::ROW_H;
 
             wideTextRow(
-                    id, "environment", "环境变量", "无",
-                    "游戏进程额外的环境变量，写成 名称=值，空格分隔；值里有空格时把整项用双引号括起来。",
+                    id, "environment", "环境变量", "名称=值",
                     [](const Settings& s) { return joinEnvironment(s.environment); },
                     [](Settings& s, const std::string& value) { s.environment = splitEnvironment(value); }, rowY,
                     blocked);
@@ -1160,17 +1128,12 @@ namespace InstancePage {
             toggle(
                     id, "noDefaultJvmArgs", [](const Settings& s) { return !s.default_jvm_args; },
                     [](Settings& s, bool value) { s.default_jvm_args = !value; }, rowY, blocked);
-            explain(id, "noDefaultJvmArgs",
-                    "不加启动器默认的 G1 垃圾回收、日志安全和输出编码等参数，只用版本自带的和上面填写的。", rowY,
-                    Page::controlRight() - 40.0f, blocked);
             rowY += Page::ROW_H;
 
             Page::label("不检查游戏完整性", rowY);
             toggle(
                     id, "skipIntegrity", [](const Settings& s) { return !s.check_integrity; },
                     [](Settings& s, bool value) { s.check_integrity = !value; }, rowY, blocked);
-            explain(id, "skipIntegrity", "启动前不校验也不补全游戏文件，启动更快；文件缺失或损坏时游戏会启动失败。",
-                    rowY, Page::controlRight() - 40.0f, blocked);
         }
 
         void advancedSection(const Instances::Entry& entry) {
@@ -1178,7 +1141,7 @@ namespace InstancePage {
             if (Page::iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered)) {
                 sections.go(SECTION_MAIN);
             }
-            const char* title = "高级设置";
+            const char* title = "高级";
             Page::title(title, Page::left() + 30.0f, Page::TOP);
             float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
             UiRender::textY(fitEnd(entry.info.id, Page::right() - nameX, UiWidgets::TEXT_CONTROL), nameX, Page::TOP,
@@ -1293,7 +1256,7 @@ namespace InstancePage {
                 "instance#menu#" + id,
                 [id] {
                     MenuItems items;
-                    items.push_back(ActionMenuItem::make("版本设置", 0xf1de, [id] {
+                    items.push_back(ActionMenuItem::make("实例设置", 0xf1de, [id] {
                                         MainWindow::openVersionSettings(id);
                                     })->enabledIf([id] { return MainWindow::shownInstance() != id; }));
                     items.push_back(ActionMenuItem::make("测试游戏", 0xf188, [id] {

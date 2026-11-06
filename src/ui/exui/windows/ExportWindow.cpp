@@ -56,24 +56,20 @@ namespace ForgottenMelody {
                 {SUMMARY_LABEL, SUMMARY, &Options::summary},
         };
 
-        // What goes into the pack, with the explanations of the default interface.
         struct Part {
             uint32_t id;
             bool Options::* member;
-            const wchar_t* explanation;
         };
         const Part PARTS[] = {
-                {MODS, &Options::mods, nullptr},
-                {DISABLED_MODS, &Options::disabled_mods, nullptr},
-                {MOD_SETTINGS, &Options::mod_settings, L"config 等文件夹里模组的设置。"},
-                {GAME_SETTINGS, &Options::game_settings, L"options.txt 里的按键、视频等设置。"},
-                {RESOURCE_PACKS, &Options::resource_packs, nullptr},
-                {SHADER_PACKS, &Options::shader_packs, nullptr},
-                {SAVES, &Options::saves, nullptr},
-                {SERVERS, &Options::servers, nullptr},
-                {BUNDLE, &Options::bundle_files,
-                 L"关闭时，能在 Modrinth 上找到的模组和资源只记下载地址，整合包更小，安装时再下载；"
-                 L"打开则把文件都放进整合包。"},
+                {MODS, &Options::mods},
+                {DISABLED_MODS, &Options::disabled_mods},
+                {MOD_SETTINGS, &Options::mod_settings},
+                {GAME_SETTINGS, &Options::game_settings},
+                {RESOURCE_PACKS, &Options::resource_packs},
+                {SHADER_PACKS, &Options::shader_packs},
+                {SAVES, &Options::saves},
+                {SERVERS, &Options::servers},
+                {BUNDLE, &Options::bundle_files},
         };
 
         // The default interface's export page as a dialog: the pack, what goes into it and how its files are
@@ -97,7 +93,7 @@ namespace ForgottenMelody {
                         {MODS, ControlKind::Check, {38, 166, 105, 26}, L"模组"},
                         {DISABLED_MODS, ControlKind::Check, {149, 166, 105, 26}, L"已禁用的模组"},
                         {MOD_SETTINGS, ControlKind::Check, {260, 166, 105, 26}, L"模组配置文件"},
-                        {GAME_SETTINGS, ControlKind::Check, {371, 166, 110, 26}, L"游戏设置"},
+                        {GAME_SETTINGS, ControlKind::Check, {371, 166, 110, 26}, L"游戏选项"},
                         {RESOURCE_PACKS, ControlKind::Check, {38, 199, 105, 26}, L"资源包"},
                         {SHADER_PACKS, ControlKind::Check, {149, 199, 105, 26}, L"光影包"},
                         {SAVES, ControlKind::Check, {260, 199, 105, 26}, L"存档"},
@@ -125,9 +121,6 @@ namespace ForgottenMelody {
                 FindControl(VERSION)->SetTooltipText(L"例如 1.0.0");
                 for (const Part& part : PARTS) {
                     SetChecked(part.id, options.*part.member);
-                    if (part.explanation != nullptr) {
-                        FindControl(part.id)->SetTooltipText(part.explanation);
-                    }
                 }
                 startRefreshing();
                 return true;

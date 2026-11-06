@@ -54,7 +54,7 @@ namespace ForgottenMelody {
                          .bounds = {379, 195, 130, 35},
                          .caption = L"新建 .minecraft",
                          .visible = false},
-                        {SETTINGS, ControlKind::Button, {186, 402, 76, 35}, L"版本设置"},
+                        {SETTINGS, ControlKind::Button, {186, 402, 76, 35}, L"实例设置"},
                         {FOLDER, ControlKind::Button, {268, 402, 76, 35}, L"打开目录"},
                         {RENAME, ControlKind::Button, {350, 402, 76, 35}, L"重命名"},
                         {COPY, ControlKind::Button, {432, 402, 76, 35}, L"复制"},

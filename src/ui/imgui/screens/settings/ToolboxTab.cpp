@@ -422,9 +422,7 @@ namespace ToolboxTab {
             Page::caption("PCL2", y);
             y += Page::CAPTION_H;
             Page::card(y, 1);
-            float textX = Page::columnLeft() + 16.0f;
-            UiRender::textY("解锁隐藏主题", textX, y, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
+            Page::label("解锁隐藏主题", y);
             std::string unlockLabel = "一键解锁";
             float unlockW = std::max(90.0f, Page::buttonWidth(unlockLabel, 0xf09c));
             float unlockX = Page::controlRight() - unlockW;

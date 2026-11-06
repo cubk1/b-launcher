@@ -40,6 +40,21 @@ namespace Page {
         float clipTop = 0.0f;
         float clipBottom = 0.0f;
 
+        constexpr double REVEAL_HOLD = 0.6;
+        constexpr double REVEAL_FADE = 1.0;
+        std::string revealText;
+        double revealAt = 0.0;
+        bool revealScrolled = false;
+        bool scrollActive = false;
+        std::string activeId;
+        float activeTop = 0.0f;
+        float activeBottom = 0.0f;
+        float activeOffset = 0.0f;
+        float activeMax = 0.0f;
+        float cardTop = 0.0f;
+        float cardBottom = 0.0f;
+        std::vector<std::string>* collected = nullptr;
+
         float currentLeft = -1.0f;
     }
 
@@ -76,7 +91,7 @@ namespace Page {
     }
 
     bool shown(float y, float h) {
-        return !clipping || (y + h >= clipTop && y <= clipBottom);
+        return collected != nullptr || !clipping || (y + h >= clipTop && y <= clipBottom);
     }
 
     void centredText(const std::string& text, float cx, float y, float h, uint32_t color, float size) {
@@ -98,6 +113,8 @@ namespace Page {
     }
 
     void card(float x, float y, float w, float h) {
+        cardTop = y;
+        cardBottom = y + h;
         UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::surface());
         UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
     }
@@ -113,7 +130,41 @@ namespace Page {
         listCard(columnLeft(), y, columnWidth(), ROW_H, rows);
     }
 
+    void reveal(const std::string& text) {
+        revealText = text;
+        revealAt = ImGui::GetTime();
+        revealScrolled = false;
+    }
+
+    void collect(std::vector<std::string>* sink) {
+        collected = sink;
+    }
+
     void label(const std::string& text, float y) {
+        if (collected != nullptr) {
+            collected->push_back(text);
+            return;
+        }
+        if (!revealText.empty() && text == revealText) {
+            if (!revealScrolled && scrollActive) {
+                revealScrolled = true;
+                float view = activeBottom - activeTop;
+                scrolls[activeId].target =
+                        UiRender::clamp(activeOffset + y - activeTop - (view - ROW_H) * 0.4f, 0.0f, activeMax);
+            }
+            double elapsed = ImGui::GetTime() - revealAt;
+            float amount = elapsed < REVEAL_HOLD ? 1.0f : 1.0f - (float) ((elapsed - REVEAL_HOLD) / REVEAL_FADE);
+            if (amount <= 0.0f) {
+                revealText.clear();
+            } else {
+                UiState::keepAnimating();
+                uint32_t alpha = (uint32_t) Ui::round(56.0f * amount);
+                int corners = (std::fabs(y - cardTop) < 0.5f ? 1 | 2 : 0) |
+                        (std::fabs(y + ROW_H - cardBottom) < 0.5f ? 4 | 8 : 0);
+                UiRender::roundRect(columnLeft(), y, columnWidth(), ROW_H, CARD_RADIUS,
+                                    (UiTheme::accent() & 0x00FFFFFFu) | (alpha << 24), corners);
+            }
+        }
         UiRender::textY(text, columnLeft() + 16.0f, y, ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                         UiWidgets::TEXT_CONTROL);
     }
@@ -316,6 +367,12 @@ namespace Page {
 
     bool Scroll::begin() {
         UiRender::scissor(left - 4.0f, top, width + 8.0f, bottom - top);
+        scrollActive = true;
+        activeId = id;
+        activeTop = top;
+        activeBottom = bottom;
+        activeOffset = offset;
+        activeMax = maxScroll;
         clipping = true;
         clipTop = top;
         clipBottom = bottom;
@@ -323,6 +380,7 @@ namespace Page {
     }
 
     void Scroll::end() {
+        scrollActive = false;
         clipping = false;
         UiRender::unscissor();
         if (maxScroll < 0.5f) {

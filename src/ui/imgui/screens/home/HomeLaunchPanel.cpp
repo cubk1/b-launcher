@@ -381,7 +381,7 @@ namespace HomeLaunchPanel {
             UiSound::request(UiSound::PAGE);
             MainWindow::showVersions();
         }
-        if (sideButton("home#versionSettings", "版本设置", sideX, y + SIDE_BTN + SIDE_GAP, SIDE_W, blocked)) {
+        if (sideButton("home#versionSettings", "实例设置", sideX, y + SIDE_BTN + SIDE_GAP, SIDE_W, blocked)) {
             UiSound::request(UiSound::PAGE);
             std::string key = Instances::selected();
             if (!key.empty()) {

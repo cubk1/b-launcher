@@ -741,7 +741,7 @@ namespace MainWindow {
                     "sidebar#instance#" + key,
                     [key, source] {
                         MenuItems items;
-                        items.push_back(ActionMenuItem::make("版本设置", 0xf013, [key] { openVersionSettings(key); }));
+                        items.push_back(ActionMenuItem::make("实例设置", 0xf013, [key] { openVersionSettings(key); }));
                         items.push_back(
                                 ActionMenuItem::make("置顶", 0xf062, [source, key] { moveVersion(source, key, 0); }));
                         items.push_back(
@@ -1065,7 +1065,7 @@ namespace MainWindow {
         }
         navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
-        navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
+        navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
         UiRender::unscissor();
     }
 
