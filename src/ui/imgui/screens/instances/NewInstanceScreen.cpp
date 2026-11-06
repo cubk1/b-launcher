@@ -356,6 +356,9 @@ namespace NewInstanceScreen {
             ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
         }
 
+        bool cancelArmed = false;
+        double armedAt = 0.0;
+
         void installButton(float right, float bottom, const std::string& problem, bool waiting) {
             const char* action = editing.empty() ? "安装" : "应用";
             bool installing = Installer::running();
@@ -367,6 +370,10 @@ namespace NewInstanceScreen {
             float x = right - w;
             float y = bottom - h;
             bool hovered = !NewUi::overlayCoversMouse() && NewUi::hit(x, y, w, h);
+            if (!installing || (cancelArmed && (!hovered || ImGui::GetTime() - armedAt > 3.0))) {
+                cancelArmed = false;
+            }
+            float armed = UiState::motion("new#install#armed", cancelArmed ? 1.0f : 0.0f, 16.0f);
             float hover = UiState::motion("new#install#hover", usable && hovered ? 1.0f : 0.0f, 18.0f);
             float enabled = UiState::motion("new#install#enabled", usable ? 1.0f : 0.0f, 14.0f);
             float savedAlpha = UiRender::alphaMul;
@@ -385,8 +392,12 @@ namespace NewInstanceScreen {
             }
             if (morph > 0.01f) {
                 float alpha = UiRender::alphaMul;
-                UiRender::alphaMul = alpha * morph;
+                UiRender::alphaMul = alpha * morph * (1.0f - armed);
                 ring(cx, cy, 11.0f * UiRender::lerp(0.4f, 1.0f, morph), Installer::progress(), ink);
+                if (armed > 0.01f) {
+                    UiRender::alphaMul = alpha * morph * armed;
+                    UiWidgets::icon(Ui::glyph(0xf00d), cx, cy, ink, UiRender::lerp(10.0f, 18.0f, armed));
+                }
                 UiRender::alphaMul = alpha;
             }
             UiRender::alphaMul = savedAlpha;
@@ -402,15 +413,21 @@ namespace NewInstanceScreen {
                                 UiWidgets::TEXT_CONTROL);
             }
             if (installing && hovered) {
-                std::string hint = editing.empty() ? "取消安装" : "取消修改";
+                std::string verb = editing.empty() ? "取消安装" : "取消修改";
+                std::string hint = cancelArmed ? "再次点击" + verb : verb;
                 float tipW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22.0f;
-                NewUi::tooltipText = hint;
-                NewUi::tooltipX = x + w - tipW;
-                NewUi::tooltipY = y - 34.0f;
+                NewUi::tooltipNow(hint, x + w - tipW, y - 34.0f);
             }
             if (usable && NewUi::click(x, y, w, h)) {
+                if (installing && !cancelArmed) {
+                    UiSound::request(UiSound::TICK);
+                    cancelArmed = true;
+                    armedAt = ImGui::GetTime();
+                    return;
+                }
                 UiSound::request(installing ? UiSound::RELEASE : UiSound::PULSE);
                 if (installing) {
+                    cancelArmed = false;
                     Installer::cancel();
                 } else if (!editing.empty()) {
                     Installer::startModify(editing, loaderSelection.requests());

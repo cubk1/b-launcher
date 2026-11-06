@@ -20,6 +20,7 @@ namespace NewUi {
     extern const std::string INPUT_TEXT;
     extern const std::string INPUT_POPUP;
     void endPopupSearch();
+    void tooltipNow(const std::string& text, float x, float y);
     extern const std::string INPUT_SLIDER;
 
     extern float mouseX;

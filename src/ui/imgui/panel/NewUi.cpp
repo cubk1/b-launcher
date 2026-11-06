@@ -809,6 +809,16 @@ namespace NewUi {
     float tooltipWaited = 0.0f;
     constexpr float TOOLTIP_DELAY = 0.5f;
 
+    void tooltipNow(const std::string& text, float x, float y) {
+        if (tooltipWaiting != text) {
+            tooltipWaiting = text;
+            tooltipWaited = TOOLTIP_DELAY;
+        }
+        tooltipText = text;
+        tooltipX = x;
+        tooltipY = y;
+    }
+
     void tooltipLayer() {
         if (tooltipText.empty()) {
             tooltipWaiting.clear();
