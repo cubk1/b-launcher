@@ -1744,8 +1744,10 @@ namespace DownloadsScreen {
                 return;
             }
             bool intoInstance = !ProjectInstaller::folder(kind).empty() || kind == Kind::World;
-            if ((intoInstance && ProjectInstaller::installed(version, kind, target)) ||
-                ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done)) {
+            bool saveAs = intoInstance && Instances::find(target) == nullptr;
+            if (!saveAs &&
+                ((intoInstance && ProjectInstaller::installed(version, kind, target)) ||
+                 ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done))) {
                 std::string done = "已安装";
                 float doneW = UiFont::width(done, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY(done, right - doneW, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -1753,21 +1755,16 @@ namespace DownloadsScreen {
                 UiWidgets::check(right - doneW - 12.0f, centreY, UiTheme::accent(), 9.0f);
                 return;
             }
-            std::string text = kind == Kind::Datapack ? "下载" : "安装";
-            float w = Page::buttonWidth(text, 0xf019);
+            std::string text = saveAs ? "另存为" : kind == Kind::Datapack ? "下载" : "安装";
+            int glyph = saveAs ? 0xf0c7 : 0xf019;
+            float w = Page::buttonWidth(text, glyph);
             float x = right - w;
-            bool usable = !intoInstance || Instances::find(target) != nullptr;
-            float saved = UiRender::alphaMul;
-            if (!usable) {
-                UiRender::alphaMul = saved * 0.45f;
+            if (!Page::button("downloads#install#" + version.id, text, x, rowY + Page::FIELD_Y, w, false, blocked,
+                              glyph)) {
+                return;
             }
-            bool pressed = Page::button("downloads#install#" + version.id, text, x, rowY + Page::FIELD_Y, w, false,
-                                        blocked || !usable, 0xf019);
-            UiRender::alphaMul = saved;
-            if (!usable && !blocked && NewUi::hit(x, rowY + Page::FIELD_Y, w, Page::FIELD_H)) {
-                Page::tooltip("先在上方选择要安装到的实例", x, rowY + Page::FIELD_Y, w, Page::FIELD_H);
-            }
-            if (!pressed || !usable) {
+            if (saveAs) {
+                ProjectInstaller::saveAs(version, project.title);
                 return;
             }
             switch (kind) {

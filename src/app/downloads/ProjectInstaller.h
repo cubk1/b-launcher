@@ -21,6 +21,7 @@ namespace ProjectInstaller {
     void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
                  const std::string& instanceKey);
     void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title);
+    void saveAs(const Addons::Version& version, const std::string& title);
     void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey);
 
     void poll();

@@ -2,8 +2,11 @@
 #include "app/downloads/Recent.h"
 #include "app/system/AsyncTasks.h"
 #include "app/instances/Instances.h"
+#include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
+
+#include <core/base/json.hpp>
 
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
@@ -175,13 +178,9 @@ namespace ProjectInstaller {
             std::map<std::string, std::pair<unsigned long long, unsigned long long>> sizes;
         };
 
-        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& directory) {
-            if (!blb::fs::safe_filename(file.filename) || directory.empty()) {
-                throw std::runtime_error("下载文件名或保存目录无效");
-            }
-            auto target = directory / blb::path_from_utf8(file.filename);
-            if (!blb::fs::is_inside(directory, target) || blb::fs::stat(target).is_link) {
-                throw std::runtime_error("下载路径超出保存目录或指向链接");
+        blb::net::download_task taskAt(const Addons::File& file, const std::filesystem::path& target) {
+            if (!target.has_filename() || blb::fs::stat(target).is_link) {
+                throw std::runtime_error("保存位置无效");
             }
             blb::net::download_task task;
             task.urls = Addons::fileUrls(file.url);
@@ -191,6 +190,17 @@ namespace ProjectInstaller {
                 task.sha1 = blb::parse_sha1(file.sha1);
             }
             return task;
+        }
+
+        blb::net::download_task taskFor(const Addons::File& file, const std::filesystem::path& directory) {
+            if (!blb::fs::safe_filename(file.filename) || directory.empty()) {
+                throw std::runtime_error("下载文件名或保存目录无效");
+            }
+            auto target = directory / blb::path_from_utf8(file.filename);
+            if (!blb::fs::is_inside(directory, target) || blb::fs::stat(target).is_link) {
+                throw std::runtime_error("下载路径超出保存目录或指向链接");
+            }
+            return taskAt(file, target);
         }
 
         std::string download(const std::vector<blb::net::download_task>& files, const std::shared_ptr<Task>& task,
@@ -661,6 +671,42 @@ namespace ProjectInstaller {
                 std::string extra =
                         dependencies > 0 ? "（含 " + std::to_string(dependencies) + " 个前置）" : std::string();
                 finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra);
+            };
+        });
+    }
+
+    void saveAs(const Addons::Version& version, const std::string& title) {
+        const Addons::File* file = version.file();
+        if (file == nullptr || state(version.id) == State::Running) {
+            return;
+        }
+        std::error_code error;
+        std::filesystem::path folder = blb::path_from_utf8(blb::json_text(Config::data(), "saveAsFolder"));
+        if (folder.empty() || !std::filesystem::is_directory(folder, error)) {
+            const Instances::Source* source = Instances::installSource("");
+            folder = source != nullptr && std::filesystem::is_directory(source->root, error) ? source->root
+                                                                                             : Platform::exeDirectory();
+        }
+        std::optional<std::filesystem::path> picked =
+                Platform::pickSaveAs(folder / blb::path_from_utf8(file->filename));
+        if (!picked || state(version.id) == State::Running) {
+            return;
+        }
+        Config::data()["saveAsFolder"] = blb::path_to_utf8(picked->parent_path());
+        Config::save();
+        std::shared_ptr<Task> task = begin(version.id);
+        Addons::File chosen = *file;
+        std::filesystem::path target = *picked;
+        std::string name = blb::path_to_utf8(target.filename());
+        run(task, [task, chosen, target, title, name](blb::cancellation_token token) -> Continuation {
+            std::vector<blb::net::download_task> files = {taskAt(chosen, target)};
+            std::string problem = download(files, task, token);
+            if (token.is_cancelled()) {
+                return nullptr;
+            }
+            return [task, problem, title, name] {
+                finish(task, problem.empty(),
+                       problem.empty() ? "已下载 " + name : "无法下载 " + title + "：" + problem);
             };
         });
     }

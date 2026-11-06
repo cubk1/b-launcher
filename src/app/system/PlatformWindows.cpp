@@ -675,6 +675,23 @@ namespace Platform {
         return saveDialog(suggested, title, owner, filters, 2, L"log");
     }
 
+    std::optional<std::filesystem::path> pickSaveAs(const std::filesystem::path& suggested) {
+        std::wstring extension = suggested.extension().wstring();
+        if (!extension.empty()) {
+            extension.erase(0, 1);
+        }
+        if (extension.empty()) {
+            const COMDLG_FILTERSPEC filters[] = {{L"所有文件", L"*.*"}};
+            return saveDialog(suggested, L"另存为", nullptr, filters, 1, L"");
+        }
+        std::wstring upper = extension;
+        std::transform(upper.begin(), upper.end(), upper.begin(), [](wchar_t c) { return (wchar_t) towupper(c); });
+        std::wstring name = upper + L" 文件 (*." + extension + L")";
+        std::wstring pattern = L"*." + extension;
+        const COMDLG_FILTERSPEC filters[] = {{name.c_str(), pattern.c_str()}, {L"所有文件", L"*.*"}};
+        return saveDialog(suggested, L"另存为", nullptr, filters, 2, extension.c_str());
+    }
+
     std::optional<std::filesystem::path> pickShortcut(const std::filesystem::path& suggested) {
         const COMDLG_FILTERSPEC filters[] = {{L"快捷方式 (*.lnk)", L"*.lnk"}};
         return saveDialog(suggested, L"快捷方式保存位置", nullptr, filters, 1, L"lnk");

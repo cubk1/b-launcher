@@ -1098,26 +1098,24 @@ namespace ForgottenMelody {
 
                 const Addons::Version* version = selectedVersion();
                 bool intoInstance = !ProjectInstaller::folder(query.kind).empty();
-                bool usable = !intoInstance || Instances::find(target) != nullptr;
+                bool saveAs = intoInstance && Instances::find(target) == nullptr;
                 ProjectInstaller::State state =
                         version != nullptr ? ProjectInstaller::state(version->id) : ProjectInstaller::State::Idle;
-                bool installed = version != nullptr &&
-                        ((intoInstance && usable && ProjectInstaller::installed(*version, query.kind, target)) ||
+                bool installed = version != nullptr && !saveAs &&
+                        ((intoInstance && ProjectInstaller::installed(*version, query.kind, target)) ||
                          (query.kind == Kind::Modpack && state == ProjectInstaller::State::Done));
                 std::wstring status;
                 if (version == nullptr) {
                     status = versionKeys.size() > 1 || !versionKeys.front().empty() ? L"选择一个版本" : L"";
                 } else if (state == ProjectInstaller::State::Running) {
-                    status = L"正在安装 " + std::to_wstring((int) (ProjectInstaller::progress(version->id) * 100)) +
-                            L"%";
+                    status = (saveAs ? L"正在下载 " : L"正在安装 ") +
+                            std::to_wstring((int) (ProjectInstaller::progress(version->id) * 100)) + L"%";
                 } else if (installed) {
                     status = L"已安装";
-                } else if (!usable) {
-                    status = L"先在上方选择要安装到的实例";
                 }
                 UpdateText(STATUS, status);
-                UpdateText(ACTION, query.kind == Kind::Datapack ? L"下载" : L"安装");
-                FindControl(ACTION)->SetEnabled(version != nullptr && usable && !installed &&
+                UpdateText(ACTION, saveAs ? L"另存为" : query.kind == Kind::Datapack ? L"下载" : L"安装");
+                FindControl(ACTION)->SetEnabled(version != nullptr && !installed &&
                                                 state != ProjectInstaller::State::Running);
             }
 
@@ -1334,6 +1332,10 @@ namespace ForgottenMelody {
                 }
                 // The list may be fetched again under a dialog, so the version is copied before one opens.
                 const Addons::Version version = *chosen;
+                if (!ProjectInstaller::folder(query.kind).empty() && Instances::find(target) == nullptr) {
+                    ProjectInstaller::saveAs(version, project.title);
+                    return;
+                }
                 switch (query.kind) {
                     case Kind::Modpack: {
                         auto setup = ModpackSetup::fromProject(version, project.title);

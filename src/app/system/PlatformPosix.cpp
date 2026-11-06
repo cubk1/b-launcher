@@ -439,6 +439,25 @@ namespace Platform {
                        {{"日志文件 (*.log)", "log"}, {"文本文件 (*.txt)", "txt"}});
     }
 
+    std::optional<std::filesystem::path> pickSaveAs(const std::filesystem::path& suggested) {
+        std::string extension = blb::path_to_utf8(suggested.extension());
+        if (!extension.empty()) {
+            extension.erase(0, 1);
+        }
+        std::vector<Filter> filters;
+        if (!extension.empty()) {
+            std::string upper = extension;
+            for (char& c : upper) {
+                if (c >= 'a' && c <= 'z') {
+                    c = (char) (c - 'a' + 'A');
+                }
+            }
+            filters.push_back({upper + " 文件 (*." + extension + ")", extension});
+        }
+        filters.push_back({"所有文件", "*"});
+        return pickOne(SDL_FILEDIALOG_SAVEFILE, "另存为", suggested, filters);
+    }
+
     std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path& suggested) {
         return pickOne(SDL_FILEDIALOG_SAVEFILE, "导出整合包", suggested, {{"Modrinth 整合包 (*.mrpack)", "mrpack"}});
     }
