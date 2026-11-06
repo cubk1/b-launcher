@@ -18,6 +18,8 @@ namespace NewUi {
 
     extern const std::string INPUT_COLOR;
     extern const std::string INPUT_TEXT;
+    extern const std::string INPUT_POPUP;
+    void endPopupSearch();
     extern const std::string INPUT_SLIDER;
 
     extern float mouseX;
