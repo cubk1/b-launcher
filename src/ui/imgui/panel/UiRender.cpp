@@ -109,7 +109,7 @@ namespace UiRender {
     }
 
     float scale() {
-        return uiScale * scaleFactor;
+        return uiScale * settledScale();
     }
 
     float stableScale() {
@@ -130,16 +130,20 @@ namespace UiRender {
         }
     }
 
+    float settledScale() {
+        return scaling() ? scaleFactor : 1.0f;
+    }
+
     float transformX(float x) {
-        return pivotX + (x * uiScale + offsetX - pivotX) * scaleFactor;
+        return pivotX + (x * uiScale + offsetX - pivotX) * settledScale();
     }
 
     float transformY(float y) {
-        return pivotY + (y * uiScale + offsetY - pivotY) * scaleFactor;
+        return pivotY + (y * uiScale + offsetY - pivotY) * settledScale();
     }
 
     float transformW(float w) {
-        return w * uiScale * scaleFactor;
+        return w * uiScale * settledScale();
     }
 
     uint32_t applyAlpha(uint32_t rgba) {

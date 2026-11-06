@@ -19,14 +19,17 @@ bool PageTransition::go(int next) {
 
 void PageTransition::begin() {
     mix = UiRender::lerp(mix, 1.0f, 1.0f - (float) std::exp(-15.0f * UiRender::deltaTime()));
-    if (mix < 0.999f) {
+    if (mix > 0.9995f) {
+        mix = 1.0f;
+    } else {
         UiState::keepAnimating();
     }
     float eased = 1.0f - (float) std::pow(1.0f - mix, 3.0);
+    float pixel = UiRender::pixelScale();
     savedAlpha = UiRender::alphaMul;
     savedOffsetX = UiRender::offsetX;
     UiRender::alphaMul = savedAlpha * mix;
-    UiRender::offsetX = savedOffsetX + 9.0f * (1.0f - eased) * UiRender::uiScale;
+    UiRender::offsetX = savedOffsetX + std::round(9.0f * (1.0f - eased) * UiRender::uiScale * pixel) / pixel;
 }
 
 void PageTransition::end() {
