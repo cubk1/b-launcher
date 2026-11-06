@@ -665,9 +665,9 @@ namespace NewInstanceScreen {
                 }
             }
             UiRender::alphaMul = savedAlpha;
-            Page::title(!editing.empty()  ? "修改加载器"
-                                : modpack ? "安装整合包"
-                                          : "新建实例",
+            Page::title(!editing.empty()  ? std::string("修改加载器")
+                                : modpack ? std::string("安装整合包")
+                                          : "新建 " + minecraft + " 实例",
                         Page::left() + 30.0f * (1.0f - phase), Page::TOP);
             if (!editing.empty()) {
                 if (const Instances::Entry* entry = Instances::find(editing)) {
@@ -811,21 +811,14 @@ namespace NewInstanceScreen {
             Page::caption("加载器", y);
             y += Page::CAPTION_H;
             Page::card(y, loaderRows);
-            if (edit) {
-                if (Page::shown(y)) {
-                    UiRender::texture(Icons::vanilla(), Page::left() + 16.0f, y + (Page::ROW_H - 16.0f) * 0.5f, 16.0f,
-                                      16.0f);
-                    UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
-                                    UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
-                                    UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                }
-            } else if (Page::shown(y) &&
-                       loaderRow("new#row#minecraft", Icons::vanilla(), 0, "Minecraft", minecraft,
-                                 UiTheme::textSecondary(), true, false, y, rowsBlocked,
-                                 Page::rowCorners(0, loaderRows)) == RowAction::Open) {
-                steps.go(STEP_VERSIONS);
+            if (Page::shown(y)) {
+                UiRender::texture(Icons::vanilla(), Page::left() + 16.0f, y + (Page::ROW_H - 16.0f) * 0.5f, 16.0f,
+                                  16.0f);
+                UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
+                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
+                                UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             }
             y += Page::ROW_H;
             int rowIndex = 1;

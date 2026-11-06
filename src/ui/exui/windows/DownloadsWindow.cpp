@@ -1233,7 +1233,8 @@ namespace ForgottenMelody {
 
             void showSetup() {
                 bool pack = modpack.has_value();
-                UpdateText(SETUP_TITLE, pack ? L"安装整合包" : L"新建实例");
+                UpdateText(SETUP_TITLE,
+                           pack ? std::wstring(L"安装整合包") : L"新建 " + Platform::widen(minecraft) + L" 实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
 
                 std::vector<std::wstring> places;
