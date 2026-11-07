@@ -154,6 +154,7 @@ namespace ModGraph {
 
         std::map<std::string, View> views;
         const Model* model = nullptr;
+        bool movable = false;
 
         const Item* itemOf(const Node& node) {
             if (node.kind != Kind::Remote || model == nullptr || node.item < 0 ||
@@ -1688,7 +1689,7 @@ namespace ModGraph {
                         UiRender::lerp(nodeW, CARD_W, reveal), UiRender::lerp(nodeH, height, reveal)};
         }
 
-        float toolsW = 4.0f * TOOL_STEP - 4.0f + 8.0f;
+        float toolsW = 5.0f * TOOL_STEP - 4.0f + 8.0f;
         float toolsH = 36.0f;
         float toolsX = fitArea.x + fitArea.w - 14.0f - toolsW;
         float toolsY = fitArea.y + fitArea.h - 14.0f - toolsH;
@@ -1713,7 +1714,7 @@ namespace ModGraph {
                     break;
                 }
             }
-            if (hovered < 0) {
+            if (hovered < 0 && movable) {
                 for (int i = (int) view.clusters.size() - 1; i >= 0; i--) {
                     const Cluster& cluster = view.clusters[(size_t) i];
                     if (NewUi::rawHit(screenX(cluster.x), screenY(cluster.y), cluster.w * zoom, cluster.h * zoom)) {
@@ -1938,6 +1939,10 @@ namespace ModGraph {
             view.signature.clear();
             view.fitted = false;
             touch(view);
+        }
+        if (Page::iconButton("mods#graph#lock", movable ? 0xf3c1 : 0xf023, movable ? "锁定分组" : "允许拖动分组",
+                             toolX + 4.0f * TOOL_STEP, toolY, blocked)) {
+            movable = !movable;
         }
         UiRender::alphaMul = savedTools;
         if (shown >= 0) {

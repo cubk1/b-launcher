@@ -119,6 +119,15 @@ namespace LaunchDefaults {
         Config::save();
     }
 
+    bool wrapLogLines() {
+        return blb::json_bool(Config::data(), "logWrapLines", true);
+    }
+
+    void setWrapLogLines(bool on) {
+        Config::data()["logWrapLines"] = on;
+        Config::save();
+    }
+
     void applyLanguage(Language language, const std::filesystem::path& gameDirectory, const std::string& minecraft,
                        const std::string& optionsFile) {
         if (language == Language::None || gameDirectory.empty()) {

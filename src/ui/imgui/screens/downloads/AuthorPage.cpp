@@ -92,6 +92,10 @@ namespace AuthorPage {
                             avatarX + AVATAR * 0.5f, avatarY + AVATAR * 0.5f, UiTheme::textFaint(), 18.0f);
         }
         float textX = avatarX + AVATAR + 12.0f;
+        bool sortable = route.author != Authors::Kind::Mcmod;
+        std::vector<DownloadsParts::Segment> sorts = {{0, "下载量", 0xf019, 0}, {1, "最近更新", 0xf017, 0}};
+        float sortW = sortable ? DownloadsParts::segmentsWidth(sorts) : 0.0f;
+        float textRight = sortable ? right - sortW - 12.0f : right;
         float linkX = right - 28.0f;
         std::string site = route.author == Authors::Kind::Mcmod
                 ? std::string("在 MC 百科上查看")
@@ -119,17 +123,17 @@ namespace AuthorPage {
         std::string bio = !profile.bio.empty() ? profile.bio : role;
         std::string flat = bio;
         std::replace(flat.begin(), flat.end(), '\n', ' ');
-        UiRender::textY(fitEnd(flat, right - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
+        UiRender::textY(fitEnd(flat, textRight - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
                         UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
         float sx = textX;
         float statY = Page::TOP + 38.0f;
         if (profile.status == Status::Ready) {
-            sx += stat(0xf1b3, std::to_string(profile.projects.size()) + " 个项目", sx, statY, right);
+            sx += stat(0xf1b3, std::to_string(profile.projects.size()) + " 个项目", sx, statY, textRight);
             if (profile.downloads > 0) {
-                sx += stat(0xf019, Addons::count(profile.downloads) + " 次下载", sx, statY, right);
+                sx += stat(0xf019, Addons::count(profile.downloads) + " 次下载", sx, statY, textRight);
             }
             if (!profile.joined.empty()) {
-                sx += stat(0xf073, DownloadsParts::shortDate(profile.joined) + " 加入", sx, statY, right);
+                sx += stat(0xf073, DownloadsParts::shortDate(profile.joined) + " 加入", sx, statY, textRight);
             }
         }
 
@@ -164,22 +168,18 @@ namespace AuthorPage {
         if (std::none_of(items.begin(), items.end(), [&](const auto& item) { return item.id == route.tab; })) {
             route.tab = ALL;
         }
-        std::vector<DownloadsParts::Segment> sortItems = {{0, "下载量", 0xf019, 0}, {1, "最近更新", 0xf017, 0}};
-        float sortW = route.author != Authors::Kind::Mcmod ? DownloadsParts::segmentsWidth(sortItems) + 12.0f : 0.0f;
         if (items.size() > 1) {
-            route.tab = DownloadsParts::segments("author", route.tab, items, x0, tabsY, covered,
-                                                 DownloadsParts::mainW() - sortW);
+            route.tab =
+                    DownloadsParts::segments("author", route.tab, items, x0, tabsY, covered, DownloadsParts::mainW());
+        } else {
+            top = tabsY;
         }
         std::string key = std::to_string((int) route.author) + ":" + route.authorId;
-        bool sortable = route.author != Authors::Kind::Mcmod;
         bool& updated = byUpdate[key];
         if (sortable) {
-            std::vector<DownloadsParts::Segment> sorts = {{0, "下载量", 0xf019, 0}, {1, "最近更新", 0xf017, 0}};
-            float px = right - DownloadsParts::segmentsWidth(sorts);
-            updated = DownloadsParts::segments("author#sort", updated ? 1 : 0, sorts, px, tabsY, covered) == 1;
-        }
-        if (items.size() <= 1 && !sortable) {
-            top = tabsY;
+            float sortY = avatarY + AVATAR - DownloadsParts::SEGMENT_H;
+            updated =
+                    DownloadsParts::segments("author#sort", updated ? 1 : 0, sorts, right - sortW, sortY, covered) == 1;
         }
         std::vector<const Authors::Project*> list;
         for (const Authors::Project& project : profile.projects) {

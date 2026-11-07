@@ -557,6 +557,30 @@ namespace MainWindow {
         return rows.empty() ? 1 : (int) rows.size();
     }
 
+    static void addFolder() {
+        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::exeDirectory())) {
+            std::string problem = Instances::addFolder(*picked);
+            if (!problem.empty()) {
+                Instances::notify(problem, true);
+            }
+        }
+    }
+
+    static void folderItems(MenuItems& items) {
+        items.push_back(ActionMenuItem::make("添加游戏目录", 0xf65e, [] { addFolder(); }));
+        MenuItems hidden;
+        for (const Instances::Source& source : Instances::sources()) {
+            if (!source.hidden) {
+                continue;
+            }
+            std::string key = source.key;
+            hidden.push_back(ActionMenuItem::make(source.label, 0xf06e, [key] { Instances::setHidden(key, false); }));
+        }
+        if (!hidden.empty()) {
+            items.push_back(ActionMenuItem::make("已隐藏的目录", 0xf070)->nest(hidden));
+        }
+    }
+
     static void groupHeader(const Instances::Source& source, size_t count, float y, float open, bool blocked) {
         float x = ITEM_X;
         bool rail = fold > 0.5f;
@@ -603,6 +627,7 @@ namespace MainWindow {
                         items.push_back(ActionMenuItem::make("下移", 0xf063, [key] { Instances::moveSource(key, 1); }));
                         items.push_back(ActionMenuItem::make("在侧栏隐藏", 0xf06e,
                                                              [key] { Instances::setHidden(key, true); }));
+                        folderItems(items);
                         if (found->custom) {
                             items.push_back(
                                     ActionMenuItem::make("移除", 0xf2ed, [key] { Instances::removeFolder(key); })
@@ -617,57 +642,6 @@ namespace MainWindow {
             UiSound::request(UiSound::TICK);
             toggleGroup(source.key);
         }
-    }
-
-    static void addFolderRow(float y, bool blocked) {
-        NavItemWidget item("nav#addFolder", Ui::glyph(0xf65e), "添加游戏目录");
-        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
-        item.paint();
-        if (!item.pressed) {
-            return;
-        }
-        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::exeDirectory())) {
-            std::string problem = Instances::addFolder(*picked);
-            if (!problem.empty()) {
-                Instances::notify(problem, true);
-            }
-        }
-    }
-
-    static size_t hiddenCount() {
-        size_t count = 0;
-        for (const Instances::Source& source : Instances::sources()) {
-            count += source.hidden ? 1 : 0;
-        }
-        return count;
-    }
-
-    // One entry for every folder the player put away, so nothing is out of reach for good.
-    static void hiddenFolderRow(float y, bool blocked) {
-        if (hiddenCount() == 0) {
-            return;
-        }
-        NavItemWidget item("nav#hiddenFolders", Ui::glyph(0xf06e), "已隐藏的目录");
-        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
-        item.paint();
-        if (!item.pressed) {
-            return;
-        }
-        NewUi::openMenu(
-                "sidebar#hiddenFolders",
-                [] {
-                    MenuItems items;
-                    for (const Instances::Source& source : Instances::sources()) {
-                        if (!source.hidden) {
-                            continue;
-                        }
-                        std::string key = source.key;
-                        items.push_back(ActionMenuItem::make(source.label, 0xf06e,
-                                                             [key] { Instances::setHidden(key, false); }));
-                    }
-                    return items;
-                },
-                NewUi::mouseX, NewUi::mouseY, 180.0f);
     }
 
     static float playingWidth(const std::string& key) {
@@ -751,7 +725,19 @@ namespace MainWindow {
                     "sidebar#instance#" + key,
                     [key, source] {
                         MenuItems items;
+                        auto idle = [key] {
+                            const Instances::Entry* found = Instances::find(key);
+                            return found != nullptr && found->info.valid && Game::state(key) == Game::State::Idle;
+                        };
+                        items.push_back(ActionMenuItem::make("启动", 0xf04b, [key] {
+                                            LaunchButton::start(key);
+                                        })->enabledIf(idle));
                         items.push_back(ActionMenuItem::make("实例设置", 0xf013, [key] { openVersionSettings(key); }));
+                        items.push_back(ActionMenuItem::make("打开游戏目录", 0xf07c, [key] {
+                            if (const Instances::Entry* found = Instances::find(key)) {
+                                Platform::open(found->gameDirectory);
+                            }
+                        }));
                         items.push_back(
                                 ActionMenuItem::make("置顶", 0xf062, [source, key] { moveVersion(source, key, 0); }));
                         items.push_back(
@@ -914,10 +900,6 @@ namespace MainWindow {
                                        isCollapsed(sources[i].key) && !searching ? 0.0f : 1.0f, 16.0f);
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
-        contentH += ITEM_STEP;
-        if (hiddenCount() > 0) {
-            contentH += ITEM_STEP;
-        }
 
         float listBottom = height() - FOOTER_H - 10.0f;
         float viewH = listBottom - listTop;
@@ -1046,14 +1028,17 @@ namespace MainWindow {
             arrangeSource.clear();
             arrangeKeys.clear();
         }
-        if (cursor + ITEM_H >= listTop && cursor <= listBottom) {
-            UiRender::scissor(0, listTop, sideW, viewH);
-            bool blocked = dragging || !NewUi::rawHit(0, listTop, sideW, viewH);
-            addFolderRow(cursor, blocked);
-            if (hiddenCount() > 0) {
-                hiddenFolderRow(cursor + ITEM_STEP, blocked);
-            }
-            UiRender::unscissor();
+        if (!dragging && NewUi::rightClick && !NewUi::overlayCoversMouse() && NewUi::hit(0, listTop, sideW, viewH)) {
+            NewUi::rightClick = false;
+            UiSound::request(UiSound::PAGE);
+            NewUi::openMenu(
+                    "sidebar#list",
+                    [] {
+                        MenuItems items;
+                        folderItems(items);
+                        return items;
+                    },
+                    NewUi::mouseX, NewUi::mouseY, 160.0f);
         }
 
         if (maxScroll > 0.5f && fold < 0.5f) {
