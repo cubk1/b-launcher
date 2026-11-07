@@ -125,6 +125,8 @@ namespace DownloadsScreen {
         std::string typed;
         double typedAt = 0.0;
         std::string target;
+        std::string skippedTarget;
+        bool pickedTarget = false;
         bool started = false;
         bool followed = false;
         Addons::Results shown;
@@ -268,6 +270,34 @@ namespace DownloadsScreen {
             followInstance();
         }
 
+        bool suits(const std::string& key) {
+            const Instances::Entry* entry = Instances::find(key);
+            return entry != nullptr && (entry->info.modded() || query.kind == Kind::ResourcePack);
+        }
+
+        void enterWith(const std::string& key) {
+            pickedTarget = false;
+            skippedTarget = suits(key) ? std::string() : key;
+            std::string chosen = skippedTarget.empty() ? key : std::string();
+            if (chosen != target || !followed) {
+                chooseTarget(chosen);
+            }
+        }
+
+        void retarget() {
+            if (pickedTarget) {
+                return;
+            }
+            if (!target.empty() && Instances::find(target) != nullptr && !suits(target)) {
+                skippedTarget = target;
+                chooseTarget(std::string());
+            } else if (target.empty() && suits(skippedTarget)) {
+                std::string key = skippedTarget;
+                skippedTarget.clear();
+                chooseTarget(key);
+            }
+        }
+
         const char* const PICKER = "downloads#instancePicker";
         std::string pickingSource;
 
@@ -278,7 +308,10 @@ namespace DownloadsScreen {
                         const Instances::Entry* entry = Instances::find(target);
                         return entry != nullptr && entry->source == pickingSource ? entry->info.id : std::string();
                     },
-                    [](const std::string& id) { chooseTarget(Instances::keyOf(pickingSource, id)); },
+                    [](const std::string& id) {
+                        pickedTarget = true;
+                        chooseTarget(Instances::keyOf(pickingSource, id));
+                    },
                     [] {
                         std::vector<std::string> ids;
                         for (const Instances::Entry& entry : Instances::list()) {
@@ -319,6 +352,7 @@ namespace DownloadsScreen {
                     [x, y, w] {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make(ANY_INSTANCE, 0xf05e, [] {
+                                            pickedTarget = true;
                                             chooseTarget(std::string());
                                         })->checkedIf([] { return target.empty(); }));
                         for (const Instances::Source& source : Instances::sources()) {
@@ -866,6 +900,7 @@ namespace DownloadsScreen {
                 query.server = false;
                 shown = Addons::Results();
                 allLoaders = false;
+                retarget();
                 followInstance();
             }
             routes.clear();
@@ -1902,8 +1937,8 @@ namespace DownloadsScreen {
             target = saved != doc.end() && saved->is_string() ? saved->get<std::string>() : Instances::selected();
         }
         if (!followed && Instances::find(target) != nullptr) {
+            enterWith(target);
             followed = true;
-            followInstance();
         }
         if (!target.empty() && Instances::find(target) == nullptr && !Instances::loading()) {
             chooseTarget(std::string());
@@ -1928,9 +1963,7 @@ namespace DownloadsScreen {
         if (Instances::find(key) == nullptr) {
             return;
         }
-        if (key != target || !followed) {
-            chooseTarget(key);
-        }
+        enterWith(key);
         started = true;
         followed = true;
     }
