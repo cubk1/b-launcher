@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/instances/ModGraph.h"
+#include "app/downloads/Addons.h"
 #include "app/downloads/ModNames.h"
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
@@ -67,12 +68,13 @@ namespace ModGraph {
         const char* const BUILTIN[] = {"minecraft", "java",     "fabricloader", "fabric-loader", "quilt_loader",
                                        "forge",     "neoforge", "javafml",      "lowcodefml",    "mixinextras"};
 
-        enum class Kind { Local, Added, Missing };
+        enum class Kind { Local, Added, Missing, Remote };
 
         struct Node {
             std::string id;
             Kind kind = Kind::Local;
             int mod = -1;
+            int item = -1;
             std::string name;
             std::string projectId;
             float x = 0.0f;
@@ -85,10 +87,12 @@ namespace ModGraph {
             int from = 0;
             int to = 0;
             bool required = true;
+            Link link = Link::Required;
         };
 
         struct Cluster {
             std::string id;
+            std::string title;
             int hub = -1;
             std::vector<int> members;
             int lanes = 1;
@@ -145,9 +149,32 @@ namespace ModGraph {
             float lastY = 0.0f;
             double lastPress = -1.0;
             std::string lastPressed;
+            bool touched = false;
         };
 
         std::map<std::string, View> views;
+        const Model* model = nullptr;
+
+        const Item* itemOf(const Node& node) {
+            if (node.kind != Kind::Remote || model == nullptr || node.item < 0 ||
+                node.item >= (int) model->items.size()) {
+                return nullptr;
+            }
+            return &model->items[(size_t) node.item];
+        }
+
+        bool missing(const Node& node) {
+            if (node.kind == Kind::Missing) {
+                return true;
+            }
+            const Item* item = itemOf(node);
+            return item != nullptr && item->tone == Tone::Missing;
+        }
+
+        bool openable(const Node& node) {
+            const Item* item = itemOf(node);
+            return item != nullptr && item->openable && model->open;
+        }
 
         std::filesystem::path layoutFile(const Instances::Entry& entry) {
             return entry.info.directory / "blb-modgraph.json";
@@ -287,6 +314,22 @@ namespace ModGraph {
             }
         }
 
+        int laneCount(size_t count) {
+            return std::max(2, (int) std::lround(std::sqrt((double) count * LANE_STEP * ROW_STEP * 1.7) / LANE_STEP));
+        }
+
+        void measure(Cluster& cluster, int lanes) {
+            int members = (int) cluster.members.size();
+            cluster.lanes = std::clamp((members + ROWS_PREFERRED - 1) / ROWS_PREFERRED, 1, lanes);
+            cluster.rows = members == 0 ? 0 : (members + cluster.lanes - 1) / cluster.lanes;
+            cluster.w = (float) cluster.lanes * LANE_STEP - CLUSTER_GAP;
+            cluster.h = PAD + headerOf(cluster) +
+                    (cluster.rows > 0 ? HEADER_GAP + (float) cluster.rows * ROW_STEP - (ROW_STEP - NODE_H) : 0.0f) +
+                    PAD;
+        }
+
+        void pack(View& view, std::vector<Cluster>& clusters, const std::vector<size_t>& order, int lanes);
+
         void group(View& view) {
             std::vector<Node>& nodes = view.nodes;
             size_t count = nodes.size();
@@ -301,7 +344,7 @@ namespace ModGraph {
             std::vector<bool> hub(count, false);
             for (size_t i = 0; i < count; i++) {
                 nodes[i].dependents = (int) users[i].size();
-                hub[i] = nodes[i].kind == Kind::Missing ? !users[i].empty() : users[i].size() >= 2;
+                hub[i] = missing(nodes[i]) ? !users[i].empty() : users[i].size() >= 2;
             }
             auto lower = [&nodes](int index) { return blb::to_lower(nameOf(nodes[(size_t) index])); };
             std::vector<int> owner(count, -2);
@@ -401,16 +444,9 @@ namespace ModGraph {
                 }
             }
 
-            int lanes =
-                    std::max(2, (int) std::lround(std::sqrt((double) count * LANE_STEP * ROW_STEP * 1.7) / LANE_STEP));
+            int lanes = laneCount(count);
             for (Cluster& cluster : clusters) {
-                int members = (int) cluster.members.size();
-                cluster.lanes = std::clamp((members + ROWS_PREFERRED - 1) / ROWS_PREFERRED, 1, lanes);
-                cluster.rows = members == 0 ? 0 : (members + cluster.lanes - 1) / cluster.lanes;
-                cluster.w = (float) cluster.lanes * LANE_STEP - CLUSTER_GAP;
-                cluster.h = PAD + headerOf(cluster) +
-                        (cluster.rows > 0 ? HEADER_GAP + (float) cluster.rows * ROW_STEP - (ROW_STEP - NODE_H) : 0.0f) +
-                        PAD;
+                measure(cluster, lanes);
             }
             std::vector<size_t> order(clusters.size());
             for (size_t i = 0; i < order.size(); i++) {
@@ -421,7 +457,7 @@ namespace ModGraph {
                 if (cluster.hub < 0) {
                     return 2;
                 }
-                return nodes[(size_t) cluster.hub].kind == Kind::Missing ? 0 : 1;
+                return missing(nodes[(size_t) cluster.hub]) ? 0 : 1;
             };
             std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
                 if (rank(a) != rank(b)) {
@@ -432,6 +468,10 @@ namespace ModGraph {
                 }
                 return clusters[a].hub >= 0 && clusters[b].hub >= 0 && lower(clusters[a].hub) < lower(clusters[b].hub);
             });
+            pack(view, clusters, order, lanes);
+        }
+
+        void pack(View& view, std::vector<Cluster>& clusters, const std::vector<size_t>& order, int lanes) {
             std::vector<float> sky((size_t) lanes, 0.0f);
             for (size_t index : order) {
                 Cluster& cluster = clusters[index];
@@ -460,6 +500,83 @@ namespace ModGraph {
             }
             view.clusters = std::move(clusters);
             place(view);
+        }
+
+        void arrange(View& view) {
+            std::vector<Cluster> clusters;
+            std::map<std::string, size_t> byGroup;
+            for (size_t i = 0; i < view.nodes.size(); i++) {
+                const Item* item = itemOf(view.nodes[i]);
+                std::string name = item != nullptr ? item->group : std::string();
+                auto found = byGroup.find(name);
+                if (found == byGroup.end()) {
+                    Cluster cluster;
+                    cluster.id = "group:" + name;
+                    cluster.title = name;
+                    found = byGroup.emplace(name, clusters.size()).first;
+                    clusters.push_back(std::move(cluster));
+                }
+                Cluster& cluster = clusters[found->second];
+                view.nodes[i].cluster = (int) found->second;
+                if (item != nullptr && item->head && cluster.hub < 0) {
+                    cluster.hub = (int) i;
+                    cluster.title.clear();
+                } else {
+                    cluster.members.push_back((int) i);
+                }
+            }
+            for (Node& node : view.nodes) {
+                node.dependents = 0;
+            }
+            for (const Edge& edge : view.edges) {
+                if (edge.link == Link::Required || edge.link == Link::Optional) {
+                    view.nodes[(size_t) edge.from].dependents++;
+                }
+            }
+            int lanes = laneCount(view.nodes.size());
+            std::vector<size_t> order(clusters.size());
+            for (size_t i = 0; i < clusters.size(); i++) {
+                measure(clusters[i], lanes);
+                order[i] = i;
+            }
+            pack(view, clusters, order, lanes);
+        }
+
+        void buildModel(const Model& source, View& view) {
+            std::vector<Node> nodes;
+            std::vector<Edge> edges;
+            std::map<std::string, int> byId;
+            for (size_t i = 0; i < source.items.size(); i++) {
+                const Item& item = source.items[i];
+                if (item.id.empty() || byId.count(item.id) != 0) {
+                    continue;
+                }
+                Node node;
+                node.id = item.id;
+                node.kind = Kind::Remote;
+                node.item = (int) i;
+                node.name = item.name;
+                byId[item.id] = (int) nodes.size();
+                nodes.push_back(std::move(node));
+            }
+            std::set<std::pair<int, int>> seen;
+            for (const Relation& relation : source.relations) {
+                auto from = byId.find(relation.from);
+                auto to = byId.find(relation.to);
+                if (from == byId.end() || to == byId.end() || from->second == to->second ||
+                    !seen.insert({from->second, to->second}).second) {
+                    continue;
+                }
+                edges.push_back(Edge{from->second, to->second, relation.link == Link::Required, relation.link});
+            }
+            view.nodes = std::move(nodes);
+            view.edges = std::move(edges);
+            if (source.grouped) {
+                arrange(view);
+            } else {
+                group(view);
+            }
+            view.dragCluster = -1;
         }
 
         void build(const std::string& key, const Mods::List& list, View& view) {
@@ -790,6 +907,22 @@ namespace ModGraph {
         }
 
         void nodeMenu(const std::string& key, const Mods::List& list, const Node& node, float x, float y) {
+            if (node.kind == Kind::Remote) {
+                if (!openable(node)) {
+                    return;
+                }
+                std::string id = node.id;
+                std::function<void(const std::string&)> open = model->open;
+                NewUi::openMenu(
+                        "mods#graph#menu",
+                        [id, open] {
+                            MenuItems items;
+                            items.push_back(ActionMenuItem::make("查看详情", 0xf05a, [id, open] { open(id); }));
+                            return items;
+                        },
+                        x, y, 150.0f);
+                return;
+            }
             if (node.kind == Kind::Missing) {
                 if (node.projectId.empty()) {
                     return;
@@ -865,24 +998,26 @@ namespace ModGraph {
             float radius = 9.0f * zoom;
             float saved = UiRender::alphaMul;
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
+            const Item* item = itemOf(node);
             float alpha = (dim ? 0.3f : 1.0f) * appear;
-            if (mod != nullptr && !mod->info.enabled) {
+            if ((mod != nullptr && !mod->info.enabled) || (item != nullptr && item->tone == Tone::Muted)) {
                 alpha *= 0.5f;
             }
             UiRender::alphaMul = saved * alpha;
             const ModManager::Change* change = mod != nullptr ? ModManager::changeFor(key, mod->info.file) : nullptr;
             uint32_t accent = UiTheme::accent();
-            uint32_t fill = node.kind == Kind::Missing ? withAlpha(UiTheme::danger(), 0.08f)
-                    : node.kind == Kind::Added         ? withAlpha(accent, 0.16f)
+            bool root = item != nullptr && item->tone == Tone::Root;
+            uint32_t fill = missing(node)              ? withAlpha(UiTheme::danger(), 0.08f)
+                    : node.kind == Kind::Added || root ? withAlpha(accent, 0.16f)
                                                        : UiTheme::surfaceRaised();
             UiRender::roundRect(nx, ny, w, h, radius, fill);
             if (hovered) {
                 UiRender::roundRect(nx, ny, w, h, radius, UiTheme::overlay(14));
             }
-            uint32_t border = selected                              ? accent
-                    : node.kind == Kind::Missing                    ? withAlpha(UiTheme::danger(), 0.6f)
-                    : node.kind == Kind::Added || change != nullptr ? withAlpha(accent, 0.6f)
-                                                                    : UiTheme::outlineSoft();
+            uint32_t border = selected                                      ? accent
+                    : missing(node)                                         ? withAlpha(UiTheme::danger(), 0.6f)
+                    : node.kind == Kind::Added || change != nullptr || root ? withAlpha(accent, 0.6f)
+                                                                            : UiTheme::outlineSoft();
             UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : 1.0f);
             if (mod != nullptr && !mod->missing.empty()) {
                 UiRender::circle(nx + w - 6.0f * zoom, ny + 6.0f * zoom, 3.2f * zoom, UiTheme::danger());
@@ -892,13 +1027,16 @@ namespace ModGraph {
             float iconX = nx + pad;
             float iconY = ny + (h - icon) * 0.5f;
             uint32_t texture = mod != nullptr ? Textures::of(mod->icon) : 0;
+            if (item != nullptr && !item->iconUrl.empty() && icon >= 11.0f) {
+                texture = Textures::of(Addons::icon(item->iconUrl));
+            }
             if (texture != 0) {
                 roundIcon(texture, iconX, iconY, icon, 5.0f * zoom);
             } else {
-                int glyph = node.kind == Kind::Missing ? 0xf071 : node.kind == Kind::Added ? 0xf067 : 0xf12e;
-                uint32_t ink = node.kind == Kind::Missing ? UiTheme::danger()
-                        : node.kind == Kind::Added        ? UiTheme::accentText()
-                                                          : UiTheme::textFaint();
+                int glyph = missing(node) ? 0xf071 : node.kind == Kind::Added ? 0xf067 : 0xf12e;
+                uint32_t ink = missing(node)               ? UiTheme::danger()
+                        : node.kind == Kind::Added || root ? UiTheme::accentText()
+                                                           : UiTheme::textFaint();
                 UiRender::roundRect(iconX, iconY, icon, icon, 5.0f * zoom, UiTheme::surface());
                 scaledGlyph(glyph, iconX + icon * 0.5f, iconY + icon * 0.5f, ink, 10.0f, zoom);
             }
@@ -906,7 +1044,10 @@ namespace ModGraph {
             const float rightOffset = NODE_W - 9.0f;
             std::string version;
             uint32_t versionInk = UiTheme::textMuted();
-            if (node.kind == Kind::Missing) {
+            if (item != nullptr) {
+                version = item->version;
+                versionInk = missing(node) ? UiTheme::danger() : root ? UiTheme::accentText() : UiTheme::textMuted();
+            } else if (node.kind == Kind::Missing) {
                 version = "缺少";
                 versionInk = UiTheme::danger();
             } else if (node.kind == Kind::Added) {
@@ -936,9 +1077,24 @@ namespace ModGraph {
             UiRender::alphaMul = saved;
         }
 
+        std::string joinLinked(const View& view, int focus, Link link) {
+            std::string out;
+            for (const Edge& edge : view.edges) {
+                if (edge.link != link || (edge.from != focus && edge.to != focus)) {
+                    continue;
+                }
+                out += (out.empty() ? "" : "、") +
+                        nameOf(view.nodes[(size_t) (edge.from == focus ? edge.to : edge.from)]);
+            }
+            return out;
+        }
+
         std::string joinNames(const View& view, int focus, bool preds) {
             std::string out;
             for (const Edge& edge : view.edges) {
+                if (edge.link == Link::Integration || edge.link == Link::Incompatible) {
+                    continue;
+                }
                 int other = preds ? (edge.to == focus ? edge.from : -1) : (edge.from == focus ? edge.to : -1);
                 if (other < 0) {
                     continue;
@@ -1049,6 +1205,23 @@ namespace ModGraph {
             Detail detail;
             const Node& node = view.nodes[(size_t) focus];
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
+            const Item* item = itemOf(node);
+            if (item != nullptr) {
+                std::string about = item->about;
+                std::replace(about.begin(), about.end(), '\n', ' ');
+                about = Ui::trim(about);
+                if (!about.empty()) {
+                    std::vector<std::string> lines =
+                            UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, CARD_W - 28.0f);
+                    if (lines.size() > (size_t) ABOUT_LINES) {
+                        lines.resize(ABOUT_LINES);
+                        lines.back() = UiFont::fitEnd(lines.back() + "…", UiFont::MEDIUM, UiWidgets::TEXT_SMALL,
+                                                      CARD_W - 28.0f);
+                    }
+                    detail.about = lines;
+                }
+                detail.rows = item->rows;
+            }
             if (mod != nullptr) {
                 std::string about = blb::strip_formatting(mod->info.description);
                 std::replace(about.begin(), about.end(), '\n', ' ');
@@ -1095,11 +1268,18 @@ namespace ModGraph {
             }
             detail.rows.push_back({"依赖", joinNames(view, focus, true)});
             detail.rows.push_back({"被依赖", joinNames(view, focus, false)});
+            if (std::string linked = joinLinked(view, focus, Link::Integration); !linked.empty()) {
+                detail.rows.push_back({"联动", linked});
+            }
+            if (std::string linked = joinLinked(view, focus, Link::Incompatible); !linked.empty()) {
+                detail.rows.push_back({"不兼容", linked});
+            }
             if (mod != nullptr) {
                 detail.rows.push_back({"文件", mod->info.file_name + "  " + sizeText(mod->info.size)});
             }
             detail.toggle = mod != nullptr;
-            detail.buttons = node.kind != Kind::Missing || !node.projectId.empty();
+            detail.buttons =
+                    node.kind == Kind::Remote ? openable(node) : node.kind != Kind::Missing || !node.projectId.empty();
             detail.height = CARD_HEAD + 8.0f + (float) detail.about.size() * ABOUT_LINE +
                     (detail.about.empty() ? 0.0f : 6.0f) +
                     (float) (detail.rows.size() + (detail.toggle ? 1 : 0)) * CARD_ROW +
@@ -1112,9 +1292,13 @@ namespace ModGraph {
             float left = area.x + 14.0f;
             float right = area.x + CARD_W - 14.0f;
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
+            const Item* item = itemOf(node);
             float iconSize = 26.0f;
             float iconY = area.y + (CARD_HEAD - iconSize) * 0.5f;
             uint32_t texture = mod != nullptr ? Textures::of(mod->icon) : 0;
+            if (item != nullptr && !item->iconUrl.empty()) {
+                texture = Textures::of(Addons::icon(item->iconUrl));
+            }
             if (texture != 0) {
                 roundIcon(texture, left, iconY, iconSize, 7.0f);
             } else {
@@ -1137,7 +1321,10 @@ namespace ModGraph {
             } else {
                 std::string version;
                 uint32_t versionInk = UiTheme::textMuted();
-                if (node.kind == Kind::Missing) {
+                if (item != nullptr) {
+                    version = item->version;
+                    versionInk = missing(node) ? UiTheme::danger() : UiTheme::textMuted();
+                } else if (node.kind == Kind::Missing) {
                     version = "缺少";
                     versionInk = UiTheme::danger();
                 } else if (mod != nullptr) {
@@ -1209,6 +1396,14 @@ namespace ModGraph {
                 return;
             }
             float buttonY = y + 8.0f;
+            if (node.kind == Kind::Remote) {
+                std::string label = "查看详情";
+                float buttonW = Page::buttonWidth(label, 0xf05a);
+                if (Page::button("mods#graph#card#open", label, left, buttonY, buttonW, true, blocked, 0xf05a)) {
+                    model->open(node.id);
+                }
+                return;
+            }
             if (node.kind == Kind::Missing) {
                 std::string label = "添加前置";
                 float buttonW = Page::buttonWidth(label, 0xf067);
@@ -1310,9 +1505,8 @@ namespace ModGraph {
         }
     }
 
-    void draw(const Instances::Entry& entry, const std::string& query, const Frame& frame, bool blocked) {
-        const std::string& key = entry.key;
-        const Mods::List& list = Mods::of(key);
+    void render(const std::string& key, const Instances::Entry* entry, const Mods::List& list, const Model* source,
+                const std::string& query, const Frame& frame, bool blocked) {
         const Area& clip = frame.clip;
         float originX = frame.layout.x;
         float originY = frame.layout.y;
@@ -1332,7 +1526,10 @@ namespace ModGraph {
             Page::card(clip.x, clip.y, clip.w, clip.h);
             UiRender::alphaMul = saved;
         }
-        if (list.mods.empty()) {
+        if (source != nullptr && source->items.empty()) {
+            return;
+        }
+        if (source == nullptr && list.mods.empty()) {
             float saved = UiRender::alphaMul;
             UiRender::alphaMul = saved * frame.nodes;
             message(list.loading ? "正在读取模组…" : "还没有模组", fitArea.x, fitArea.y, fitArea.w, fitArea.h,
@@ -1342,16 +1539,24 @@ namespace ModGraph {
         }
         View& view = views[key];
         if (!view.loaded) {
-            load(view, entry);
+            if (entry != nullptr) {
+                load(view, *entry);
+            } else {
+                view.loaded = true;
+            }
         }
         view.originX = originX;
         view.originY = originY;
-        std::string signature = signatureOf(key, list);
+        std::string signature = source != nullptr ? source->signature : signatureOf(key, list);
         if (signature != view.signature) {
             view.signature = signature;
-            build(key, list, view);
-            if (!view.fitted) {
-                fit(view, fitArea.x - originX, fitArea.y - originY, fitArea.w, fitArea.h, true);
+            if (source != nullptr) {
+                buildModel(*source, view);
+            } else {
+                build(key, list, view);
+            }
+            if (!view.fitted || (source != nullptr && !view.touched)) {
+                fit(view, fitArea.x - originX, fitArea.y - originY, fitArea.w, fitArea.h, !view.fitted);
                 view.fitted = true;
             }
         }
@@ -1546,16 +1751,17 @@ namespace ModGraph {
             }
             float saved = UiRender::alphaMul;
             UiRender::alphaMul = saved * appear[i];
-            bool missing = cluster.hub >= 0 && view.nodes[(size_t) cluster.hub].kind == Kind::Missing;
+            bool absent = cluster.hub >= 0 && missing(view.nodes[(size_t) cluster.hub]);
             float radius = CLUSTER_RADIUS * zoom;
             UiRender::roundRect(cx, cy, cw, ch, radius, withAlpha(UiTheme::textPrimary(), 0.035f));
             if ((int) i == hoveredCluster) {
                 UiRender::roundRect(cx, cy, cw, ch, radius, withAlpha(UiTheme::textPrimary(), 0.03f));
             }
             UiRender::outline(cx, cy, cw, ch, radius,
-                              missing ? withAlpha(UiTheme::danger(), 0.45f) : UiTheme::outlineSoft());
+                              absent ? withAlpha(UiTheme::danger(), 0.45f) : UiTheme::outlineSoft());
             if (cluster.hub < 0) {
-                std::string title = "无前置依赖  " + std::to_string(cluster.members.size());
+                std::string title = (cluster.title.empty() ? std::string("无前置依赖") : cluster.title) + "  " +
+                        std::to_string(cluster.members.size());
                 zoomText(UiFont::fitEnd(title, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, cluster.w - 2.0f * PAD),
                          cx + (PAD + 4.0f) * zoom, cy + PAD * zoom, TITLE_H * zoom, UiTheme::textMuted(),
                          UiWidgets::TEXT_SMALL, zoom, view.zoomTarget);
@@ -1638,10 +1844,12 @@ namespace ModGraph {
                 }
                 const Node& from = view.nodes[(size_t) edge.from];
                 bool dependency = edge.to == highlight;
-                uint32_t color = from.kind == Kind::Missing ? UiTheme::danger()
-                        : dependency                        ? UiTheme::accent()
-                                                            : UiTheme::textSecondary();
-                float alpha = (strong ? 0.9f : 0.55f) * (edge.required ? 1.0f : 0.5f) * frame.nodes;
+                uint32_t color = edge.link == Link::Integration            ? UiRender::color(91, 181, 219)
+                        : edge.link == Link::Incompatible || missing(from) ? UiTheme::danger()
+                        : dependency                                       ? UiTheme::accent()
+                                                                           : UiTheme::textSecondary();
+                bool solid = edge.required || edge.link == Link::Integration || edge.link == Link::Incompatible;
+                float alpha = (strong ? 0.9f : 0.55f) * (solid ? 1.0f : 0.5f) * frame.nodes;
                 ImU32 ink = imColor(withAlpha(color, alpha));
                 float thickness = UiRender::transformW((strong ? 1.8f : 1.3f) * std::clamp(zoom, 0.6f, 1.2f)) * unit;
                 drawList->AddBezierCubic(point(x0, ay), point(c0, ay), point(c3, by), point(x3, by), ink, thickness);
@@ -1712,14 +1920,18 @@ namespace ModGraph {
         float middleY = fitArea.y - originY + fitArea.h * 0.5f;
         if (Page::iconButton("mods#graph#out", 0xf068, "缩小", toolX, toolY, blocked)) {
             zoomAt(view, view.zoomTarget / 1.25f, middleX, middleY);
+            view.touched = true;
         }
         if (Page::iconButton("mods#graph#in", 0xf067, "放大", toolX + TOOL_STEP, toolY, blocked)) {
             zoomAt(view, view.zoomTarget * 1.25f, middleX, middleY);
+            view.touched = true;
         }
         if (Page::iconButton("mods#graph#fit", 0xf065, "适应视图", toolX + 2.0f * TOOL_STEP, toolY, blocked)) {
             fit(view, fitArea.x - originX, fitArea.y - originY, fitArea.w, fitArea.h, false);
+            view.touched = false;
         }
         if (Page::iconButton("mods#graph#layout", 0xf0e2, "重新排列", toolX + 3.0f * TOOL_STEP, toolY, blocked)) {
+            view.touched = false;
             view.moved.clear();
             view.pinned.clear();
             view.pending.clear();
@@ -1743,6 +1955,7 @@ namespace ModGraph {
 
         if (canvasHover && NewUi::wheel() != 0.0f) {
             zoomAt(view, view.zoomTarget * std::pow(1.15f, NewUi::wheel()), mx - originX, my - originY);
+            view.touched = true;
         }
         if (canvasHover && NewUi::pendingClick && !NewUi::clickConsumed) {
             NewUi::clickConsumed = true;
@@ -1760,6 +1973,8 @@ namespace ModGraph {
                 view.selected = node.id;
                 if (twice && node.kind == Kind::Local) {
                     view.picking = true;
+                } else if (twice && openable(node)) {
+                    model->open(node.id);
                 }
             } else if (hoveredCluster >= 0) {
                 view.dragCluster = hoveredCluster;
@@ -1796,6 +2011,7 @@ namespace ModGraph {
                     view.dragged = true;
                 }
                 if (view.dragged) {
+                    view.touched = true;
                     float dx = mx - view.lastX;
                     float dy = my - view.lastY;
                     if (view.dragCluster >= 0 && view.dragCluster < (int) view.clusters.size()) {
@@ -1837,9 +2053,26 @@ namespace ModGraph {
             touch(view);
         }
         bool idle = view.dragCluster < 0 && view.dragNode < 0 && !view.panning;
-        if (view.dirty && idle && (ImGui::GetTime() - view.changedAt > 0.8 || frame.nodes < 1.0f)) {
-            save(view, entry);
+        if (entry != nullptr && view.dirty && idle && (ImGui::GetTime() - view.changedAt > 0.8 || frame.nodes < 1.0f)) {
+            save(view, *entry);
         }
+    }
+
+    void draw(const Instances::Entry& entry, const std::string& query, const Frame& frame, bool blocked) {
+        model = nullptr;
+        render(entry.key, &entry, Mods::of(entry.key), nullptr, query, frame, blocked);
+    }
+
+    void drawModel(const std::string& key, const Model& source, const std::string& query, const Frame& frame,
+                   bool blocked) {
+        static const Mods::List none = [] {
+            Mods::List list;
+            list.loading = false;
+            return list;
+        }();
+        model = &source;
+        render(key, nullptr, none, &source, query, frame, blocked);
+        model = nullptr;
     }
 
     void pin(const std::string& key, const std::vector<std::filesystem::path>& files, float x, float y) {

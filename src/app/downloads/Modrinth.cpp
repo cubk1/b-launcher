@@ -54,18 +54,6 @@ namespace Modrinth {
             return it != node.end() && it->is_number() ? it->get<long long>() : 0;
         }
 
-        blb::result<json> api(const std::string& path, blb::cancellation_token token) {
-            auto body = blb::net::http_get(DownloadSources::provider()->resolve(std::string(API) + path), token);
-            if (!body) {
-                return body.err();
-            }
-            json doc = json::parse(*body, nullptr, false);
-            if (doc.is_discarded()) {
-                return blb::make_error(blb::errc::parse, "Modrinth 返回的内容无效");
-            }
-            return doc;
-        }
-
         bool isLoader(const std::string& tag) {
             static const std::set<std::string> loaders = {
                     "fabric",    "forge",      "neoforge",   "quilt",      "liteloader",    "rift",
@@ -157,6 +145,7 @@ namespace Modrinth {
                                 hit.title = blb::json_text(item, "title");
                                 hit.description = blb::json_text(item, "description");
                                 hit.author = blb::json_text(item, "author");
+                                hit.authorId = hit.author;
                                 hit.iconUrl = blb::json_text(item, "icon_url");
                                 hit.pageUrl =
                                         "https://modrinth.com/" + kind + "/" + (hit.slug.empty() ? hit.id : hit.slug);
@@ -223,6 +212,7 @@ namespace Modrinth {
             version.loaders = blb::json_strings(item, "loaders");
             version.published = blb::json_text(item, "date_published");
             version.downloads = number(item, "downloads");
+            version.changelog = blb::json_text(item, "changelog");
             auto files = item.find("files");
             if (files != item.end() && files->is_array()) {
                 for (const json& file : *files) {
@@ -242,12 +232,12 @@ namespace Modrinth {
             if (dependencies != item.end() && dependencies->is_array()) {
                 for (const json& dependency : *dependencies) {
                     std::string type = blb::json_text(dependency, "dependency_type");
-                    if (type != "required" && type != "optional" && type != "incompatible") {
+                    if (type != "required" && type != "optional" && type != "incompatible" && type != "embedded") {
                         continue;
                     }
-                    version.dependencies.push_back(Dependency{blb::json_text(dependency, "project_id"),
-                                                              blb::json_text(dependency, "version_id"),
-                                                              type == "required", type == "incompatible"});
+                    version.dependencies.push_back(Dependency{
+                            blb::json_text(dependency, "project_id"), blb::json_text(dependency, "version_id"),
+                            type == "required", type == "incompatible", type == "embedded"});
                 }
             }
             return version;
@@ -293,6 +283,63 @@ namespace Modrinth {
                     });
         }
 
+    }
+
+    blb::result<json> fetchJson(const std::string& url, blb::cancellation_token token) {
+        auto body = blb::net::http_get(DownloadSources::provider()->resolve(url), token);
+        if (!body) {
+            return body.err();
+        }
+        json doc = json::parse(*body, nullptr, false);
+        if (doc.is_discarded()) {
+            return blb::make_error(blb::errc::parse, "Modrinth 返回的内容无效");
+        }
+        return doc;
+    }
+
+    blb::result<json> api(const std::string& path, blb::cancellation_token token) {
+        return fetchJson(std::string(API) + path, token);
+    }
+
+    blb::result<json> post(const std::string& path, const json& body, blb::cancellation_token token) {
+        blb::error last = blb::make_error(blb::errc::network, "无法连接 Modrinth");
+        for (const std::string& url : DownloadSources::provider()->resolve(std::string(API) + path)) {
+            auto response = blb::net::http_post_json(url, body.dump(), {}, token);
+            if (!response) {
+                last = response.err();
+                if (last.code == blb::errc::cancelled) {
+                    return last;
+                }
+                continue;
+            }
+            if (!response->ok()) {
+                last = blb::make_error(blb::errc::http_status, "HTTP " + std::to_string(response->status));
+                continue;
+            }
+            json doc = json::parse(response->body, nullptr, false);
+            if (doc.is_discarded()) {
+                last = blb::make_error(blb::errc::parse, "Modrinth 返回的内容无效");
+                continue;
+            }
+            return doc;
+        }
+        return last;
+    }
+
+    Kind kindOf(const std::string& projectType) {
+        if (projectType == "modpack") {
+            return Kind::Modpack;
+        }
+        if (projectType == "resourcepack") {
+            return Kind::ResourcePack;
+        }
+        if (projectType == "shader") {
+            return Kind::Shader;
+        }
+        if (projectType == "datapack") {
+            return Kind::Datapack;
+        }
+        return Kind::Mod;
     }
 
     const char* projectType(Kind kind) {

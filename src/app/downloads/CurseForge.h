@@ -4,6 +4,8 @@
 
 #include <core/base/error.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <cstdint>
 #include <map>
 #include <string>
@@ -12,6 +14,11 @@
 namespace CurseForge {
 
     const std::string& apiKey();
+    b_launcher_base::result<nlohmann::json> call(const std::string& path, const std::string& body,
+                                                 b_launcher_base::cancellation_token token);
+    Addons::Kind kindOf(long long classId);
+    Addons::Hit hitFrom(const nlohmann::json& item);
+    Addons::Version versionFrom(const nlohmann::json& item);
     const Addons::Results& search(const Addons::Query& query);
     void refresh(const Addons::Query& query);
     const std::vector<Addons::Category>& categories(Addons::Kind kind);

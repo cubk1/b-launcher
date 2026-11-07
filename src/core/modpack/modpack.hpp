@@ -99,6 +99,8 @@ struct export_report
 
 std::string_view format_name (pack_format format) noexcept;
 result<pack_manifest> read_modpack (const std::filesystem::path &archive);
+result<pack_manifest> parse_pack_index (std::string_view name,
+                                        std::string_view text);
 result<std::string> import_modpack (install::game_installer &installer,
                                     const std::filesystem::path &archive,
                                     const import_options &options = {},
