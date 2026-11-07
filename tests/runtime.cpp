@@ -142,9 +142,12 @@ int main(int argc, char **argv)
         require(blb::launcher_data_directory() == root / "b-launcher", "absolute XDG value");
         if (saved) setenv("XDG_DATA_HOME", saved->c_str(), 1); else unsetenv("XDG_DATA_HOME");
 
-        require(blb::java::runtime_blocked(21).has_value() == blb::is_nixos(),
-                "runtime download policy must depend on the distribution");
-        if (blb::is_nixos()) {
+        bool blocked = !blb::runs_generic_binaries();
+        require(blb::java::runtime_blocked().has_value() == blocked,
+                "runtime downloads must depend on nix-ld");
+        require(!blb::java::runtime_blocked({self.string(), "--wrapper"}),
+                "a wrapper must allow runtime downloads");
+        if (blocked) {
             auto mirror = std::make_shared<no_network>();
             blb::install::install_options options;
             options.mirror = mirror;
@@ -153,16 +156,15 @@ int main(int argc, char **argv)
             auto installer = std::make_shared<blb::install::game_installer>(
                     blb::meta::game_layout(root / "game"), options);
             require(!blb::java::install_runtime(*installer, "java-runtime-delta"),
-                    "NixOS must reject direct runtime downloads");
+                    "NixOS without nix-ld must reject direct runtime downloads");
             blb::launch::game_launcher launcher(installer);
             blb::meta::version version;
             version.release_time = "2025-01-01";
             blb::launch::launch_settings settings;
-            settings.wrapper = {self.string(), "--wrapper"};
             auto missing = launcher.resolve_java(version, settings);
-            require(!missing && missing.err().message == "在系统配置声明以安装 Java",
-                    "missing local Java must show the NixOS installation hint");
-            require(mirror->calls == 0, "NixOS must reject Java downloads before network access");
+            require(!missing && missing.err().message == blb::java::runtime_blocked()->message,
+                    "missing local Java must show the nix-ld hint");
+            require(mirror->calls == 0, "NixOS without nix-ld must reject Java downloads before network access");
         }
         fs::remove_all(root);
         std::cout << "runtime regression tests passed\n";

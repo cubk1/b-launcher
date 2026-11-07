@@ -143,8 +143,11 @@ namespace UiFont {
             return systemFont("Menlo");
         }
 #else
+#if !defined(BLB_FONTCONFIG_LIBRARY)
+#define BLB_FONTCONFIG_LIBRARY "libfontconfig.so.1"
+#endif
         struct FontConfig {
-            void* library = dlopen("libfontconfig.so.1", RTLD_NOW | RTLD_LOCAL);
+            void* library = dlopen(BLB_FONTCONFIG_LIBRARY, RTLD_NOW | RTLD_LOCAL);
             void* config = nullptr;
             void* (*parse)(const unsigned char*) = nullptr;
             int (*substitute)(void*, void*, int) = nullptr;

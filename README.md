@@ -29,12 +29,15 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 cmake --build build --config MinSizeRel
 
+# For Linux distribution packages, use the shared libraries of the system:
+cmake -S . -B build -G Ninja -DBLB_SYSTEM_LIBS=ON
+
 # For NixOS:
 nix run github:cubk1/b-launcher
 # or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
-# NixOS uses local Java from JAVA_HOME, PATH, or installed JDKs.
-# Declare the required JDKs, for example environment.systemPackages = [ pkgs.jdk21 ].
-# Other Linux systems can download Java through the launcher.
+# The launcher finds Java in JAVA_HOME and PATH, for example environment.systemPackages = [ pkgs.jdk21 ].
+# To give more JDKs to the launcher, use .override { jdks = [ pkgs.jdk8 pkgs.jdk21 ]; } on the package.
+# With programs.nix-ld.enable = true, the launcher can also download Java.
 ```
 
 ## Unix数据目录

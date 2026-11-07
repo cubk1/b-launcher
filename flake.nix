@@ -14,11 +14,13 @@
     in
     {
       overlays.default = final: prev: {
+        b-launcher-unwrapped = final.callPackage ./nix/unwrapped.nix { };
         b-launcher = final.callPackage ./nix/package.nix { };
       };
 
       packages = forAllSystems (pkgs: rec {
-        b-launcher = pkgs.callPackage ./nix/package.nix { };
+        b-launcher-unwrapped = pkgs.callPackage ./nix/unwrapped.nix { };
+        b-launcher = pkgs.callPackage ./nix/package.nix { inherit b-launcher-unwrapped; };
         default = b-launcher;
       });
 
@@ -28,17 +30,16 @@
           b-launcher = self.packages.${pkgs.stdenv.hostPlatform.system}.b-launcher;
         in
         {
-          # The dev build downloads its dependencies with FetchContent as usual:
-          #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          # The dev build uses the libraries of the shell. FetchContent downloads simdjson and libzt:
+          #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBLB_SYSTEM_LIBS=ON
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
-            inputsFrom = [ b-launcher ];
+            inputsFrom = [ b-launcher.unwrapped ];
             packages = [
               pkgs.git
               pkgs.gdb
             ];
-            # SDL3 and fontconfig are opened with dlopen, so ./build/b-launcher needs these.
-            LD_LIBRARY_PATH = "${pkgs.addDriverRunpath.driverLink}/lib:${pkgs.lib.makeLibraryPath b-launcher.runtimeLibs}";
+            # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
             BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
             BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
             BLB_NIXOS_PATH = b-launcher.nixosPath;
