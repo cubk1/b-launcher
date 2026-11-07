@@ -4,6 +4,7 @@
 #include "ui/imgui/screens/shell/Background.h"
 #include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/shell/Dialog.h"
+#include "app/accounts/Avatars.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
 #include "app/system/Config.h"
@@ -268,9 +269,9 @@ namespace SettingsScreen {
 
         int lookCount() {
 #if defined(_WIN32)
-            int count = 6;
+            int count = 7;
 #else
-            int count = 5;
+            int count = 6;
 #endif
             return Appearance::backgroundImage() ? count + 1 : count;
         }
@@ -404,6 +405,18 @@ namespace SettingsScreen {
                            "settings#modNames", [] { return std::string(ModNames::original() ? "原名" : "中文名"); },
                            [](const std::string& value) { ModNames::setOriginal(value == "原名"); },
                            [] { return std::vector<std::string>{"中文名", "原名"}; }),
+                   y, blocked);
+            y += Page::ROW_H;
+
+            Page::label("账户头像", y);
+            select("settings#avatars",
+                   std::make_shared<ModeBinding>(
+                           "settings#avatars",
+                           [] { return std::string(Avatars::style() == Avatars::Style::Head ? "头部" : "上半身"); },
+                           [](const std::string& value) {
+                               Avatars::setStyle(value == "头部" ? Avatars::Style::Head : Avatars::Style::Bust);
+                           },
+                           [] { return std::vector<std::string>{"上半身", "头部"}; }),
                    y, blocked);
             y += Page::ROW_H;
 
@@ -595,6 +608,7 @@ namespace SettingsScreen {
                 {SECTION_LOOK, "主题", "强调色 颜色 深色 浅色"},
                 {SECTION_LOOK, "界面缩放", "缩放 大小"},
                 {SECTION_LOOK, "模组名称", "中文名 原名"},
+                {SECTION_LOOK, "账户头像", "皮肤 上半身 头部"},
                 {SECTION_LOOK, "背景图片", nullptr},
                 {SECTION_LOOK, "背景图片文件", nullptr},
                 {SECTION_LOOK, "界面音效", "声音"},
@@ -1332,6 +1346,11 @@ namespace SettingsScreen {
             toggle(
                     "settings#systemProxy", [] { return Network::systemProxy(); },
                     [](bool on) { Network::setSystemProxy(on); }, y, blocked);
+            y += Page::ROW_H;
+            Page::label("以离线模式启动", y);
+            toggle(
+                    "settings#offlineLaunch", [] { return Network::offlineLaunch(); },
+                    [](bool on) { Network::setOfflineLaunch(on); }, y, blocked);
         }
 
         void confirmReset() {
@@ -1384,7 +1403,7 @@ namespace SettingsScreen {
         }
 
         void networkSection(bool covered) {
-            float contentH = 2 * Page::CAPTION_H + 5 * Page::ROW_H + Page::GAP;
+            float contentH = 2 * Page::CAPTION_H + 6 * Page::ROW_H + Page::GAP;
             Page::Scroll body("settings#network", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -1394,7 +1413,7 @@ namespace SettingsScreen {
             downloadRows(y + Page::CAPTION_H, blocked);
             y += Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP;
             Page::caption("网络", y);
-            Page::card(y + Page::CAPTION_H, 1);
+            Page::card(y + Page::CAPTION_H, 2);
             networkRows(y + Page::CAPTION_H, blocked);
             body.end();
         }

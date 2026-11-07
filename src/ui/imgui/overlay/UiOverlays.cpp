@@ -125,6 +125,14 @@ namespace UiOverlays {
         }
     }
 
+    void closeAbove(Overlay* layer) {
+        sync();
+        int index = indexOf(stack, layer);
+        if (index >= 0) {
+            closeFrom(index + 1);
+        }
+    }
+
     void closeAll() {
         closeFrom(0);
         std::vector<Overlay*>& all = layers();

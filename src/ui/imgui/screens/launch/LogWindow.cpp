@@ -22,6 +22,7 @@
 #include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiIme.h"
 #include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiSound.h"
@@ -1592,7 +1593,7 @@ namespace LogWindow {
         NewUi::render(draw);
         UiRender::end();
         if (NewUi::caretFrame == NewUi::frameCounter) {
-            window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
+            window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH, UiIme::wanted());
         } else {
             window.clearTextArea();
         }

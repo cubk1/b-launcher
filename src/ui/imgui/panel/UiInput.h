@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace UiInput {
@@ -52,6 +53,7 @@ namespace UiInput {
     int wordLeft(const std::string& id, int from);
     int wordRight(const std::string& id, int from);
     void selectWordAt(const std::string& id, int index);
+    std::pair<int, int> wordAt(const std::string& id, int index);
     void cut(const std::string& id);
     void copy(const std::string& id);
     void paste(const std::string& id);

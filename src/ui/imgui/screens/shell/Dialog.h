@@ -10,5 +10,6 @@ namespace Dialog {
     void open(const std::string& id, float width, float height, Body body,
               std::function<void()> closed = std::function<void()>());
     void close();
+    void resize(const std::string& id, float width, float height);
     bool isOpen(const std::string& id);
 }

@@ -20,6 +20,7 @@
 
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/NewUi.h"
+#include "ui/imgui/panel/UiIme.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiImages.h"
 #include "ui/imgui/panel/Notifications.h"
@@ -386,7 +387,7 @@ namespace ImGuiApp {
             NewUi::render(panel.active() ? Compact::draw : MainWindow::draw);
             UiRender::end();
             if (NewUi::caretFrame == NewUi::frameCounter) {
-                window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
+                window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH, UiIme::wanted());
             } else {
                 window.clearTextArea();
             }

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,12 +39,28 @@ namespace Accounts {
                                    const std::string& username, const std::string& password);
     std::string registrationUrl(blb::auth::account_type type, const std::string& server);
 
+    struct Credential {
+        std::string username;
+        std::string password;
+    };
+
+    std::optional<Credential> rememberedLogin(blb::auth::account_type type, const std::string& server);
+    std::optional<std::string> loadSealed(const std::string& name);
+    bool storeSealed(const std::string& name, const std::string& data);
+    std::string updateOffline(const std::string& key, const std::string& name, const std::string& uuid,
+                              std::string& updatedKey);
+    void rememberLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
+                       const std::string& password);
+    void forgetLogin(blb::auth::account_type type, const std::string& server);
+
     enum class ServerLogin { Idle, Working, Choosing, Done };
     ServerLogin serverLogin();
     void startServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
                           const std::string& password);
     const std::vector<blb::auth::yggdrasil_profile>& serverProfiles();
+    blb::auth::account serverCandidate(size_t index);
     void chooseProfile(size_t index);
+    void chooseProfiles(const std::vector<size_t>& indices, const std::string& username, const std::string& password);
     void cancelServerLogin();
     void finishServerLogin();
 

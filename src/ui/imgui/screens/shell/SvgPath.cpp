@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <map>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -348,6 +350,34 @@ namespace SvgPath {
         w = shape.w;
         h = shape.h;
         return true;
+    }
+
+    uint32_t texture(const std::string& data, int size, uint32_t rgba) {
+        static std::map<std::tuple<std::string, int, uint32_t>, uint32_t> made;
+        size = std::clamp(size, 1, MAX_SIZE);
+        auto key = std::make_tuple(data, size, rgba);
+        auto found = made.find(key);
+        if (found != made.end()) {
+            return found->second;
+        }
+        Shape& shape = lookup(data);
+        if (shape.image == nullptr) {
+            return 0;
+        }
+        std::vector<unsigned char> pixels((size_t) size * size * 4, 0);
+        rasterize(shape, size, size, size * 4, true, pixels.data());
+        unsigned int alpha = (rgba >> 24) & 0xFF;
+        for (size_t i = 0; i < pixels.size(); i += 4) {
+            pixels[i] = (unsigned char) ((rgba >> 16) & 0xFF);
+            pixels[i + 1] = (unsigned char) ((rgba >> 8) & 0xFF);
+            pixels[i + 2] = (unsigned char) (rgba & 0xFF);
+            pixels[i + 3] = (unsigned char) (pixels[i + 3] * alpha / 255);
+        }
+        uint32_t texture = UiImages::upload(pixels.data(), size, size);
+        if (texture != 0) {
+            made[key] = texture;
+        }
+        return texture;
     }
 
     void draw(const std::string& data, float x, float y, float w, float h, uint32_t rgba, bool uniform) {

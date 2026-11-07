@@ -282,25 +282,38 @@ namespace UiInput {
         return index;
     }
 
-    void selectWordAt(const std::string& id, int index) {
+    std::pair<int, int> wordAt(const std::string& id, int index) {
         std::u32string value = Ui::decode(get(id));
-        if (value.empty()) {
-            return;
-        }
         int length = (int) value.size();
-        int at = std::max(0, std::min(length - 1, index));
-        if (!wordChar(value[at])) {
-            selectRange(id, at, at + 1);
-            return;
+        if (length == 0) {
+            return {0, 0};
         }
+        int at = std::max(0, std::min(length - 1, index));
+        bool word = wordChar(value[at]);
+        bool blank = value[at] == ' ' || value[at] == '\t';
+        auto same = [&](char32_t c) {
+            return word ? wordChar(c) : blank ? c == ' ' || c == '\t' : !wordChar(c) && c != ' ' && c != '\t';
+        };
         int from = at;
-        while (from > 0 && wordChar(value[from - 1])) {
+        while (from > 0 && same(value[from - 1])) {
             from--;
         }
-        int to = at;
-        while (to < length && wordChar(value[to])) {
+        int to = at + 1;
+        while (to < length && same(value[to])) {
             to++;
         }
+        return {from, to};
+    }
+
+    void selectWordAt(const std::string& id, int index) {
+        if (get(id).empty()) {
+            return;
+        }
+        if (secrets.count(id) != 0) {
+            selectAll(id);
+            return;
+        }
+        auto [from, to] = wordAt(id, index);
         selectRange(id, from, to);
     }
 

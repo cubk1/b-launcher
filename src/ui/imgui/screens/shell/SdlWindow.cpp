@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/shell/SdlWindow.h"
+#include "ui/imgui/panel/UiIme.h"
 
 #include <core/base/strings.hpp>
 
@@ -262,6 +263,10 @@ void SdlWindow::setTitle(const std::string& title) {
 void SdlWindow::handle(SDL_Event& event) {
     switch (event.type) {
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED: closing = true; return;
+        case SDL_EVENT_TEXT_EDITING:
+            UiIme::set(event.edit.text != nullptr ? event.edit.text : "", std::max(0, (int) event.edit.start));
+            break;
+        case SDL_EVENT_TEXT_INPUT: UiIme::clear(); break;
         case SDL_EVENT_WINDOW_RESIZED:
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: refreshSize(); break;
@@ -369,11 +374,12 @@ void SdlWindow::setTyping(bool typing) {
         SDL_StartTextInput(window);
     } else {
         SDL_StopTextInput(window);
+        UiIme::clear();
     }
 }
 
-void SdlWindow::setTextArea(float x, float y, float h) {
-    if (window == nullptr) {
+void SdlWindow::setTextArea(float x, float y, float h, bool ime) {
+    if (window == nullptr || !ime) {
         return;
     }
     float scale = density();

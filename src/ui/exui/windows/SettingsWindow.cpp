@@ -9,6 +9,7 @@
 #include "app/downloads/DownloadSources.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/GameOptions.h"
+#include "app/accounts/Avatars.h"
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
 #include "app/system/About.h"
@@ -128,9 +129,12 @@ namespace ForgottenMelody {
             STYLE,
             STYLE_HINT,
             RESTART,
+            AVATAR_LABEL,
+            AVATAR,
             NETWORK_GROUP,
             SOURCES_GROUP,
             SYSTEM_PROXY,
+            OFFLINE_LAUNCH,
             SOURCE_MINECRAFT_LABEL,
             SOURCE_MINECRAFT,
             SOURCE_ASSETS_LABEL,
@@ -387,9 +391,12 @@ namespace ForgottenMelody {
                         {STYLE, ControlKind::Combo, {}},
                         {STYLE_HINT, ControlKind::Label, {}},
                         {RESTART, ControlKind::Button, {}, L"立即重启"},
+                        {AVATAR_LABEL, ControlKind::Label, {}, L"账户头像"},
+                        {AVATAR, ControlKind::Combo, {}},
                         {NETWORK_GROUP, ControlKind::Group, {}, L"网络"},
                         {SOURCES_GROUP, ControlKind::Group, {}, L"下载源"},
                         {SYSTEM_PROXY, ControlKind::Check, {}, L"使用系统代理"},
+                        {OFFLINE_LAUNCH, ControlKind::Check, {}, L"以离线模式启动"},
                         {SOURCE_MINECRAFT_LABEL, ControlKind::Label, {}, L"Minecraft"},
                         {SOURCE_MINECRAFT, ControlKind::Combo, {}},
                         {SOURCE_ASSETS_LABEL, ControlKind::Label, {}, L"资源文件"},
@@ -502,8 +509,10 @@ namespace ForgottenMelody {
                 for (uint32_t id : SKIN_CONTROLS) {
                     MoveInto(pages.at(PATCH)->GetContent(), {id});
                 }
-                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART});
-                MoveInto(pages.at(NETWORK_PAGE)->GetContent(), {SOURCES_GROUP, NETWORK_GROUP, SYSTEM_PROXY});
+                MoveInto(pages.at(LAUNCHER)->GetContent(),
+                         {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART, AVATAR_LABEL, AVATAR});
+                MoveInto(pages.at(NETWORK_PAGE)->GetContent(),
+                         {SOURCES_GROUP, NETWORK_GROUP, SYSTEM_PROXY, OFFLINE_LAUNCH});
                 for (const auto& source : DOWNLOAD_SOURCES) {
                     MoveInto(pages.at(NETWORK_PAGE)->GetContent(), {source.label, source.control});
                 }
@@ -573,6 +582,7 @@ namespace ForgottenMelody {
                     case SKIN_MODE: Patches::setValue("skin.mode", SKIN_MODES[index].value); break;
                     case SKIN_SOURCE: Patches::setValue("skin.source", SKIN_SOURCES[index].value); break;
                     case STYLE: UiStyles::set(UiStyles::all()[index].key); break;
+                    case AVATAR: Avatars::setStyle(index == 1 ? Avatars::Style::Head : Avatars::Style::Bust); break;
                     case MAJOR:
                         if (index < (int) shownMajors.size()) {
                             javaMajor = shownMajors[index];
@@ -598,6 +608,7 @@ namespace ForgottenMelody {
                     case LOGS: LaunchDefaults::setShowLogs(Checked(LOGS)); break;
                     case ALL: Patches::setAll(Checked(ALL)); break;
                     case SYSTEM_PROXY: Network::setSystemProxy(Checked(SYSTEM_PROXY)); break;
+                    case OFFLINE_LAUNCH: Network::setOfflineLaunch(Checked(OFFLINE_LAUNCH)); break;
                     case RESET_SETTINGS: resetSettings(); return;
                     case SKIN_IMAGE_PICK: pickImage(SKIN_IMAGE, true); break;
                     case CAPE_IMAGE_PICK: pickImage(CAPE_IMAGE, true); break;
@@ -797,6 +808,7 @@ namespace ForgottenMelody {
                                                            field(RESTART, 90, 30),
                                                    },
                                                    34, 95, Layout::Align::Center),
+                                               setting(AVATAR_LABEL, {field(AVATAR, 200, 28)}),
                                        },
                                        {20, 23, 20, 18})},
                                 15));
@@ -805,7 +817,7 @@ namespace ForgottenMelody {
                     sources.push_back(setting(source.label, {field(source.control, 200, 28)}));
                 setPageLayout(NETWORK_PAGE,
                               Layout::Column({formGroup(SOURCES_GROUP, std::move(sources)),
-                                              formGroup(NETWORK_GROUP, {toggle(SYSTEM_PROXY)})},
+                                              formGroup(NETWORK_GROUP, {toggle(SYSTEM_PROXY), toggle(OFFLINE_LAUNCH)})},
                                              15));
                 setPageLayout(RESET_PAGE,
                               Layout::Column({formGroup(RESET_GROUP,
@@ -1134,7 +1146,9 @@ namespace ForgottenMelody {
                     selected = &styles[i] == &UiStyles::current() ? i : selected;
                 }
                 choose(STYLE, options, selected);
+                choose(AVATAR, {L"上半身", L"头部"}, Avatars::style() == Avatars::Style::Head ? 1 : 0);
                 SetChecked(SYSTEM_PROXY, Network::systemProxy());
+                SetChecked(OFFLINE_LAUNCH, Network::offlineLaunch());
                 FindControl(RESET_SETTINGS)->SetTextColor(0xD2C00000);
             }
 
@@ -1147,6 +1161,7 @@ namespace ForgottenMelody {
                 FindControl(RESTART)->SetEnabled(!busy);
                 FindControl(RESET_SETTINGS)->SetEnabled(!busy);
                 SetChecked(SYSTEM_PROXY, Network::systemProxy());
+                SetChecked(OFFLINE_LAUNCH, Network::offlineLaunch());
                 for (const auto& source : DOWNLOAD_SOURCES) {
                     auto order = DownloadSources::order(source.kind);
                     auto at = std::find(std::begin(SOURCE_ORDERS), std::end(SOURCE_ORDERS), order);
