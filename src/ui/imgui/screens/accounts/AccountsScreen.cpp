@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -753,6 +754,7 @@ namespace AccountsScreen {
         std::string nide8Server;
         std::string loginProblem;
         bool rememberPassword = true;
+        bool viaBrowser = false;
         std::set<std::string> pickedProfiles;
         float pickScroll = 0.0f;
 
@@ -800,7 +802,9 @@ namespace AccountsScreen {
         }
 
         void finishLogin() {
-            if (rememberPassword) {
+            if (viaBrowser) {
+                viaBrowser = false;
+            } else if (rememberPassword) {
                 Accounts::rememberLogin(loginType(), loginAddress(), serverUser, serverPassword);
             } else {
                 Accounts::forgetLogin(loginType(), loginAddress());
@@ -829,7 +833,19 @@ namespace AccountsScreen {
             pickScroll = 0.0f;
             serverUser = user;
             serverPassword = password;
+            viaBrowser = false;
             Accounts::startServerLogin(loginType(), address, user, password);
+        }
+
+        void submitBrowser() {
+            if (ours(NewUi::textEditing)) {
+                NewUi::commitTextEdit();
+            }
+            loginProblem.clear();
+            pickedProfiles.clear();
+            pickScroll = 0.0f;
+            viaBrowser = true;
+            Accounts::startBrowserLogin();
         }
 
         std::shared_ptr<TextBinding> serverField(const char* owner, std::string* target, const std::string& hint,
@@ -962,14 +978,17 @@ namespace AccountsScreen {
             field.paint();
         }
 
-        std::vector<std::pair<std::string, std::string>> loginLinks() {
-            std::vector<std::pair<std::string, std::string>> links;
+        std::vector<std::pair<std::string, std::function<void()>>> loginLinks() {
+            std::vector<std::pair<std::string, std::function<void()>>> links;
             std::string signUp = Accounts::registrationUrl(loginType(), loginAddress());
             if (!signUp.empty()) {
-                links.push_back({"注册账号", signUp});
+                links.push_back({"注册账号", [signUp] { Platform::openUrl(signUp); }});
+            }
+            if (server == Server::LittleSkin) {
+                links.push_back({"通过浏览器登录", [] { submitBrowser(); }});
             }
             if (nide8()) {
-                links.push_back({"服主后台", std::string(blb::auth::nide8_admin_url)});
+                links.push_back({"服主后台", [] { Platform::openUrl(std::string(blb::auth::nide8_admin_url)); }});
             }
             return links;
         }
@@ -1090,22 +1109,22 @@ namespace AccountsScreen {
                 submitServer();
             }
             if (working) {
-                busyLabel("正在登录", left, cy, width);
+                busyLabel(viaBrowser ? "在浏览器中完成授权" : "正在登录", left, cy, width);
             }
             cy += LOGIN_FIELD;
-            std::vector<std::pair<std::string, std::string>> links = loginLinks();
+            std::vector<std::pair<std::string, std::function<void()>>> links = loginLinks();
             if (links.empty()) {
                 return;
             }
             cy += 12.0f;
             float total = 0.0f;
-            for (const auto& [text, url] : links) {
+            for (const auto& [text, action] : links) {
                 total += UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f;
             }
             float linkX = cx - (total - 20.0f) * 0.5f;
-            for (const auto& [text, url] : links) {
+            for (const auto& [text, action] : links) {
                 if (textLink(text, linkX, cy, UiTheme::textMuted(), UiTheme::textSecondary(), working)) {
-                    Platform::openUrl(url);
+                    action();
                 }
                 linkX += UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f;
             }
@@ -1297,6 +1316,7 @@ namespace AccountsScreen {
         }
 
         const char* const OFFLINE_DIALOG = "accounts#offline#dialog";
+        constexpr float OFFLINE_TOP = 13.0f;
         std::string offlineProblem;
         bool offlineFocus = false;
 
@@ -1331,8 +1351,7 @@ namespace AccountsScreen {
         }
 
         float offlineHeight() {
-            float h =
-                    LOGIN_PAD + LOGIN_ICON + 12.0f + LOGIN_TITLE + 18.0f + LOGIN_LABEL + LOGIN_LABEL_GAP + LOGIN_FIELD;
+            float h = OFFLINE_TOP + LOGIN_TITLE + 16.0f + LOGIN_LABEL + LOGIN_LABEL_GAP + LOGIN_FIELD;
             if (!offlineProblem.empty()) {
                 h += 8.0f + LOGIN_NOTE;
             }
@@ -1348,14 +1367,10 @@ namespace AccountsScreen {
             UiRender::scissor(x, y, w, h);
             float left = x + LOGIN_PAD;
             float width = w - 2.0f * LOGIN_PAD;
-            float cx = x + w * 0.5f;
-            float cy = y + LOGIN_PAD;
-            UiRender::roundRect(cx - LOGIN_ICON * 0.5f, cy, LOGIN_ICON, LOGIN_ICON, LOGIN_ICON * 0.25f,
-                                UiTheme::surfaceRaised());
-            UiWidgets::icon(Ui::glyph(0xf007), cx, cy + LOGIN_ICON * 0.5f, UiTheme::textSecondary(), LOGIN_ICON * 0.4f);
-            cy += LOGIN_ICON + 12.0f;
-            Page::centredText("添加离线账户", cx, cy, LOGIN_TITLE, UiTheme::textPrimary(), Page::TITLE_SIZE);
-            cy += LOGIN_TITLE + 18.0f;
+            float cy = y + OFFLINE_TOP;
+            UiRender::textY("添加离线账户", left, cy, LOGIN_TITLE, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            Page::TITLE_SIZE);
+            cy += LOGIN_TITLE + 16.0f;
             UiRender::textY("玩家名", left + 2.0f, cy, LOGIN_LABEL, UiTheme::textSecondary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_SMALL);
             cy += LOGIN_LABEL + LOGIN_LABEL_GAP;
@@ -1412,6 +1427,7 @@ namespace AccountsScreen {
             serverPassword.clear();
             focusNext.clear();
             loginProblem.clear();
+            viaBrowser = false;
         }
 
         void listView() {

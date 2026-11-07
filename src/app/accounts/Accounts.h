@@ -60,6 +60,7 @@ namespace Accounts {
     const std::vector<blb::auth::yggdrasil_profile>& serverProfiles();
     blb::auth::account serverCandidate(size_t index);
     void chooseProfile(size_t index);
+    void startBrowserLogin();
     void chooseProfiles(const std::vector<size_t>& indices, const std::string& username, const std::string& password);
     void cancelServerLogin();
     void finishServerLogin();
