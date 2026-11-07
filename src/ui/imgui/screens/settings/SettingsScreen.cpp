@@ -1732,18 +1732,12 @@ namespace SettingsScreen {
         }
 
         void updateControl(float y, float leftEnd, bool blocked) {
+            if (!Updates::enabled()) {
+                return;
+            }
             Updates::State state = Updates::state();
             float by = y + (HERO_H - Page::FIELD_H) * 0.5f;
             float right = mainX() + mainW() - 20.0f;
-            if (!Updates::enabled()) {
-                std::string text = "由包管理器更新";
-                float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                if (right - w >= leftEnd + 12.0f) {
-                    UiRender::textY(text, right - w, y, HERO_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                    UiWidgets::TEXT_CONTROL);
-                }
-                return;
-            }
             if (state == Updates::State::Checking || state == Updates::State::Latest) {
                 std::string text = state == Updates::State::Checking ? "正在检查" : "已是最新版本";
                 float w = Page::buttonWidth(text, 0xf00c);
