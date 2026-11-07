@@ -38,6 +38,13 @@ namespace EmbeddedIcons {
     extern const unsigned char prism[];
     extern const unsigned int prismSize;
 
+    extern const unsigned char microsoft[];
+    extern const unsigned int microsoftSize;
+    extern const unsigned char littleskin[];
+    extern const unsigned int littleskinSize;
+    extern const unsigned char defaultSkin[];
+    extern const unsigned int defaultSkinSize;
+
     extern const unsigned char backgroundSidebar[];
     extern const unsigned int backgroundSidebarSize;
     extern const unsigned char backgroundPanel[];

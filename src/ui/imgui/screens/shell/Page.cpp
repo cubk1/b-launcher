@@ -254,19 +254,19 @@ namespace Page {
     }
 
     bool button(const std::string& id, const std::string& text, float x, float y, float w, bool primary, bool blocked,
-                int glyph) {
-        bool hovered = !blocked && NewUi::hit(x, y, w, FIELD_H);
+                int glyph, float h) {
+        bool hovered = !blocked && NewUi::hit(x, y, w, h);
         float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
         uint32_t ink;
         if (primary) {
-            UiRender::roundRect(x, y, w, FIELD_H, 7.0f, UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
+            UiRender::roundRect(x, y, w, h, 7.0f, UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
             ink = UiTheme::onAccent();
         } else {
-            UiRender::roundRect(x, y, w, FIELD_H, 7.0f, UiTheme::surfaceRaised());
+            UiRender::roundRect(x, y, w, h, 7.0f, UiTheme::surfaceRaised());
             if (hover > 0.001f) {
-                UiRender::roundRect(x, y, w, FIELD_H, 7.0f, UiTheme::overlay(Ui::round(14 * hover)));
+                UiRender::roundRect(x, y, w, h, 7.0f, UiTheme::overlay(Ui::round(14 * hover)));
             }
-            UiRender::outline(x, y, w, FIELD_H, 7.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, h, 7.0f, UiTheme::outlineSoft());
             ink = UiTheme::textPrimary();
         }
         float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -274,13 +274,13 @@ namespace Page {
             float contentW = BUTTON_ICON + BUTTON_ICON_GAP + textW;
             float iconX = x + (w - contentW) * 0.5f;
             UiWidgets::iconBeside(Ui::glyph(glyph), iconX + BUTTON_ICON * 0.5f, text, UiFont::MEDIUM,
-                                  UiWidgets::TEXT_CONTROL, y, FIELD_H, ink, 10.0f);
-            UiRender::textY(text, iconX + BUTTON_ICON + BUTTON_ICON_GAP, y, FIELD_H, ink, UiFont::MEDIUM,
+                                  UiWidgets::TEXT_CONTROL, y, h, ink, 10.0f);
+            UiRender::textY(text, iconX + BUTTON_ICON + BUTTON_ICON_GAP, y, h, ink, UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
         } else {
-            UiRender::textY(text, x + (w - textW) * 0.5f, y, FIELD_H, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(text, x + (w - textW) * 0.5f, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         }
-        if (!blocked && NewUi::click(x, y, w, FIELD_H)) {
+        if (!blocked && NewUi::click(x, y, w, h)) {
             UiSound::request(UiSound::forLabel(text));
             return true;
         }

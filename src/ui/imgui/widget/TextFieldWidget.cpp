@@ -80,6 +80,6 @@ void TextFieldWidget::paint() {
     }
     if (clicked()) {
         UiSound::request(UiSound::TICK);
-        NewUi::beginTextEdit(value);
+        NewUi::beginTextEditAt(value, boxX + 9 + leading, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
     }
 }

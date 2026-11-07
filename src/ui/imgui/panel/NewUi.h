@@ -236,6 +236,8 @@ namespace NewUi {
     void closeAllOverlays();
 
     float fieldScroll(const std::string& id, float room, int family, float size, bool focused);
+    float fieldScroll(const std::string& id, float room, int family, float size, bool focused, const std::string& value,
+                      int caret);
     std::string fitControl(const std::string& label, float available);
     std::string fit(const std::string& label, float available);
     void commitSliderEdit(const std::string& id);
@@ -275,6 +277,7 @@ namespace NewUi {
     bool scrollColor(double amount);
     void beginSliderEdit(const std::string& id, const std::string& value);
     void beginTextEdit(const std::shared_ptr<TextValue>& value);
+    void beginTextEditAt(const std::shared_ptr<TextValue>& value, float textX, int family, float size);
     void tabStop(const std::shared_ptr<TextValue>& value);
     void cancelTextEdit();
     void commitTextEdit();
@@ -308,6 +311,7 @@ namespace NewUi {
     void releaseInput(const std::string& target);
     void drawSelection(const std::string& id, float x, float y, float h, int family, float size);
     void drawCaret(const std::string& id, float x, float y, float h, int family, float size);
+    void drawCaretAt(float x, float y, float h, bool steady);
     int caretIndexAt(const std::string& id, float textX, float pointerX, int family, float size);
     void fieldMouse(const std::string& id, float x, float y, float w, float h, float textX, int family, float size,
                     int maxLength);

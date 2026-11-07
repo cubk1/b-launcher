@@ -8,6 +8,7 @@ namespace Network {
 
     namespace {
         const char* const KEY = "systemProxy";
+        const char* const OFFLINE_KEY = "offlineLaunch";
     }
 
     bool systemProxy() {
@@ -18,6 +19,15 @@ namespace Network {
         Config::data()[KEY] = on;
         Config::save();
         apply();
+    }
+
+    bool offlineLaunch() {
+        return b_launcher_base::json_bool(Config::data(), OFFLINE_KEY);
+    }
+
+    void setOfflineLaunch(bool on) {
+        Config::data()[OFFLINE_KEY] = on;
+        Config::save();
     }
 
     void apply() {

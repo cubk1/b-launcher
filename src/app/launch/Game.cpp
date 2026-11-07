@@ -1,6 +1,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/GameOptions.h"
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Looks.h"
 #include "app/downloads/DownloadSources.h"
 #include "app/launch/GameLog.h"
 #include "app/instances/Instances.h"
@@ -10,9 +11,11 @@
 #include "app/multiplayer/Multiplayer.h"
 #include "app/system/Platform.h"
 #include "app/system/Interface.h"
+#include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Catalog.h"
 
+#include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
 #include <core/base/progress.hpp>
@@ -528,6 +531,9 @@ namespace Game {
         if (Patches::enabled(options.patch)) {
             patchJar = Patches::jarIn(blb::meta::game_layout(root).cache());
             patchPlan = Patches::plan();
+            if (account->type == blb::auth::account_type::offline) {
+                Looks::apply(Accounts::keyOf(*account), patchPlan);
+            }
             optionsFile = options.options_file;
             if (!optionsFile.empty()) {
                 patchPlan.values.emplace_back("options.file", optionsFile);
@@ -582,6 +588,12 @@ namespace Game {
         live.cancelling = std::make_shared<blb::cancellation_source>();
         blb::cancellation_token token = live.cancelling->token();
         blb::auth::account player = *account;
+        if (Network::offlineLaunch() && player.type != blb::auth::account_type::offline) {
+            if (auto offline = blb::auth::offline_account(player.name, player.uuid)) {
+                player = std::move(*offline);
+                GameLog::note(log, "已开启以离线模式启动，只使用账户的名字和 UUID");
+            }
+        }
         std::shared_ptr<blb::auth::microsoft_authenticator> authenticator = Accounts::authenticator(player);
         Platform::Environment commandVariables = live.variables;
         std::filesystem::path directory = live.commandDirectory;

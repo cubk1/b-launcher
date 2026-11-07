@@ -3,6 +3,7 @@
 #include "UiCommon.h"
 #include "UiCursor.h"
 #include "UiFont.h"
+#include "UiIme.h"
 #include "UiInput.h"
 #include "UiRender.h"
 #include "UiState.h"
@@ -191,6 +192,10 @@ namespace NewUi {
     std::string fieldClickId;
     long long fieldClickAt;
     int fieldClicks;
+    static float fieldClickX = 0.0f;
+    static float fieldClickY = 0.0f;
+    static int fieldWordFrom = 0;
+    static int fieldWordTo = 0;
     std::string docHoverTarget;
     std::string docHoverText;
     std::string docHoverNext;
@@ -233,6 +238,12 @@ namespace NewUi {
                 onKeyPress(key, 1);
             } else if (ImGui::IsKeyPressed(imKey, true)) {
                 onKeyRepeat(key);
+            }
+        }
+        std::string committed = UiIme::takeCommitted();
+        if (!committed.empty() && !UiInput::focused.empty()) {
+            for (char32_t c : Ui::decode(committed)) {
+                UiInput::charTyped(UiInput::focused, c);
             }
         }
         for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
@@ -614,7 +625,11 @@ namespace NewUi {
     }
 
     float fieldScroll(const std::string& id, float room, int family, float size, bool focused) {
-        std::string value = UiInput::shown(id);
+        return fieldScroll(id, room, family, size, focused, UiInput::shown(id), UiInput::caret(id));
+    }
+
+    float fieldScroll(const std::string& id, float room, int family, float size, bool focused, const std::string& value,
+                      int caret) {
         float total = UiFont::width(value, family, size);
         if (!focused || total <= room) {
             fieldOffset[id] = 0.0f;
@@ -622,7 +637,7 @@ namespace NewUi {
         }
         auto stored = fieldOffset.find(id);
         float offset = stored == fieldOffset.end() ? 0.0f : stored->second;
-        float caretX = UiFont::width(Ui::substring(value, 0, UiInput::caret(id)), family, size);
+        float caretX = UiFont::width(Ui::substring(value, 0, caret), family, size);
         if (caretX - offset > room - 6) {
             offset = caretX - room + 6;
         }
@@ -1653,6 +1668,17 @@ namespace NewUi {
         UiInput::select(INPUT_TEXT, value);
     }
 
+    void beginTextEditAt(const std::shared_ptr<TextValue>& target, float textX, int family, float size) {
+        beginTextEdit(target);
+        UiInput::moveCaret(INPUT_TEXT, caretIndexAt(INPUT_TEXT, textX, mouseX, family, size), false);
+        fieldDragId = INPUT_TEXT;
+        fieldClickId = INPUT_TEXT;
+        fieldClickAt = Ui::millis();
+        fieldClickX = mouseX;
+        fieldClickY = mouseY;
+        fieldClicks = 1;
+    }
+
     void tabStop(const std::shared_ptr<TextValue>& value) {
         tabStops.push_back(value);
     }
@@ -2142,15 +2168,19 @@ namespace NewUi {
 
     void drawCaret(const std::string& id, float x, float y, float h, int family, float size) {
         float at = UiFont::width(Ui::substring(UiInput::shown(id), 0, UiInput::caret(id)), family, size);
+        drawCaretAt(x + at, y, h, false);
+    }
+
+    void drawCaretAt(float x, float y, float h, bool steady) {
         float unit = UiRender::unit();
-        caretScreenX = UiRender::transformX(x + at) * unit;
+        caretScreenX = UiRender::transformX(x) * unit;
         caretScreenY = UiRender::transformY(y) * unit;
         caretScreenH = UiRender::transformW(h) * unit;
         caretFrame = frameCounter;
-        if (((long long) (caretTimer * 1.6f)) % 2 != 0) {
+        if (!steady && ((long long) (caretTimer * 1.6f)) % 2 != 0) {
             return;
         }
-        UiRender::roundRect(x + at, y, 1.2f, h, 0, UiTheme::textPrimary());
+        UiRender::roundRect(x, y, 1.2f, h, 0, UiTheme::textPrimary());
     }
 
     int caretIndexAt(const std::string& id, float textX, float pointerX, int family, float size) {
@@ -2206,24 +2236,37 @@ namespace NewUi {
             UiInput::focus(id, maxLength);
             int index = caretIndexAt(id, textX, mouseX, family, size);
             long long now = Ui::millis();
-            bool sameSpot = id == fieldClickId && now - fieldClickAt < 400;
+            bool sameSpot = id == fieldClickId && now - fieldClickAt < 500 && std::fabs(mouseX - fieldClickX) < 5.0f &&
+                    std::fabs(mouseY - fieldClickY) < 5.0f;
             fieldClickAt = now;
             fieldClickId = id;
+            fieldClickX = mouseX;
+            fieldClickY = mouseY;
             fieldClicks = sameSpot ? fieldClicks + 1 : 1;
+            fieldDragId = id;
             if (fieldClicks >= 3) {
                 UiInput::selectAll(id);
             } else if (fieldClicks == 2) {
                 UiInput::selectWordAt(id, index);
+                fieldWordFrom = UiInput::selectionStart(id);
+                fieldWordTo = UiInput::selectionEnd(id);
             } else {
                 UiInput::moveCaret(id, index, UiInput::shiftDown());
-                fieldDragId = id;
             }
             return;
         }
         if (!fieldDragId.empty() && fieldDragId == id) {
             if (!mouseDown) {
                 fieldDragId.clear();
-            } else {
+            } else if (fieldClicks == 2 && UiInput::secrets.count(id) == 0) {
+                int index = caretIndexAt(id, textX, mouseX, family, size);
+                auto [from, to] = UiInput::wordAt(id, std::max(0, index < fieldWordFrom ? index : index - 1));
+                if (index < fieldWordFrom) {
+                    UiInput::selectRange(id, fieldWordTo, std::min(from, fieldWordFrom));
+                } else {
+                    UiInput::selectRange(id, fieldWordFrom, std::max(to, fieldWordTo));
+                }
+            } else if (fieldClicks == 1) {
                 UiInput::moveCaret(id, caretIndexAt(id, textX, mouseX, family, size), true);
             }
         }

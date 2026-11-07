@@ -58,6 +58,12 @@ namespace Dialog {
             if (layer.owner.empty() || !layer.body) {
                 return;
             }
+            bool covered = UiOverlays::top() != &layer;
+            if (covered && NewUi::pendingClick && !NewUi::clickConsumed &&
+                !UiOverlays::blocks(NewUi::mouseX, NewUi::mouseY)) {
+                UiOverlays::closeAbove(&layer);
+                NewUi::clickConsumed = true;
+            }
             float open = UiState::motionFrom("dialog#open", 1.0f, 14.0f, 0.0f);
             float eased = 1.0f - (float) std::pow(1.0f - open, 3.0);
             float windowW = MainWindow::width();
@@ -95,7 +101,11 @@ namespace Dialog {
             if (NewUi::click(0.0f, 0.0f, windowW, windowH) && !inside) {
                 close();
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-                close();
+                if (covered) {
+                    UiOverlays::closeAbove(&layer);
+                } else {
+                    close();
+                }
             }
         }
     }
@@ -115,6 +125,13 @@ namespace Dialog {
     void close() {
         UiOverlays::close(&layer);
         layer.release();
+    }
+
+    void resize(const std::string& id, float width, float height) {
+        if (!layer.owner.empty() && layer.owner == id) {
+            layer.width = width;
+            layer.height = height;
+        }
     }
 
     bool isOpen(const std::string& id) {

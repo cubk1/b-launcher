@@ -28,6 +28,7 @@ namespace UiOverlays {
     void openOn(Overlay* host, Overlay* layer);
     void close(Overlay* layer);
     void closeFrom(int index);
+    void closeAbove(Overlay* layer);
     void closeAll();
     bool dismiss(float x, float y);
     bool scroll(double amount);

@@ -1,5 +1,7 @@
 #include "app/system/Services.h"
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Avatars.h"
+#include "app/accounts/LittleSkin.h"
 #include "app/accounts/Profiles.h"
 #include "app/downloads/Addons.h"
 #include "app/downloads/DownloadSources.h"
@@ -42,6 +44,8 @@ namespace Services {
         Instances::poll();
         Accounts::poll();
         Profiles::poll();
+        Avatars::poll();
+        LittleSkin::poll();
         Game::poll();
         Catalog::poll();
         Addons::poll();
@@ -82,6 +86,8 @@ namespace Services {
         Addons::shutdown();
         Catalog::shutdown();
         Game::shutdown();
+        LittleSkin::shutdown();
+        Avatars::shutdown();
         Profiles::shutdown();
         Accounts::shutdown();
         Instances::shutdown();

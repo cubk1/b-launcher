@@ -11,6 +11,7 @@ namespace b_launcher_base::auth
 {
 
 std::string offline_uuid (std::string_view name);
+std::string pcl_offline_uuid (std::string_view name);
 bool valid_player_name (std::string_view name) noexcept;
 result<account> offline_account (std::string_view name,
                                  std::optional<std::string> uuid
