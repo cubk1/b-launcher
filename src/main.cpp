@@ -26,7 +26,7 @@ int main() {
     Platform::waitForPrevious();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
-    if (Config::data().value("singleInstance", true) && Platform::forwardLaunch(pendingLaunch, headless)) {
+    if (!Config::data().value("allowMultipleInstances", true) && Platform::forwardLaunch(pendingLaunch, headless)) {
         return 0;
     }
     if (!pendingLaunch.empty()) {

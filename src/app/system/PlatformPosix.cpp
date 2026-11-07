@@ -411,7 +411,7 @@ namespace Platform {
     void claimTaskbar() {}
 
     void claimLaunches() {
-        if (!Config::data().value("singleInstance", true)) {
+        if (Config::data().value("allowMultipleInstances", true)) {
             launches.reset();
         } else if (!launches.listening()) {
             launches.forward_or_listen(launchDirectory(), {});

@@ -1138,11 +1138,11 @@ namespace SettingsScreen {
             y += Page::CAPTION_H + 2 * Page::ROW_H + Page::GAP;
             Page::caption("行为", y);
             Page::card(y + Page::CAPTION_H, 1);
-            Page::label("不开启多个启动器", y + Page::CAPTION_H);
-            toggle("settings#singleInstance",
-                   [] { return Config::data().value("singleInstance", true); },
+            Page::label("允许多个启动器同时开启", y + Page::CAPTION_H);
+            toggle("settings#allowMultipleInstances",
+                   [] { return Config::data().value("allowMultipleInstances", true); },
                    [](bool on) {
-                       Config::data()["singleInstance"] = on;
+                       Config::data()["allowMultipleInstances"] = on;
                        Config::save();
                        Platform::claimLaunches();
                    }, y + Page::CAPTION_H, blocked);
