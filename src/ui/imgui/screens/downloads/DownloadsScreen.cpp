@@ -1976,6 +1976,22 @@ namespace DownloadsScreen {
         switchKind(kind);
         MainWindow::showDownloads();
     }
+
+    void showProject(const std::string& instanceKey, Source from, Kind kind, const Addons::Hit& hit) {
+        if (aggregate || source != from) {
+            switchSource(from);
+        }
+        switchKind(kind);
+        openFor(instanceKey);
+        versionFilter = query.gameVersion;
+        loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
+        Route route;
+        route.source = from;
+        route.kind = kind;
+        route.hit = hit;
+        pushRoute(route);
+        MainWindow::showDownloads();
+    }
 }
 
 namespace DownloadsParts {

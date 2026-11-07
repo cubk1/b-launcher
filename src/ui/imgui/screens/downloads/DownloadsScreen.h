@@ -9,4 +9,5 @@ namespace DownloadsScreen {
     void draw();
     void openFor(const std::string& key);
     void open(Addons::Kind kind);
+    void showProject(const std::string& instanceKey, Addons::Source source, Addons::Kind kind, const Addons::Hit& hit);
 }
