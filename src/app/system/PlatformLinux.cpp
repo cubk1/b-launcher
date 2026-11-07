@@ -140,15 +140,14 @@ namespace Platform {
     }
 
     std::filesystem::path configDirectory() {
-        if (auto xdg = blb::environment("XDG_CONFIG_HOME"); xdg && xdg->starts_with('/')) {
-            return blb::path_from_utf8(*xdg) / "b-launcher";
-        }
-        std::filesystem::path home = blb::home_directory();
-        return home.empty() ? std::filesystem::path() : home / ".config" / "b-launcher";
+        return blb::launcher_data_directory();
     }
 
     std::filesystem::path desktopDirectory() {
-        std::filesystem::path config = configDirectory().parent_path() / "user-dirs.dirs";
+        auto xdg = blb::environment("XDG_CONFIG_HOME");
+        std::filesystem::path config =
+                (xdg && blb::path_from_utf8(*xdg).is_absolute()
+                         ? blb::path_from_utf8(*xdg) : blb::home_directory() / ".config") / "user-dirs.dirs";
         std::ifstream file(config);
         std::string line;
         while (std::getline(file, line)) {

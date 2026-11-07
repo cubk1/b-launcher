@@ -29,15 +29,15 @@
   libpulseaudio,
   ibus,
   fontconfig,
+  freetype,
+  zlib,
   addDriverRunpath,
   libxxf86vm,
   vulkan-loader,
   flite,
   xrandr,
   pciutils,
-  # The package includes no Java. Users put a JDK on PATH, or set
-  # programs.nix-ld.enable = true for Mojang's Java. Java homes listed here
-  # (e.g. [ jdk21 ]) are found too.
+  # NixOS uses local Java. Java homes listed here (e.g. [ jdk21 ]) are found too.
   jdks ? [ ],
 }:
 
@@ -129,6 +129,15 @@ let
     libxxf86vm
     vulkan-loader
     flite
+    freetype
+    zlib
+  ];
+
+  nixosJavaHomes = lib.concatMapStringsSep ":" (jdk: jdk.home) jdks;
+  nixosLibraryPath = "${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath gameLibs}";
+  nixosPath = lib.makeBinPath [
+    xrandr
+    pciutils
   ];
 
   compilerId = if stdenv.cc.isClang then "Clang" else "GNU";
@@ -161,6 +170,7 @@ stdenv.mkDerivation {
       ../src
       ../assets
       ../third_party
+      ../tests
     ];
   };
 
@@ -205,18 +215,24 @@ stdenv.mkDerivation {
 
   cmakeFlags = [
     (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
-    (lib.cmakeFeature "BLB_NIXOS_JAVA" (lib.concatMapStringsSep ":" (jdk: jdk.home) jdks))
-    (lib.cmakeFeature "BLB_NIXOS_LIBRARY_PATH" "${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath gameLibs}")
+    (lib.cmakeBool "BLB_TESTS" true)
+    (lib.cmakeFeature "BLB_NIXOS_JAVA" nixosJavaHomes)
+    (lib.cmakeFeature "BLB_NIXOS_LIBRARY_PATH" nixosLibraryPath)
     # LWJGL 2 (Minecraft 1.12.2 and older) runs xrandr. OSHI runs lspci.
-    (lib.cmakeFeature "BLB_NIXOS_PATH" (
-      lib.makeBinPath [
-        xrandr
-        pciutils
-      ]
-    ))
+    (lib.cmakeFeature "BLB_NIXOS_PATH" nixosPath)
   ];
 
-  ninjaFlags = [ "b-launcher" ];
+  ninjaFlags = [
+    "b-launcher"
+    "b-launcher-tests"
+  ];
+
+  doCheck = true;
+  checkPhase = ''
+    runHook preCheck
+    ctest --output-on-failure
+    runHook postCheck
+  '';
 
   installPhase = ''
     runHook preInstall
@@ -240,7 +256,16 @@ stdenv.mkDerivation {
     patchelf --add-rpath ${lib.makeLibraryPath runtimeLibs} $out/bin/b-launcher
   '';
 
-  passthru = { inherit runtimeLibs gameLibs jdks; };
+  passthru = {
+    inherit
+      runtimeLibs
+      gameLibs
+      jdks
+      nixosJavaHomes
+      nixosLibraryPath
+      nixosPath
+      ;
+  };
 
   meta = {
     description = "Lightweight Minecraft launcher written in C++";

@@ -44,6 +44,7 @@ struct scan_options
   std::vector<std::filesystem::path> extra_roots;
   std::vector<std::filesystem::path> runtime_roots;
   std::vector<std::filesystem::path> excluded;
+  std::vector<std::string> wrapper;
   std::function<void (std::size_t done, std::size_t total)> progress;
   bool probe_process = true;
   bool system_locations = true;
@@ -58,7 +59,8 @@ java_home_from_executable (const std::filesystem::path &executable);
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
             bool allow_process = true, cancellation_token token = {},
-            const std::vector<std::string> &wrapper = {});
+            const std::vector<std::string> &wrapper = {},
+            bool verify_execution = false);
 std::vector<java_installation> scan_java (const scan_options &options = {},
                                           cancellation_token token = {});
 void prune_missing (std::vector<java_installation> &installs);

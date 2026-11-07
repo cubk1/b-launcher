@@ -467,6 +467,10 @@ namespace JavaDownloads {
         }
     }
 
+    bool available() {
+        return !blb::is_nixos();
+    }
+
     const List& list() {
         if (!started) {
             refresh();
@@ -475,6 +479,13 @@ namespace JavaDownloads {
     }
 
     void refresh() {
+        if (!available()) {
+            started = true;
+            current.status = Status::Failed;
+            current.packages.clear();
+            current.error = "在系统配置声明以安装 Java";
+            return;
+        }
         if (started && current.status == Status::Loading) {
             return;
         }
@@ -517,11 +528,11 @@ namespace JavaDownloads {
 
     bool installed(const Package& package) {
         std::error_code error;
-#if defined(_WIN32)
-        return std::filesystem::exists(homeOf(package) / "bin" / "java.exe", error);
-#else
-        return std::filesystem::exists(homeOf(package) / "bin" / "java", error);
-#endif
+        auto home = homeOf(package);
+        const auto& known = Catalog::java().list;
+        return std::any_of(known.begin(), known.end(), [&](const auto& java) {
+            return std::filesystem::equivalent(home, java.home, error);
+        });
     }
 
     bool busy() {
@@ -549,12 +560,19 @@ namespace JavaDownloads {
         std::filesystem::path base =
                 local != nullptr && *local != 0 ? std::filesystem::path(local) : Platform::exeDirectory();
 #else
-        std::filesystem::path base = blb::app_data_directory();
+        return blb::launcher_data_directory() / "java";
 #endif
+#if defined(_WIN32)
         return base / L"b-launcher" / L"java";
+#endif
     }
 
     void install(const Package& package) {
+        if (!available()) {
+            Notices::add(Notices::Kind::Failed,
+                         "在系统配置声明以安装 Java", 5000);
+            return;
+        }
         if (package.archiveSize > (uint64_t) std::numeric_limits<int64_t>::max()) {
             Notices::add(Notices::Kind::Failed, "Java 下载大小无效", 5000);
             return;
@@ -626,6 +644,10 @@ namespace JavaDownloads {
                     error = "解压后没有找到 java";
                 }
 #endif
+                if (error.empty()) {
+                    auto checked = blb::java::probe_java(home, true, token, {}, true);
+                    if (!checked) error = checked.err().message;
+                }
             }
             if (error.empty()) {
                 std::filesystem::remove_all(target, ec);
@@ -642,12 +664,22 @@ namespace JavaDownloads {
 #else
             std::filesystem::path java = homeOf(package) / "bin" / "java";
 #endif
+            std::optional<blb::java::java_installation> installed;
+            if (error.empty()) {
+                auto checked = blb::java::probe_java(java, true, token, {}, true);
+                if (checked) {
+                    installed = *checked;
+                    installed->source = blb::java::java_source::managed;
+                } else {
+                    error = checked.err().message;
+                }
+            }
             std::string label = name(package) + " " + package.version;
-            return [job, error, java, label] {
+            return [job, error, installed, label] {
                 job->state = error.empty() ? State::Done : State::Failed;
                 if (error.empty()) {
                     job->fraction = 1.0f;
-                    Catalog::addJava(java);
+                    Catalog::seenJava(*installed);
                     Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
                 } else {
                     Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);

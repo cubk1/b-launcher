@@ -176,6 +176,26 @@ std::vector<candidate>
 collect_candidates (const scan_options &options)
 {
   std::vector<candidate> out;
+  if (options.system_locations)
+    {
+      if (auto home = environment ("JAVA_HOME"))
+        add_home (out, path_from_utf8 (*home), java_source::java_home);
+      if (auto path = environment ("PATH"))
+        for (auto entry : split (*path, path_list_separator ()))
+          {
+            auto dir = trim (entry);
+            if (dir.empty ())
+              continue;
+            auto executable = path_from_utf8 (dir)
+#if defined(_WIN32)
+                              / "java.exe";
+#else
+                              / "java";
+#endif
+            if (fs::exists (executable))
+              add_home (out, java_home_from_executable (executable), java_source::path);
+          }
+    }
   for (const auto &home : options.extra_homes)
     {
       auto st = fs::stat (home);
@@ -190,25 +210,6 @@ collect_candidates (const scan_options &options)
     scan_tree (out, root, java_source::managed, 4);
   if (!options.system_locations)
     return out;
-
-  if (auto home = environment ("JAVA_HOME"))
-    add_home (out, path_from_utf8 (*home), java_source::java_home);
-  if (auto path = environment ("PATH"))
-    for (auto entry : split (*path, path_list_separator ()))
-      {
-        auto dir = trim (entry);
-        if (dir.empty ())
-          continue;
-        auto executable = path_from_utf8 (dir)
-#if defined(_WIN32)
-                          / "java.exe";
-#else
-                          / "java";
-#endif
-        if (fs::exists (executable))
-          add_home (out, java_home_from_executable (executable),
-                    java_source::path);
-      }
 
   auto home = home_directory ();
   scan_tree (out, default_minecraft_directory () / "runtime",
@@ -277,6 +278,10 @@ probe_with_process (java_installation install, cancellation_token token,
   BLB_TRY_ASSIGN (
       auto output,
       run_process (options, token, std::chrono::milliseconds (15000)));
+  if (output.exit_code != 0)
+    return make_error (errc::java_not_found,
+                       sformat ("Java exited with code {}: {}", output.exit_code,
+                                path_to_utf8 (install.executable)));
   auto text = output.err + output.out;
   for (auto line : split (text, '\n'))
     {
@@ -360,7 +365,7 @@ java_home_from_executable (const std::filesystem::path &executable)
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
             bool allow_process, cancellation_token token,
-            const std::vector<std::string> &wrapper)
+            const std::vector<std::string> &wrapper, bool verify_execution)
 {
   BLB_TRY (token.check ());
   auto st = fs::stat (home_or_executable);
@@ -399,7 +404,8 @@ probe_java (const std::filesystem::path &home_or_executable,
           install.arch = *parsed;
       if (auto vendor = release.find ("IMPLEMENTOR"); vendor != release.end ())
         install.vendor = vendor->second;
-      if (install.major > 0 && install.arch != cpu_arch::unknown && !unsure)
+      if (install.major > 0 && install.arch != cpu_arch::unknown && !unsure
+          && !verify_execution && wrapper.empty ())
         return install;
     }
   if (!allow_process)
@@ -415,11 +421,9 @@ probe_java (const std::filesystem::path &home_or_executable,
     }
   auto executable = install.executable;
   // The version must come from the process, not from the release file.
-  if (unsure)
+  if (unsure || verify_execution || !wrapper.empty ())
     install.version.clear ();
-  auto probed = probe_with_process (std::move (install), token,
-                                    unsure ? wrapper
-                                           : std::vector<std::string> ());
+  auto probed = probe_with_process (std::move (install), token, wrapper);
   if (!probed && unsure && !token.is_cancelled ())
     return needs_nix_ld (executable);
   return probed;
@@ -455,7 +459,7 @@ scan_java (const scan_options &options, cancellation_token token)
   parallel_for (thread_pool::shared (), unique.size (), [&] (std::size_t i) {
     if (token.is_cancelled ())
       return;
-    auto probed = probe_java (unique[i].home, options.probe_process, token);
+    auto probed = probe_java (unique[i].home, options.probe_process, token, options.wrapper);
     if (options.progress)
       options.progress (++probed_count, unique.size ());
     if (!probed)

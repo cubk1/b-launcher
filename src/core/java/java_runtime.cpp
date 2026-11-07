@@ -185,15 +185,13 @@ runtime_home (const meta::game_layout &layout, std::string_view component,
 }
 
 std::optional<error>
-runtime_blocked (int major)
+runtime_blocked (int)
 {
-  if (runs_generic_binaries ())
+  if (!is_nixos ())
     return std::nullopt;
   return make_error (
       errc::java_not_found,
-      sformat ("找不到 Java {}。NixOS 需要 programs.nix-ld.enable = true "
-               "才能运行 Mojang 的 Java，也可以安装 JDK {}",
-               major, major));
+      "在系统配置声明以安装 Java");
 }
 
 result<java_installation>
@@ -202,6 +200,9 @@ install_runtime (install::game_installer &installer,
                  cancellation_token token, std::optional<cpu_arch> arch,
                  const std::vector<std::string> &wrapper)
 {
+  if (is_nixos ())
+    return make_error (errc::unsupported,
+                       "在系统配置声明以安装 Java");
   if (!fs::safe_component (component))
     return make_error (errc::invalid_argument, "invalid runtime component");
   const auto &platform_info = current_platform ();

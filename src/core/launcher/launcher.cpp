@@ -83,8 +83,7 @@ forget_argument_files (const std::filesystem::path &directory)
       (void)fs::remove_file (directory / path_from_utf8 (name));
 }
 
-// The value from the instance settings stays first. Else the entries go
-// before the launcher's own value.
+// Keep instance entries first, then package entries and the inherited value.
 void
 prepend_list (std::vector<std::pair<std::string, std::string>> &variables,
               std::string_view name, std::string_view entries)
@@ -98,6 +97,8 @@ prepend_list (std::vector<std::pair<std::string, std::string>> &variables,
       if (!set->second.empty ())
         set->second += ":";
       set->second += entries;
+      if (auto current = environment (name); current && !current->empty ())
+        set->second += ":" + *current;
       return;
     }
   std::string value (entries);
@@ -127,6 +128,7 @@ struct game_launcher::impl
   std::shared_ptr<auth::microsoft_authenticator> authenticator;
   std::mutex java_mutex;
   std::optional<std::vector<java::java_installation>> java_cache;
+  std::vector<std::string> java_wrapper;
 };
 
 game_launcher::game_launcher (
@@ -154,22 +156,33 @@ game_launcher::set_java_candidates (
 }
 
 std::vector<java::java_installation>
-game_launcher::java_candidates (bool rescan, cancellation_token token)
+game_launcher::java_candidates (bool rescan, cancellation_token token,
+                                const std::vector<std::string> &wrapper)
 {
   if (token.is_cancelled ())
     return {};
   std::lock_guard lock (m_impl->java_mutex);
   if (token.is_cancelled ())
     return {};
+  if (m_impl->java_wrapper != wrapper)
+    {
+      m_impl->java_wrapper = wrapper;
+      m_impl->java_cache.reset ();
+    }
   const auto &known = m_impl->installer->options ().java_candidates;
-  if (!m_impl->java_cache && !rescan && known)
+  if (!m_impl->java_cache && !rescan && known && wrapper.empty ())
     {
       m_impl->java_cache = *known;
       java::prune_missing (*m_impl->java_cache);
+      if (!runs_generic_binaries ())
+        std::erase_if (*m_impl->java_cache, [&] (const auto &install) {
+          return !java::probe_java (install.home, true, token);
+        });
     }
   if (!m_impl->java_cache || rescan)
     {
       auto options = m_impl->installer->options ().java_scan;
+      options.wrapper = wrapper;
       options.runtime_roots.push_back (
           m_impl->installer->layout ().runtime ());
       auto found = java::scan_java (options, token);
@@ -206,21 +219,19 @@ game_launcher::resolve_java (const meta::version &resolved,
     cached = m_impl->java_cache.has_value ()
              || m_impl->installer->options ().java_candidates.has_value ();
   }
-  auto candidates = java_candidates (false, token);
+  auto candidates = java_candidates (false, token, settings.wrapper);
   BLB_TRY (token.check ());
   if (auto chosen = java::select_java (candidates, requirement))
     return *chosen;
   if (cached)
     {
-      candidates = java_candidates (true, token);
+      candidates = java_candidates (true, token, settings.wrapper);
       BLB_TRY (token.check ());
       if (auto chosen = java::select_java (candidates, requirement))
         return *chosen;
     }
-  // A wrapper such as steam-run can start Mojang's Java without nix-ld.
-  if (settings.wrapper.empty ())
-    if (auto blocked = java::runtime_blocked (requirement.min_major))
-      return *blocked;
+  if (auto blocked = java::runtime_blocked (requirement.min_major))
+    return *blocked;
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,
                        sformat ("no java {}+ found", requirement.min_major));

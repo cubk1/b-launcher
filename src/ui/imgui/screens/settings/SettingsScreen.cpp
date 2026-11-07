@@ -1207,9 +1207,10 @@ namespace SettingsScreen {
                 }
             }
             std::string download = "下载";
-            float downloadW = Page::buttonWidth(download, 0xf019);
-            float downloadX = addX - 8.0f - downloadW;
-            if (Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
+            bool canDownload = JavaDownloads::available();
+            float downloadW = canDownload ? Page::buttonWidth(download, 0xf019) : 0.0f;
+            float downloadX = canDownload ? addX - 8.0f - downloadW : addX;
+            if (canDownload && Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
                              0xf019)) {
                 javaViews.go(1);
             }
