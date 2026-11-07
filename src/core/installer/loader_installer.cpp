@@ -137,7 +137,7 @@ struct loader_installer::impl
     java_cache = std::move (found);
     if (auto chosen = java::select_java (*java_cache, requirement))
       return *chosen;
-    if (auto blocked = java::runtime_blocked (requirement.min_major))
+    if (auto blocked = java::runtime_blocked ())
       return *blocked;
     BLB_TRY_ASSIGN (auto installed,
                     java::install_runtime (*installer, requirement.component, sink, token));

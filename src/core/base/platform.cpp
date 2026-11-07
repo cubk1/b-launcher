@@ -408,8 +408,11 @@ const nixos_paths &
 packaged_nixos_paths ()
 {
   static const nixos_paths none;
-  static const nixos_paths paths { BLB_NIXOS_JAVA, BLB_NIXOS_LIBRARY_PATH,
-                                   BLB_NIXOS_PATH };
+  static const nixos_paths paths {
+    environment ("BLB_NIXOS_JAVA").value_or (""),
+    environment ("BLB_NIXOS_LIBRARY_PATH").value_or (""),
+    environment ("BLB_NIXOS_PATH").value_or ("")
+  };
   return is_nixos () ? paths : none;
 }
 

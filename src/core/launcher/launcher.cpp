@@ -230,7 +230,7 @@ game_launcher::resolve_java (const meta::version &resolved,
       if (auto chosen = java::select_java (candidates, requirement))
         return *chosen;
     }
-  if (auto blocked = java::runtime_blocked (requirement.min_major))
+  if (auto blocked = java::runtime_blocked (settings.wrapper))
     return *blocked;
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,

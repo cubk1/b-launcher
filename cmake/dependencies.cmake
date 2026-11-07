@@ -13,160 +13,192 @@ blb_force(BUILD_TESTING OFF)
 blb_force(SKIP_INSTALL_ALL ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-blb_force(ZLIB_COMPAT ON)
-blb_force(ZLIB_ENABLE_TESTS OFF)
-blb_force(ZLIBNG_ENABLE_TESTS OFF)
-blb_force(WITH_GTEST OFF)
-blb_force(WITH_GZFILEOP OFF)
-blb_force(WITH_FUZZERS OFF)
-blb_force(WITH_BENCHMARKS OFF)
-blb_force(WITH_BENCHMARK_APPS OFF)
-blb_force(WITH_AVX512 OFF)
-blb_force(WITH_AVX512VNNI OFF)
-blb_force(WITH_VPCLMULQDQ OFF)
-blb_force(WITH_CRC32_CHORBA OFF)
-blb_force(INSTALL_UTILS OFF)
-
-FetchContent_Declare(zlib
-  URL ${BLB_DEP_BASE}/zlib-ng/zlib-ng/archive/refs/tags/2.3.3.tar.gz
-  URL_HASH SHA256=f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1
-  OVERRIDE_FIND_PACKAGE
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(zlib)
-if(MSVC AND TARGET zlib-ng)
-  target_compile_options(zlib-ng PRIVATE $<$<CONFIG:Release>:/O2>)
-endif()
-if(NOT TARGET ZLIB::ZLIB)
-  add_library(ZLIB::ZLIB ALIAS zlib-ng)
-endif()
-blb_force(ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR};${zlib_SOURCE_DIR}")
-blb_force(ZLIB_INCLUDE_DIRS "${zlib_BINARY_DIR};${zlib_SOURCE_DIR}")
-blb_force(ZLIB_LIBRARY zlib-ng)
-blb_force(ZLIB_LIBRARIES zlib-ng)
-
-blb_force(BUILD_CURL_EXE OFF)
-blb_force(BUILD_STATIC_LIBS ON)
-blb_force(BUILD_LIBCURL_DOCS OFF)
-blb_force(BUILD_MISC_DOCS OFF)
-blb_force(ENABLE_CURL_MANUAL OFF)
-blb_force(BUILD_EXAMPLES OFF)
-blb_force(CURL_DISABLE_INSTALL ON)
-blb_force(CURL_ENABLE_EXPORT_TARGET OFF)
-blb_force(PICKY_COMPILER OFF)
-blb_force(CURL_DROP_UNUSED ON)
-blb_force(CURL_USE_PKGCONFIG OFF)
-blb_force(CURL_USE_LIBPSL OFF)
-blb_force(CURL_USE_LIBSSH2 OFF)
-blb_force(CURL_USE_LIBSSH OFF)
-blb_force(CURL_USE_GSSAPI OFF)
-blb_force(USE_LIBIDN2 OFF)
-blb_force(USE_WIN32_IDN OFF)
-blb_force(USE_NGTCP2 OFF)
-blb_force(USE_NGHTTP2 OFF)
-blb_force(CURL_BROTLI OFF)
-blb_force(CURL_ZSTD OFF)
-blb_force(CURL_ZLIB ON)
-blb_force(ENABLE_ARES OFF)
-blb_force(ENABLE_UNIX_SOCKETS OFF)
-blb_force(USE_WIN32_LDAP OFF)
-foreach(feature
-    ALTSVC AWS DICT DOH FILE FTP GOPHER IMAP LDAP LDAPS MQTT POP3 RTSP SMTP
-    TELNET TFTP IPFS WEBSOCKETS MIME FORM_API NETRC HSTS KERBEROS_AUTH
-    NEGOTIATE_AUTH DIGEST_AUTH GETOPTIONS LIBCURL_OPTION PROGRESS_METER
-    SHA512_256 BINDLOCAL HEADERS_API COOKIES HTTPSIG)
-  blb_force(CURL_DISABLE_${feature} ON)
-endforeach()
-if(WIN32)
-  blb_force(CURL_USE_SCHANNEL ON)
-  blb_force(CURL_USE_OPENSSL OFF)
-  blb_force(CURL_WINDOWS_SSPI ON)
-elseif(NOT APPLE)
-  blb_force(ENABLE_PROGRAMS OFF)
-  blb_force(ENABLE_TESTING OFF)
-  blb_force(GEN_FILES OFF)
-  blb_force(MBEDTLS_FATAL_WARNINGS OFF)
-  blb_force(USE_STATIC_MBEDTLS_LIBRARY ON)
-  blb_force(USE_SHARED_MBEDTLS_LIBRARY OFF)
-  blb_force(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON)
-
-  FetchContent_Declare(mbedtls
-    URL ${BLB_DEP_BASE}/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
-    URL_HASH SHA256=a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
-    EXCLUDE_FROM_ALL)
-  FetchContent_MakeAvailable(mbedtls)
-
-  blb_force(CURL_USE_OPENSSL OFF)
-  blb_force(CURL_USE_MBEDTLS ON)
-  blb_force(CURL_CA_BUNDLE none)
-  blb_force(CURL_CA_PATH none)
-  blb_force(HAVE_MBEDTLS_DES_CRYPT_ECB 0)
-  blb_force(MBEDTLS_INCLUDE_DIR "${mbedtls_SOURCE_DIR}/include")
-  blb_force(MBEDTLS_LIBRARY mbedtls)
-  blb_force(MBEDX509_LIBRARY mbedx509)
-  blb_force(MBEDCRYPTO_LIBRARY mbedcrypto)
-endif()
-
-if(APPLE)
+if(BLB_SYSTEM_LIBS)
+  # A distribution package (e.g. nixpkgs) links the shared libraries of the system.
+  find_package(ZLIB REQUIRED)
   find_package(CURL REQUIRED)
+  find_package(minizip-ng REQUIRED)
+  find_package(reproc REQUIRED)
+  find_package(nlohmann_json REQUIRED)
+  # Match the bundled build, which turns JSON_ImplicitConversions off.
+  set_property(TARGET nlohmann_json::nlohmann_json APPEND PROPERTY
+    INTERFACE_COMPILE_DEFINITIONS JSON_USE_IMPLICIT_CONVERSIONS=0)
+  if(NOT WIN32)
+    find_package(SDL3 REQUIRED)
+  endif()
 else()
-  FetchContent_Declare(curl
-    URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
-    URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
+  blb_force(ZLIB_COMPAT ON)
+  blb_force(ZLIB_ENABLE_TESTS OFF)
+  blb_force(ZLIBNG_ENABLE_TESTS OFF)
+  blb_force(WITH_GTEST OFF)
+  blb_force(WITH_GZFILEOP OFF)
+  blb_force(WITH_FUZZERS OFF)
+  blb_force(WITH_BENCHMARKS OFF)
+  blb_force(WITH_BENCHMARK_APPS OFF)
+  blb_force(WITH_AVX512 OFF)
+  blb_force(WITH_AVX512VNNI OFF)
+  blb_force(WITH_VPCLMULQDQ OFF)
+  blb_force(WITH_CRC32_CHORBA OFF)
+  blb_force(INSTALL_UTILS OFF)
+
+  FetchContent_Declare(zlib
+    URL ${BLB_DEP_BASE}/zlib-ng/zlib-ng/archive/refs/tags/2.3.3.tar.gz
+    URL_HASH SHA256=f9c65aa9c852eb8255b636fd9f07ce1c406f061ec19a2e7d508b318ca0c907d1
+    OVERRIDE_FIND_PACKAGE
     EXCLUDE_FROM_ALL)
-  FetchContent_MakeAvailable(curl)
+  FetchContent_MakeAvailable(zlib)
+  if(MSVC AND TARGET zlib-ng)
+    target_compile_options(zlib-ng PRIVATE $<$<CONFIG:Release>:/O2>)
+  endif()
+  if(NOT TARGET ZLIB::ZLIB)
+    add_library(ZLIB::ZLIB ALIAS zlib-ng)
+  endif()
+  blb_force(ZLIB_INCLUDE_DIR "${zlib_BINARY_DIR};${zlib_SOURCE_DIR}")
+  blb_force(ZLIB_INCLUDE_DIRS "${zlib_BINARY_DIR};${zlib_SOURCE_DIR}")
+  blb_force(ZLIB_LIBRARY zlib-ng)
+  blb_force(ZLIB_LIBRARIES zlib-ng)
+
+  blb_force(BUILD_CURL_EXE OFF)
+  blb_force(BUILD_STATIC_LIBS ON)
+  blb_force(BUILD_LIBCURL_DOCS OFF)
+  blb_force(BUILD_MISC_DOCS OFF)
+  blb_force(ENABLE_CURL_MANUAL OFF)
+  blb_force(BUILD_EXAMPLES OFF)
+  blb_force(CURL_DISABLE_INSTALL ON)
+  blb_force(CURL_ENABLE_EXPORT_TARGET OFF)
+  blb_force(PICKY_COMPILER OFF)
+  blb_force(CURL_DROP_UNUSED ON)
+  blb_force(CURL_USE_PKGCONFIG OFF)
+  blb_force(CURL_USE_LIBPSL OFF)
+  blb_force(CURL_USE_LIBSSH2 OFF)
+  blb_force(CURL_USE_LIBSSH OFF)
+  blb_force(CURL_USE_GSSAPI OFF)
+  blb_force(USE_LIBIDN2 OFF)
+  blb_force(USE_WIN32_IDN OFF)
+  blb_force(USE_NGTCP2 OFF)
+  blb_force(USE_NGHTTP2 OFF)
+  blb_force(CURL_BROTLI OFF)
+  blb_force(CURL_ZSTD OFF)
+  blb_force(CURL_ZLIB ON)
+  blb_force(ENABLE_ARES OFF)
+  blb_force(ENABLE_UNIX_SOCKETS OFF)
+  blb_force(USE_WIN32_LDAP OFF)
+  foreach(feature
+      ALTSVC AWS DICT DOH FILE FTP GOPHER IMAP LDAP LDAPS MQTT POP3 RTSP SMTP
+      TELNET TFTP IPFS WEBSOCKETS MIME FORM_API NETRC HSTS KERBEROS_AUTH
+      NEGOTIATE_AUTH DIGEST_AUTH GETOPTIONS LIBCURL_OPTION PROGRESS_METER
+      SHA512_256 BINDLOCAL HEADERS_API COOKIES HTTPSIG)
+    blb_force(CURL_DISABLE_${feature} ON)
+  endforeach()
+  if(WIN32)
+    blb_force(CURL_USE_SCHANNEL ON)
+    blb_force(CURL_USE_OPENSSL OFF)
+    blb_force(CURL_WINDOWS_SSPI ON)
+  elseif(NOT APPLE)
+    blb_force(ENABLE_PROGRAMS OFF)
+    blb_force(ENABLE_TESTING OFF)
+    blb_force(GEN_FILES OFF)
+    blb_force(MBEDTLS_FATAL_WARNINGS OFF)
+    blb_force(USE_STATIC_MBEDTLS_LIBRARY ON)
+    blb_force(USE_SHARED_MBEDTLS_LIBRARY OFF)
+    blb_force(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON)
+
+    FetchContent_Declare(mbedtls
+      URL ${BLB_DEP_BASE}/Mbed-TLS/mbedtls/releases/download/mbedtls-3.6.7/mbedtls-3.6.7.tar.bz2
+      URL_HASH SHA256=a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6
+      EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(mbedtls)
+
+    blb_force(CURL_USE_OPENSSL OFF)
+    blb_force(CURL_USE_MBEDTLS ON)
+    blb_force(CURL_CA_BUNDLE none)
+    blb_force(CURL_CA_PATH none)
+    blb_force(HAVE_MBEDTLS_DES_CRYPT_ECB 0)
+    blb_force(MBEDTLS_INCLUDE_DIR "${mbedtls_SOURCE_DIR}/include")
+    blb_force(MBEDTLS_LIBRARY mbedtls)
+    blb_force(MBEDX509_LIBRARY mbedx509)
+    blb_force(MBEDCRYPTO_LIBRARY mbedcrypto)
+  endif()
+
+  if(APPLE)
+    find_package(CURL REQUIRED)
+  else()
+    FetchContent_Declare(curl
+      URL ${BLB_DEP_BASE}/curl/curl/releases/download/curl-8_23_0/curl-8.23.0.tar.xz
+      URL_HASH SHA256=8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5
+      EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(curl)
+  endif()
+
+  blb_force(MZ_COMPAT OFF)
+  blb_force(MZ_ZLIB ON)
+  blb_force(MZ_ZLIB_FLAVOR zlib)
+  blb_force(MZ_BZIP2 OFF)
+  blb_force(MZ_LZMA OFF)
+  blb_force(MZ_PPMD OFF)
+  blb_force(MZ_ZSTD OFF)
+  blb_force(MZ_LIBCOMP OFF)
+  blb_force(MZ_FETCH_LIBS OFF)
+  blb_force(MZ_FORCE_FETCH_LIBS OFF)
+  blb_force(MZ_PKCRYPT OFF)
+  blb_force(MZ_WZAES OFF)
+  blb_force(MZ_OPENSSL OFF)
+  blb_force(MZ_LIBBSD OFF)
+  blb_force(MZ_ICONV OFF)
+  blb_force(MZ_DECOMPRESS_ONLY OFF)
+  blb_force(MZ_BUILD_TESTS OFF)
+  blb_force(MZ_BUILD_UNIT_TESTS OFF)
+  blb_force(MZ_BUILD_FUZZ_TESTS OFF)
+
+  FetchContent_Declare(minizip
+    URL ${BLB_DEP_BASE}/zlib-ng/minizip-ng/archive/refs/tags/4.2.2.tar.gz
+    URL_HASH SHA256=71af7b9799856d8b03619df3949e9c1be9703f8de0795af71399ba283cb27aac
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(minizip)
+
+  blb_force(REPROC++ OFF)
+  blb_force(REPROC_TEST OFF)
+  blb_force(REPROC_EXAMPLES OFF)
+  blb_force(REPROC_INSTALL OFF)
+  blb_force(REPROC_INSTALL_PKGCONFIG OFF)
+  blb_force(REPROC_OBJECT_LIBRARIES OFF)
+  blb_force(REPROC_MULTITHREADED ON)
+
+  FetchContent_Declare(reproc
+    URL ${BLB_DEP_BASE}/DaanDeMeyer/reproc/archive/refs/tags/v14.2.7.tar.gz
+    URL_HASH SHA256=77914ba566356d86986db240ecdb1762dfdd55bb1e8e127d016d9c5c4c9300e8
+    PATCH_COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
+      -P ${CMAKE_CURRENT_LIST_DIR}/patch_reproc.cmake
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(reproc)
+
+  blb_force(JSON_BuildTests OFF)
+  blb_force(JSON_Install OFF)
+  blb_force(JSON_ImplicitConversions OFF)
+
+  FetchContent_Declare(nlohmann_json
+    URL ${BLB_DEP_BASE}/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(nlohmann_json)
+
+  if(NOT WIN32)
+    blb_force(SDL_SHARED OFF)
+    blb_force(SDL_STATIC ON)
+    blb_force(SDL_TEST_LIBRARY OFF)
+    blb_force(SDL_EXAMPLES OFF)
+    blb_force(SDL_INSTALL OFF)
+    foreach(subsystem CAMERA JOYSTICK HAPTIC HIDAPI SENSOR POWER GPU RENDER VULKAN METAL)
+      blb_force(SDL_${subsystem} OFF)
+    endforeach()
+
+    FetchContent_Declare(sdl3
+      URL ${BLB_DEP_BASE}/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
+      URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
+      EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(sdl3)
+  endif()
 endif()
-
-blb_force(MZ_COMPAT OFF)
-blb_force(MZ_ZLIB ON)
-blb_force(MZ_ZLIB_FLAVOR zlib)
-blb_force(MZ_BZIP2 OFF)
-blb_force(MZ_LZMA OFF)
-blb_force(MZ_PPMD OFF)
-blb_force(MZ_ZSTD OFF)
-blb_force(MZ_LIBCOMP OFF)
-blb_force(MZ_FETCH_LIBS OFF)
-blb_force(MZ_FORCE_FETCH_LIBS OFF)
-blb_force(MZ_PKCRYPT OFF)
-blb_force(MZ_WZAES OFF)
-blb_force(MZ_OPENSSL OFF)
-blb_force(MZ_LIBBSD OFF)
-blb_force(MZ_ICONV OFF)
-blb_force(MZ_DECOMPRESS_ONLY OFF)
-blb_force(MZ_BUILD_TESTS OFF)
-blb_force(MZ_BUILD_UNIT_TESTS OFF)
-blb_force(MZ_BUILD_FUZZ_TESTS OFF)
-
-FetchContent_Declare(minizip
-  URL ${BLB_DEP_BASE}/zlib-ng/minizip-ng/archive/refs/tags/4.2.2.tar.gz
-  URL_HASH SHA256=71af7b9799856d8b03619df3949e9c1be9703f8de0795af71399ba283cb27aac
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(minizip)
-
-blb_force(REPROC++ OFF)
-blb_force(REPROC_TEST OFF)
-blb_force(REPROC_EXAMPLES OFF)
-blb_force(REPROC_INSTALL OFF)
-blb_force(REPROC_INSTALL_PKGCONFIG OFF)
-blb_force(REPROC_OBJECT_LIBRARIES OFF)
-blb_force(REPROC_MULTITHREADED ON)
-
-FetchContent_Declare(reproc
-  URL ${BLB_DEP_BASE}/DaanDeMeyer/reproc/archive/refs/tags/v14.2.7.tar.gz
-  URL_HASH SHA256=77914ba566356d86986db240ecdb1762dfdd55bb1e8e127d016d9c5c4c9300e8
-  PATCH_COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=<SOURCE_DIR>
-    -P ${CMAKE_CURRENT_LIST_DIR}/patch_reproc.cmake
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(reproc)
-
-blb_force(JSON_BuildTests OFF)
-blb_force(JSON_Install OFF)
-blb_force(JSON_ImplicitConversions OFF)
-
-FetchContent_Declare(nlohmann_json
-  URL ${BLB_DEP_BASE}/nlohmann/json/releases/download/v3.12.0/json.tar.xz
-  URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
-  EXCLUDE_FROM_ALL)
-FetchContent_MakeAvailable(nlohmann_json)
 
 set(BLB_SIMDJSON_RAW
   "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader")
@@ -192,23 +224,6 @@ target_compile_definitions(blb_simdjson PUBLIC
   SIMDJSON_IMPLEMENTATION_ICELAKE=0
   SIMDJSON_IMPLEMENTATION_WESTMERE=0
   SIMDJSON_DISABLE_DEPRECATED_API=1)
-
-if(NOT WIN32)
-  blb_force(SDL_SHARED OFF)
-  blb_force(SDL_STATIC ON)
-  blb_force(SDL_TEST_LIBRARY OFF)
-  blb_force(SDL_EXAMPLES OFF)
-  blb_force(SDL_INSTALL OFF)
-  foreach(subsystem CAMERA JOYSTICK HAPTIC HIDAPI SENSOR POWER GPU RENDER VULKAN METAL)
-    blb_force(SDL_${subsystem} OFF)
-  endforeach()
-
-  FetchContent_Declare(sdl3
-    URL ${BLB_DEP_BASE}/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz
-    URL_HASH SHA256=9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3
-    EXCLUDE_FROM_ALL)
-  FetchContent_MakeAvailable(sdl3)
-endif()
 
 if(NOT WIN32)
   blb_force(BUILD_STATIC_LIB ON)
@@ -240,4 +255,12 @@ endif()
 set(BLB_MINIZIP_TARGET minizip)
 if(NOT TARGET ${BLB_MINIZIP_TARGET})
   set(BLB_MINIZIP_TARGET minizip-ng)
+endif()
+if(NOT TARGET ${BLB_MINIZIP_TARGET})
+  set(BLB_MINIZIP_TARGET MINIZIP::minizip-ng)
+endif()
+
+set(BLB_SDL3_TARGET SDL3::SDL3-static)
+if(NOT TARGET ${BLB_SDL3_TARGET})
+  set(BLB_SDL3_TARGET SDL3::SDL3)
 endif()

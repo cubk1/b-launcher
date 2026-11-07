@@ -12,6 +12,7 @@
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
+#include <core/java/java_runtime.hpp>
 #include <core/network/download_client.hpp>
 #include <core/network/http_client.hpp>
 
@@ -468,7 +469,7 @@ namespace JavaDownloads {
     }
 
     bool available() {
-        return !blb::is_nixos();
+        return !blb::java::runtime_blocked();
     }
 
     const List& list() {
@@ -483,7 +484,7 @@ namespace JavaDownloads {
             started = true;
             current.status = Status::Failed;
             current.packages.clear();
-            current.error = "在系统配置声明以安装 Java";
+            current.error = blb::java::runtime_blocked()->message;
             return;
         }
         if (started && current.status == Status::Loading) {
@@ -569,8 +570,7 @@ namespace JavaDownloads {
 
     void install(const Package& package) {
         if (!available()) {
-            Notices::add(Notices::Kind::Failed,
-                         "在系统配置声明以安装 Java", 5000);
+            Notices::add(Notices::Kind::Failed, blb::java::runtime_blocked()->message, 5000);
             return;
         }
         if (package.archiveSize > (uint64_t) std::numeric_limits<int64_t>::max()) {

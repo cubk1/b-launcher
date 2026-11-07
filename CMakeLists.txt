@@ -50,6 +50,8 @@ else ()
     endforeach ()
 endif ()
 
+# Distribution packages (e.g. nixpkgs) turn this on to link the shared libraries of the system.
+option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, SDL3, FreeType and fontconfig" OFF)
 include(cmake/dependencies.cmake)
 include(cmake/embed.cmake)
 
@@ -85,14 +87,6 @@ else ()
             src/core/meta/asset_index.cpp
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
-# nix/package.nix fills these in. The launcher uses them only on NixOS.
-set(BLB_NIXOS_JAVA "$ENV{BLB_NIXOS_JAVA}" CACHE STRING "Java homes for the games on NixOS, separated by colons")
-set(BLB_NIXOS_LIBRARY_PATH "$ENV{BLB_NIXOS_LIBRARY_PATH}" CACHE STRING "LD_LIBRARY_PATH entries for the games on NixOS")
-set(BLB_NIXOS_PATH "$ENV{BLB_NIXOS_PATH}" CACHE STRING "PATH entries for the games on NixOS")
-set_property(SOURCE src/core/base/platform.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-        "BLB_NIXOS_JAVA=\"${BLB_NIXOS_JAVA}\"" "BLB_NIXOS_LIBRARY_PATH=\"${BLB_NIXOS_LIBRARY_PATH}\""
-        "BLB_NIXOS_PATH=\"${BLB_NIXOS_PATH}\"")
-
 option(BLB_TESTS "Build launcher regression tests" OFF)
 if (BLB_TESTS AND NOT WIN32)
     enable_testing()
@@ -106,30 +100,36 @@ if (MSVC)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif ()
 
-set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
-if (WIN32)
-    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+if (BLB_SYSTEM_LIBS)
+    find_package(Freetype REQUIRED)
+    set(BLB_FREETYPE_TARGET Freetype::Freetype)
 else ()
-    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
-            ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
-            ${FREETYPE_DIR}/src/psnames/psnames.c)
+    set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
+    if (WIN32)
+        set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+    else ()
+        set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
+                ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
+                ${FREETYPE_DIR}/src/psnames/psnames.c)
+    endif ()
+    add_library(freetype STATIC
+            ${FREETYPE_DIR}/src/base/ftbase.c
+            ${FREETYPE_DIR}/src/base/ftbbox.c
+            ${FREETYPE_DIR}/src/base/ftbitmap.c
+            ${FREETYPE_DIR}/src/base/ftinit.c
+            ${FREETYPE_DIR}/src/base/ftmm.c
+            ${FREETYPE_DIR}/src/base/ftsynth.c
+            ${FREETYPE_SYSTEM_SOURCES}
+            ${FREETYPE_DIR}/src/autofit/autofit.c
+            ${FREETYPE_DIR}/src/gzip/ftgzip.c
+            ${FREETYPE_DIR}/src/sfnt/sfnt.c
+            ${FREETYPE_DIR}/src/smooth/smooth.c
+            ${FREETYPE_DIR}/src/truetype/truetype.c)
+    target_include_directories(freetype PUBLIC ${FREETYPE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype-config)
+    target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_SUBPIXEL_RENDERING
+            "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
+    set(BLB_FREETYPE_TARGET freetype)
 endif ()
-add_library(freetype STATIC
-        ${FREETYPE_DIR}/src/base/ftbase.c
-        ${FREETYPE_DIR}/src/base/ftbbox.c
-        ${FREETYPE_DIR}/src/base/ftbitmap.c
-        ${FREETYPE_DIR}/src/base/ftinit.c
-        ${FREETYPE_DIR}/src/base/ftmm.c
-        ${FREETYPE_DIR}/src/base/ftsynth.c
-        ${FREETYPE_SYSTEM_SOURCES}
-        ${FREETYPE_DIR}/src/autofit/autofit.c
-        ${FREETYPE_DIR}/src/gzip/ftgzip.c
-        ${FREETYPE_DIR}/src/sfnt/sfnt.c
-        ${FREETYPE_DIR}/src/smooth/smooth.c
-        ${FREETYPE_DIR}/src/truetype/truetype.c)
-target_include_directories(freetype PUBLIC ${FREETYPE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype-config)
-target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_SUBPIXEL_RENDERING
-        "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 if (WIN32)
@@ -147,9 +147,9 @@ add_library(imgui STATIC
         ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
-target_link_libraries(imgui PUBLIC freetype)
+target_link_libraries(imgui PUBLIC ${BLB_FREETYPE_TARGET})
 if (NOT WIN32)
-    target_link_libraries(imgui PUBLIC SDL3::SDL3-static)
+    target_link_libraries(imgui PUBLIC ${BLB_SDL3_TARGET})
 endif ()
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
@@ -193,7 +193,13 @@ target_link_libraries(ui PUBLIC imgui)
 if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 else ()
-    target_link_libraries(ui PUBLIC SDL3::SDL3-static)
+    target_link_libraries(ui PUBLIC ${BLB_SDL3_TARGET})
+    if (BLB_SYSTEM_LIBS AND NOT APPLE)
+        # UiFont.cpp opens fontconfig with dlopen. Give it the full path of the system library.
+        find_package(Fontconfig REQUIRED)
+        get_filename_component(BLB_FONTCONFIG_DIR ${Fontconfig_LIBRARIES} DIRECTORY)
+        target_compile_definitions(ui PRIVATE BLB_FONTCONFIG_LIBRARY="${BLB_FONTCONFIG_DIR}/libfontconfig.so.1")
+    endif ()
     if (APPLE)
         target_link_libraries(ui PUBLIC "-framework CoreText" "-framework CoreFoundation")
     endif ()
