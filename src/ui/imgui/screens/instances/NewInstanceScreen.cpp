@@ -264,8 +264,8 @@ namespace NewInstanceScreen {
         constexpr float TILE_MIN_W = 116.0f;
         constexpr float TILE_GAP = 10.0f;
         constexpr float TILE_RATIO = 1.4f;
-        const char* const APRIL_GROUP = "april";
-        const char* const OLD_GROUP = "old";
+        const char* const APRIL_PREFIX = "april:";
+        const char* const STAGE_PREFIX = "stage:";
         const char* const SNAPSHOT_GROUP = "snapshot";
 
         struct Major {
@@ -301,12 +301,34 @@ namespace NewInstanceScreen {
                     id[2] == 'w';
         }
 
-        std::string majorLabel(const std::string& key) {
-            if (key == APRIL_GROUP) {
-                return APRIL_FOOLS;
+        std::string stageOf(const std::string& id) {
+            bool numbered = id.size() > 1 && std::isdigit((unsigned char) id[1]);
+            if (id.rfind("rd-", 0) == 0) {
+                return "Pre-Classic";
             }
-            if (key == OLD_GROUP) {
-                return OLD;
+            if (id.rfind("inf-", 0) == 0) {
+                return "Infdev";
+            }
+            if (id.rfind("in-", 0) == 0) {
+                return "Indev";
+            }
+            if (numbered && id[0] == 'c') {
+                return "Classic";
+            }
+            if (numbered && id[0] == 'a') {
+                return "Alpha";
+            }
+            if (numbered && id[0] == 'b') {
+                return "Beta";
+            }
+            return OLD;
+        }
+
+        std::string majorLabel(const std::string& key) {
+            for (const char* prefix : {APRIL_PREFIX, STAGE_PREFIX}) {
+                if (key.rfind(prefix, 0) == 0) {
+                    return key.substr(std::char_traits<char>::length(prefix));
+                }
             }
             if (key == SNAPSHOT_GROUP) {
                 return SNAPSHOT;
@@ -336,9 +358,9 @@ namespace NewInstanceScreen {
                     key = familyOf(version.id);
                     upcoming = key;
                 } else if (kind == Catalog::Kind::AprilFools) {
-                    key = APRIL_GROUP;
+                    key = APRIL_PREFIX + version.id;
                 } else if (kind == Catalog::Kind::Old) {
-                    key = OLD_GROUP;
+                    key = STAGE_PREFIX + stageOf(version.id);
                 } else {
                     key = weekly(version.id) ? upcoming : familyOf(leadingVersion(version.id));
                 }
@@ -384,20 +406,25 @@ namespace NewInstanceScreen {
             bool hovered = !blocked && NewUi::hit(x, y, w, h);
             float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             float top = y;
+            bool captioned = major.key.rfind(APRIL_PREFIX, 0) != 0;
             UiRender::roundRectGradientV(x, top, w, h, CARD_RADIUS, placeholderTint(major.key, 255),
                                          UiRender::mix(placeholderTint(major.key, 255), 0xFF000000u, 0.45f));
-            UiRender::roundRectGradientV(x, top + h * 0.45f, w, h * 0.55f, CARD_RADIUS, 0x00000000u, 0xB3000000u);
+            if (captioned) {
+                UiRender::roundRectGradientV(x, top + h * 0.45f, w, h * 0.55f, CARD_RADIUS, 0x00000000u, 0xB3000000u);
+            }
             if (hover > 0.001f) {
                 UiRender::roundRect(x, top, w, h, CARD_RADIUS, UiRender::color(255, 255, 255, Ui::round(24 * hover)));
             }
-            std::string count = std::to_string(major.versions.size()) + " 个版本";
-            float countY = top + h - 10.0f - 16.0f;
-            float labelY = countY - 22.0f;
-            std::string label = UiFont::fitEnd(major.label, UiFont::MEDIUM, 17.0f, w - 21.0f);
-            for (float shift : {0.0f, 0.7f}) {
-                UiRender::textY(label, x + 10.0f + shift, labelY, 22.0f, 0xFFFFFFFFu, UiFont::MEDIUM, 17.0f);
+            if (captioned) {
+                std::string count = std::to_string(major.versions.size()) + " 个版本";
+                float countY = top + h - 10.0f - 16.0f;
+                float labelY = countY - 22.0f;
+                std::string label = UiFont::fitEnd(major.label, UiFont::MEDIUM, 17.0f, w - 21.0f);
+                for (float shift : {0.0f, 0.7f}) {
+                    UiRender::textY(label, x + 10.0f + shift, labelY, 22.0f, 0xFFFFFFFFu, UiFont::MEDIUM, 17.0f);
+                }
+                UiRender::textY(count, x + 10.0f, countY, 16.0f, 0xB3FFFFFFu, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             }
-            UiRender::textY(count, x + 10.0f, countY, 16.0f, 0xB3FFFFFFu, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::PAGE);
                 return true;
