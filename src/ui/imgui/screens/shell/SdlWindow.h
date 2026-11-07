@@ -58,7 +58,7 @@ public:
     void swap();
     void setVsync(bool on);
     void setTyping(bool typing);
-    void setTextArea(float x, float y, float h);
+    void setTextArea(float x, float y, float h, bool ime = true);
     void clearTextArea();
     void makeCurrent();
     float density() const;

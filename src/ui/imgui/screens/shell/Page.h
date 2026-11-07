@@ -54,7 +54,7 @@ namespace Page {
     bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y,
                     bool blocked = false);
     bool button(const std::string& id, const std::string& text, float x, float y, float w, bool primary, bool blocked,
-                int glyph = 0);
+                int glyph = 0, float h = FIELD_H);
     float buttonWidth(const std::string& text, int glyph = 0);
     int rowCorners(int index, int count);
     void rowHover(const std::string& id, float y, bool hovered, int corners);

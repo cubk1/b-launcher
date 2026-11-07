@@ -1,17 +1,21 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Avatars.h"
 #include "ui/imgui/screens/accounts/ProfilePage.h"
+#include "ui/imgui/screens/home/WebImages.h"
+#include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
+#include "ui/imgui/screens/shell/SvgPath.h"
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/system/Platform.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/panel/NewUi.h"
-#include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiPageTransition.h"
@@ -27,6 +31,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <set>
@@ -38,19 +43,24 @@ namespace AccountsScreen {
 
     namespace {
         const char* const OFFLINE_OWNER = "accounts#offline";
-        constexpr float AVATAR = 24.0f;
-        constexpr float AVATAR_RADIUS = 6.0f;
-        float nameX() {
-            return Page::left() + 52.0f;
-        }
         constexpr float ACTION_Y = Page::TOP + 1.0f;
+        constexpr float CARD_H = 64.0f;
+        constexpr float CARD_MIN_W = 236.0f;
+        constexpr float CARD_GAP = 10.0f;
+        constexpr float CARD_RADIUS = 12.0f;
+        constexpr float BUST = 56.0f;
+        constexpr float HEAD = 40.0f;
+        constexpr float METHOD = 14.0f;
+        constexpr float LINK_H = 18.0f;
+        const char* const NIDE8_MARK =
+                "F0 M17.79 0.55L31.01 6.15Q32.3 6.7 32.3 8.1L32.3 21.6Q32.3 23 31.05 23.63L17.75 30.37Q16.5 31 15.25 "
+                "30.37L1.95 23.63Q0.7 23 0.7 21.6L0.7 8.1Q0.7 6.7 1.99 6.15L15.21 0.55Q16.5 0 17.79 0.55ZM16.5 "
+                "1.9L28.9 6.9L16.5 11.9L4.1 6.9ZM17.8 13.8L29 9.3L29 22.1L17.8 27.2Z";
 
-        bool addingOffline = false;
         std::string offlineName;
         bool addPending = false;
 
         constexpr int VIEW_LIST = 0;
-        constexpr int VIEW_SERVER = 1;
         constexpr int VIEW_PROFILE = 2;
         PageTransition views(VIEW_LIST);
 
@@ -58,34 +68,15 @@ namespace AccountsScreen {
         const char* const USER_OWNER = "accounts#server#user";
         const char* const PASSWORD_OWNER = "accounts#server#password";
 
-        blb::auth::account_type serverType = blb::auth::account_type::yggdrasil;
-        std::string serverAddress;
         std::string serverUser;
         std::string serverPassword;
         std::string focusNext;
-        size_t chosenProfile = 0;
 
         bool hasOnline() {
             const std::vector<blb::auth::account>& accounts = Accounts::list();
             return std::any_of(accounts.begin(), accounts.end(), [](const blb::auth::account& account) {
                 return account.type != blb::auth::account_type::offline;
             });
-        }
-
-        void avatar(uint32_t face, const std::string& name, float rowY) {
-            float x = Page::left() + 16.0f;
-            float y = rowY + (Page::ROW_H - AVATAR) * 0.5f;
-            if (face != 0) {
-                ShaderUtil::roundTex(UiRender::transformX(x), UiRender::transformY(y), UiRender::transformW(AVATAR),
-                                     UiRender::transformW(AVATAR), UiRender::transformW(AVATAR_RADIUS), face, 0.0f,
-                                     0.0f, 1.0f, 1.0f, UiRender::applyAlpha(0xFFFFFFFFu));
-                return;
-            }
-            UiRender::roundRect(x, y, AVATAR, AVATAR, AVATAR_RADIUS, UiTheme::surfaceRaised());
-            std::string letter = name.empty() ? "?" : std::string(1, (char) std::toupper((unsigned char) name[0]));
-            float letterW = UiFont::width(letter, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(letter, x + (AVATAR - letterW) * 0.5f, y, AVATAR, UiTheme::textSecondary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
         }
 
         void openAccountMenu(const std::string& key, float x, float y) {
@@ -144,111 +135,156 @@ namespace AccountsScreen {
                     x, y, 160.0f);
         }
 
-        void accountRow(const blb::auth::account& account, bool current, float rowY, int index, int count,
-                        bool blocked) {
+        void relogin(const std::string& key) {
+            const blb::auth::account* account = Accounts::find(key);
+            if (account == nullptr) {
+                return;
+            }
+            if (account->type == blb::auth::account_type::microsoft) {
+                if (Accounts::login() == Accounts::Login::Idle) {
+                    Accounts::startLogin();
+                }
+            } else if (blb::auth::is_yggdrasil(account->type)) {
+                openServerLogin(account->type, account->server, account->username);
+            }
+        }
+
+        std::string originOf(const std::string& url) {
+            size_t scheme = url.find("://");
+            if (scheme == std::string::npos) {
+                return std::string();
+            }
+            size_t path = url.find('/', scheme + 3);
+            return path == std::string::npos ? url : url.substr(0, path);
+        }
+
+        void methodIcon(const blb::auth::account& account, float x, float cy, bool blocked) {
+            float y = cy - METHOD * 0.5f;
+            uint32_t image = 0;
+            int glyph = 0xf007;
+            if (account.type == blb::auth::account_type::microsoft) {
+                image = Icons::microsoft();
+            } else if (account.type == blb::auth::account_type::yggdrasil) {
+                glyph = 0xf233;
+                if (blb::auth::same_yggdrasil_server(account.server, blb::auth::littleskin_api)) {
+                    image = Icons::littleskin();
+                } else if (std::string origin = originOf(blb::auth::yggdrasil_api(account)); !origin.empty()) {
+                    image = WebImages::get(origin + "/favicon.ico", origin + "/favicon.png").texture;
+                }
+            } else if (account.type == blb::auth::account_type::nide8) {
+                SvgPath::draw(NIDE8_MARK, x, y, METHOD, METHOD, UiTheme::textSecondary());
+                glyph = 0;
+            }
+            if (image != 0) {
+                UiRender::texture(image, x, y, METHOD, METHOD);
+            } else if (glyph != 0) {
+                UiWidgets::icon(Ui::glyph(glyph), x + METHOD * 0.5f, cy, UiTheme::textMuted(), 10.0f);
+            }
+            if (!blocked && NewUi::hit(x, y, METHOD, METHOD)) {
+                Page::tooltip(Accounts::kindOf(account), x, y, METHOD, METHOD);
+            }
+        }
+
+        bool textLink(const std::string& text, float x, float y, uint32_t ink, uint32_t hot, bool blocked) {
+            float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            bool over = !blocked && NewUi::hit(x, y, w, LINK_H);
+            uint32_t color = over ? hot : ink;
+            UiRender::textY(text, x, y, LINK_H, color, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            UiRender::hLine(x, x + w, y + LINK_H * 0.5f + 6.0f, color);
+            if (over) {
+                UiCursor::hand();
+            }
+            return !blocked && NewUi::click(x, y, w, LINK_H);
+        }
+
+        void bustIn(uint32_t texture, float x, float size, float bottom) {
+            if (texture == 0) {
+                return;
+            }
+            float pixel = UiRender::pixelScale();
+            float unit = UiRender::unit();
+            float inner = std::round(UiRender::transformY(bottom) * pixel) / pixel - 1.0f / pixel;
+            UiRender::flush();
+            UiRender::drawList()->PushClipRect(
+                    ImVec2(UiRender::transformX(x) * unit, UiRender::transformY(bottom - size) * unit),
+                    ImVec2(UiRender::transformX(x + size) * unit, inner * unit), true);
+            UiRender::texture(texture, x, bottom - size + 1.0f, size, size);
+            UiRender::flush();
+            UiRender::drawList()->PopClipRect();
+        }
+
+        void headIn(uint32_t texture, float x, float y, float size, float radius) {
+            if (texture == 0) {
+                return;
+            }
+            ShaderUtil::roundTex(UiRender::transformX(x), UiRender::transformY(y), UiRender::transformW(size),
+                                 UiRender::transformW(size), UiRender::transformW(radius), texture, 0.0f, 0.0f, 1.0f,
+                                 1.0f, UiRender::applyAlpha(0xFFFFFFFFu));
+        }
+
+        void accountCard(const blb::auth::account& account, bool current, float x, float y, float w, bool blocked) {
+            float h = CARD_H;
             std::string key = Accounts::keyOf(account);
-            bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-            Page::rowHover("accounts#row#" + key, rowY, hovered, Page::rowCorners(index, count));
-            avatar(Textures::of(Accounts::face(account)), account.name, rowY);
-            float nameW = UiFont::width(account.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(account.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
-            float tagX = nameX() + nameW + 10.0f;
-            tagX += Page::tag(Accounts::kindOf(account), tagX, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary(), 7.0f) +
-                    6.0f;
-            if (Accounts::expired(key)) {
-                Page::tag("需要重新登录", tagX, rowY, UiTheme::dangerSoft(), UiTheme::danger(), 7.0f);
+            std::string id = "accounts#card#" + key;
+            bool hovered = !blocked && NewUi::hit(x, y, w, h);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
+            float lit = UiState::motion(id + "#current", current ? 1.0f : 0.0f, 14.0f);
+            UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::surface());
+            float shine = 18.0f * lit + 8.0f * hover;
+            if (shine > 0.1f) {
+                UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::overlay(Ui::round(shine)));
+            }
+            UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
+            bool heads = Avatars::style() == Avatars::Style::Head;
+            if (heads) {
+                headIn(Textures::of(Avatars::head(account)), x + 12.0f, y + (h - HEAD) * 0.5f, HEAD, 8.0f);
+            } else {
+                bustIn(Textures::of(Avatars::bust(account)), x + 10.0f, BUST, y + h);
             }
 
-            float menuX = Page::controlRight() - 26.0f;
-            float markX = menuX - 16.0f;
+            float textX = heads ? x + 12.0f + HEAD + 12.0f : x + 10.0f + BUST + 12.0f;
+            float nameY = y + 11.0f;
+            std::string name = UiFont::fitEnd(account.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                              std::max(0.0f, x + w - 30.0f - METHOD - 6.0f - textX));
+            float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(name, textX, nameY, 22.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            methodIcon(account, textX + nameW + 6.0f, nameY + 11.0f, blocked);
+
+            float linkY = y + 34.0f;
+            std::string edit = "编辑账号";
+            if (textLink(edit, textX, linkY, UiTheme::textMuted(), UiTheme::textSecondary(), blocked)) {
+                UiSound::request(UiSound::PAGE);
+                ProfilePage::open(key);
+                views.go(VIEW_PROFILE);
+            }
+            if (Accounts::expired(key)) {
+                float reloginX = textX + UiFont::width(edit, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+                if (textLink("需要重新登录", reloginX, linkY, UiTheme::danger(), UiTheme::danger(), blocked)) {
+                    relogin(key);
+                }
+            }
+
+            float markX = x + w - 20.0f;
+            float markY = y + h - 18.0f;
             if (Accounts::busy(key)) {
-                Page::spinner(markX, rowY + Page::ROW_H * 0.5f, 7.0f, UiTheme::accent());
-            } else if (current) {
-                UiWidgets::check(markX, rowY + Page::ROW_H * 0.5f, UiTheme::accent(), 10.0f);
+                Page::spinner(markX, markY, 7.0f, UiTheme::accent());
+            } else if (lit > 0.01f) {
+                float savedAlpha = UiRender::alphaMul;
+                UiRender::alphaMul = savedAlpha * lit;
+                UiWidgets::check(markX, markY, UiTheme::accent(), 10.0f);
+                UiRender::alphaMul = savedAlpha;
             }
-            if (Page::iconButton("accounts#more#" + key, 0xf141, "更多操作", menuX, rowY + 6.0f, blocked)) {
-                openAccountMenu(key, menuX - 132.0f, rowY + 36.0f);
-            }
-            if (hovered && NewUi::rightClick) {
+            if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
                 NewUi::rightClick = false;
                 openAccountMenu(key, NewUi::mouseX, NewUi::mouseY);
             }
-            if (!blocked && NewUi::click(Page::left(), rowY, Page::width(), Page::ROW_H)) {
+            if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::TICK);
                 Accounts::select(key);
             }
         }
 
-        void finishOffline() {
-            addingOffline = false;
-            offlineName.clear();
-            if (NewUi::textEditing == OFFLINE_OWNER) {
-                NewUi::cancelTextEdit();
-            }
-        }
-
-        void addOffline(const std::string& name) {
-            std::string problem = Accounts::addOffline(name);
-            if (!problem.empty()) {
-                Notifications::add(Notifications::FAILED, problem, 3500);
-                return;
-            }
-            finishOffline();
-        }
-
-        std::shared_ptr<TextBinding> offlineValue() {
-            static std::shared_ptr<TextBinding> value = [] {
-                auto binding = std::make_shared<TextBinding>(
-                        OFFLINE_OWNER, [] { return offlineName; },
-                        [](const std::string& text) {
-                            offlineName = text;
-                            if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
-                                addOffline(text);
-                            }
-                        },
-                        "玩家名");
-                binding->limit = 16;
-                return binding;
-            }();
-            return value;
-        }
-
-        void beginOffline() {
-            addingOffline = true;
-            offlineName.clear();
-            NewUi::beginTextEdit(offlineValue());
-        }
-
-        void offlineRow(float rowY, int index, int count, bool blocked) {
-            bool editing = NewUi::textEditing == OFFLINE_OWNER;
-            if (!editing && offlineName.empty()) {
-                addingOffline = false;
-                return;
-            }
-            Page::rowHover("accounts#row#new", rowY, false, Page::rowCorners(index, count));
-            std::string typed = editing ? UiInput::get(NewUi::INPUT_TEXT) : offlineName;
-            avatar(0, typed, rowY);
-            float fieldX = nameX() - 9.0f;
-            TextFieldWidget field(offlineValue());
-            field.box(fieldX, rowY + Page::FIELD_Y, 180.0f, Page::FIELD_H)
-                    .bounds(fieldX, rowY + Page::FIELD_Y, 180.0f, Page::FIELD_H)
-                    .block(blocked);
-            field.paint();
-
-            std::string add = "添加";
-            float addW = Page::buttonWidth(add);
-            float addX = Page::controlRight() - addW;
-            if (Page::button("accounts#offline#add", add, addX, rowY + Page::FIELD_Y, addW, true, blocked)) {
-                addOffline(typed);
-            }
-            std::string cancel = "取消";
-            float cancelW = Page::buttonWidth(cancel);
-            if (Page::button("accounts#offline#cancel", cancel, addX - 8.0f - cancelW, rowY + Page::FIELD_Y, cancelW,
-                             false, blocked)) {
-                finishOffline();
-            }
-        }
+        void openOffline();
 
         bool importable() {
             const std::vector<Accounts::Found>& found = Accounts::found();
@@ -332,23 +368,9 @@ namespace AccountsScreen {
         }
 
         void addServerItems(MenuItems& items) {
-            items.push_back(ActionMenuItem::make("第三方账户（Authlib Injector）", 0xf0c1, [] {
+            items.push_back(ActionMenuItem::make("第三方账户", 0xf0c1, [] {
                 openServerLogin(blb::auth::account_type::yggdrasil, std::string(), std::string());
             }));
-            items.push_back(ActionMenuItem::make("统一通行证", 0xf2c2, [] {
-                openServerLogin(blb::auth::account_type::nide8, std::string(), std::string());
-            }));
-        }
-
-        void openServerMenu(float x, float y) {
-            NewUi::openMenu(
-                    "accounts#third",
-                    [] {
-                        MenuItems items;
-                        addServerItems(items);
-                        return items;
-                    },
-                    x, y, 230.0f);
         }
 
         void openAddMenu(float x, float y) {
@@ -361,7 +383,7 @@ namespace AccountsScreen {
                         bool allowed = hasOnline();
                         items.push_back(
                                 ActionMenuItem::make(allowed ? "离线账户" : "离线账户（先登录微软账户）", 0xf007, [] {
-                                    beginOffline();
+                                    openOffline();
                                 })->enabledIf([] { return hasOnline(); }));
                         return items;
                     },
@@ -579,7 +601,7 @@ namespace AccountsScreen {
             }
             float otherX = x + microsoftW + 8.0f;
             if (Page::button(id + "#third", other, otherX, y, otherW, false, blocked, 0xf0c1)) {
-                openServerMenu(otherX, y + Page::FIELD_H + 6.0f);
+                openServerLogin(blb::auth::account_type::yggdrasil, std::string(), std::string());
             }
         }
 
@@ -702,6 +724,38 @@ namespace AccountsScreen {
     }
 
     namespace {
+        const char* const LOGIN_DIALOG = "accounts#login";
+        const char* const SERVER_SOURCE = "accounts#login#server";
+        constexpr float LOGIN_W = 360.0f;
+        constexpr float LOGIN_PAD = 28.0f;
+        constexpr float LOGIN_ICON = 44.0f;
+        constexpr float LOGIN_TITLE = 26.0f;
+        constexpr float LOGIN_FIELD = 30.0f;
+        constexpr float LOGIN_GAP = 10.0f;
+        constexpr float LOGIN_NOTE = 18.0f;
+        constexpr float LOGIN_LABEL = 18.0f;
+        constexpr float LOGIN_LABEL_GAP = 6.0f;
+        constexpr float PICK_W = 470.0f;
+        constexpr float PROFILE_H = 132.0f;
+        constexpr float PROFILE_BUST = 92.0f;
+        constexpr float PROFILE_HEAD = 64.0f;
+        constexpr float PROFILE_ROW = 48.0f;
+        constexpr float PROFILE_ROW_HEAD = 28.0f;
+        constexpr float REMEMBER_H = 20.0f;
+        constexpr float PROFILE_GAP = 12.0f;
+        constexpr int PROFILE_COLUMNS = 3;
+        constexpr float DIALOG_MARGIN = 24.0f;
+
+        enum class Server { LittleSkin, Nide8, Custom };
+
+        Server server = Server::LittleSkin;
+        std::string customServer;
+        std::string nide8Server;
+        std::string loginProblem;
+        bool rememberPassword = true;
+        std::set<std::string> pickedProfiles;
+        float pickScroll = 0.0f;
+
         bool ours(const std::string& owner) {
             return owner == ADDRESS_OWNER || owner == USER_OWNER || owner == PASSWORD_OWNER;
         }
@@ -715,25 +769,67 @@ namespace AccountsScreen {
         }
 
         bool nide8() {
-            return serverType == blb::auth::account_type::nide8;
+            return server == Server::Nide8;
+        }
+
+        blb::auth::account_type loginType() {
+            return nide8() ? blb::auth::account_type::nide8 : blb::auth::account_type::yggdrasil;
+        }
+
+        std::string* addressTarget() {
+            return nide8() ? &nide8Server : &customServer;
+        }
+
+        std::string loginAddress() {
+            return server == Server::LittleSkin ? std::string(blb::auth::littleskin_api)
+                                                : live(ADDRESS_OWNER, *addressTarget());
+        }
+
+        bool choosing() {
+            Accounts::ServerLogin state = Accounts::serverLogin();
+            return state == Accounts::ServerLogin::Choosing ||
+                    (state == Accounts::ServerLogin::Working && !Accounts::serverProfiles().empty());
+        }
+
+        void recall() {
+            std::optional<Accounts::Credential> saved = Accounts::rememberedLogin(loginType(), loginAddress());
+            if (saved && (serverUser.empty() || serverUser == saved->username)) {
+                serverUser = saved->username;
+                serverPassword = saved->password;
+            }
+        }
+
+        void finishLogin() {
+            if (rememberPassword) {
+                Accounts::rememberLogin(loginType(), loginAddress(), serverUser, serverPassword);
+            } else {
+                Accounts::forgetLogin(loginType(), loginAddress());
+            }
+            Accounts::finishServerLogin();
+            if (Dialog::isOpen(LOGIN_DIALOG)) {
+                Dialog::close();
+            }
         }
 
         void submitServer() {
-            std::string address = live(ADDRESS_OWNER, serverAddress);
+            std::string address = loginAddress();
             std::string user = live(USER_OWNER, serverUser);
             std::string password = live(PASSWORD_OWNER, serverPassword);
-            std::string problem = Accounts::serverLoginProblem(serverType, address, user, password);
-            if (!problem.empty()) {
-                Notifications::add(Notifications::FAILED, problem, 3500);
+            loginProblem = Accounts::serverLoginProblem(loginType(), address, user, password);
+            if (!loginProblem.empty()) {
                 return;
             }
             if (ours(NewUi::textEditing)) {
                 NewUi::commitTextEdit();
             }
-            serverAddress = address;
+            if (server != Server::LittleSkin) {
+                *addressTarget() = address;
+            }
+            pickedProfiles.clear();
+            pickScroll = 0.0f;
             serverUser = user;
             serverPassword = password;
-            Accounts::startServerLogin(serverType, address, user, password);
+            Accounts::startServerLogin(loginType(), address, user, password);
         }
 
         std::shared_ptr<TextBinding> serverField(const char* owner, std::string* target, const std::string& hint,
@@ -741,7 +837,12 @@ namespace AccountsScreen {
             auto binding = std::make_shared<TextBinding>(
                     owner, [target] { return *target; },
                     [target, next](const std::string& text) {
+                        bool moved = *target != text && (target == &customServer || target == &nide8Server);
                         *target = text;
+                        loginProblem.clear();
+                        if (moved && serverUser.empty() && serverPassword.empty()) {
+                            recall();
+                        }
                         if (!ImGui::IsKeyPressed(ImGuiKey_Enter) && !ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
                             return;
                         }
@@ -758,22 +859,551 @@ namespace AccountsScreen {
         }
 
         std::shared_ptr<TextBinding> addressField() {
-            return serverField(ADDRESS_OWNER, &serverAddress,
-                               nide8() ? "服主后台 → 集成说明中的服务器 ID" : "Yggdrasil API 地址，例如 littleskin.cn",
-                               USER_OWNER);
+            return serverField(ADDRESS_OWNER, addressTarget(), std::string(), USER_OWNER);
         }
 
         std::shared_ptr<TextBinding> userField() {
-            return serverField(USER_OWNER, &serverUser, nide8() ? "邮箱或统一通行证账号" : "邮箱或用户名",
-                               PASSWORD_OWNER);
+            return serverField(USER_OWNER, &serverUser, std::string(), PASSWORD_OWNER);
         }
 
         std::shared_ptr<TextBinding> passwordField() {
-            return serverField(PASSWORD_OWNER, &serverPassword, "密码", nullptr);
+            return serverField(PASSWORD_OWNER, &serverPassword, std::string(), nullptr);
         }
 
-        void closeServer(bool cancel) {
-            if (cancel) {
+        void switchServer(Server picked) {
+            if (picked == server) {
+                return;
+            }
+            if (NewUi::textEditing == ADDRESS_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+            server = picked;
+            loginProblem.clear();
+            if (std::optional<Accounts::Credential> saved = Accounts::rememberedLogin(loginType(), loginAddress())) {
+                if (ours(NewUi::textEditing)) {
+                    NewUi::cancelTextEdit();
+                }
+                serverUser = saved->username;
+                serverPassword = saved->password;
+            } else {
+                serverPassword.clear();
+            }
+            if (picked != Server::LittleSkin && addressTarget()->empty()) {
+                focusNext = ADDRESS_OWNER;
+            } else if (serverUser.empty()) {
+                focusNext = USER_OWNER;
+            }
+        }
+
+        std::shared_ptr<ModeBinding> serverChoice() {
+            static std::shared_ptr<ModeBinding> choice;
+            if (choice == nullptr) {
+                choice = ModeBinding::mapped<Server>(
+                        SERVER_SOURCE, [] { return server; }, [](Server picked) { switchServer(picked); },
+                        {{Server::LittleSkin, "LittleSkin"},
+                         {Server::Nide8, "统一通行证"},
+                         {Server::Custom, "其他认证服务器"}});
+                choice->icon("其他认证服务器", 0xf233);
+            }
+            choice->image("LittleSkin", Icons::littleskin(), 0.0f);
+            choice->image("统一通行证", SvgPath::texture(NIDE8_MARK, 48, UiTheme::textSecondary()), 0.0f);
+            return choice;
+        }
+
+        void serverMark(float x, float y, float size) {
+            uint32_t image = 0;
+            if (server == Server::LittleSkin) {
+                image = Icons::littleskin();
+            } else if (server == Server::Nide8) {
+                SvgPath::draw(NIDE8_MARK, x, y, size, size, UiTheme::textPrimary());
+                return;
+            } else if (!customServer.empty()) {
+                std::string url =
+                        customServer.find("://") == std::string::npos ? "https://" + customServer : customServer;
+                std::string origin = originOf(url);
+                image = WebImages::get(origin + "/favicon.ico", origin + "/favicon.png").texture;
+            }
+            if (image != 0) {
+                UiRender::texture(image, x, y, size, size);
+                return;
+            }
+            UiRender::roundRect(x, y, size, size, size * 0.25f, UiTheme::surfaceRaised());
+            UiWidgets::icon(Ui::glyph(0xf233), x + size * 0.5f, y + size * 0.5f, UiTheme::textSecondary(), size * 0.4f);
+        }
+
+        void serverPicker(float x, float y, float w, bool blocked) {
+            std::shared_ptr<ModeBinding> choice = serverChoice();
+            float anchorY = y + (LOGIN_FIELD - 23.0f) * 0.5f;
+            bool open = NewUi::popupOpen && NewUi::popupOwner == choice->owner && NewUi::popupSource == SERVER_SOURCE;
+            bool hovered = !blocked && NewUi::hit(x, y, w, LOGIN_FIELD);
+            float lit = UiState::motion(std::string(SERVER_SOURCE) + "#hover", open || hovered ? 1.0f : 0.0f, 18.0f);
+            UiRender::roundRect(x, y, w, LOGIN_FIELD, 7.0f, UiTheme::surfaceRaised());
+            if (lit > 0.001f) {
+                UiRender::roundRect(x, y, w, LOGIN_FIELD, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
+            }
+            UiRender::outline(x, y, w, LOGIN_FIELD, 7.0f, open ? UiTheme::accent() : UiTheme::outlineSoft());
+            serverMark(x + 10.0f, y + (LOGIN_FIELD - 16.0f) * 0.5f, 16.0f);
+            UiRender::textY(choice->label(), x + 34.0f, y, LOGIN_FIELD, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            UiWidgets::icon(Ui::glyph(0xf078), x + w - 15.0f, y + LOGIN_FIELD * 0.5f, UiTheme::textMuted(), 9.0f);
+            if (!blocked && NewUi::click(x, y, w, LOGIN_FIELD)) {
+                UiSound::request(UiSound::TICK);
+                NewUi::openChoice(choice, x, anchorY, w, SERVER_SOURCE);
+            } else if (open) {
+                NewUi::popupAnchorX = x;
+                NewUi::popupAnchorY = anchorY;
+                NewUi::popupWidth = w;
+            }
+        }
+
+        void loginField(const std::shared_ptr<TextBinding>& value, float x, float y, float w, bool blocked) {
+            TextFieldWidget field(value);
+            field.box(x, y, w, LOGIN_FIELD).radius(7.0f).bounds(x, y, w, LOGIN_FIELD).block(blocked);
+            field.paint();
+        }
+
+        std::vector<std::pair<std::string, std::string>> loginLinks() {
+            std::vector<std::pair<std::string, std::string>> links;
+            std::string signUp = Accounts::registrationUrl(loginType(), loginAddress());
+            if (!signUp.empty()) {
+                links.push_back({"注册账号", signUp});
+            }
+            if (nide8()) {
+                links.push_back({"服主后台", std::string(blb::auth::nide8_admin_url)});
+            }
+            return links;
+        }
+
+        float formHeight() {
+            int fields = server == Server::LittleSkin ? 3 : 4;
+            float h = LOGIN_PAD + LOGIN_ICON + 12.0f + LOGIN_TITLE + 18.0f;
+            h += fields * (LOGIN_LABEL + LOGIN_LABEL_GAP + LOGIN_FIELD) + (fields - 1) * LOGIN_GAP;
+            if (!loginProblem.empty()) {
+                h += 8.0f + LOGIN_NOTE;
+            }
+            h += 12.0f + REMEMBER_H;
+            h += 18.0f + LOGIN_FIELD;
+            if (!loginLinks().empty()) {
+                h += 12.0f + LOGIN_NOTE;
+            }
+            return h + LOGIN_PAD;
+        }
+
+        bool headRows() {
+            return Avatars::style() == Avatars::Style::Head;
+        }
+
+        float gridHeight() {
+            if (headRows()) {
+                return (float) Accounts::serverProfiles().size() * PROFILE_ROW;
+            }
+            int lines = ((int) Accounts::serverProfiles().size() + PROFILE_COLUMNS - 1) / PROFILE_COLUMNS;
+            return lines > 0 ? lines * PROFILE_H + (lines - 1) * PROFILE_GAP : 0.0f;
+        }
+
+        float pickChrome() {
+            return LOGIN_PAD + LOGIN_TITLE + 16.0f + 18.0f + LOGIN_FIELD + LOGIN_PAD;
+        }
+
+        float gridView() {
+            float room = MainWindow::height() - 2.0f * DIALOG_MARGIN - pickChrome();
+            return std::max(headRows() ? PROFILE_ROW : PROFILE_H, std::min(gridHeight(), room));
+        }
+
+        float loginHeight() {
+            return choosing() ? pickChrome() + gridView() : formHeight();
+        }
+
+        float loginWidth() {
+            return choosing() && !headRows() ? PICK_W : LOGIN_W;
+        }
+
+        void busyLabel(const std::string& text, float x, float y, float w) {
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            float start = x + (w - (12.0f + 8.0f + textW)) * 0.5f;
+            Page::spinner(start + 6.0f, y + LOGIN_FIELD * 0.5f, 6.0f, UiTheme::onAccent());
+            UiRender::textY(text, start + 20.0f, y, LOGIN_FIELD, UiTheme::onAccent(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+        }
+
+        void formStep(float x, float y, float w) {
+            bool working = Accounts::serverLogin() == Accounts::ServerLogin::Working;
+            float left = x + LOGIN_PAD;
+            float width = w - 2.0f * LOGIN_PAD;
+            float cx = x + w * 0.5f;
+            float cy = y + LOGIN_PAD;
+            serverMark(cx - LOGIN_ICON * 0.5f, cy, LOGIN_ICON);
+            cy += LOGIN_ICON + 12.0f;
+            std::string title = server == Server::LittleSkin ? std::string("登录 LittleSkin")
+                    : nide8()                                ? std::string("登录统一通行证")
+                                                             : std::string("第三方登录");
+            Page::centredText(title, cx, cy, LOGIN_TITLE, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            cy += LOGIN_TITLE + 18.0f;
+            auto label = [&](const std::string& text) {
+                UiRender::textY(text, left + 2.0f, cy, LOGIN_LABEL, UiTheme::textSecondary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                cy += LOGIN_LABEL + LOGIN_LABEL_GAP;
+            };
+            label("认证服务器");
+            serverPicker(left, cy, width, working);
+            cy += LOGIN_FIELD + LOGIN_GAP;
+            if (server != Server::LittleSkin) {
+                label(nide8() ? "服务器 ID" : "认证服务器地址");
+                loginField(addressField(), left, cy, width, working);
+                cy += LOGIN_FIELD + LOGIN_GAP;
+            }
+            label(nide8() ? "邮箱或统一通行证账号" : "邮箱或用户名");
+            loginField(userField(), left, cy, width, working);
+            cy += LOGIN_FIELD + LOGIN_GAP;
+            label("密码");
+            loginField(passwordField(), left, cy, width, working);
+            cy += LOGIN_FIELD;
+            if (!focusNext.empty() && NewUi::textEditing.empty()) {
+                std::string next = focusNext;
+                focusNext.clear();
+                NewUi::beginTextEdit(next == ADDRESS_OWNER && server != Server::LittleSkin ? addressField()
+                                             : next == PASSWORD_OWNER                      ? passwordField()
+                                                                                           : userField());
+            }
+            if (!loginProblem.empty()) {
+                cy += 8.0f;
+                UiRender::textY(UiFont::fitEnd(loginProblem, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, width), left, cy,
+                                LOGIN_NOTE, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                cy += LOGIN_NOTE;
+            }
+            cy += 12.0f;
+            const std::string remember = "记住密码";
+            float rememberW = 24.0f + UiFont::width(remember, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            tickBox("accounts#login#remember", left + 2.0f, cy + (REMEMBER_H - 16.0f) * 0.5f, rememberPassword);
+            UiRender::textY(remember, left + 26.0f, cy, REMEMBER_H, UiTheme::textSecondary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            if (!working && NewUi::hit(left, cy, rememberW, REMEMBER_H)) {
+                UiCursor::hand();
+            }
+            if (!working && NewUi::click(left, cy, rememberW, REMEMBER_H)) {
+                UiSound::request(UiSound::TICK);
+                rememberPassword = !rememberPassword;
+            }
+            cy += REMEMBER_H + 18.0f;
+            if (Page::button("accounts#login#submit", working ? std::string() : std::string("登录"), left, cy, width,
+                             true, working, working ? 0 : SIGN_IN_GLYPH, LOGIN_FIELD)) {
+                submitServer();
+            }
+            if (working) {
+                busyLabel("正在登录", left, cy, width);
+            }
+            cy += LOGIN_FIELD;
+            std::vector<std::pair<std::string, std::string>> links = loginLinks();
+            if (links.empty()) {
+                return;
+            }
+            cy += 12.0f;
+            float total = 0.0f;
+            for (const auto& [text, url] : links) {
+                total += UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f;
+            }
+            float linkX = cx - (total - 20.0f) * 0.5f;
+            for (const auto& [text, url] : links) {
+                if (textLink(text, linkX, cy, UiTheme::textMuted(), UiTheme::textSecondary(), working)) {
+                    Platform::openUrl(url);
+                }
+                linkX += UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 20.0f;
+            }
+        }
+
+        void profileCard(const blb::auth::yggdrasil_profile& profile, size_t index, float x, float y, float w,
+                         bool working, bool reachable) {
+            float top = y;
+            float h = PROFILE_H;
+            float bottom = top + h;
+            std::string id = "accounts#login#profile#" + profile.id;
+            bool picked = pickedProfiles.count(profile.id) != 0;
+            bool hovered = !working && reachable && NewUi::hit(x, top, w, h);
+            float lit = UiState::motion(id + "#picked", picked ? 1.0f : 0.0f, 16.0f);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
+            UiRender::roundRect(x, top, w, h, 12.0f, UiTheme::surfaceRaised());
+            float shine = 22.0f * lit + 8.0f * hover;
+            if (shine > 0.1f) {
+                UiRender::roundRect(x, top, w, h, 12.0f, UiTheme::overlay(Ui::round(shine)));
+            }
+            std::string name = UiFont::fitEnd(profile.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w - 24.0f);
+            Page::centredText(name, x + w * 0.5f, top + 10.0f, 24.0f, UiTheme::textPrimary(), UiWidgets::TEXT_CONTROL);
+            UiRender::outline(x, top, w, h, 12.0f, UiTheme::outlineSoft());
+            blb::auth::account candidate = Accounts::serverCandidate(index);
+            if (Avatars::style() == Avatars::Style::Head) {
+                headIn(Textures::of(Avatars::head(candidate)), x + (w - PROFILE_HEAD) * 0.5f,
+                       top + 40.0f + (h - 54.0f - PROFILE_HEAD) * 0.5f, PROFILE_HEAD, 12.0f);
+            } else {
+                bustIn(Textures::of(Avatars::bust(candidate)), x + (w - PROFILE_BUST) * 0.5f, PROFILE_BUST, bottom);
+            }
+            if (lit > 0.01f) {
+                float savedAlpha = UiRender::alphaMul;
+                UiRender::alphaMul = savedAlpha * lit;
+                UiRender::circle(x + w - 15.0f, top + 15.0f, 8.0f, UiTheme::accent());
+                UiWidgets::check(x + w - 15.0f, top + 15.0f, UiTheme::onAccent(), 8.0f);
+                UiRender::alphaMul = savedAlpha;
+            }
+            if (!working && reachable && NewUi::click(x, top, w, h)) {
+                UiSound::request(UiSound::TICK);
+                if (picked) {
+                    pickedProfiles.erase(profile.id);
+                } else {
+                    pickedProfiles.insert(profile.id);
+                }
+            }
+        }
+
+        void profileRow(const blb::auth::yggdrasil_profile& profile, int index, int count, float x, float y, float w,
+                        bool working, bool reachable) {
+            std::string id = "accounts#login#profile#" + profile.id;
+            bool picked = pickedProfiles.count(profile.id) != 0;
+            bool hovered = !working && reachable && NewUi::hit(x, y, w, PROFILE_ROW);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            if (hover > 0.001f) {
+                UiRender::roundRect(x, y, w, PROFILE_ROW, 12.0f, UiTheme::overlay(Ui::round(14 * hover)),
+                                    Page::rowCorners(index, count));
+            }
+            headIn(Textures::of(Avatars::head(Accounts::serverCandidate((size_t) index))), x + 12.0f,
+                   y + (PROFILE_ROW - PROFILE_ROW_HEAD) * 0.5f, PROFILE_ROW_HEAD, 6.0f);
+            std::string name = UiFont::fitEnd(profile.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                              w - 24.0f - PROFILE_ROW_HEAD - 44.0f);
+            UiRender::textY(name, x + 24.0f + PROFILE_ROW_HEAD, y, PROFILE_ROW, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            tickBox(id, x + w - 30.0f, y + (PROFILE_ROW - 16.0f) * 0.5f, picked);
+            if (!working && reachable && NewUi::click(x, y, w, PROFILE_ROW)) {
+                UiSound::request(UiSound::TICK);
+                if (picked) {
+                    pickedProfiles.erase(profile.id);
+                } else {
+                    pickedProfiles.insert(profile.id);
+                }
+            }
+        }
+
+        void addPicked() {
+            const std::vector<blb::auth::yggdrasil_profile>& profiles = Accounts::serverProfiles();
+            std::vector<size_t> indices;
+            for (size_t i = 0; i < profiles.size(); i++) {
+                if (pickedProfiles.count(profiles[i].id) != 0) {
+                    indices.push_back(i);
+                }
+            }
+            if (!indices.empty()) {
+                Accounts::chooseProfiles(indices, serverUser, serverPassword);
+            }
+        }
+
+        void profileStep(float x, float y, float w) {
+            const std::vector<blb::auth::yggdrasil_profile>& profiles = Accounts::serverProfiles();
+            bool working = Accounts::serverLogin() == Accounts::ServerLogin::Working;
+            float left = x + LOGIN_PAD;
+            float width = w - 2.0f * LOGIN_PAD;
+            float cx = x + w * 0.5f;
+            float cy = y + LOGIN_PAD;
+            Page::centredText("选择角色", cx, cy, LOGIN_TITLE, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            cy += LOGIN_TITLE + 16.0f;
+
+            int count = (int) profiles.size();
+            float view = gridView();
+            float maxScroll = std::max(0.0f, gridHeight() - view);
+            bool reachable = NewUi::hit(left, cy, width, view);
+            if (reachable && NewUi::wheel() != 0.0f) {
+                pickScroll -= NewUi::wheel() * 60.0f;
+            }
+            pickScroll = std::clamp(pickScroll, 0.0f, maxScroll);
+            float shown = UiRender::snapLayout(UiState::motion("accounts#login#pickScroll", pickScroll, 18.0f));
+            float cardW = (width - PROFILE_GAP * (PROFILE_COLUMNS - 1)) / (float) PROFILE_COLUMNS;
+            UiRender::scissor(left - 1.0f, cy, width + 2.0f, view);
+            if (headRows()) {
+                float listY = cy - shown;
+                Page::listCard(left, listY, width, PROFILE_ROW, count);
+                for (int i = 0; i < count; i++) {
+                    float rowY = listY + (float) i * PROFILE_ROW;
+                    if (rowY + PROFILE_ROW >= cy && rowY <= cy + view) {
+                        profileRow(profiles[(size_t) i], i, count, left, rowY, width, working, reachable);
+                    }
+                }
+            } else {
+                for (int i = 0; i < count; i++) {
+                    int column = i % PROFILE_COLUMNS;
+                    int line = i / PROFILE_COLUMNS;
+                    int inLine = std::min(PROFILE_COLUMNS, count - line * PROFILE_COLUMNS);
+                    float lineW = inLine * cardW + (inLine - 1) * PROFILE_GAP;
+                    float cardX = cx - lineW * 0.5f + column * (cardW + PROFILE_GAP);
+                    float cardY = cy + line * (PROFILE_H + PROFILE_GAP) - shown;
+                    if (cardY + PROFILE_H < cy || cardY > cy + view) {
+                        continue;
+                    }
+                    profileCard(profiles[(size_t) i], (size_t) i, cardX, cardY, cardW, working, reachable);
+                }
+            }
+            UiRender::unscissor();
+            if (maxScroll > 0.5f) {
+                float dragged = NewUi::listScrollbar("accounts#login#pickbar", x + w - LOGIN_PAD * 0.5f - 3.0f,
+                                                     cy + 2.0f, view - 4.0f, view, maxScroll, shown, pickScroll);
+                if (dragged != pickScroll) {
+                    pickScroll = dragged;
+                }
+            }
+            cy += view + 18.0f;
+
+            int chosen = 0;
+            for (const blb::auth::yggdrasil_profile& profile : profiles) {
+                chosen += pickedProfiles.count(profile.id) != 0 ? 1 : 0;
+            }
+            std::string back = "返回";
+            std::string add = working ? std::string("正在添加")
+                    : chosen > 0      ? "添加 " + std::to_string(chosen) + " 个账户"
+                                      : std::string("添加账户");
+            float backW = std::max(88.0f, Page::buttonWidth(back));
+            float addW = std::max(128.0f, Page::buttonWidth(add, 0xf234));
+            float buttonsX = cx - (backW + 8.0f + addW) * 0.5f;
+            if (Page::button("accounts#login#back", back, buttonsX, cy, backW, false, working, 0, LOGIN_FIELD)) {
+                pickedProfiles.clear();
+                pickScroll = 0.0f;
+                Accounts::cancelServerLogin();
+            }
+            float addX = buttonsX + backW + 8.0f;
+            float ready = UiState::motion("accounts#login#addReady", chosen > 0 || working ? 1.0f : 0.0f, 14.0f);
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * UiRender::lerp(0.45f, 1.0f, ready);
+            if (Page::button("accounts#login#add", working ? std::string() : add, addX, cy, addW, true,
+                             working || chosen == 0, working ? 0 : 0xf234, LOGIN_FIELD)) {
+                addPicked();
+            }
+            UiRender::alphaMul = savedAlpha;
+            if (working) {
+                busyLabel(add, addX, cy, addW);
+            }
+        }
+
+        void loginBody(float x, float y, float w, float h) {
+            if (Accounts::serverLogin() == Accounts::ServerLogin::Done) {
+                finishLogin();
+                return;
+            }
+            Dialog::resize(LOGIN_DIALOG, UiState::motion("accounts#login#width", loginWidth(), 18.0f),
+                           UiState::motion("accounts#login#height", loginHeight(), 18.0f));
+            UiRender::scissor(x, y, w, h);
+            if (choosing()) {
+                profileStep(x, y, w);
+            } else {
+                formStep(x, y, w);
+            }
+            UiRender::unscissor();
+            if (Page::iconButton("accounts#login#close", 0xf00d, "关闭", x + w - 40.0f, y + 12.0f)) {
+                Dialog::close();
+            }
+        }
+
+        const char* const OFFLINE_DIALOG = "accounts#offline#dialog";
+        std::string offlineProblem;
+        bool offlineFocus = false;
+
+        void submitOffline() {
+            std::string name =
+                    Ui::trim(NewUi::textEditing == OFFLINE_OWNER ? UiInput::get(NewUi::INPUT_TEXT) : offlineName);
+            offlineName = name;
+            offlineProblem = Accounts::addOffline(name);
+            if (offlineProblem.empty()) {
+                Dialog::close();
+            } else {
+                offlineFocus = true;
+            }
+        }
+
+        std::shared_ptr<TextBinding> offlineValue() {
+            static std::shared_ptr<TextBinding> value = [] {
+                auto binding = std::make_shared<TextBinding>(
+                        OFFLINE_OWNER, [] { return offlineName; },
+                        [](const std::string& text) {
+                            offlineName = text;
+                            offlineProblem.clear();
+                            if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) {
+                                submitOffline();
+                            }
+                        },
+                        std::string());
+                binding->limit = 16;
+                return binding;
+            }();
+            return value;
+        }
+
+        float offlineHeight() {
+            float h =
+                    LOGIN_PAD + LOGIN_ICON + 12.0f + LOGIN_TITLE + 18.0f + LOGIN_LABEL + LOGIN_LABEL_GAP + LOGIN_FIELD;
+            if (!offlineProblem.empty()) {
+                h += 8.0f + LOGIN_NOTE;
+            }
+            return h + 18.0f + LOGIN_FIELD + LOGIN_PAD;
+        }
+
+        void offlineBody(float x, float y, float w, float h) {
+            if (!hasOnline()) {
+                Dialog::close();
+                return;
+            }
+            Dialog::resize(OFFLINE_DIALOG, LOGIN_W, UiState::motion("accounts#offline#height", offlineHeight(), 18.0f));
+            UiRender::scissor(x, y, w, h);
+            float left = x + LOGIN_PAD;
+            float width = w - 2.0f * LOGIN_PAD;
+            float cx = x + w * 0.5f;
+            float cy = y + LOGIN_PAD;
+            UiRender::roundRect(cx - LOGIN_ICON * 0.5f, cy, LOGIN_ICON, LOGIN_ICON, LOGIN_ICON * 0.25f,
+                                UiTheme::surfaceRaised());
+            UiWidgets::icon(Ui::glyph(0xf007), cx, cy + LOGIN_ICON * 0.5f, UiTheme::textSecondary(), LOGIN_ICON * 0.4f);
+            cy += LOGIN_ICON + 12.0f;
+            Page::centredText("添加离线账户", cx, cy, LOGIN_TITLE, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            cy += LOGIN_TITLE + 18.0f;
+            UiRender::textY("玩家名", left + 2.0f, cy, LOGIN_LABEL, UiTheme::textSecondary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_SMALL);
+            cy += LOGIN_LABEL + LOGIN_LABEL_GAP;
+            loginField(offlineValue(), left, cy, width, false);
+            cy += LOGIN_FIELD;
+            if (offlineFocus && NewUi::textEditing.empty()) {
+                offlineFocus = false;
+                NewUi::beginTextEdit(offlineValue());
+            }
+            if (!offlineProblem.empty()) {
+                cy += 8.0f;
+                UiRender::textY(UiFont::fitEnd(offlineProblem, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, width), left, cy,
+                                LOGIN_NOTE, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                cy += LOGIN_NOTE;
+            }
+            cy += 18.0f;
+            if (Page::button("accounts#offline#submit", "添加", left, cy, width, true, false, 0xf234, LOGIN_FIELD)) {
+                submitOffline();
+            }
+            UiRender::unscissor();
+            if (Page::iconButton("accounts#offline#close", 0xf00d, "关闭", x + w - 40.0f, y + 12.0f)) {
+                Dialog::close();
+            }
+        }
+
+        void offlineClosed() {
+            if (NewUi::textEditing == OFFLINE_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+            offlineName.clear();
+            offlineProblem.clear();
+            offlineFocus = false;
+        }
+
+        void openOffline() {
+            if (ours(NewUi::textEditing) || NewUi::textEditing == OFFLINE_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+            offlineName.clear();
+            offlineProblem.clear();
+            offlineFocus = true;
+            UiState::remove("accounts#offline#height");
+            Dialog::open(OFFLINE_DIALOG, LOGIN_W, offlineHeight(), offlineBody, offlineClosed);
+        }
+
+        void loginClosed() {
+            Accounts::ServerLogin state = Accounts::serverLogin();
+            if (state == Accounts::ServerLogin::Working || state == Accounts::ServerLogin::Choosing) {
                 Accounts::cancelServerLogin();
             }
             if (ours(NewUi::textEditing)) {
@@ -781,148 +1411,7 @@ namespace AccountsScreen {
             }
             serverPassword.clear();
             focusNext.clear();
-            views.go(VIEW_LIST);
-        }
-
-        float fieldWidth() {
-            return std::max(160.0f, std::min(360.0f, Page::controlRight() - Page::left() - 130.0f));
-        }
-
-        void formRow(const char* label, const std::shared_ptr<TextBinding>& value, float rowY, bool blocked) {
-            Page::label(label, rowY);
-            float w = fieldWidth();
-            float x = Page::controlRight() - w;
-            TextFieldWidget field(value);
-            field.box(x, rowY + Page::FIELD_Y, w, Page::FIELD_H)
-                    .bounds(x, rowY + Page::FIELD_Y, w, Page::FIELD_H)
-                    .block(blocked);
-            field.paint();
-        }
-
-        void serverForm(float y, bool covered) {
-            bool working = Accounts::serverLogin() == Accounts::ServerLogin::Working;
-            bool blocked = covered || working;
-            Page::card(y, 3);
-            formRow(nide8() ? "服务器 ID" : "认证服务器", addressField(), y, blocked);
-            formRow("账号", userField(), y + Page::ROW_H, blocked);
-            formRow("密码", passwordField(), y + 2 * Page::ROW_H, blocked);
-            if (!focusNext.empty() && NewUi::textEditing.empty()) {
-                std::string next = focusNext;
-                focusNext.clear();
-                NewUi::beginTextEdit(next == ADDRESS_OWNER        ? addressField()
-                                             : next == USER_OWNER ? userField()
-                                                                  : passwordField());
-            }
-
-            float buttonY = y + 3 * Page::ROW_H + 14.0f;
-            float x = Page::left();
-            std::string preset = nide8() ? "服主后台" : "设置为 LittleSkin";
-            float presetW = Page::buttonWidth(preset);
-            if (Page::button("accounts#server#preset", preset, x, buttonY, presetW, false, blocked)) {
-                if (nide8()) {
-                    Platform::openUrl(std::string(blb::auth::nide8_admin_url));
-                } else {
-                    if (NewUi::textEditing == ADDRESS_OWNER) {
-                        NewUi::cancelTextEdit();
-                    }
-                    serverAddress = std::string(blb::auth::littleskin_api);
-                    if (serverUser.empty()) {
-                        focusNext = USER_OWNER;
-                    }
-                }
-            }
-            x += presetW + 8.0f;
-            std::string signUp = Accounts::registrationUrl(serverType, live(ADDRESS_OWNER, serverAddress));
-            if (!signUp.empty()) {
-                std::string text = "注册账号";
-                float w = Page::buttonWidth(text);
-                if (Page::button("accounts#server#register", text, x, buttonY, w, false, blocked)) {
-                    Platform::openUrl(signUp);
-                }
-            }
-
-            std::string login = "登录";
-            float loginW = Page::buttonWidth(login, SIGN_IN_GLYPH);
-            float loginX = Page::right() - loginW;
-            if (working) {
-                std::string status = "正在登录";
-                float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                float statusX = Page::right() - statusW;
-                UiRender::textY(status, statusX, buttonY, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                Page::spinner(statusX - 14.0f, buttonY + Page::FIELD_H * 0.5f, 7.0f, UiTheme::accent());
-                loginX = statusX - 22.0f;
-            } else if (Page::button("accounts#server#login", login, loginX, buttonY, loginW, true, covered,
-                                    SIGN_IN_GLYPH)) {
-                submitServer();
-            }
-            std::string cancel = "取消";
-            float cancelW = Page::buttonWidth(cancel);
-            if (Page::button("accounts#server#cancel", cancel, loginX - 8.0f - cancelW, buttonY, cancelW, false,
-                             covered)) {
-                if (working) {
-                    Accounts::cancelServerLogin();
-                } else {
-                    closeServer(true);
-                }
-            }
-        }
-
-        void profileList(float y, bool covered) {
-            const std::vector<blb::auth::yggdrasil_profile>& profiles = Accounts::serverProfiles();
-            bool working = Accounts::serverLogin() == Accounts::ServerLogin::Working;
-            bool blocked = covered || working;
-            int count = (int) profiles.size();
-            Page::Scroll body("accounts#profiles", y, MainWindow::height() - 14.0f, count * Page::ROW_H + 52.0f);
-            bool outside = body.begin();
-            float top = body.top - body.offset;
-            Page::card(top, count);
-            for (int i = 0; i < count; i++) {
-                float rowY = top + i * Page::ROW_H;
-                if (!Page::shown(rowY)) {
-                    continue;
-                }
-                const blb::auth::yggdrasil_profile& profile = profiles[i];
-                bool hovered = !blocked && !outside && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-                Page::rowHover("accounts#profile#" + profile.id, rowY, hovered, Page::rowCorners(i, count));
-                avatar(0, profile.name, rowY);
-                UiRender::textY(profile.name, nameX(), rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                float cy = rowY + Page::ROW_H * 0.5f;
-                if (working && chosenProfile == (size_t) i) {
-                    Page::spinner(Page::controlRight() - 8.0f, cy, 7.0f, UiTheme::accent());
-                } else {
-                    UiWidgets::icon(Ui::glyph(0xf054), Page::controlRight() - 6.0f, cy, UiTheme::textMuted(), 9.0f);
-                }
-                if (!blocked && !outside && NewUi::click(Page::left(), rowY, Page::width(), Page::ROW_H)) {
-                    UiSound::request(UiSound::TICK);
-                    chosenProfile = (size_t) i;
-                    Accounts::chooseProfile((size_t) i);
-                }
-            }
-            std::string back = "返回";
-            float backW = Page::buttonWidth(back);
-            if (Page::button("accounts#profiles#back", back, Page::right() - backW, top + count * Page::ROW_H + 14.0f,
-                             backW, false, covered || outside)) {
-                Accounts::cancelServerLogin();
-            }
-            body.end();
-        }
-
-        void serverView(bool covered) {
-            bool choosing = Accounts::serverLogin() == Accounts::ServerLogin::Choosing ||
-                    (Accounts::serverLogin() == Accounts::ServerLogin::Working && !Accounts::serverProfiles().empty());
-            if (Page::iconButton("accounts#server#back", 0xf053, "返回", Page::left() - 6.0f, Page::TOP - 2.0f, covered)) {
-                closeServer(true);
-                return;
-            }
-            std::string title = choosing ? "选择角色" : nide8() ? "统一通行证" : "第三方登录";
-            Page::title(title, Page::left() + 28.0f, Page::TOP);
-            if (choosing) {
-                profileList(Page::TOP + 40.0f, covered);
-            } else {
-                serverForm(Page::TOP + 40.0f, covered);
-            }
+            loginProblem.clear();
         }
 
         void listView() {
@@ -935,11 +1424,7 @@ namespace AccountsScreen {
             const std::vector<blb::auth::account>& accounts = Accounts::list();
             const blb::auth::account* current = Accounts::current();
             bool covered = NewUi::overlayCoversMouse();
-            if (addingOffline && !hasOnline()) {
-                finishOffline();
-            }
-
-            int count = (int) accounts.size() + (addingOffline ? 1 : 0);
+            int count = (int) accounts.size();
             if (count == 0 || views.page != VIEW_LIST) {
                 addPending = false;
             }
@@ -964,25 +1449,26 @@ namespace AccountsScreen {
             bool listBlocked = covered || first > 0.5f;
             actions(listBlocked);
 
-            int rows = std::max(1, count);
-            Page::Scroll body("accounts#body", Page::TOP + 40.0f, MainWindow::height() - 14.0f, rows * Page::ROW_H);
+            float x0 = Page::left();
+            float width = Page::width();
+            int columns = std::max(1, (int) ((width + CARD_GAP) / (CARD_MIN_W + CARD_GAP)));
+            float cardW = (width - CARD_GAP * (float) (columns - 1)) / (float) columns;
+            int cardRows = ((int) accounts.size() + columns - 1) / columns;
+            float gridH = cardRows > 0 ? cardRows * (CARD_H + CARD_GAP) - CARD_GAP : 0.0f;
+            Page::Scroll body("accounts#body", Page::TOP + 40.0f, MainWindow::height() - 14.0f, gridH);
             bool outside = body.begin();
             bool blocked = outside || listBlocked;
             float y = body.top - body.offset;
 
-            Page::card(y, rows);
             std::vector<blb::auth::account> shown = accounts;
             std::string currentKey = current != nullptr ? Accounts::keyOf(*current) : std::string();
             for (size_t i = 0; i < shown.size(); i++) {
-                if (Page::shown(y + i * Page::ROW_H)) {
-                    accountRow(shown[i], Accounts::keyOf(shown[i]) == currentKey, y + i * Page::ROW_H, (int) i, count,
-                               blocked);
+                float cardX = x0 + (float) (i % columns) * (cardW + CARD_GAP);
+                float cardY = y + (float) (i / columns) * (CARD_H + CARD_GAP);
+                if (Page::shown(cardY, CARD_H)) {
+                    accountCard(shown[i], Accounts::keyOf(shown[i]) == currentKey, cardX, cardY, cardW, blocked);
                 }
             }
-            if (addingOffline) {
-                offlineRow(y + shown.size() * Page::ROW_H, (int) shown.size(), count, blocked);
-            }
-
             body.end();
             UiRender::alphaMul = savedAlpha;
         }
@@ -990,14 +1476,11 @@ namespace AccountsScreen {
 
     void draw() {
         if (Accounts::serverLogin() == Accounts::ServerLogin::Done) {
-            Accounts::finishServerLogin();
-            closeServer(false);
+            finishLogin();
         }
         bool covered = NewUi::overlayCoversMouse();
         views.begin();
-        if (views.page == VIEW_SERVER) {
-            serverView(covered);
-        } else if (views.page == VIEW_PROFILE) {
+        if (views.page == VIEW_PROFILE) {
             if (!ProfilePage::draw(covered)) {
                 views.go(VIEW_LIST);
             }
@@ -1011,7 +1494,7 @@ namespace AccountsScreen {
         addPending = true;
     }
 
-    void openServerLogin(blb::auth::account_type type, const std::string& server, const std::string& username) {
+    void openServerLogin(blb::auth::account_type type, const std::string& address, const std::string& username) {
         Accounts::ServerLogin state = Accounts::serverLogin();
         if (state == Accounts::ServerLogin::Working || state == Accounts::ServerLogin::Choosing) {
             Accounts::cancelServerLogin();
@@ -1019,11 +1502,27 @@ namespace AccountsScreen {
         if (ours(NewUi::textEditing)) {
             NewUi::cancelTextEdit();
         }
-        serverType = type;
-        serverAddress = server;
+        if (type == blb::auth::account_type::nide8) {
+            server = Server::Nide8;
+            nide8Server = address;
+        } else if (address.empty() || blb::auth::same_yggdrasil_server(address, blb::auth::littleskin_api)) {
+            server = Server::LittleSkin;
+        } else {
+            server = Server::Custom;
+            customServer = address;
+        }
         serverUser = username;
         serverPassword.clear();
-        focusNext = server.empty() ? ADDRESS_OWNER : username.empty() ? USER_OWNER : PASSWORD_OWNER;
-        views.go(VIEW_SERVER);
+        loginProblem.clear();
+        rememberPassword = true;
+        recall();
+        focusNext = server != Server::LittleSkin && addressTarget()->empty() ? ADDRESS_OWNER
+                : serverUser.empty()                                         ? USER_OWNER
+                                                                             : PASSWORD_OWNER;
+        pickedProfiles.clear();
+        pickScroll = 0.0f;
+        UiState::remove("accounts#login#width");
+        UiState::remove("accounts#login#height");
+        Dialog::open(LOGIN_DIALOG, loginWidth(), loginHeight(), loginBody, loginClosed);
     }
 }

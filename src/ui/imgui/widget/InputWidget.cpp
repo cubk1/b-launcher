@@ -1,6 +1,8 @@
 #include "InputWidget.h"
 #include "../panel/NewUi.h"
+#include "../panel/UiCommon.h"
 #include "../panel/UiFont.h"
+#include "../panel/UiIme.h"
 #include "../panel/UiInput.h"
 #include "../panel/UiRender.h"
 #include "../panel/UiTheme.h"
@@ -56,9 +58,22 @@ InputWidget& InputWidget::tint(uint32_t textColor) {
 void InputWidget::paint() {
     bool focused = UiInput::isFocused(id);
     std::string value = UiInput::shown(id);
+    bool composing = focused && UiIme::active() && UiInput::secrets.count(id) == 0;
+    int caret = UiInput::caret(id);
+    int imeFrom = 0;
+    int imeTo = 0;
+    if (composing) {
+        const std::string& ime = UiIme::text();
+        imeFrom = UiInput::selectionStart(id);
+        imeTo = imeFrom + Ui::length(ime);
+        value = Ui::substring(value, 0, imeFrom) + ime +
+                Ui::substring(value, UiInput::selectionEnd(id), Ui::length(value));
+        caret = imeFrom + std::max(0, std::min(UiIme::caret(), imeTo - imeFrom));
+    }
     float total = UiFont::width(value, family, size);
-    float originX = centered && total <= room ? textX + (room - total) * 0.5f
-                                              : textX - NewUi::fieldScroll(id, room, family, size, focused);
+    float originX = centered && total <= room
+            ? textX + (room - total) * 0.5f
+            : textX - NewUi::fieldScroll(id, room, family, size, focused, value, caret);
     float caretY = y + (h - caretH) * 0.5f;
     UiRender::enableScissor((int) UiRender::transformX(textX - 2), (int) UiRender::transformY(y),
                             (int) std::ceil(UiRender::transformX(textX + room + 2)),
@@ -70,12 +85,18 @@ void InputWidget::paint() {
     if (value.empty() && !focused) {
         UiRender::textY(placeholder, textX, y, h, UiTheme::textFaint(), family, size);
     } else {
-        if (focused) {
+        if (focused && !composing) {
             NewUi::drawSelection(id, originX, caretY, caretH, family, size);
         }
         UiRender::textY(value, originX, y, h, textColor, family, size);
+        if (composing) {
+            float from = UiFont::width(Ui::substring(value, 0, imeFrom), family, size);
+            float to = UiFont::width(Ui::substring(value, 0, imeTo), family, size);
+            UiRender::rect(originX + from, caretY + caretH, to - from, 1.0f, textColor);
+        }
         if (focused) {
-            NewUi::drawCaret(id, originX, caretY, caretH, family, size);
+            float at = UiFont::width(Ui::substring(value, 0, caret), family, size);
+            NewUi::drawCaretAt(originX + at, caretY, caretH, composing);
         }
     }
     UiRender::unscissor();

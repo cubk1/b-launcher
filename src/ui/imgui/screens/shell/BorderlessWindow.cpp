@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "ui/imgui/screens/shell/ResizeSurface.h"
 #include "ui/imgui/gl/UiGL.h"
+#include "ui/imgui/panel/UiIme.h"
 
 #include "imgui.h"
 
@@ -348,8 +349,74 @@ void BorderlessWindow::show(bool maximized) {
     UpdateWindow(hwnd);
 }
 
-void BorderlessWindow::setTextArea(float x, float y, float h) {
+void BorderlessWindow::allowIme(bool on) {
+    if (hwnd == nullptr || on == imeOn) {
+        return;
+    }
+    imeOn = on;
+    if (!on) {
+        if (HIMC context = ImmGetContext(hwnd)) {
+            ImmNotifyIME(context, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            ImmReleaseContext(hwnd, context);
+        }
+        UiIme::clear();
+    }
+    ImmAssociateContextEx(hwnd, nullptr, on ? IACE_DEFAULT : 0);
+    textAreaX = -1;
+    textAreaY = -1;
+    textAreaH = -1;
+}
+
+bool BorderlessWindow::composition(LPARAM lParam) {
+    HIMC context = ImmGetContext(hwnd);
+    if (context == nullptr) {
+        return false;
+    }
+    auto read = [context](DWORD kind) {
+        LONG bytes = ImmGetCompositionStringW(context, kind, nullptr, 0);
+        std::wstring text;
+        if (bytes > 0 && bytes % (LONG) sizeof(wchar_t) == 0) {
+            text.resize((size_t) bytes / sizeof(wchar_t));
+            if (ImmGetCompositionStringW(context, kind, text.data(), (DWORD) bytes) != bytes) {
+                text.clear();
+            }
+        }
+        return text;
+    };
+    auto utf8 = [](const std::wstring& text) {
+        std::string out;
+        int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), nullptr, 0, nullptr, nullptr);
+        if (size > 0) {
+            out.resize((size_t) size);
+            WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), out.data(), size, nullptr, nullptr);
+        }
+        return out;
+    };
+    if (lParam & GCS_RESULTSTR) {
+        UiIme::commit(utf8(read(GCS_RESULTSTR)));
+        UiIme::clear();
+    }
+    if (lParam & GCS_COMPSTR) {
+        std::wstring text = read(GCS_COMPSTR);
+        LONG cursor = (lParam & GCS_CURSORPOS) ? ImmGetCompositionStringW(context, GCS_CURSORPOS, nullptr, 0)
+                                               : (LONG) text.size();
+        cursor = std::clamp(cursor, 0L, (LONG) text.size());
+        int caret = 0;
+        for (LONG i = 0; i < cursor; i++) {
+            caret += text[(size_t) i] >= 0xDC00 && text[(size_t) i] <= 0xDFFF ? 0 : 1;
+        }
+        UiIme::set(utf8(text), caret);
+    }
+    ImmReleaseContext(hwnd, context);
+    return true;
+}
+
+void BorderlessWindow::setTextArea(float x, float y, float h, bool ime) {
     if (hwnd == nullptr) {
+        return;
+    }
+    allowIme(ime);
+    if (!ime) {
         return;
     }
     int areaX = (int) x;
@@ -370,13 +437,15 @@ void BorderlessWindow::setTextArea(float x, float y, float h) {
     composition.ptCurrentPos = {areaX, areaY};
     ImmSetCompositionWindow(context, &composition);
     CANDIDATEFORM candidate{};
-    candidate.dwStyle = CFS_CANDIDATEPOS;
+    candidate.dwStyle = CFS_EXCLUDE;
     candidate.ptCurrentPos = {areaX, areaY + areaH};
+    candidate.rcArea = {areaX, areaY, areaX + 1, areaY + areaH};
     ImmSetCandidateWindow(context, &candidate);
     ImmReleaseContext(hwnd, context);
 }
 
 void BorderlessWindow::clearTextArea() {
+    allowIme(false);
     textAreaX = -1;
     textAreaY = -1;
     textAreaH = -1;
@@ -540,6 +609,15 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
         return answered;
     }
     switch (msg) {
+        case WM_IME_SETCONTEXT:
+            return DefWindowProcW(hwnd, msg, wParam, lParam & ~(LPARAM) ISC_SHOWUICOMPOSITIONWINDOW);
+        case WM_IME_STARTCOMPOSITION: UiIme::clear(); return 0;
+        case WM_IME_COMPOSITION:
+            if (composition(lParam)) {
+                return 0;
+            }
+            break;
+        case WM_IME_ENDCOMPOSITION: UiIme::clear(); return 0;
         case WM_SIZING: {
             const auto* proposed = reinterpret_cast<const RECT*>(lParam);
             if (inSizeMove && resizable && !framed && !IsZoomed(hwnd)) {

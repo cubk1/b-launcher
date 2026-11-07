@@ -81,6 +81,16 @@ namespace Icons {
         return load(texture, EmbeddedIcons::prism, EmbeddedIcons::prismSize);
     }
 
+    uint32_t microsoft() {
+        static uint32_t texture = 0;
+        return load(texture, EmbeddedIcons::microsoft, EmbeddedIcons::microsoftSize);
+    }
+
+    uint32_t littleskin() {
+        static uint32_t texture = 0;
+        return load(texture, EmbeddedIcons::littleskin, EmbeddedIcons::littleskinSize);
+    }
+
     uint32_t backgroundSidebar() {
         static uint32_t texture = 0;
         return load(texture, EmbeddedIcons::backgroundSidebar, EmbeddedIcons::backgroundSidebarSize);

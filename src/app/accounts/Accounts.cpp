@@ -1,4 +1,5 @@
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Looks.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
@@ -72,6 +73,9 @@ namespace Accounts {
         std::map<std::string, Face> faces;
 
         const char* const STORE_VALUE = "Accounts";
+        const char* const CREDENTIALS_VALUE = "Credentials";
+        nlohmann::json credentials;
+        bool credentialsLoaded = false;
 
         // Completions look up the current list, which a rescan may have replaced.
         void markImport(const std::string& token, Found::State state) {
@@ -132,6 +136,37 @@ namespace Accounts {
             }
             if (!Platform::storeValue(STORE_VALUE, *sealed, false)) {
                 notify("无法保存账户", true);
+            }
+        }
+
+        std::string credentialKey(blb::auth::account_type type, const std::string& server) {
+            std::string address(blb::trim(server));
+            while (!address.empty() && address.back() == '/') {
+                address.pop_back();
+            }
+            return std::string(blb::auth::account_type_name(type)) + ":" + blb::to_lower(address);
+        }
+
+        nlohmann::json& storedCredentials() {
+            if (credentialsLoaded) {
+                return credentials;
+            }
+            credentialsLoaded = true;
+            credentials = nlohmann::json::object();
+            if (std::optional<std::string> sealed = Platform::loadValue(CREDENTIALS_VALUE)) {
+                if (std::optional<std::string> plain = protect(*sealed, false)) {
+                    nlohmann::json doc = nlohmann::json::parse(*plain, nullptr, false);
+                    if (doc.is_object()) {
+                        credentials = std::move(doc);
+                    }
+                }
+            }
+            return credentials;
+        }
+
+        void saveCredentials() {
+            if (std::optional<std::string> sealed = protect(storedCredentials().dump(), true)) {
+                (void) Platform::storeValue(CREDENTIALS_VALUE, *sealed, false);
             }
         }
 
@@ -202,6 +237,29 @@ namespace Accounts {
                 pendingBase = blb::auth::account();
                 put(account, true);
                 notify("已登录 " + account.name, false);
+            };
+        }
+
+        Continuation serverAdded(int run, const std::vector<blb::auth::account>& made,
+                                 const std::optional<blb::error>& failure) {
+            return [run, made, failure] {
+                if (run != serverRun || serverState != ServerLogin::Working) {
+                    return;
+                }
+                serverState = ServerLogin::Done;
+                profiles.clear();
+                pendingBase = blb::auth::account();
+                for (size_t i = 0; i < made.size(); i++) {
+                    put(made[i], i == 0);
+                }
+                if (failure && failure->code != blb::errc::cancelled) {
+                    notify("已添加 " + std::to_string(made.size()) + " 个账户，其余角色登录失败：" + describe(*failure),
+                           true);
+                } else if (made.size() == 1) {
+                    notify("已登录 " + made.front().name, false);
+                } else {
+                    notify("已添加 " + std::to_string(made.size()) + " 个账户", false);
+                }
             };
         }
 
@@ -387,6 +445,7 @@ namespace Accounts {
         accounts.erase(at);
         expiredKeys.erase(key);
         save();
+        Looks::forget(key);
         if (wasCurrent) {
             currentKey = accounts.empty() ? std::string() : keyOf(accounts[std::min(index, accounts.size() - 1)]);
             saveCurrent();
@@ -558,6 +617,18 @@ namespace Accounts {
         return profiles;
     }
 
+    blb::auth::account serverCandidate(size_t index) {
+        blb::auth::account candidate;
+        candidate.type = pendingBase.type;
+        candidate.server = pendingBase.server;
+        candidate.server_name = pendingBase.server_name;
+        if (index < profiles.size()) {
+            candidate.uuid = profiles[index].id;
+            candidate.name = profiles[index].name;
+        }
+        return candidate;
+    }
+
     void chooseProfile(size_t index) {
         if (serverState != ServerLogin::Choosing || index >= profiles.size()) {
             return;
@@ -579,6 +650,59 @@ namespace Accounts {
                 });
     }
 
+    void chooseProfiles(const std::vector<size_t>& indices, const std::string& username, const std::string& password) {
+        if (serverState != ServerLogin::Choosing) {
+            return;
+        }
+        std::vector<blb::auth::yggdrasil_profile> picked;
+        for (size_t index : indices) {
+            if (index < profiles.size()) {
+                picked.push_back(profiles[index]);
+            }
+        }
+        if (picked.empty()) {
+            return;
+        }
+        blb::auth::account base = pendingBase;
+        blb::cancellation_token token = beginServerRun();
+        int current = serverRun;
+        tasks.run(
+                [base, picked, username, password, token, current](blb::cancellation_token) -> Continuation {
+                    std::vector<blb::auth::account> made;
+                    std::optional<blb::error> failure;
+                    for (size_t i = 0; i < picked.size(); i++) {
+                        blb::auth::account from = base;
+                        if (i > 0) {
+                            auto session =
+                                    blb::auth::yggdrasil_login(base.type, base.server, username, password, token);
+                            if (!session) {
+                                failure = session.err();
+                                break;
+                            }
+                            if (session->ready() && session->base.uuid == picked[i].id) {
+                                made.push_back(session->base);
+                                continue;
+                            }
+                            from = session->base;
+                        }
+                        auto chosen = blb::auth::yggdrasil_select(from, picked[i], token);
+                        if (!chosen) {
+                            failure = chosen.err();
+                            break;
+                        }
+                        made.push_back(*chosen);
+                    }
+                    if (made.empty()) {
+                        return serverFailed(current,
+                                            failure ? *failure : blb::make_error(blb::errc::auth, "无法选择角色"));
+                    }
+                    return serverAdded(current, made, failure);
+                },
+                [current](const std::string& message) -> Continuation {
+                    return serverFailed(current, blb::make_error(blb::errc::auth, message));
+                });
+    }
+
     void cancelServerLogin() {
         if (serverCancel) {
             serverCancel->cancel();
@@ -592,6 +716,92 @@ namespace Accounts {
     void finishServerLogin() {
         if (serverState == ServerLogin::Done) {
             serverState = ServerLogin::Idle;
+        }
+    }
+
+    std::optional<Credential> rememberedLogin(blb::auth::account_type type, const std::string& server) {
+        const nlohmann::json& all = storedCredentials();
+        auto found = all.find(credentialKey(type, server));
+        if (found == all.end() || !found->is_object()) {
+            return std::nullopt;
+        }
+        Credential saved{found->value("username", std::string()), found->value("password", std::string())};
+        if (saved.username.empty()) {
+            return std::nullopt;
+        }
+        return saved;
+    }
+
+    std::optional<std::string> loadSealed(const std::string& name) {
+        std::optional<std::string> sealed = Platform::loadValue(name);
+        return sealed ? protect(*sealed, false) : std::nullopt;
+    }
+
+    bool storeSealed(const std::string& name, const std::string& data) {
+        std::optional<std::string> sealed = protect(data, true);
+        return sealed && Platform::storeValue(name, *sealed, false);
+    }
+
+    std::string updateOffline(const std::string& key, const std::string& name, const std::string& uuid,
+                              std::string& updatedKey) {
+        updatedKey = key;
+        const blb::auth::account* existing = find(key);
+        if (existing == nullptr || existing->type != blb::auth::account_type::offline) {
+            return "找不到这个离线账户";
+        }
+        std::string trimmed(blb::trim(name));
+        if (!blb::auth::valid_player_name(trimmed)) {
+            return "名称需要是 3 到 16 位字母、数字或下划线";
+        }
+        std::string id = blb::auth::strip_uuid(blb::trim(uuid));
+        auto made = blb::auth::offline_account(trimmed, id.empty() ? std::nullopt : std::optional<std::string>(id));
+        if (!made) {
+            return "UUID 需要是 32 位十六进制数";
+        }
+        made->access_token = existing->access_token;
+        std::string oldKey = keyOf(*existing);
+        std::string newKey = keyOf(*made);
+        if (newKey != oldKey && find(newKey) != nullptr) {
+            return "已经有使用这个 UUID 的离线账户";
+        }
+        bool wasCurrent = current() == existing;
+        auto at = std::find_if(accounts.begin(), accounts.end(),
+                               [&](const blb::auth::account& a) { return keyOf(a) == oldKey; });
+        *at = *made;
+        save();
+        updatedKey = newKey;
+        if (newKey == oldKey) {
+            return std::string();
+        }
+        for (auto& [from, to] : legacyKeys) {
+            if (to == oldKey) {
+                to = newKey;
+            }
+        }
+        legacyKeys[oldKey] = newKey;
+        Config::data()["accountKeyAliases"] = legacyKeys;
+        Config::save();
+        expiredKeys.erase(oldKey);
+        Looks::move(oldKey, newKey);
+        if (wasCurrent) {
+            currentKey = newKey;
+            saveCurrent();
+        }
+        return std::string();
+    }
+
+    void rememberLogin(blb::auth::account_type type, const std::string& server, const std::string& username,
+                       const std::string& password) {
+        if (username.empty() || password.empty()) {
+            return;
+        }
+        storedCredentials()[credentialKey(type, server)] = {{"username", username}, {"password", password}};
+        saveCredentials();
+    }
+
+    void forgetLogin(blb::auth::account_type type, const std::string& server) {
+        if (storedCredentials().erase(credentialKey(type, server)) != 0) {
+            saveCredentials();
         }
     }
 

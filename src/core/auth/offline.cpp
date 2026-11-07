@@ -19,6 +19,27 @@ offline_uuid (std::string_view name)
   return to_hex (std::span<const std::uint8_t> (digest));
 }
 
+std::string
+pcl_offline_uuid (std::string_view name)
+{
+  std::u16string units = path_from_utf8 (name).u16string ();
+  std::uint64_t hash = 5381;
+  for (char16_t unit : units)
+    hash = (hash << 5) ^ hash ^ unit;
+  hash ^= 0xa98f501bc684032fULL;
+  auto hex = [] (std::uint64_t value) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string out (16, '0');
+    for (int i = 15; i >= 0; --i, value >>= 4)
+      out[i] = digits[value & 0xf];
+    return out;
+  };
+  std::string full = hex (units.size ()) + hex (hash);
+  full[12] = '3';
+  full[16] = '9';
+  return full;
+}
+
 bool
 valid_player_name (std::string_view name) noexcept
 {
