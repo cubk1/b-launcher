@@ -31,7 +31,7 @@
         in
         {
           # The dev build uses the libraries of the shell. FetchContent downloads simdjson and libzt:
-          #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBLB_SYSTEM_LIBS=ON
+          #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
             inputsFrom = [ b-launcher.unwrapped ];
@@ -39,6 +39,8 @@
               pkgs.git
               pkgs.gdb
             ];
+            # The default value of the CMake option BLB_SYSTEM_LIBS.
+            BLB_SYSTEM_LIBS = "ON";
             # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
             BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
             BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;

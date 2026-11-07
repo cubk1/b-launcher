@@ -29,8 +29,8 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 cmake --build build --config MinSizeRel
 
-# For Linux distribution packages, use the shared libraries of the system:
-cmake -S . -B build -G Ninja -DBLB_SYSTEM_LIBS=ON
+# For Linux distribution packages, use the shared libraries of the system and turn off the update check:
+cmake -S . -B build -G Ninja -DBLB_SYSTEM_LIBS=ON -DBLB_UPDATE_CHECK=OFF
 
 # For NixOS:
 nix run github:cubk1/b-launcher
