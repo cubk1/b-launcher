@@ -1,5 +1,6 @@
 #include <core/base/platform.hpp>
 #include <core/base/process.hpp>
+#include <core/base/instance_channel.hpp>
 #include <core/base/strings.hpp>
 #include <core/java/java_detect.hpp>
 #include <core/java/java_requirement.hpp>
@@ -36,6 +37,17 @@ struct no_network final : blb::net::mirror_provider
 
 int main(int argc, char **argv)
 {
+    if (argc > 3 && std::string_view(argv[1]) == "--forward") {
+        blb::instance_channel channel;
+        return channel.forward_or_listen(argv[2], argv[3]) ? 0 : 1;
+    }
+    if (argc > 1 && std::string_view(argv[1]) == "--scan-java") {
+        auto found = blb::java::scan_java();
+        std::cout << "Java installations: " << found.size() << '\n';
+        for (const auto& java : found)
+            std::cout << java.version << ' ' << java.home << '\n';
+        return 0;
+    }
     if (argc > 1 && std::string_view(argv[1]) == "--wrapper") {
         setenv("BLB_TEST_WRAPPED", "1", 1);
         execv(argv[2], argv + 2);
@@ -68,6 +80,21 @@ int main(int argc, char **argv)
         auto output = blb::run_process(process);
         require(output && output->exit_code == 0 && output->out == "1:last:inherited\n",
                 "duplicate child variables must use the last value and preserve inherited variables");
+
+        auto endpoint = root / "instance";
+        blb::instance_channel channel;
+        require(!channel.forward_or_listen(endpoint, "0") && channel.listening(),
+                "the first launcher must claim the local channel");
+        process.args = {self.string(), "--forward", endpoint.string(), "0appdata/26.3"};
+        output = blb::run_process(process);
+        require(output && output->exit_code == 0, "a second process must forward to the first launcher");
+        auto message = channel.receive();
+        require(message && *message == "0appdata/26.3", "the original launcher must receive the launch request");
+        channel.reset();
+        std::ofstream(endpoint / "launch.sock") << "stale";
+        require(!channel.forward_or_listen(endpoint, "0") && channel.listening(),
+                "a launcher must recover an endpoint after the previous owner exits");
+        channel.reset();
 
         fs::create_symlink(self, root / "jdk" / "bin" / "java");
         std::ofstream(root / "jdk" / "release") << "JAVA_VERSION=\"99\"\nOS_ARCH=\""

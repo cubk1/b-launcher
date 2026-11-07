@@ -1109,7 +1109,8 @@ namespace SettingsScreen {
             int homeCount = homepageCount();
             float contentH = Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H +
                     homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP +
-                    Page::CAPTION_H + Page::ROW_H + Page::GAP + Page::CAPTION_H + 2 * Page::ROW_H;
+                    Page::CAPTION_H + Page::ROW_H + Page::GAP + Page::CAPTION_H + 2 * Page::ROW_H +
+                    Page::GAP + Page::CAPTION_H + Page::ROW_H;
             Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -1134,6 +1135,17 @@ namespace SettingsScreen {
             Page::card(y + Page::CAPTION_H, 2);
             guideRow(y + Page::CAPTION_H, blocked);
             resetRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
+            y += Page::CAPTION_H + 2 * Page::ROW_H + Page::GAP;
+            Page::caption("行为", y);
+            Page::card(y + Page::CAPTION_H, 1);
+            Page::label("不开启多个启动器", y + Page::CAPTION_H);
+            toggle("settings#singleInstance",
+                   [] { return Config::data().value("singleInstance", true); },
+                   [](bool on) {
+                       Config::data()["singleInstance"] = on;
+                       Config::save();
+                       Platform::claimLaunches();
+                   }, y + Page::CAPTION_H, blocked);
             body.end();
         }
 
