@@ -115,6 +115,8 @@ stdenv.mkDerivation {
   cmakeFlags = [
     (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
     (lib.cmakeBool "BLB_SYSTEM_LIBS" true)
+    # Nix updates the package.
+    (lib.cmakeBool "BLB_UPDATE_CHECK" false)
     (lib.cmakeBool "BLB_TESTS" true)
   ];
 

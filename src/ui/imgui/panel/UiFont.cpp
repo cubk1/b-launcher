@@ -39,6 +39,8 @@
 #include <string_view>
 #if defined(__APPLE__)
 #include <CoreText/CoreText.h>
+#elif defined(BLB_FONTCONFIG_LINKED)
+#include <fontconfig/fontconfig.h>
 #else
 #include <dlfcn.h>
 #endif
@@ -143,11 +145,8 @@ namespace UiFont {
             return systemFont("Menlo");
         }
 #else
-#if !defined(BLB_FONTCONFIG_LIBRARY)
-#define BLB_FONTCONFIG_LIBRARY "libfontconfig.so.1"
-#endif
+        // BLB_SYSTEM_LIBS links fontconfig. Other builds open it at run time, so they start without it.
         struct FontConfig {
-            void* library = dlopen(BLB_FONTCONFIG_LIBRARY, RTLD_NOW | RTLD_LOCAL);
             void* config = nullptr;
             void* (*parse)(const unsigned char*) = nullptr;
             int (*substitute)(void*, void*, int) = nullptr;
@@ -156,6 +155,31 @@ namespace UiFont {
             int (*text)(void*, const char*, int, unsigned char**) = nullptr;
             int (*number)(void*, const char*, int, int*) = nullptr;
             void (*destroy)(void*) = nullptr;
+
+#if defined(BLB_FONTCONFIG_LINKED)
+            FontConfig() {
+                parse = [](const unsigned char* name) -> void* { return FcNameParse(name); };
+                substitute = [](void* config, void* pattern, int kind) -> int {
+                    return FcConfigSubstitute((FcConfig*) config, (FcPattern*) pattern, (FcMatchKind) kind);
+                };
+                defaults = [](void* pattern) { FcDefaultSubstitute((FcPattern*) pattern); };
+                match = [](void* config, void* pattern, int* result) -> void* {
+                    FcResult found = FcResultNoMatch;
+                    FcPattern* font = FcFontMatch((FcConfig*) config, (FcPattern*) pattern, &found);
+                    *result = found;
+                    return font;
+                };
+                text = [](void* pattern, const char* object, int n, unsigned char** value) -> int {
+                    return FcPatternGetString((FcPattern*) pattern, object, n, value);
+                };
+                number = [](void* pattern, const char* object, int n, int* value) -> int {
+                    return FcPatternGetInteger((FcPattern*) pattern, object, n, value);
+                };
+                destroy = [](void* pattern) { FcPatternDestroy((FcPattern*) pattern); };
+                config = FcInitLoadConfigAndFonts();
+            }
+#else
+            void* library = dlopen("libfontconfig.so.1", RTLD_NOW | RTLD_LOCAL);
 
             FontConfig() {
                 if (library == nullptr) {
@@ -173,6 +197,7 @@ namespace UiFont {
                     config = init();
                 }
             }
+#endif
 
             std::string find(const char* query) {
                 if (config == nullptr) {
