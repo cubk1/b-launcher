@@ -54,6 +54,7 @@ namespace Platform {
     void waitForPrevious();
     bool forwardLaunch(const std::string& key, bool quiet);
     void claimLaunches();
+    void pollLaunches();
     void claimTaskbar();
     std::string narrow(const std::wstring& text);
     void reveal(const std::filesystem::path& path);

@@ -20,11 +20,11 @@ namespace ShortcutLaunch {
     }
 
     bool receive(unsigned long long kind, const std::wstring& text) {
-        if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
+        if (kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) {
             return false;
         }
         bool quiet = kind == Platform::LAUNCH_QUIET_MESSAGE;
-        request(Platform::narrow(text), quiet);
+        if (!text.empty()) request(Platform::narrow(text), quiet);
         if (!quiet) {
             Platform::showWindow();
         }

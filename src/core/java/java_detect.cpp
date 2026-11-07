@@ -104,6 +104,42 @@ scan_tree (std::vector<candidate> &out, const std::filesystem::path &root,
       scan_tree (out, root / path_from_utf8 (name), source, depth - 1);
 }
 
+#if defined(__linux__)
+void
+scan_nix_profiles (std::vector<candidate> &out, cancellation_token token)
+{
+  if (!is_nixos ())
+    return;
+  process_options command;
+  command.args = { "/run/current-system/sw/bin/nix-store", "--query", "--requisites" };
+  for (const auto &profile : { home_directory () / ".nix-profile",
+                               home_directory () / ".local/state/nix/profiles/profile",
+                               std::filesystem::path ("/etc/profiles/per-user") / environment ("USER").value_or (""),
+                               std::filesystem::path ("/run/current-system") })
+    if (fs::exists (profile))
+      command.args.push_back (path_to_utf8 (profile));
+  auto result = run_process (command, token, std::chrono::seconds (10));
+  if (!result || result->exit_code != 0)
+    return;
+  for (auto line : split (result->out, '\n'))
+    {
+      auto path = path_from_utf8 (trim (line));
+      if (token.is_cancelled ())
+        return;
+      auto executable = path / "bin" / "java";
+      if (!fs::exists (executable))
+        continue;
+      auto home = java_home_from_executable (executable);
+      // Desktop JDKs include AWT. Headless build tools are not game runtimes.
+      bool awt = fs::exists (home / "lib/libawt_xawt.so")
+                 || fs::exists (home / "jre/lib/amd64/libawt_xawt.so")
+                 || fs::exists (home / "jre/lib/aarch64/libawt_xawt.so");
+      if (awt && fs::exists (home / "bin/javac"))
+        add_home (out, home, java_source::system);
+    }
+}
+#endif
+
 #if defined(_WIN32)
 
 void
@@ -173,7 +209,7 @@ scan_registry (std::vector<candidate> &out)
 #endif
 
 std::vector<candidate>
-collect_candidates (const scan_options &options)
+collect_candidates (const scan_options &options, cancellation_token token)
 {
   std::vector<candidate> out;
   if (options.system_locations)
@@ -245,6 +281,9 @@ collect_candidates (const scan_options &options)
   scan_tree (out, home / "Library/Java/JavaVirtualMachines",
              java_source::system, 2);
 #else
+#if defined(__linux__)
+  scan_nix_profiles (out, token);
+#endif
   for (auto java : split (packaged_nixos_paths ().java_homes, ':'))
     if (!java.empty ())
       add_home (out, path_from_utf8 (java), java_source::system);
@@ -434,7 +473,7 @@ scan_java (const scan_options &options, cancellation_token token)
 {
   if (token.is_cancelled ())
     return {};
-  auto candidates = collect_candidates (options);
+  auto candidates = collect_candidates (options, token);
   std::vector<candidate> unique;
   std::vector<std::string> keys;
   for (const auto &path : options.excluded)

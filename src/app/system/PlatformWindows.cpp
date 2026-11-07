@@ -462,6 +462,8 @@ namespace Platform {
         }
     }
 
+    void pollLaunches() {}
+
     bool openUrl(const std::string& url) {
         if (!webUrl(url)) {
             return false;

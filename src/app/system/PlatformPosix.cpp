@@ -1,7 +1,11 @@
 #include "app/system/Platform.h"
 #include "app/system/PlatformPosix.h"
+#include "app/system/Config.h"
+#include "app/launch/ShortcutLaunch.h"
 
 #include <core/base/fs.hpp>
+#include <core/base/hash.hpp>
+#include <core/base/instance_channel.hpp>
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
@@ -35,6 +39,16 @@ namespace Platform {
 
     namespace {
         namespace blb = b_launcher_base;
+
+        blb::instance_channel launches;
+
+        std::filesystem::path launchDirectory() {
+            auto runtime = blb::environment("XDG_RUNTIME_DIR");
+            auto parent = runtime && runtime->starts_with('/') && runtime->size() < 60
+                    ? blb::path_from_utf8(*runtime) : std::filesystem::path("/tmp");
+            auto identity = blb::to_hex(blb::sha1::digest(blb::path_to_utf8(configDirectory().lexically_normal())));
+            return parent / ("b-launcher-" + std::to_string(getuid()) + "-" + identity.substr(0, 16));
+        }
 
         std::vector<std::string> environmentList(const Environment& extra) {
             std::map<std::string, std::string> variables;
@@ -390,13 +404,28 @@ namespace Platform {
         }
     }
 
-    bool forwardLaunch(const std::string&, bool) {
-        return false;
+    bool forwardLaunch(const std::string& key, bool quiet) {
+        return launches.forward_or_listen(launchDirectory(), std::string(quiet ? "1" : "0") + key);
     }
 
     void claimTaskbar() {}
 
-    void claimLaunches() {}
+    void claimLaunches() {
+        if (!Config::data().value("singleInstance", true)) {
+            launches.reset();
+        } else if (!launches.listening()) {
+            launches.forward_or_listen(launchDirectory(), {});
+        }
+    }
+
+    void pollLaunches() {
+        if (auto message = launches.receive(); message && !message->empty()) {
+            bool quiet = message->front() == '1';
+            std::string key = message->substr(1);
+            if (!key.empty()) ShortcutLaunch::request(key, quiet);
+            if (!quiet) showWindow();
+        }
+    }
 
     bool setClipboardImage(const Pixels& pixels) {
         static std::string png;
