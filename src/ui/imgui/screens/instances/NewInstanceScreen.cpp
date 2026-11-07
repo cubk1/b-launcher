@@ -34,8 +34,11 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <optional>
 #include <memory>
@@ -258,6 +261,184 @@ namespace NewInstanceScreen {
             return clicked;
         }
 
+        constexpr float TILE_MIN_W = 116.0f;
+        constexpr float TILE_GAP = 10.0f;
+        constexpr float TILE_RATIO = 1.4f;
+        const char* const APRIL_GROUP = "april";
+        const char* const OLD_GROUP = "old";
+        const char* const SNAPSHOT_GROUP = "snapshot";
+
+        struct Major {
+            std::string key;
+            std::string label;
+            std::vector<const blb::meta::manifest_version*> versions;
+        };
+
+        std::vector<std::string> familyVersions;
+
+        std::string leadingVersion(const std::string& id) {
+            size_t end = 0;
+            while (end < id.size() && (std::isdigit((unsigned char) id[end]) || id[end] == '.')) {
+                end++;
+            }
+            return id.substr(0, end);
+        }
+
+        std::string familyOf(const std::string& base) {
+            size_t first = base.find('.');
+            if (first == std::string::npos || first == 0) {
+                return std::string();
+            }
+            if (base.compare(0, 2, "1.") == 0) {
+                size_t second = base.find('.', first + 1);
+                return second == std::string::npos ? base : base.substr(0, second);
+            }
+            return base.substr(0, first);
+        }
+
+        bool weekly(const std::string& id) {
+            return id.size() >= 6 && std::isdigit((unsigned char) id[0]) && std::isdigit((unsigned char) id[1]) &&
+                    id[2] == 'w';
+        }
+
+        std::string majorLabel(const std::string& key) {
+            if (key == APRIL_GROUP) {
+                return APRIL_FOOLS;
+            }
+            if (key == OLD_GROUP) {
+                return OLD;
+            }
+            if (key == SNAPSHOT_GROUP) {
+                return SNAPSHOT;
+            }
+            return key.find('.') == std::string::npos ? key + ".x" : key;
+        }
+
+        const std::vector<Major>& majors(const Catalog::Versions& all, const std::string& query) {
+            static std::vector<Major> cached;
+            static std::string signature;
+            std::string now =
+                    std::to_string((uintptr_t) all.list.data()) + "#" + std::to_string(all.list.size()) + "#" + query;
+            for (const std::string& kind : kinds) {
+                now += "#" + kind;
+            }
+            if (now == signature) {
+                return cached;
+            }
+            signature = now;
+            cached.clear();
+            std::map<std::string, size_t> index;
+            std::string upcoming;
+            for (const blb::meta::manifest_version& version : all.list) {
+                Catalog::Kind kind = Catalog::kindOf(version);
+                std::string key;
+                if (kind == Catalog::Kind::Release) {
+                    key = familyOf(version.id);
+                    upcoming = key;
+                } else if (kind == Catalog::Kind::AprilFools) {
+                    key = APRIL_GROUP;
+                } else if (kind == Catalog::Kind::Old) {
+                    key = OLD_GROUP;
+                } else {
+                    key = weekly(version.id) ? upcoming : familyOf(leadingVersion(version.id));
+                }
+                if (key.empty()) {
+                    key = kind == Catalog::Kind::Release ? version.id : SNAPSHOT_GROUP;
+                }
+                if (std::find(kinds.begin(), kinds.end(), kindOf(version)) == kinds.end() ||
+                    !blb::icontains(version.id, query)) {
+                    continue;
+                }
+                auto found = index.find(key);
+                if (found == index.end()) {
+                    found = index.emplace(key, cached.size()).first;
+                    cached.push_back(Major{key, majorLabel(key), {}});
+                }
+                cached[found->second].versions.push_back(&version);
+            }
+            return cached;
+        }
+
+        int tileColumns(float w) {
+            return std::max(2, (int) ((w + TILE_GAP) / (TILE_MIN_W + TILE_GAP)));
+        }
+
+        float tileWidth(float w, int columns) {
+            return (w - TILE_GAP * (float) (columns - 1)) / (float) columns;
+        }
+
+        float tileHeight(float tileW) {
+            return std::clamp(tileW * TILE_RATIO, 150.0f, 200.0f);
+        }
+
+        uint32_t placeholderTint(const std::string& key, int alpha) {
+            static const uint32_t palette[] = {0x5C8F4Fu, 0x4F7A99u, 0x9A6B47u, 0x7D5C9Bu,
+                                               0x4E8C86u, 0x9B5361u, 0x8A8442u, 0x5466A0u};
+            size_t hash = std::hash<std::string>{}(key);
+            uint32_t rgb = palette[hash % (sizeof(palette) / sizeof(palette[0]))];
+            return UiRender::color((int) ((rgb >> 16) & 0xFF), (int) ((rgb >> 8) & 0xFF), (int) (rgb & 0xFF), alpha);
+        }
+
+        bool majorTile(const Major& major, float x, float y, float w, float h, bool blocked) {
+            std::string id = "new#major#" + major.key;
+            bool hovered = !blocked && NewUi::hit(x, y, w, h);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            float top = y;
+            UiRender::roundRectGradientV(x, top, w, h, CARD_RADIUS, placeholderTint(major.key, 255),
+                                         UiRender::mix(placeholderTint(major.key, 255), 0xFF000000u, 0.45f));
+            UiRender::roundRectGradientV(x, top + h * 0.45f, w, h * 0.55f, CARD_RADIUS, 0x00000000u, 0xB3000000u);
+            if (hover > 0.001f) {
+                UiRender::roundRect(x, top, w, h, CARD_RADIUS, UiRender::color(255, 255, 255, Ui::round(24 * hover)));
+            }
+            std::string count = std::to_string(major.versions.size()) + " 个版本";
+            float countY = top + h - 10.0f - 16.0f;
+            float labelY = countY - 22.0f;
+            std::string label = UiFont::fitEnd(major.label, UiFont::MEDIUM, 17.0f, w - 21.0f);
+            for (float shift : {0.0f, 0.7f}) {
+                UiRender::textY(label, x + 10.0f + shift, labelY, 22.0f, 0xFFFFFFFFu, UiFont::MEDIUM, 17.0f);
+            }
+            UiRender::textY(count, x + 10.0f, countY, 16.0f, 0xB3FFFFFFu, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (!blocked && NewUi::click(x, y, w, h)) {
+                UiSound::request(UiSound::PAGE);
+                return true;
+            }
+            return false;
+        }
+
+        void chooseMajor(const Catalog::Versions& all, const Major& major) {
+            std::string key = major.key;
+            std::string preferred;
+            for (const blb::meta::manifest_version* version : major.versions) {
+                if (Catalog::kindOf(*version) == Catalog::Kind::Release) {
+                    preferred = version->id;
+                    break;
+                }
+            }
+            if (preferred.empty() && !major.versions.empty()) {
+                preferred = major.versions.front()->id;
+            }
+            familyVersions.clear();
+            for (const Major& group : majors(all, std::string())) {
+                if (group.key == key) {
+                    for (const blb::meta::manifest_version* version : group.versions) {
+                        familyVersions.push_back(version->id);
+                    }
+                }
+            }
+            if (!preferred.empty()) {
+                chooseVersion(preferred);
+            }
+        }
+
+        void switchMinecraft(const std::string& id) {
+            if (id == minecraft) {
+                return;
+            }
+            loaderSelection.reset(id);
+            autoFabricApi = false;
+            automaticFabricApi.clear();
+        }
+
         void versionsStep() {
             bool blocked = NewUi::overlayCoversMouse();
             Page::title("新建实例", Page::left(), Page::TOP);
@@ -299,39 +480,37 @@ namespace NewInstanceScreen {
                 }
                 return;
             }
-            std::vector<const blb::meta::manifest_version*> shown;
-            for (const blb::meta::manifest_version& version : all.list) {
-                if (std::find(kinds.begin(), kinds.end(), kindOf(version)) != kinds.end() &&
-                    blb::icontains(version.id, query)) {
-                    shown.push_back(&version);
-                }
-            }
-            if (shown.empty()) {
+            const std::vector<Major>& groups = majors(all, query);
+            if (groups.empty()) {
                 message(query.empty() ? std::string("没有符合筛选的版本") : "没有找到“" + query + "”",
                         UiTheme::textMuted());
                 return;
             }
-            int clicked = list("new#versions", Page::TOP + 40.0f, MainWindow::height() - 14.0f, shown.size(),
-                               [&](int i, float rowY) {
-                                   const blb::meta::manifest_version& version = *shown[i];
-                                   UiRender::texture(Icons::vanilla(), Page::left() + 16.0f,
-                                                     rowY + (LIST_ROW - 16.0f) * 0.5f, 16.0f, 16.0f);
-                                   UiRender::textY(version.id, Page::left() + 44.0f, rowY, LIST_ROW,
-                                                   UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-                                   float tagX = Page::left() + 44.0f +
-                                           UiFont::width(version.id, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
-                                   std::string kind = kindOf(version);
-                                   bool release = kind == RELEASE;
-                                   tag(kind, tagX, rowY, LIST_ROW,
-                                       release ? UiTheme::accentSoft(255) : UiTheme::surfaceRaised(),
-                                       release ? UiTheme::accentText() : UiTheme::textSecondary());
-                                   std::string date = day(version.release_time);
-                                   float dateW = UiFont::width(date, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                                   UiRender::textY(date, Page::right() - 16.0f - dateW, rowY, LIST_ROW,
-                                                   UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                               });
-            if (clicked >= 0) {
-                chooseVersion(shown[clicked]->id);
+            float x = Page::left();
+            float w = Page::width();
+            int columns = tileColumns(w);
+            float tileW = tileWidth(w, columns);
+            float tileH = tileHeight(tileW);
+            int rows = ((int) groups.size() + columns - 1) / columns;
+            float contentH = 6.0f + rows * tileH + (rows - 1) * TILE_GAP + 8.0f;
+            Page::Scroll body("new#versions", Page::TOP + 40.0f, MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool listBlocked = outside || blocked;
+            float y0 = body.top - body.offset + 6.0f;
+            const Major* picked = nullptr;
+            for (size_t i = 0; i < groups.size(); i++) {
+                float tileX = x + (float) (i % (size_t) columns) * (tileW + TILE_GAP);
+                float tileY = y0 + (float) (i / (size_t) columns) * (tileH + TILE_GAP);
+                if (tileY + tileH < body.top - 8.0f || tileY > body.bottom + 8.0f) {
+                    continue;
+                }
+                if (majorTile(groups[i], tileX, tileY, tileW, tileH, listBlocked)) {
+                    picked = &groups[i];
+                }
+            }
+            body.end();
+            if (picked != nullptr) {
+                chooseMajor(all, *picked);
             }
         }
 
@@ -841,9 +1020,18 @@ namespace NewInstanceScreen {
                                   16.0f);
                 UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
                                 UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
-                                UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                if (!edit && familyVersions.size() > 1) {
+                    auto version = std::make_shared<ModeBinding>(
+                            "new#minecraft", [] { return minecraft; },
+                            [](const std::string& id) { switchMinecraft(id); }, [] { return familyVersions; });
+                    SelectWidget select("new#minecraft", version);
+                    select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
+                    select.paint();
+                } else {
+                    float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                    UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
+                                    UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                }
             }
             y += Page::ROW_H;
             int rowIndex = 1;
@@ -1006,6 +1194,7 @@ namespace NewInstanceScreen {
 
     void reset() {
         loaderSelection.reset();
+        familyVersions.clear();
         autoFabricApi = false;
         fabricApiRequested = false;
         automaticFabricApi.clear();
