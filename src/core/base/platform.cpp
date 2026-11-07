@@ -18,6 +18,16 @@
 #endif
 #endif
 
+#if !defined(BLB_NIXOS_JAVA)
+#define BLB_NIXOS_JAVA ""
+#endif
+#if !defined(BLB_NIXOS_LIBRARY_PATH)
+#define BLB_NIXOS_LIBRARY_PATH ""
+#endif
+#if !defined(BLB_NIXOS_PATH)
+#define BLB_NIXOS_PATH ""
+#endif
+
 namespace b_launcher_base
 {
 
@@ -278,9 +288,23 @@ app_data_directory ()
 #elif defined(__APPLE__)
   return home_directory () / "Library" / "Application Support";
 #else
-  if (auto xdg = environment ("XDG_DATA_HOME"))
+  if (auto xdg = environment ("XDG_DATA_HOME");
+      xdg && path_from_utf8 (*xdg).is_absolute ())
     return path_from_utf8 (*xdg);
   return home_directory () / ".local" / "share";
+#endif
+}
+
+std::filesystem::path
+launcher_data_directory ()
+{
+#if defined(_WIN32)
+  return app_data_directory () / "b-launcher";
+#else
+  if (auto xdg = environment ("XDG_DATA_HOME");
+      xdg && path_from_utf8 (*xdg).is_absolute ())
+    return path_from_utf8 (*xdg) / "b-launcher";
+  return home_directory () / ".local" / "share" / "b-launcher";
 #endif
 }
 
@@ -314,6 +338,82 @@ path_list_separator () noexcept
 #else
   return ':';
 #endif
+}
+
+bool
+is_nixos ()
+{
+#if defined(__linux__)
+  static const bool nixos = [] {
+    // system.etc.overlay skips /etc/NIXOS, so os-release decides too.
+    if (fs::exists ("/etc/NIXOS"))
+      return true;
+    auto text = fs::read_file ("/etc/os-release");
+    if (!text)
+      return false;
+    for (auto line : split (*text, '\n'))
+      {
+        auto eq = line.find ('=');
+        if (eq == std::string_view::npos)
+          continue;
+        auto key = trim (line.substr (0, eq));
+        auto value = trim (line.substr (eq + 1));
+        if (value.size () >= 2 && (value.front () == '"' || value.front () == '\'')
+            && value.back () == value.front ())
+          value = value.substr (1, value.size () - 2);
+        if (key == "ID" && value == "nixos")
+          return true;
+        if (key == "ID_LIKE")
+          for (auto like : split (value, ' '))
+            if (like == "nixos")
+              return true;
+      }
+    return false;
+  }();
+  return nixos;
+#else
+  return false;
+#endif
+}
+
+bool
+runs_generic_binaries ()
+{
+  if (!is_nixos ())
+    return true;
+#if defined(__aarch64__)
+  std::filesystem::path loader = "/lib/ld-linux-aarch64.so.1";
+#elif defined(__i386__)
+  std::filesystem::path loader = "/lib/ld-linux.so.2";
+#elif defined(__x86_64__)
+  std::filesystem::path loader = "/lib64/ld-linux-x86-64.so.2";
+#elif defined(__riscv) && __riscv_xlen == 64
+  std::filesystem::path loader = "/lib/ld-linux-riscv64-lp64d.so.1";
+#elif defined(__arm__) && defined(__ARM_PCS_VFP)
+  std::filesystem::path loader = "/lib/ld-linux-armhf.so.3";
+#elif defined(__arm__)
+  std::filesystem::path loader = "/lib/ld-linux.so.3";
+#else
+  std::filesystem::path loader;
+#endif
+  // environment.ldso links the loader to nix-ld, or else to the stub-ld program,
+  // /nix/store/<hash>-stub-ld-<host triple>.
+  if (!fs::exists (loader))
+    return false;
+  auto name = path_to_utf8 (fs::real_path (loader).filename ());
+  return name.find ("stub-ld") == std::string::npos;
+}
+
+const nixos_paths &
+packaged_nixos_paths ()
+{
+  static const nixos_paths none;
+  static const nixos_paths paths {
+    environment ("BLB_NIXOS_JAVA").value_or (""),
+    environment ("BLB_NIXOS_LIBRARY_PATH").value_or (""),
+    environment ("BLB_NIXOS_PATH").value_or ("")
+  };
+  return is_nixos () ? paths : none;
 }
 
 }

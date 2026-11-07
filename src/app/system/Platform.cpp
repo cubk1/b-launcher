@@ -1,13 +1,31 @@
 #include "app/system/Platform.h"
 
+#include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 #include <core/meta/game_layout.hpp>
 
 #include <algorithm>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 namespace Platform {
 
     void* window = nullptr;
+
+    std::filesystem::path userDirectory() {
+        std::filesystem::path exe = exeDirectory();
+#if !defined(_WIN32)
+        if (access(exe.c_str(), W_OK) != 0) {
+            std::filesystem::path home = b_launcher_base::home_directory();
+            if (!home.empty()) {
+                return home;
+            }
+        }
+#endif
+        return exe;
+    }
 
     std::filesystem::path cacheDirectory() {
         std::error_code error;

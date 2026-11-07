@@ -558,7 +558,7 @@ namespace MainWindow {
     }
 
     static void addFolder() {
-        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::exeDirectory())) {
+        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::userDirectory())) {
             std::string problem = Instances::addFolder(*picked);
             if (!problem.empty()) {
                 Instances::notify(problem, true);

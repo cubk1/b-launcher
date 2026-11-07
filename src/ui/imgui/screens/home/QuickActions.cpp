@@ -61,7 +61,7 @@ namespace QuickActions {
                 DownloadsScreen::open(Addons::Kind::Modpack);
             } else if (id == "importModpack") {
                 std::vector<std::filesystem::path> picked =
-                        Platform::pickFiles(Platform::exeDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
+                        Platform::pickFiles(Platform::userDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
                     Drops::importPack(picked.front());
                 }

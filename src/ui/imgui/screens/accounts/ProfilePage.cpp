@@ -81,7 +81,7 @@ namespace ProfilePage {
 
         std::filesystem::path pickPng(const wchar_t* title) {
             std::vector<std::filesystem::path> files =
-                    Platform::pickFiles(Platform::exeDirectory(), title, L"PNG 图片", L"*.png");
+                    Platform::pickFiles(Platform::userDirectory(), title, L"PNG 图片", L"*.png");
             return files.empty() ? std::filesystem::path() : files.front();
         }
 

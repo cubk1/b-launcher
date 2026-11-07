@@ -620,7 +620,7 @@ namespace LogWindow {
         void exportAll() {
             std::string name = GameLog::title().empty() ? std::string("game") : GameLog::title();
             std::optional<std::filesystem::path> target =
-                    Platform::pickSaveFile(Platform::exeDirectory() / b_launcher_base::path_from_utf8(name + ".log"),
+                    Platform::pickSaveFile(Platform::userDirectory() / b_launcher_base::path_from_utf8(name + ".log"),
 #if defined(_WIN32)
                                            L"导出游戏日志", window.hwnd);
 #else

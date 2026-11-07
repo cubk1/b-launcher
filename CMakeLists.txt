@@ -33,6 +33,12 @@ else ()
     else ()
         set(BLB_SIZE_FLAGS "-Os -ffunction-sections -fdata-sections -flto -DNDEBUG")
         set(BLB_DEAD_STRIP "-flto -Wl,--gc-sections -s")
+        # ar without the GCC LTO plugin (as in Nix binutils) writes no symbol index for LTO objects.
+        if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_AR AND CMAKE_CXX_COMPILER_RANLIB)
+            set(CMAKE_AR ${CMAKE_CXX_COMPILER_AR})
+            set(CMAKE_RANLIB ${CMAKE_CXX_COMPILER_RANLIB})
+            string(REPLACE "-flto" "-flto=auto" BLB_DEAD_STRIP ${BLB_DEAD_STRIP})
+        endif ()
     endif ()
     foreach (language C CXX OBJC OBJCXX)
         set(CMAKE_${language}_FLAGS_RELEASE ${BLB_SIZE_FLAGS})
@@ -44,6 +50,17 @@ else ()
     endforeach ()
 endif ()
 
+# Distribution packages (e.g. nixpkgs) turn this on to link the shared libraries of the system.
+# The Nix dev shell sets the BLB_SYSTEM_LIBS environment variable to ON.
+if (DEFINED ENV{BLB_SYSTEM_LIBS})
+    set(BLB_SYSTEM_LIBS_DEFAULT $ENV{BLB_SYSTEM_LIBS})
+else ()
+    set(BLB_SYSTEM_LIBS_DEFAULT OFF)
+endif ()
+option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, SDL3, FreeType and fontconfig"
+        ${BLB_SYSTEM_LIBS_DEFAULT})
+# Package managers update the launcher themselves, so they turn this off.
+option(BLB_UPDATE_CHECK "Check for new launcher versions" ON)
 include(cmake/dependencies.cmake)
 include(cmake/embed.cmake)
 
@@ -79,36 +96,49 @@ else ()
             src/core/meta/asset_index.cpp
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
+option(BLB_TESTS "Build launcher regression tests" OFF)
+if (BLB_TESTS AND NOT WIN32)
+    enable_testing()
+    add_executable(b-launcher-tests tests/runtime.cpp)
+    target_link_libraries(b-launcher-tests PRIVATE core)
+    add_test(NAME runtime COMMAND b-launcher-tests)
+endif ()
 
 if (MSVC)
     add_compile_options(/utf-8 /W3 /permissive- /Zc:__cplusplus)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif ()
 
-set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
-if (WIN32)
-    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+if (BLB_SYSTEM_LIBS)
+    find_package(Freetype REQUIRED)
+    set(BLB_FREETYPE_TARGET Freetype::Freetype)
 else ()
-    set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
-            ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
-            ${FREETYPE_DIR}/src/psnames/psnames.c)
+    set(FREETYPE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype)
+    if (WIN32)
+        set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/builds/windows/ftsystem.c ${FREETYPE_DIR}/builds/windows/ftdebug.c)
+    else ()
+        set(FREETYPE_SYSTEM_SOURCES ${FREETYPE_DIR}/src/base/ftsystem.c ${FREETYPE_DIR}/src/base/ftdebug.c
+                ${FREETYPE_DIR}/src/cff/cff.c ${FREETYPE_DIR}/src/psaux/psaux.c ${FREETYPE_DIR}/src/pshinter/pshinter.c
+                ${FREETYPE_DIR}/src/psnames/psnames.c)
+    endif ()
+    add_library(freetype STATIC
+            ${FREETYPE_DIR}/src/base/ftbase.c
+            ${FREETYPE_DIR}/src/base/ftbbox.c
+            ${FREETYPE_DIR}/src/base/ftbitmap.c
+            ${FREETYPE_DIR}/src/base/ftinit.c
+            ${FREETYPE_DIR}/src/base/ftmm.c
+            ${FREETYPE_DIR}/src/base/ftsynth.c
+            ${FREETYPE_SYSTEM_SOURCES}
+            ${FREETYPE_DIR}/src/autofit/autofit.c
+            ${FREETYPE_DIR}/src/gzip/ftgzip.c
+            ${FREETYPE_DIR}/src/sfnt/sfnt.c
+            ${FREETYPE_DIR}/src/smooth/smooth.c
+            ${FREETYPE_DIR}/src/truetype/truetype.c)
+    target_include_directories(freetype PUBLIC ${FREETYPE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype-config)
+    target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_SUBPIXEL_RENDERING
+            "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
+    set(BLB_FREETYPE_TARGET freetype)
 endif ()
-add_library(freetype STATIC
-        ${FREETYPE_DIR}/src/base/ftbase.c
-        ${FREETYPE_DIR}/src/base/ftbbox.c
-        ${FREETYPE_DIR}/src/base/ftbitmap.c
-        ${FREETYPE_DIR}/src/base/ftinit.c
-        ${FREETYPE_DIR}/src/base/ftmm.c
-        ${FREETYPE_DIR}/src/base/ftsynth.c
-        ${FREETYPE_SYSTEM_SOURCES}
-        ${FREETYPE_DIR}/src/autofit/autofit.c
-        ${FREETYPE_DIR}/src/gzip/ftgzip.c
-        ${FREETYPE_DIR}/src/sfnt/sfnt.c
-        ${FREETYPE_DIR}/src/smooth/smooth.c
-        ${FREETYPE_DIR}/src/truetype/truetype.c)
-target_include_directories(freetype PUBLIC ${FREETYPE_DIR}/include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/freetype-config)
-target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY FT_CONFIG_OPTION_SUBPIXEL_RENDERING
-        "FT_CONFIG_MODULES_H=<b-launcher-ftmodule.h>" _CRT_NONSTDC_NO_WARNINGS)
 
 set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui)
 if (WIN32)
@@ -126,9 +156,9 @@ add_library(imgui STATIC
         ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS IMGUI_DISABLE_DEFAULT_FONT IMGUI_ENABLE_FREETYPE)
-target_link_libraries(imgui PUBLIC freetype)
+target_link_libraries(imgui PUBLIC ${BLB_FREETYPE_TARGET})
 if (NOT WIN32)
-    target_link_libraries(imgui PUBLIC SDL3::SDL3-static)
+    target_link_libraries(imgui PUBLIC ${BLB_SDL3_TARGET})
 endif ()
 
 file(GLOB_RECURSE UI_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/imgui/*.cpp)
@@ -172,7 +202,13 @@ target_link_libraries(ui PUBLIC imgui)
 if (WIN32)
     target_link_libraries(ui PUBLIC winhttp opengl32 shell32 winmm)
 else ()
-    target_link_libraries(ui PUBLIC SDL3::SDL3-static)
+    target_link_libraries(ui PUBLIC ${BLB_SDL3_TARGET})
+    if (BLB_SYSTEM_LIBS AND NOT APPLE)
+        # Other builds open fontconfig with dlopen in UiFont.cpp.
+        find_package(Fontconfig REQUIRED)
+        target_link_libraries(ui PUBLIC Fontconfig::Fontconfig)
+        target_compile_definitions(ui PRIVATE BLB_FONTCONFIG_LINKED)
+    endif ()
     if (APPLE)
         target_link_libraries(ui PUBLIC "-framework CoreText" "-framework CoreFoundation")
     endif ()
@@ -263,6 +299,9 @@ add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} ${APP_RESOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
+if (NOT BLB_UPDATE_CHECK)
+    target_compile_definitions(b-launcher PRIVATE BLB_NO_UPDATE_CHECK)
+endif ()
 if (WIN32)
     target_link_libraries(b-launcher PRIVATE ui exui imgui core nlohmann_json::nlohmann_json opengl32 dwmapi shell32 ole32 crypt32 bcrypt ws2_32)
 else ()
