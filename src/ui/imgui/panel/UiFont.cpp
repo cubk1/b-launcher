@@ -1125,7 +1125,7 @@ namespace UiFont {
 
     float centreY(const std::string& text, int family, float size, float y) {
         float drawSize = size * UiRender::stableScale() * UiRender::rasterScale;
-        float extra = UiRender::scaleFactor / UiRender::rasterScale;
+        float extra = UiRender::settledScale() / UiRender::rasterScale;
         std::u32string chars = Ui::decode(strip(text));
         Slot slot = drawSlot(chars.empty() ? family : familyFor(chars[0], family), size);
         float scale = (float) pixelScale();
@@ -1133,7 +1133,7 @@ namespace UiFont {
         float top = (UiRender::transformY(y) + drawSize * 0.5f * extra - centre) * scale;
         top = (std::fabs(extra - 1.0f) < 0.001f ? snapPixel(top) : top) / scale;
         float gui = top + centre;
-        return ((gui - UiRender::pivotY) / UiRender::scaleFactor + UiRender::pivotY - UiRender::offsetY) /
+        return ((gui - UiRender::pivotY) / UiRender::settledScale() + UiRender::pivotY - UiRender::offsetY) /
                 UiRender::uiScale;
     }
 
@@ -1147,7 +1147,7 @@ namespace UiFont {
         }
         float drawSize = size * UiRender::stableScale() * UiRender::rasterScale;
         Slot index = drawSlot(family, size);
-        float extra = UiRender::scaleFactor / UiRender::rasterScale;
+        float extra = UiRender::settledScale() / UiRender::rasterScale;
         bool coded = !raw && text.find("\xC2\xA7") != std::string::npos;
         std::u32string chars = Ui::decode(text);
         std::u32string leading = coded ? Ui::decode(strip(text)) : chars;

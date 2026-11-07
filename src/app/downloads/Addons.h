@@ -40,6 +40,7 @@ namespace Addons {
         std::string title;
         std::string description;
         std::string author;
+        std::string authorId;
         std::string iconUrl;
         std::string pageUrl;
         std::vector<std::string> categories;
@@ -77,6 +78,7 @@ namespace Addons {
         std::string versionId;
         bool required = false;
         bool incompatible = false;
+        bool embedded = false;
     };
 
     struct Version {
@@ -92,6 +94,7 @@ namespace Addons {
         long long downloads = 0;
         std::vector<File> files;
         std::vector<Dependency> dependencies;
+        std::string changelog;
 
         const File* file() const;
     };

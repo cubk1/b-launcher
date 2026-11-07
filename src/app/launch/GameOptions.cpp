@@ -21,12 +21,11 @@ namespace GameOptions {
     namespace blb = b_launcher_base;
 
     const std::array<OptionSpec, 5> OPTIONS{{
-            {Option::Brightness, "gamma", "亮度", "游戏里的亮度，0% 是昏暗，100% 是明亮。", 0, 100, 50, "%"},
-            {Option::Fov, "fov", "视野", "视野范围（FOV），默认 70，越大看到的范围越广。", 30, 110, 70, ""},
-            {Option::Sensitivity, "mouseSensitivity", "鼠标灵敏度", "鼠标转动视角的快慢，默认 100%。", 0, 200, 100, "%"},
-            {Option::RenderDistance, "renderDistance", "渲染距离", "能看到多远的区块，默认 12，越大越占用性能。", 2, 32, 12, " 区块"},
-            {Option::GuiScale, "guiScale", "界面尺寸", "游戏界面的缩放倍数，自动时随窗口大小变化；超过窗口能容纳的倍数时游戏会自动调小。",
-             0, std::numeric_limits<int>::max(), 0, "x"},
+            {Option::Brightness, "gamma", "亮度", 0, 100, 50, "%"},
+            {Option::Fov, "fov", "视野", 30, 110, 70, ""},
+            {Option::Sensitivity, "mouseSensitivity", "鼠标灵敏度", 0, 200, 100, "%"},
+            {Option::RenderDistance, "renderDistance", "渲染距离", 2, 32, 12, " 区块"},
+            {Option::GuiScale, "guiScale", "界面尺寸", 0, std::numeric_limits<int>::max(), 0, "x"},
     }};
 
     namespace {

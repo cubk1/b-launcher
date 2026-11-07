@@ -2,6 +2,7 @@
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/Mods.h"
+#include "app/system/Interface.h"
 #include "app/system/Notices.h"
 
 #include <core/base/strings.hpp>
@@ -22,6 +23,7 @@
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
@@ -29,7 +31,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace Drops {
@@ -58,6 +62,8 @@ namespace Drops {
 
         bool over = false;
         std::vector<std::filesystem::path> dragged;
+        std::string draggedServer;
+        std::vector<std::string> droppedServers;
         POINT hoverPoint{-1, -1};
 
         std::thread worker;
@@ -91,6 +97,47 @@ namespace Drops {
             return !handlers.accepting || handlers.accepting();
         }
 
+        int hexDigit(char c) {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        }
+
+        std::string serverOf(std::string text) {
+            constexpr std::string_view SCHEME = "authlib-injector:yggdrasil-server:";
+            while (!text.empty() && (text.back() == '\0' || std::isspace((unsigned char) text.back()))) {
+                text.pop_back();
+            }
+            size_t start = text.find_first_not_of(" \t\r\n");
+            if (start == std::string::npos || text.compare(start, SCHEME.size(), SCHEME) != 0) {
+                return std::string();
+            }
+            std::string encoded = text.substr(start + SCHEME.size());
+            std::string server;
+            for (size_t i = 0; i < encoded.size(); i++) {
+                int high = encoded[i] == '%' && i + 2 < encoded.size() ? hexDigit(encoded[i + 1]) : -1;
+                int low = high >= 0 ? hexDigit(encoded[i + 2]) : -1;
+                if (high >= 0 && low >= 0) {
+                    server.push_back((char) (high * 16 + low));
+                    i += 2;
+                } else {
+                    server.push_back(encoded[i]);
+                }
+            }
+            if (server.empty() || server.find_first_of("\r\n") != std::string::npos) {
+                return std::string();
+            }
+            return server;
+        }
+
+        std::string hostOf(const std::string& server) {
+            size_t from = server.find("://");
+            from = from == std::string::npos ? 0 : from + 3;
+            size_t to = server.find('/', from);
+            return server.substr(from, to == std::string::npos ? std::string::npos : to - from);
+        }
+
 #if defined(_WIN32)
         std::vector<std::filesystem::path> filesOf(IDataObject* data) {
             std::vector<std::filesystem::path> out;
@@ -112,6 +159,32 @@ namespace Drops {
             }
             ReleaseStgMedium(&medium);
             return out;
+        }
+
+        std::string serverIn(IDataObject* data) {
+            FORMATETC format = {CF_UNICODETEXT, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+            STGMEDIUM medium = {};
+            if (data == nullptr || FAILED(data->GetData(&format, &medium))) {
+                return std::string();
+            }
+            std::wstring text;
+            if (const auto* chars = (const wchar_t*) GlobalLock(medium.hGlobal)) {
+                size_t limit = GlobalSize(medium.hGlobal) / sizeof(wchar_t);
+                size_t length = 0;
+                while (length < limit && length < 4096 && chars[length] != L'\0') {
+                    length++;
+                }
+                text.assign(chars, length);
+                GlobalUnlock(medium.hGlobal);
+            }
+            ReleaseStgMedium(&medium);
+            std::string narrow;
+            int size = WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), nullptr, 0, nullptr, nullptr);
+            if (size > 0) {
+                narrow.resize((size_t) size);
+                WideCharToMultiByte(CP_UTF8, 0, text.data(), (int) text.size(), narrow.data(), size, nullptr, nullptr);
+            }
+            return serverOf(narrow);
         }
 #endif
 
@@ -247,23 +320,29 @@ namespace Drops {
                 }
             }
 
+            static bool takes() {
+                return !draggedServer.empty() || acceptable(dragged);
+            }
+
             HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD, POINTL screen, DWORD* effect) override {
                 remember(screen);
                 dragged = filesOf(data);
-                over = !dragged.empty() && accepting();
-                *effect = over && acceptable(dragged) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+                draggedServer = dragged.empty() ? serverIn(data) : std::string();
+                over = (!dragged.empty() || !draggedServer.empty()) && accepting();
+                *effect = over && takes() ? DROPEFFECT_COPY : DROPEFFECT_NONE;
                 return S_OK;
             }
 
             HRESULT STDMETHODCALLTYPE DragOver(DWORD, POINTL screen, DWORD* effect) override {
                 remember(screen);
-                *effect = over && acceptable(dragged) ? DROPEFFECT_COPY : DROPEFFECT_NONE;
+                *effect = over && takes() ? DROPEFFECT_COPY : DROPEFFECT_NONE;
                 return S_OK;
             }
 
             HRESULT STDMETHODCALLTYPE DragLeave() override {
                 over = false;
                 dragged.clear();
+                draggedServer.clear();
                 return S_OK;
             }
 
@@ -271,7 +350,15 @@ namespace Drops {
                 remember(screen);
                 over = false;
                 std::vector<std::filesystem::path> files = filesOf(data);
+                std::string server = files.empty() ? serverIn(data) : std::string();
                 dragged.clear();
+                draggedServer.clear();
+                if (!server.empty() && accepting()) {
+                    *effect = DROPEFFECT_COPY;
+                    SetForegroundWindow(target);
+                    droppedServers.push_back(std::move(server));
+                    return S_OK;
+                }
                 if (!accepting() || !acceptable(files)) {
                     *effect = DROPEFFECT_NONE;
                     return S_OK;
@@ -388,6 +475,7 @@ namespace Drops {
 #endif
         over = false;
         dragged.clear();
+        draggedServer.clear();
     }
 
     void hover(bool inside, int x, int y) {
@@ -395,6 +483,15 @@ namespace Drops {
         hoverPoint = over ? POINT{x, y} : POINT{-1, -1};
         if (!over) {
             dragged.clear();
+            draggedServer.clear();
+        }
+    }
+
+    void droppedText(const std::string& text) {
+        over = false;
+        std::string server = serverOf(text);
+        if (!server.empty() && accepting()) {
+            droppedServers.push_back(std::move(server));
         }
     }
 
@@ -428,6 +525,9 @@ namespace Drops {
     }
 
     std::string promise() {
+        if (!draggedServer.empty()) {
+            return "松开以登录 " + hostOf(draggedServer);
+        }
         int mods = 0;
         int packs = 0;
         int zips = 0;
@@ -459,6 +559,9 @@ namespace Drops {
     }
 
     void poll() {
+        for (const std::string& server : std::exchange(droppedServers, {})) {
+            Interface::needAccount("yggdrasil", server);
+        }
         std::deque<Batch> ready;
         {
             std::lock_guard<std::mutex> guard(lock);

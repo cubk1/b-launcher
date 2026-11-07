@@ -65,10 +65,10 @@ namespace AccountsScreen {
         std::string focusNext;
         size_t chosenProfile = 0;
 
-        bool hasMicrosoft() {
+        bool hasOnline() {
             const std::vector<blb::auth::account>& accounts = Accounts::list();
             return std::any_of(accounts.begin(), accounts.end(), [](const blb::auth::account& account) {
-                return account.type == blb::auth::account_type::microsoft;
+                return account.type != blb::auth::account_type::offline;
             });
         }
 
@@ -358,11 +358,11 @@ namespace AccountsScreen {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make("微软账户", 0xf090, [] { Accounts::startLogin(); }));
                         addServerItems(items);
-                        bool allowed = hasMicrosoft();
+                        bool allowed = hasOnline();
                         items.push_back(
                                 ActionMenuItem::make(allowed ? "离线账户" : "离线账户（先登录微软账户）", 0xf007, [] {
                                     beginOffline();
-                                })->enabledIf([] { return hasMicrosoft(); }));
+                                })->enabledIf([] { return hasOnline(); }));
                         return items;
                     },
                     x, y, 230.0f);
@@ -935,7 +935,7 @@ namespace AccountsScreen {
             const std::vector<blb::auth::account>& accounts = Accounts::list();
             const blb::auth::account* current = Accounts::current();
             bool covered = NewUi::overlayCoversMouse();
-            if (addingOffline && !hasMicrosoft()) {
+            if (addingOffline && !hasOnline()) {
                 finishOffline();
             }
 

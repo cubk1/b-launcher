@@ -48,7 +48,7 @@ namespace ForgottenMelody {
                         {FILE_LABEL, ControlKind::Label, {25, 70, 65, 25}, L"图标文件"},
                         {FILE, ControlKind::Edit, {95, 70, 220, 25}},
                         {PICK, ControlKind::Button, {320, 70, 55, 25}, L"浏览"},
-                        {HEADLESS, ControlKind::Check, {25, 105, 200, 25}, L"静默启动"},
+                        {HEADLESS, ControlKind::Check, {25, 105, 200, 25}, L"不显示启动器窗口"},
                         {CREATE, ControlKind::Button, {230, 137, 70, 35}, L"生成"},
                         {CANCEL, ControlKind::Button, {305, 137, 70, 35}, L"取消"},
                 };
@@ -70,9 +70,6 @@ namespace ForgottenMelody {
                 FindControl(LAUNCHER_ICON)->SetTooltipText(L"启动器程序的图标");
                 FindControl(INSTANCE_ICON)->SetTooltipText(L"实例所用加载器的图标，原版是草方块");
                 FindControl(FILE)->SetTooltipText(L"PNG、JPG、ICO 等图片");
-                FindControl(HEADLESS)->SetTooltipText(
-                        L"不显示启动器窗口，直接启动游戏；游戏启动后启动器自动退出，启动失败时才显示窗口。"
-                        L"启动器已经打开时在后台启动，不切换到启动器窗口。");
                 update();
                 return true;
             }

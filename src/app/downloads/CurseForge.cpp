@@ -184,6 +184,7 @@ namespace CurseForge {
             if (auto authors = item.find("authors");
                 authors != item.end() && authors->is_array() && !authors->empty()) {
                 hit.author = blb::json_text(authors->front(), "name");
+                hit.authorId = id(authors->front(), "id");
             }
             if (auto logo = item.find("logo"); logo != item.end() && logo->is_object()) {
                 hit.iconUrl = blb::json_text(*logo, "thumbnailUrl");
@@ -365,9 +366,9 @@ namespace CurseForge {
             if (auto dependencies = item.find("dependencies"); dependencies != item.end() && dependencies->is_array()) {
                 for (const json& dependency : *dependencies) {
                     long long relation = number(dependency, "relationType");
-                    if (relation == 2 || relation == 3) {
-                        version.dependencies.push_back(
-                                Dependency{id(dependency, "modId"), std::string(), relation == 3});
+                    if (relation == 1 || relation == 2 || relation == 3 || relation == 5) {
+                        version.dependencies.push_back(Dependency{id(dependency, "modId"), std::string(), relation == 3,
+                                                                  relation == 5, relation == 1});
                     }
                 }
             }
@@ -446,6 +447,27 @@ namespace CurseForge {
                         };
                     });
         }
+    }
+
+    blb::result<json> call(const std::string& path, const std::string& body, blb::cancellation_token token) {
+        return api(path, body, token);
+    }
+
+    Kind kindOf(long long classId) {
+        for (Kind kind : {Kind::Mod, Kind::Modpack, Kind::ResourcePack, Kind::Shader, Kind::Datapack, Kind::World}) {
+            if (classOf(kind) == classId) {
+                return kind;
+            }
+        }
+        return Kind::Mod;
+    }
+
+    Hit hitFrom(const json& item) {
+        return parseHit(item);
+    }
+
+    Version versionFrom(const json& item) {
+        return parseFile(item);
     }
 
     const std::string& apiKey() {

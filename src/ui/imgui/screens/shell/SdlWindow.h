@@ -31,6 +31,8 @@ public:
     std::function<void()> onModalFrame;
     std::function<void(std::vector<std::filesystem::path> files, int x, int y)> onDrop;
     std::function<void(bool inside, int x, int y)> onDragOver;
+    std::function<void(const std::string& text)> onDropText;
+    std::function<void()> onFocusLost;
     void* imguiContext = nullptr;
 
     bool create(const std::string& title, int clientWidth, int clientHeight, SdlWindow* share = nullptr);
@@ -72,4 +74,5 @@ private:
 
     bool closing = false;
     std::vector<std::filesystem::path> dropping;
+    std::string droppingText;
 };

@@ -9,4 +9,5 @@ namespace LaunchButton {
     void draw(float x, float y);
     void drawStatus(float right, float bottom);
     void launchAnother(const std::string& key, float left, float top, float bottom);
+    void start(const std::string& key);
 }

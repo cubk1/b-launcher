@@ -324,7 +324,17 @@ build_launch_command (const launch_context &ctx)
     }
 
   if (!version.jvm_arguments.empty ())
-    append_arguments (jvm, version.jvm_arguments, rules, values);
+    {
+      auto first = jvm.size ();
+      append_arguments (jvm, version.jvm_arguments, rules, values);
+      constexpr std::string_view shadow_pages = "-XX:StackShadowPages=";
+      if (contains_prefix (settings.jvm_args, shadow_pages))
+        jvm.erase (std::remove_if (jvm.begin () + first, jvm.end (),
+                                   [&] (const std::string &arg) {
+                                     return arg.starts_with (shadow_pages);
+                                   }),
+                   jvm.end ());
+    }
   else
     {
       if (rules.os == os_type::windows)

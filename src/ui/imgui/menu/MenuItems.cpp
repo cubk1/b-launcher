@@ -14,8 +14,8 @@ float ToggleMenuItem::itemTrailWidth() {
 }
 
 void ToggleMenuItem::itemTrail(bool hovered) {
-    (void) hovered;
-    UiWidgets::subToggle("menu#toggle#" + flag->owner, rowX + rowW - 44, rowY + (rowH - 18) * 0.5f, flag->isOn());
+    UiWidgets::subToggle("menu#toggle#" + flag->owner, rowX + rowW - 44, rowY + (rowH - 18) * 0.5f, flag->isOn(),
+                         hovered);
 }
 
 void ToggleMenuItem::itemRun() {

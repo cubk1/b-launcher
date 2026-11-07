@@ -43,7 +43,7 @@ namespace InstanceExport {
         }
 
         void toggleRow(const std::string& key, const char* field, const char* label, bool Options::* member, float rowY,
-                       bool blocked, const char* doc = nullptr) {
+                       bool blocked) {
             Page::label(label, rowY);
             std::string id = std::string("export#") + field + "#" + key;
             auto flag = std::make_shared<FlagBinding>(
@@ -57,10 +57,6 @@ namespace InstanceExport {
                     .hitArea(Page::left(), rowY, Page::width(), Page::ROW_H)
                     .block(blocked);
             widget.paint();
-            if (doc != nullptr && !blocked &&
-                NewUi::hit(Page::left(), rowY, Page::controlRight() - 60.0f - Page::left(), Page::ROW_H)) {
-                NewUi::markDoc(id + "#doc", doc, Page::left() + 6.0f, rowY + Page::ROW_H + 10.0f);
-            }
         }
 
         void exportButton(const Instances::Entry& entry, bool blocked) {
@@ -130,10 +126,8 @@ namespace InstanceExport {
             Page::card(rowY, contentCount);
             toggleRow(key, "mods", "模组", &Options::mods, rowY, blocked);
             toggleRow(key, "disabledMods", "已禁用的模组", &Options::disabled_mods, rowY + Page::ROW_H, blocked);
-            toggleRow(key, "modSettings", "模组配置文件", &Options::mod_settings, rowY + 2 * Page::ROW_H, blocked,
-                      "config 等文件夹里模组的设置。");
-            toggleRow(key, "gameSettings", "游戏设置", &Options::game_settings, rowY + 3 * Page::ROW_H, blocked,
-                      "options.txt 里的按键、视频等设置。");
+            toggleRow(key, "modSettings", "模组配置文件", &Options::mod_settings, rowY + 2 * Page::ROW_H, blocked);
+            toggleRow(key, "gameSettings", "游戏选项", &Options::game_settings, rowY + 3 * Page::ROW_H, blocked);
             toggleRow(key, "resourcePacks", "资源包", &Options::resource_packs, rowY + 4 * Page::ROW_H, blocked);
             toggleRow(key, "shaderPacks", "光影包", &Options::shader_packs, rowY + 5 * Page::ROW_H, blocked);
             toggleRow(key, "saves", "存档", &Options::saves, rowY + 6 * Page::ROW_H, blocked);
@@ -145,9 +139,7 @@ namespace InstanceExport {
             Page::caption("文件", y);
             float rowY = y + Page::CAPTION_H;
             Page::card(rowY, fileCount);
-            toggleRow(key, "bundle", "全部打包进整合包", &Options::bundle_files, rowY, blocked,
-                      "关闭时，能在 Modrinth "
-                      "上找到的模组和资源只记下载地址，整合包更小，安装时再下载；打开则把文件都放进整合包。");
+            toggleRow(key, "bundle", "全部打包进整合包", &Options::bundle_files, rowY, blocked);
         }
         body.end();
 

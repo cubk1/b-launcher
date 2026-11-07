@@ -1,5 +1,12 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
+#include "ui/imgui/screens/downloads/AuthorPage.h"
+#include "ui/imgui/screens/downloads/DownloadsParts.h"
+#include "ui/imgui/screens/downloads/Prerequisites.h"
+#include "ui/imgui/screens/downloads/ProjectPage.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
+#include "app/downloads/CurseForge.h"
+#include "app/downloads/Projects.h"
+#include "app/system/AsyncTasks.h"
 #include "app/system/Catalog.h"
 #include "app/downloads/Aggregate.h"
 #include "app/system/Config.h"
@@ -32,12 +39,15 @@
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
 
+#include <core/base/strings.hpp>
 #include <core/installer/loader.hpp>
 
 #include "imgui.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -105,8 +115,10 @@ namespace DownloadsScreen {
                 {Kind::World, "地图", 0xf279},
         };
 
+        using DownloadsParts::Route;
+        using DownloadsParts::View;
+
         constexpr int VIEW_RESULTS = 0;
-        constexpr int VIEW_PROJECT = 1;
         PageTransition views(VIEW_RESULTS);
 
         Addons::Query query;
@@ -116,7 +128,7 @@ namespace DownloadsScreen {
         bool started = false;
         bool followed = false;
         Addons::Results shown;
-        Addons::Hit project;
+        std::vector<Route> routes;
         std::string versionFilter;
         std::string loaderFilter;
         std::set<std::string> folded;
@@ -136,12 +148,11 @@ namespace DownloadsScreen {
             Addons::Query query;
             std::string typed;
             Addons::Results shown;
-            Addons::Hit project;
+            std::vector<Route> routes;
             std::string versionFilter;
             std::string loaderFilter;
             std::set<std::string> folded;
             bool allLoaders = false;
-            int view = VIEW_RESULTS;
         };
         Tab tabs[2];
         Tab aggregateTab;
@@ -857,6 +868,7 @@ namespace DownloadsScreen {
                 allLoaders = false;
                 followInstance();
             }
+            routes.clear();
             views.go(VIEW_RESULTS);
         }
 
@@ -866,24 +878,23 @@ namespace DownloadsScreen {
             out.query = query;
             out.typed = typed;
             out.shown = shown;
-            out.project = project;
+            out.routes = routes;
             out.versionFilter = versionFilter;
             out.loaderFilter = loaderFilter;
             out.folded = folded;
             out.allLoaders = allLoaders;
-            out.view = views.page;
         }
 
         void resume(const Tab& in) {
             query = in.query;
             typed = in.typed;
             shown = in.shown;
-            project = in.project;
+            routes = in.routes;
             versionFilter = in.versionFilter;
             loaderFilter = in.loaderFilter;
             folded = in.folded;
             allLoaders = in.allLoaders;
-            views.page = in.view;
+            views.page = (int) routes.size();
             if (in.target != target && ProjectBrowser::usesInstance(query.kind)) {
                 followInstance();
                 shown = Addons::Results();
@@ -898,6 +909,7 @@ namespace DownloadsScreen {
 
         void enterAggregate() {
             if (aggregate) {
+                routes.clear();
                 views.go(VIEW_RESULTS);
                 return;
             }
@@ -917,6 +929,7 @@ namespace DownloadsScreen {
 
         void switchSource(Source next) {
             if (!aggregate && next == source) {
+                routes.clear();
                 views.go(VIEW_RESULTS);
                 return;
             }
@@ -940,7 +953,7 @@ namespace DownloadsScreen {
                 query.sort = next == Source::CurseForge ? Addons::Sort::Popularity : Addons::Sort::Relevance;
                 typed.clear();
                 shown = Addons::Results();
-                project = Addons::Hit();
+                routes.clear();
                 folded.clear();
                 allLoaders = false;
                 followInstance();
@@ -1020,36 +1033,75 @@ namespace DownloadsScreen {
             body.end();
         }
 
-        void openProject(const Addons::Hit& hit) {
-            project = hit;
-            versionFilter = query.gameVersion;
-            loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
-            views.go(VIEW_PROJECT);
+        void pushRoute(const Route& route) {
+            routes.push_back(route);
+            if (routes.size() > 24) {
+                routes.erase(routes.begin());
+            }
+            views.go((int) routes.size());
         }
 
-        void resultRow(const Addons::Hit& hit, float x, float y, float w, int index, int count, bool blocked) {
+        void openProject(const Addons::Hit& hit) {
+            versionFilter = query.gameVersion;
+            loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
+            Route route;
+            route.source = source;
+            route.kind = query.kind;
+            route.hit = hit;
+            pushRoute(route);
+        }
+
+        bool authorLink(const Addons::Hit& hit, Source from, float right, float y, float h, bool blocked) {
+            if (hit.author.empty()) {
+                return false;
+            }
+            std::string name = fitEnd(hit.author, 140.0f, UiWidgets::TEXT_SMALL);
+            float w = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float x = right - w;
+            bool usable = !hit.authorId.empty();
+            bool hovered = usable && !blocked && NewUi::hit(x - 2.0f, y, w + 4.0f, h);
+            uint32_t ink = hovered ? UiTheme::accentText() : UiTheme::textMuted();
+            UiRender::textY(name, x, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (hovered) {
+                UiRender::hLine(x, x + w, y + h * 0.5f + 7.0f, ink);
+                UiCursor::hand();
+                if (NewUi::click(x - 2.0f, y, w + 4.0f, h)) {
+                    UiSound::request(UiSound::PAGE);
+                    DownloadsParts::openAuthor(from == Source::Modrinth ? Authors::Kind::ModrinthUser
+                                                                        : Authors::Kind::CurseForge,
+                                               hit.authorId, hit.author, std::string(), from);
+                }
+            }
+            return true;
+        }
+
+        bool projectRow(const std::string& id, const Addons::Hit& hit, Kind kind, Source from, float x, float y,
+                        float w, int index, int count, bool blocked) {
             bool hovered = !blocked && NewUi::hit(x, y, w, RESULT_H);
-            float hover = UiState::motion("downloads#hit#" + hit.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            float hover = UiState::motion("downloads#hit#" + id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
                                     Page::rowCorners(index, count));
             }
-            projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON);
+            projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON, kind);
             float textX = x + 12.0f + RESULT_ICON + 12.0f;
             float right = x + w - 14.0f;
-            float titleY = y + 9.0f;
+            float titleY = hit.description.empty() && hit.author.empty() ? y + (RESULT_H - 20.0f) * 0.5f : y + 9.0f;
             float titleCentre = titleY + 10.0f;
 
-            std::string downloads = Addons::count(hit.downloads);
-            float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            float downloadsX = right - downloadsW;
-            UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_SMALL);
-            UiWidgets::iconBeside(Ui::glyph(0xf019), downloadsX - 9.0f, downloads, UiFont::MEDIUM,
-                                  UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
-            float limit = downloadsX - 22.0f;
+            float limit = right;
+            if (hit.downloads > 0) {
+                std::string downloads = Addons::count(hit.downloads);
+                float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                float downloadsX = right - downloadsW;
+                UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                UiWidgets::iconBeside(Ui::glyph(0xf019), downloadsX - 9.0f, downloads, UiFont::MEDIUM,
+                                      UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
+                limit = downloadsX - 22.0f;
+            }
 
-            std::string chinese = ModNames::applies(query.kind) ? ModNames::zh(hit.title) : std::string();
+            std::string chinese = ModNames::applies(kind) ? ModNames::zh(hit.title) : std::string();
             bool original = chinese.empty() || ModNames::original();
             std::string title = fitEnd(original ? hit.title : chinese, limit - textX, UiWidgets::TEXT_BODY);
             UiRender::textY(title, textX, titleY, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
@@ -1061,8 +1113,8 @@ namespace DownloadsScreen {
                 tagX += UiFont::width(other, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 8.0f;
             }
             for (const std::string& category : hit.categories) {
-                float tagW = tag(categoryLabel(category), tagX, titleCentre, limit, UiTheme::surfaceRaised(),
-                                 UiTheme::textSecondary());
+                float tagW = tag(from == Source::Modrinth ? Modrinth::label(category) : category, tagX, titleCentre,
+                                 limit, UiTheme::surfaceRaised(), UiTheme::textSecondary());
                 if (tagW == 0.0f) {
                     break;
                 }
@@ -1076,10 +1128,22 @@ namespace DownloadsScreen {
                 }
                 tagX += tagW + 4.0f;
             }
-            UiRender::textY(fitEnd(hit.description, right - textX, UiWidgets::TEXT_SMALL), textX, y + 30.0f, 16.0f,
-                            UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float descriptionRight = right;
+            if (authorLink(hit, from, right, y + 30.0f, 16.0f, blocked)) {
+                descriptionRight -=
+                        std::min(140.0f, UiFont::width(hit.author, UiFont::MEDIUM, UiWidgets::TEXT_SMALL)) + 16.0f;
+            }
+            UiRender::textY(fitEnd(hit.description, descriptionRight - textX, UiWidgets::TEXT_SMALL), textX, y + 30.0f,
+                            16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             if (!blocked && NewUi::click(x, y, w, RESULT_H)) {
                 UiSound::request(UiSound::PAGE);
+                return true;
+            }
+            return false;
+        }
+
+        void resultRow(const Addons::Hit& hit, float x, float y, float w, int index, int count, bool blocked) {
+            if (projectRow(hit.id, hit, query.kind, source, x, y, w, index, count, blocked)) {
                 openProject(hit);
             }
         }
@@ -1476,7 +1540,7 @@ namespace DownloadsScreen {
                 if (entry.link != nullptr) {
                     SourceMarks::draw(entry.link->source, x, y + (18.0f - mark) * 0.5f, mark, ink);
                 } else {
-                    UiWidgets::icon(Ui::glyph(0xf02d), x + mark * 0.5f, y + 9.0f, ink, 9.5f);
+                    SourceMarks::mcmod(x, y + (18.0f - mark) * 0.5f, mark, ink);
                 }
                 UiRender::textY(entry.label, x + mark + 4.0f, y, 18.0f, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 if (hovered) {
@@ -1714,261 +1778,119 @@ namespace DownloadsScreen {
             body.end();
         }
 
-        const char* versionTypeLabel(const std::string& type) {
-            if (type == "beta") {
-                return "测试版";
-            }
-            if (type == "alpha") {
-                return "早期版";
-            }
-            return "正式版";
-        }
+        std::string pendingSlug;
+        Kind pendingKind = Kind::Mod;
+        Mcmod::Ref pendingMcmod;
+        std::string pendingUrl;
 
-        void openModpackInstall(const Addons::Version& version) {
-            auto setup = ModpackSetup::fromProject(version, project.title);
-            if (!setup) {
-                return;
-            }
-            NewInstanceScreen::openModpack(*setup);
-            MainWindow::showNewInstance();
-        }
+        struct SlugLookup {
+            Addons::Status status = Addons::Status::Loading;
+            std::string id;
+        };
 
-        void versionAction(const Addons::Version& version, float rowY, bool blocked) {
-            float centreY = rowY + Page::ROW_H * 0.5f;
-            float right = Page::right() - 12.0f;
-            Kind kind = query.kind;
-            std::string taskTarget = kind == Kind::World ? target : std::string();
-            ProjectInstaller::State state = ProjectInstaller::state(version.id, taskTarget);
-            if (state == ProjectInstaller::State::Running) {
-                progressRing(version.id, right - 20.0f, centreY, ProjectInstaller::progress(version.id, taskTarget));
-                return;
-            }
-            bool intoInstance = !ProjectInstaller::folder(kind).empty() || kind == Kind::World;
-            if ((intoInstance && ProjectInstaller::installed(version, kind, target)) ||
-                ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done)) {
-                std::string done = "已安装";
-                float doneW = UiFont::width(done, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(done, right - doneW, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                UiWidgets::check(right - doneW - 12.0f, centreY, UiTheme::accent(), 9.0f);
-                return;
-            }
-            std::string text = kind == Kind::Datapack ? "下载" : "安装";
-            float w = Page::buttonWidth(text, 0xf019);
-            float x = right - w;
-            bool usable = !intoInstance || Instances::find(target) != nullptr;
-            float saved = UiRender::alphaMul;
-            if (!usable) {
-                UiRender::alphaMul = saved * 0.45f;
-            }
-            bool pressed = Page::button("downloads#install#" + version.id, text, x, rowY + Page::FIELD_Y, w, false,
-                                        blocked || !usable, 0xf019);
-            UiRender::alphaMul = saved;
-            if (!usable && !blocked && NewUi::hit(x, rowY + Page::FIELD_Y, w, Page::FIELD_H)) {
-                Page::tooltip("先在上方选择要安装到的实例", x, rowY + Page::FIELD_Y, w, Page::FIELD_H);
-            }
-            if (!pressed || !usable) {
-                return;
-            }
-            switch (kind) {
-                case Kind::Modpack: openModpackInstall(version); break;
-                case Kind::Datapack: {
-                    const Instances::Entry* entry = Instances::find(target);
-                    std::filesystem::path start =
-                            entry != nullptr ? entry->gameDirectory / "saves" : Platform::userDirectory();
-                    if (std::optional<std::filesystem::path> folder = Platform::pickFolder(start)) {
-                        ProjectInstaller::saveTo(version, *folder, project.title);
-                    }
-                    break;
-                }
-                case Kind::World: ProjectInstaller::installWorld(version, project.title, target); break;
-                default: ProjectInstaller::install(version, kind, project.title, target); break;
-            }
-        }
+        std::map<std::string, SlugLookup> slugs;
+        AsyncTasks slugTasks;
 
-        std::vector<std::pair<uint32_t, std::string>> loaderIcons(const Addons::Version& version) {
-            std::vector<std::pair<uint32_t, std::string>> out;
-            for (const std::string& loader : version.loaders) {
-                if (out.size() == LOADER_SLOTS) {
-                    break;
-                }
-                if (uint32_t image = loaderImage(loader)) {
-                    out.emplace_back(image, loader);
-                }
+        const SlugLookup& curseSlug(const std::string& slug, Kind kind) {
+            std::string key = std::to_string((int) kind) + ":" + slug;
+            auto found = slugs.find(key);
+            if (found != slugs.end()) {
+                return found->second;
             }
-            return out;
-        }
-
-        bool hasLoaderIcons(const std::vector<const Addons::Version*>& versions) {
-            return std::any_of(versions.begin(), versions.end(), [](const Addons::Version* version) {
-                return std::any_of(version->loaders.begin(), version->loaders.end(),
-                                   [](const std::string& loader) { return loaderImage(loader) != 0; });
-            });
-        }
-
-        void versionRow(const Addons::Version& version, const std::string& prefix, float rowY, int index, int count,
-                        bool showIcons, bool blocked) {
-            bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-            float hover = UiState::motion("downloads#version#" + version.id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
-            if (hover > 0.001f) {
-                UiRender::roundRect(mainX(), rowY, mainW(), Page::ROW_H, CARD_RADIUS,
-                                    UiTheme::overlay(Ui::round(10 * hover)), Page::rowCorners(index, count));
-            }
-            float centreY = rowY + Page::ROW_H * 0.5f;
-            float x = mainX() + 14.0f;
-            bool overIcon = false;
-            if (showIcons) {
-                std::vector<std::pair<uint32_t, std::string>> icons = loaderIcons(version);
-                float iconY = centreY - LOADER_ICON * 0.5f;
-                if (!icons.empty()) {
-                    UiRender::texture(icons.front().first, x, iconY, LOADER_ICON, LOADER_ICON);
-                    if (icons.size() > 1) {
-                        float badgeX = x + LOADER_ICON - LOADER_BADGE + 3.0f;
-                        float badgeY = iconY + LOADER_ICON - LOADER_BADGE + 3.0f;
-                        UiRender::roundRect(badgeX - 1.0f, badgeY - 1.0f, LOADER_BADGE + 2.0f, LOADER_BADGE + 2.0f,
-                                            3.0f, UiTheme::surface());
-                        if (hover > 0.001f) {
-                            UiRender::roundRect(badgeX - 1.0f, badgeY - 1.0f, LOADER_BADGE + 2.0f, LOADER_BADGE + 2.0f,
-                                                3.0f, UiTheme::overlay(Ui::round(10 * hover)));
+            SlugLookup& entry = slugs[key];
+            int classId = kind == Kind::Modpack  ? 4471
+                    : kind == Kind::ResourcePack ? 12
+                    : kind == Kind::Shader       ? 6552
+                    : kind == Kind::Datapack     ? 6945
+                    : kind == Kind::World        ? 17
+                                                 : 6;
+            slugTasks.run(
+                    [key, slug, classId](b_launcher_base::cancellation_token token) -> AsyncTasks::Continuation {
+                        auto doc = CurseForge::call("/mods/search?gameId=432&classId=" + std::to_string(classId) +
+                                                            "&slug=" + b_launcher_base::url_encode(slug),
+                                                    std::string(), token);
+                        std::string id;
+                        if (doc) {
+                            auto data = doc->find("data");
+                            if (data != doc->end() && data->is_array() && !data->empty()) {
+                                id = CurseForge::hitFrom(data->front()).id;
+                            }
                         }
-                        UiRender::texture(icons[1].first, badgeX, badgeY, LOADER_BADGE, LOADER_BADGE);
-                    }
-                    if (hovered && NewUi::hit(x - 2.0f, iconY - 2.0f, LOADER_ICON + 6.0f, LOADER_ICON + 6.0f)) {
-                        overIcon = true;
-                        std::string names;
-                        for (const auto& icon : icons) {
-                            names += (names.empty() ? "" : "、") + Modrinth::label(icon.second);
-                        }
-                        Page::tooltip(names, x, iconY, LOADER_ICON, LOADER_ICON);
-                    }
-                }
-                x += LOADER_ICON + 8.0f;
-            }
-            std::string detail = version.published.substr(0, std::min<size_t>(10, version.published.size()));
-            if (versionFilter.empty() && !version.gameVersions.empty()) {
-                detail = version.gameVersions.back() + (version.gameVersions.size() > 1 ? " 等" : "") + "  " + detail;
-            }
-            float detailW = UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            float detailX = Page::right() - 104.0f - detailW;
-            float limit = detailX - 10.0f;
-            std::string typeLabel = versionTypeLabel(version.type);
-            float typeRoom = typeLabel.empty()
-                    ? 0.0f
-                    : UiFont::width(typeLabel, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f + 8.0f;
-            std::string name = ProjectBrowser::shortName(version, prefix, project.title);
-            std::string shownName = fitEnd(name, std::max(60.0f, limit - x - typeRoom), UiWidgets::TEXT_CONTROL);
-            UiRender::textY(shownName, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
-            if (shownName != name && hovered && !overIcon) {
-                Page::tooltip(name, x, rowY + 8.0f, UiFont::width(shownName, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL),
-                    Page::ROW_H - 16.0f);
-            }
-            UiRender::textY(detail, detailX, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_SMALL);
-            float tagX = x + UiFont::width(shownName, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
-            uint32_t typeInk = UiTheme::textSecondary();
-            uint32_t typeFill = UiTheme::surfaceRaised();
-            if (version.type == "beta" || version.type == "alpha") {
-                typeInk = version.type == "beta" ? (UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu) : UiTheme::danger();
-                typeFill = (typeInk & 0x00FFFFFFu) | 0x2E000000u;
-            }
-            if (!typeLabel.empty()) {
-                tag(typeLabel, tagX, centreY, limit, typeFill, typeInk);
-            }
-            versionAction(version, rowY, blocked);
+                        return [key, id] {
+                            slugs[key].id = id;
+                            slugs[key].status = id.empty() ? Addons::Status::Failed : Addons::Status::Ready;
+                        };
+                    },
+                    [key](const std::string&) -> AsyncTasks::Continuation {
+                        return [key] { slugs[key].status = Addons::Status::Failed; };
+                    });
+            return entry;
         }
 
-        void projectView(bool covered) {
-            if (Page::iconButton("downloads#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 2.0f, covered)) {
-                views.go(VIEW_RESULTS);
-            }
-            float iconX = mainX() + 30.0f;
-            projectIcon(project.iconUrl, iconX, Page::TOP, 32.0f);
-            float textX = iconX + 44.0f;
-            float linkX = Page::right() - 28.0f;
-            bool named = ModNames::applies(query.kind);
-            std::string chinese = named ? ModNames::zh(project.title) : std::string();
-            long long wiki = named ? ModNames::wikiId(project.title) : 0;
-            float wikiX = linkX - 32.0f;
-            float textRight = (wiki > 0 ? wikiX : linkX) - 8.0f;
-            bool original = chinese.empty() || ModNames::original();
-            std::string heading = fitEnd(original ? project.title : chinese, textRight - textX, Page::TITLE_SIZE);
-            UiRender::textY(heading, textX, Page::TOP - 2.0f, 22.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            Page::TITLE_SIZE);
-            float englishX = textX + UiFont::width(heading, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            if (!chinese.empty() && englishX < textRight) {
-                UiRender::textY(
-                        fitEnd(original ? chinese : project.title, textRight - englishX, UiWidgets::TEXT_CONTROL),
-                        englishX, Page::TOP - 2.0f, 22.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                        UiWidgets::TEXT_CONTROL);
-            }
-            std::string byline = project.author.empty() ? std::string() : project.author + "  ";
-            byline += Addons::count(project.downloads) + " 次下载";
-            UiRender::textY(fitEnd(byline, textRight - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
-                            UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            std::string site = std::string("在 ") + Addons::sourceName(source) + " 上查看";
-            if (Page::iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP + 2.0f, covered) &&
-                !project.pageUrl.empty()) {
-                Platform::openUrl(project.pageUrl);
-            }
-            if (wiki > 0 &&
-                Page::iconButton("downloads#wiki", 0xf02d, "在 MC 百科上查看", wikiX, Page::TOP + 2.0f, covered)) {
-                Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
-            }
+        void openSlug(Source from, Kind kind, const std::string& slug) {
+            Addons::Hit hit;
+            hit.id = slug;
+            hit.slug = slug;
+            hit.title = slug;
+            Route route;
+            route.source = from;
+            route.kind = kind;
+            route.hit = hit;
+            pushRoute(route);
+        }
 
-            float rowY = Page::TOP + 46.0f;
-            float filterX = mainX();
-            if (ProjectBrowser::usesInstance(query.kind)) {
-                float instanceW = 150.0f;
-                instancePicker(mainX(), rowY, instanceW, covered);
-                filterX += instanceW + GAP;
-            }
-            float cell = (Page::right() - filterX - GAP) / 2.0f;
-            select("downloads#versionFilter", versionChoice("downloads#versionFilter", &versionFilter, false), filterX,
-                   rowY, cell, covered);
-            if (hasLoaders(query.kind)) {
-                select("downloads#loaderFilter", loaderChoice(), filterX + cell + GAP, rowY, cell, covered);
-            }
-
-            float listTop = rowY + Page::FIELD_H + 12.0f;
-            float listBottom = MainWindow::height() - 14.0f;
-            const Addons::Versions& versions = Addons::versions(source, project.id);
-            if (versions.status == Addons::Status::Loading) {
-                message("正在获取版本列表", UiTheme::textMuted(), listTop, listBottom, true);
-                return;
-            }
-            if (versions.status == Addons::Status::Failed) {
-                message("获取版本失败：" + versions.error, UiTheme::danger(), listTop, listBottom, false);
-                std::string retry = "重试";
-                float w = Page::buttonWidth(retry);
-                if (Page::button("downloads#versions#retry", retry, mainX() + (mainW() - w) * 0.5f,
-                                 (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
-                    Addons::refreshVersions(source, project.id);
+        void followPending() {
+            slugTasks.poll();
+            if (!pendingSlug.empty()) {
+                const SlugLookup& found = curseSlug(pendingSlug, pendingKind);
+                if (found.status == Addons::Status::Ready) {
+                    openSlug(Source::CurseForge, pendingKind, found.id);
+                    pendingSlug.clear();
+                    pendingUrl.clear();
+                } else if (found.status == Addons::Status::Failed) {
+                    if (!pendingUrl.empty()) {
+                        Platform::openUrl(pendingUrl);
+                    }
+                    pendingSlug.clear();
+                    pendingUrl.clear();
                 }
                 return;
             }
-            std::string prefix = ProjectBrowser::sharedPrefix(versions.list);
-            auto matching = ProjectBrowser::matching(versions.list, versionFilter, loaderFilter);
-            if (matching.empty()) {
-                message("没有符合条件的版本", UiTheme::textMuted(), listTop, listBottom, false);
+            if (pendingMcmod.id <= 0) {
                 return;
             }
-            bool showIcons = hasLoaderIcons(matching);
-            float contentH = matching.size() * Page::ROW_H;
-            Page::Scroll body("downloads#versions#" + std::to_string((int) source) + "#" + project.id, listTop,
-                              listBottom, contentH, mainX(), mainW());
-            bool outside = body.begin();
-            bool blocked = outside || covered;
-            float y = body.top - body.offset;
-            Page::listCard(mainX(), y, mainW(), Page::ROW_H, (int) matching.size());
-            for (size_t i = 0; i < matching.size(); i++) {
-                float versionY = y + i * Page::ROW_H;
-                if (versionY + Page::ROW_H < listTop || versionY > listBottom) {
-                    continue;
+            std::string modrinth = Mcmod::slugOn(pendingMcmod, "modrinth");
+            std::string curseforge = Mcmod::slugOn(pendingMcmod, "curseforge");
+            if (modrinth.empty() && curseforge.empty()) {
+                const Mcmod::Mod& found = Mcmod::mod(pendingMcmod);
+                if (found.status == Addons::Status::Loading) {
+                    return;
                 }
-                versionRow(*matching[i], prefix, versionY, (int) i, (int) matching.size(), showIcons, blocked);
+                if (found.status == Addons::Status::Ready) {
+                    modrinth = found.modrinth;
+                    curseforge = found.curseforge;
+                }
             }
-            body.end();
+            Kind kind = pendingMcmod.type == "modpack" ? Kind::Modpack : Kind::Mod;
+            if (!modrinth.empty()) {
+                openSlug(Source::Modrinth, kind, modrinth);
+            } else if (!curseforge.empty()) {
+                pendingSlug = curseforge;
+                pendingKind = kind;
+                pendingUrl = pendingMcmod.url;
+            } else if (!pendingMcmod.url.empty()) {
+                Platform::openUrl(pendingMcmod.url);
+            }
+            pendingMcmod = Mcmod::Ref();
+        }
+
+        void drawRoute(bool covered) {
+            Route& route = routes.back();
+            if (route.view == View::Author) {
+                AuthorPage::draw(route, covered);
+            } else {
+                ProjectPage::draw(route, covered);
+            }
         }
     }
 
@@ -1987,11 +1909,12 @@ namespace DownloadsScreen {
             chooseTarget(std::string());
         }
         bool covered = NewUi::overlayCoversMouse();
+        followPending();
         side(covered);
         sourceViews.begin();
         views.begin();
-        if (views.page == VIEW_PROJECT) {
-            projectView(covered);
+        if (!routes.empty()) {
+            drawRoute(covered);
         } else if (aggregate) {
             aggregateView(covered);
         } else {
@@ -2019,5 +1942,286 @@ namespace DownloadsScreen {
         }
         switchKind(kind);
         MainWindow::showDownloads();
+    }
+}
+
+namespace DownloadsParts {
+
+    using Addons::Kind;
+    using Addons::Source;
+
+    float mainX() {
+        return DownloadsScreen::mainX();
+    }
+
+    float mainW() {
+        return DownloadsScreen::mainW();
+    }
+
+    float tag(const std::string& text, float x, float centreY, float limit, uint32_t fill, uint32_t ink) {
+        return DownloadsScreen::tag(text, x, centreY, limit, fill, ink);
+    }
+
+    void message(const std::string& text, uint32_t color, float top, float bottom, bool loading) {
+        DownloadsScreen::message(text, color, top, bottom, loading);
+    }
+
+    void projectIcon(const std::string& url, float x, float y, float size, Kind kind) {
+        DownloadsScreen::projectIcon(url, x, y, size, kind);
+    }
+
+    uint32_t loaderImage(const std::string& tag) {
+        return DownloadsScreen::loaderImage(tag);
+    }
+
+    void progressRing(const std::string& id, float cx, float cy, float fraction) {
+        DownloadsScreen::progressRing(id, cx, cy, fraction);
+    }
+
+    void select(const std::string& id, const std::shared_ptr<Choice>& choice, float x, float y, float w, bool blocked) {
+        DownloadsScreen::select(id, choice, x, y, w, blocked);
+    }
+
+    void instancePicker(float x, float y, float w, bool blocked) {
+        DownloadsScreen::instancePicker(x, y, w, blocked);
+    }
+
+    std::shared_ptr<Choice> versionChoice() {
+        return DownloadsScreen::versionChoice("downloads#versionFilter", &DownloadsScreen::versionFilter, false);
+    }
+
+    std::shared_ptr<Choice> loaderChoice(Source source, Kind kind) {
+        auto choice = std::make_shared<ModeBinding>(
+                "downloads#loaderFilter",
+                [] {
+                    return DownloadsScreen::loaderFilter.empty() ? std::string(DownloadsScreen::ANY_LOADER)
+                                                                 : Modrinth::label(DownloadsScreen::loaderFilter);
+                },
+                [source, kind](const std::string& option) {
+                    DownloadsScreen::loaderFilter.clear();
+                    for (const std::string& tag : ProjectBrowser::loaderTags(source, kind)) {
+                        if (Modrinth::label(tag) == option) {
+                            DownloadsScreen::loaderFilter = tag;
+                        }
+                    }
+                },
+                [source, kind] {
+                    std::vector<std::string> labels = {DownloadsScreen::ANY_LOADER};
+                    for (const std::string& tag : ProjectBrowser::loaderTags(source, kind)) {
+                        labels.push_back(Modrinth::label(tag));
+                    }
+                    return labels;
+                });
+        choice->icon(DownloadsScreen::ANY_LOADER, 0xf12e);
+        for (const std::string& tag : ProjectBrowser::loaderTags(source, kind)) {
+            if (uint32_t image = loaderImage(tag)) {
+                choice->image(Modrinth::label(tag), image);
+            } else {
+                choice->icon(Modrinth::label(tag), 0xf12e);
+            }
+        }
+        return choice;
+    }
+
+    std::string& versionFilter() {
+        return DownloadsScreen::versionFilter;
+    }
+
+    std::string& loaderFilter() {
+        return DownloadsScreen::loaderFilter;
+    }
+
+    const std::string& target() {
+        return DownloadsScreen::target;
+    }
+
+    std::string displayTitle(const std::string& title, Kind kind) {
+        std::string chinese = ModNames::applies(kind) ? ModNames::zh(title) : std::string();
+        return chinese.empty() || ModNames::original() ? title : chinese;
+    }
+
+    std::string otherTitle(const std::string& title, Kind kind) {
+        std::string chinese = ModNames::applies(kind) ? ModNames::zh(title) : std::string();
+        if (chinese.empty()) {
+            return std::string();
+        }
+        return ModNames::original() ? chinese : title;
+    }
+
+    void versionAction(const Addons::Version& version, const Route& route, float right, float rowY, float rowH,
+                       bool primary, bool blocked) {
+        const std::string& owner = DownloadsScreen::target;
+        float centreY = rowY + rowH * 0.5f;
+        Kind kind = route.kind;
+        std::string taskTarget = kind == Kind::World ? owner : std::string();
+        ProjectInstaller::State state = ProjectInstaller::state(version.id, taskTarget);
+        if (state == ProjectInstaller::State::Running) {
+            progressRing(version.id, right - 20.0f, centreY, ProjectInstaller::progress(version.id, taskTarget));
+            return;
+        }
+        bool intoInstance = !ProjectInstaller::folder(kind).empty() || kind == Kind::World;
+        bool saveAs = intoInstance && Instances::find(owner) == nullptr;
+        if (!saveAs &&
+            ((intoInstance && ProjectInstaller::installed(version, kind, owner)) ||
+             ((kind == Kind::Modpack || kind == Kind::World) && state == ProjectInstaller::State::Done))) {
+            std::string done = "已安装";
+            float doneW = UiFont::width(done, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(done, right - doneW, rowY, rowH, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            UiWidgets::check(right - doneW - 12.0f, centreY, UiTheme::accent(), 9.0f);
+            return;
+        }
+        std::string text = saveAs ? "另存为" : kind == Kind::Datapack ? "下载" : "安装";
+        int glyph = saveAs ? 0xf0c7 : 0xf019;
+        float w = Page::buttonWidth(text, glyph);
+        float x = right - w;
+        std::string id = std::string("downloads#install#") + (primary ? "head#" : "") + version.id;
+        if (!Page::button(id, text, x, rowY + (rowH - Page::FIELD_H) * 0.5f, w, primary, blocked, glyph)) {
+            return;
+        }
+        const std::string& title = route.hit.title;
+        if (kind == Kind::Mod && Prerequisites::needed(version)) {
+            Prerequisites::open(version, title, saveAs, owner);
+            return;
+        }
+        if (saveAs) {
+            ProjectInstaller::saveAs(version, title);
+            return;
+        }
+        switch (kind) {
+            case Kind::Modpack: {
+                auto setup = ModpackSetup::fromProject(version, title);
+                if (setup) {
+                    NewInstanceScreen::openModpack(*setup);
+                    MainWindow::showNewInstance();
+                }
+                break;
+            }
+            case Kind::Datapack: {
+                const Instances::Entry* entry = Instances::find(owner);
+                std::filesystem::path start =
+                        entry != nullptr ? entry->gameDirectory / "saves" : Platform::userDirectory();
+                if (std::optional<std::filesystem::path> folder = Platform::pickFolder(start)) {
+                    ProjectInstaller::saveTo(version, *folder, title);
+                }
+                break;
+            }
+            case Kind::World: ProjectInstaller::installWorld(version, title, owner); break;
+            default: ProjectInstaller::install(version, kind, title, owner); break;
+        }
+    }
+
+    bool projectRow(const std::string& id, const Addons::Hit& hit, Kind kind, Source source, float x, float y, float w,
+                    int index, int count, bool blocked) {
+        return DownloadsScreen::projectRow(id, hit, kind, source, x, y, w, index, count, blocked);
+    }
+
+    void push(const Route& route) {
+        DownloadsScreen::pushRoute(route);
+    }
+
+    void back() {
+        if (!DownloadsScreen::routes.empty()) {
+            DownloadsScreen::routes.pop_back();
+        }
+        DownloadsScreen::views.go((int) DownloadsScreen::routes.size());
+    }
+
+    void openProject(Source source, Kind kind, const Addons::Hit& hit) {
+        Route route;
+        route.source = source;
+        route.kind = kind;
+        route.hit = hit;
+        push(route);
+    }
+
+    void openAuthor(Authors::Kind kind, const std::string& id, const std::string& name, const std::string& avatar,
+                    Source source) {
+        if (id.empty()) {
+            return;
+        }
+        Route route;
+        route.view = View::Author;
+        route.source = source;
+        route.author = kind;
+        route.authorId = id;
+        route.authorName = name;
+        route.authorAvatar = avatar;
+        push(route);
+    }
+
+    void openMcmod(const Mcmod::Ref& ref) {
+        if (ref.id > 0) {
+            DownloadsScreen::pendingMcmod = ref;
+        }
+    }
+
+    void follow(const std::string& url) {
+        std::string rest = url;
+        size_t scheme = rest.find("://");
+        if (scheme != std::string::npos) {
+            rest = rest.substr(scheme + 3);
+        }
+        rest = rest.substr(0, rest.find_first_of("?#"));
+        size_t slash = rest.find('/');
+        std::string host = b_launcher_base::to_lower(rest.substr(0, slash));
+        std::vector<std::string> parts;
+        if (slash != std::string::npos) {
+            std::string path = rest.substr(slash + 1);
+            size_t start = 0;
+            while (start <= path.size()) {
+                size_t end = path.find('/', start);
+                std::string part = path.substr(start, end == std::string::npos ? std::string::npos : end - start);
+                if (!part.empty()) {
+                    parts.push_back(part);
+                }
+                if (end == std::string::npos) {
+                    break;
+                }
+                start = end + 1;
+            }
+        }
+        if ((host == "modrinth.com" || host == "www.modrinth.com") && parts.size() >= 2) {
+            const std::string& type = parts[0];
+            if (type == "user") {
+                openAuthor(Authors::Kind::ModrinthUser, parts[1], parts[1], std::string(), Source::Modrinth);
+                return;
+            }
+            if (type == "organization") {
+                openAuthor(Authors::Kind::ModrinthOrganization, parts[1], parts[1], std::string(), Source::Modrinth);
+                return;
+            }
+            if (type == "mod" || type == "modpack" || type == "resourcepack" || type == "shader" ||
+                type == "datapack" || type == "plugin" || type == "project") {
+                DownloadsScreen::openSlug(Source::Modrinth, Modrinth::kindOf(type), parts[1]);
+                return;
+            }
+        }
+        if ((host == "curseforge.com" || host == "www.curseforge.com") && parts.size() >= 3 &&
+            parts[0] == "minecraft") {
+            static const std::map<std::string, Kind> classes = {
+                    {"mc-mods", Kind::Mod},    {"modpacks", Kind::Modpack},    {"texture-packs", Kind::ResourcePack},
+                    {"shaders", Kind::Shader}, {"data-packs", Kind::Datapack}, {"worlds", Kind::World},
+            };
+            auto found = classes.find(parts[1]);
+            if (found != classes.end()) {
+                DownloadsScreen::pendingSlug = parts[2];
+                DownloadsScreen::pendingKind = found->second;
+                DownloadsScreen::pendingUrl = url;
+                return;
+            }
+        }
+        if ((host == "mcmod.cn" || host == "www.mcmod.cn") && parts.size() >= 2 &&
+            (parts[0] == "class" || parts[0] == "modpack")) {
+            Mcmod::Ref ref;
+            ref.id = std::atoll(parts[1].c_str());
+            ref.type = parts[0] == "class" ? "mod" : "modpack";
+            ref.url = url;
+            if (ref.id > 0) {
+                openMcmod(ref);
+                return;
+            }
+        }
+        Platform::openUrl(url);
     }
 }

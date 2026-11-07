@@ -69,6 +69,7 @@ namespace Platform {
     std::optional<std::filesystem::path> pickSavePack(const std::filesystem::path& suggested);
     std::optional<std::filesystem::path> pickSaveFile(const std::filesystem::path& suggested, const wchar_t* title,
                                                       void* owner = nullptr);
+    std::optional<std::filesystem::path> pickSaveAs(const std::filesystem::path& suggested);
     uint32_t totalMemoryMb();
 
     struct Memory {

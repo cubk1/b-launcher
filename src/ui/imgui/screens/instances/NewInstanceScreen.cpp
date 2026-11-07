@@ -216,6 +216,9 @@ namespace NewInstanceScreen {
         }
 
         const Instances::Source* targetSource() {
+            if (const Instances::Source* only = Instances::soleSource()) {
+                return only;
+            }
             return Instances::installSource(target);
         }
 
@@ -353,6 +356,9 @@ namespace NewInstanceScreen {
             ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
         }
 
+        bool cancelArmed = false;
+        double armedAt = 0.0;
+
         void installButton(float right, float bottom, const std::string& problem, bool waiting) {
             const char* action = editing.empty() ? "安装" : "应用";
             bool installing = Installer::running();
@@ -364,6 +370,10 @@ namespace NewInstanceScreen {
             float x = right - w;
             float y = bottom - h;
             bool hovered = !NewUi::overlayCoversMouse() && NewUi::hit(x, y, w, h);
+            if (!installing || (cancelArmed && (!hovered || ImGui::GetTime() - armedAt > 3.0))) {
+                cancelArmed = false;
+            }
+            float armed = UiState::motion("new#install#armed", cancelArmed ? 1.0f : 0.0f, 16.0f);
             float hover = UiState::motion("new#install#hover", usable && hovered ? 1.0f : 0.0f, 18.0f);
             float enabled = UiState::motion("new#install#enabled", usable ? 1.0f : 0.0f, 14.0f);
             float savedAlpha = UiRender::alphaMul;
@@ -382,8 +392,12 @@ namespace NewInstanceScreen {
             }
             if (morph > 0.01f) {
                 float alpha = UiRender::alphaMul;
-                UiRender::alphaMul = alpha * morph;
+                UiRender::alphaMul = alpha * morph * (1.0f - armed);
                 ring(cx, cy, 11.0f * UiRender::lerp(0.4f, 1.0f, morph), Installer::progress(), ink);
+                if (armed > 0.01f) {
+                    UiRender::alphaMul = alpha * morph * armed;
+                    UiWidgets::icon(Ui::glyph(0xf00d), cx, cy, ink, UiRender::lerp(10.0f, 18.0f, armed));
+                }
                 UiRender::alphaMul = alpha;
             }
             UiRender::alphaMul = savedAlpha;
@@ -399,15 +413,21 @@ namespace NewInstanceScreen {
                                 UiWidgets::TEXT_CONTROL);
             }
             if (installing && hovered) {
-                std::string hint = editing.empty() ? "取消安装" : "取消修改";
+                std::string verb = editing.empty() ? "取消安装" : "取消修改";
+                std::string hint = cancelArmed ? "再次点击" + verb : verb;
                 float tipW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22.0f;
-                NewUi::tooltipText = hint;
-                NewUi::tooltipX = x + w - tipW;
-                NewUi::tooltipY = y - 34.0f;
+                NewUi::tooltipNow(hint, x + w - tipW, y - 34.0f);
             }
             if (usable && NewUi::click(x, y, w, h)) {
+                if (installing && !cancelArmed) {
+                    UiSound::request(UiSound::TICK);
+                    cancelArmed = true;
+                    armedAt = ImGui::GetTime();
+                    return;
+                }
                 UiSound::request(installing ? UiSound::RELEASE : UiSound::PULSE);
                 if (installing) {
+                    cancelArmed = false;
                     Installer::cancel();
                 } else if (!editing.empty()) {
                     Installer::startModify(editing, loaderSelection.requests());
@@ -665,9 +685,9 @@ namespace NewInstanceScreen {
                 }
             }
             UiRender::alphaMul = savedAlpha;
-            Page::title(!editing.empty()  ? "修改加载器"
-                                : modpack ? "安装整合包"
-                                          : "新建实例",
+            Page::title(!editing.empty()  ? std::string("修改加载器")
+                                : modpack ? std::string("安装整合包")
+                                          : "新建 " + minecraft + " 实例",
                         Page::left() + 30.0f * (1.0f - phase), Page::TOP);
             if (!editing.empty()) {
                 if (const Instances::Entry* entry = Instances::find(editing)) {
@@ -737,8 +757,10 @@ namespace NewInstanceScreen {
                     : loaderSelection.choices();
             int loaderRows = modpack ? 4 : 1 + (int) choices.size();
             bool edit = !editing.empty();
+            bool choosePlace = Instances::soleSource() == nullptr;
+            int instanceRows = choosePlace ? 2 : 1;
             float contentH = edit ? Page::CAPTION_H + loaderRows * Page::ROW_H
-                                  : 2 * Page::CAPTION_H + (2 + loaderRows) * Page::ROW_H + Page::GAP;
+                                  : 2 * Page::CAPTION_H + (instanceRows + loaderRows) * Page::ROW_H + Page::GAP;
             float savedAlpha = UiRender::alphaMul;
             float savedOffsetY = UiRender::offsetY;
             UiRender::alphaMul = savedAlpha * (1.0f - gone);
@@ -751,7 +773,7 @@ namespace NewInstanceScreen {
             if (!edit) {
                 Page::caption("实例", y);
                 y += Page::CAPTION_H;
-                Page::card(y, 2);
+                Page::card(y, instanceRows);
                 Page::label("名称", y);
                 std::string generated = generatedName();
                 auto nameValue = std::make_shared<TextBinding>(
@@ -769,32 +791,35 @@ namespace NewInstanceScreen {
                 field.paint();
                 y += Page::ROW_H;
 
-                Page::label("安装位置", y);
-                auto place = std::make_shared<ModeBinding>(
-                        "new#place",
-                        [] {
-                            const Instances::Source* source = targetSource();
-                            return source != nullptr ? sourceLabel(*source) : std::string();
-                        },
-                        [](const std::string& option) {
-                            for (const Instances::Source& source : Instances::sources()) {
-                                if (sourceLabel(source) == option) {
-                                    target = source.key;
-                                    return;
+                if (choosePlace) {
+                    Page::label("安装位置", y);
+                    auto place = std::make_shared<ModeBinding>(
+                            "new#place",
+                            [] {
+                                const Instances::Source* source = targetSource();
+                                return source != nullptr ? sourceLabel(*source) : std::string();
+                            },
+                            [](const std::string& option) {
+                                for (const Instances::Source& source : Instances::sources()) {
+                                    if (sourceLabel(source) == option) {
+                                        target = source.key;
+                                        return;
+                                    }
                                 }
-                            }
-                        },
-                        [] {
-                            std::vector<std::string> options;
-                            for (const Instances::Source& source : Instances::sources()) {
-                                options.push_back(sourceLabel(source));
-                            }
-                            return options;
-                        });
-                SelectWidget select("new#place", place);
-                select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
-                select.paint();
-                y += Page::ROW_H + Page::GAP;
+                            },
+                            [] {
+                                std::vector<std::string> options;
+                                for (const Instances::Source& source : Instances::sources()) {
+                                    options.push_back(sourceLabel(source));
+                                }
+                                return options;
+                            });
+                    SelectWidget select("new#place", place);
+                    select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
+                    select.paint();
+                    y += Page::ROW_H;
+                }
+                y += Page::GAP;
             }
 
             if (modpack) {
@@ -811,21 +836,14 @@ namespace NewInstanceScreen {
             Page::caption("加载器", y);
             y += Page::CAPTION_H;
             Page::card(y, loaderRows);
-            if (edit) {
-                if (Page::shown(y)) {
-                    UiRender::texture(Icons::vanilla(), Page::left() + 16.0f, y + (Page::ROW_H - 16.0f) * 0.5f, 16.0f,
-                                      16.0f);
-                    UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
-                                    UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
-                                    UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                }
-            } else if (Page::shown(y) &&
-                       loaderRow("new#row#minecraft", Icons::vanilla(), 0, "Minecraft", minecraft,
-                                 UiTheme::textSecondary(), true, false, y, rowsBlocked,
-                                 Page::rowCorners(0, loaderRows)) == RowAction::Open) {
-                steps.go(STEP_VERSIONS);
+            if (Page::shown(y)) {
+                UiRender::texture(Icons::vanilla(), Page::left() + 16.0f, y + (Page::ROW_H - 16.0f) * 0.5f, 16.0f,
+                                  16.0f);
+                UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
+                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
+                                UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             }
             y += Page::ROW_H;
             int rowIndex = 1;

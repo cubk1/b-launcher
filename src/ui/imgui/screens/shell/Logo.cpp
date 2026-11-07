@@ -11,6 +11,8 @@
 #include <core/base/json.hpp>
 #include <core/base/strings.hpp>
 
+#include "app/system/Pixels.h"
+
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -20,8 +22,6 @@
 #endif
 #include <windows.h>
 #include <wincodec.h>
-#else
-#include "app/system/Pixels.h"
 #endif
 
 #include "nanosvg.h"
@@ -170,6 +170,8 @@ namespace Logo {
         uint32_t customTexture = 0;
         int customWidth = 0;
         int customHeight = 0;
+        Pixels customImage;
+        int revision = 0;
         bool working = false;
         std::thread worker;
         std::mutex lock;
@@ -344,9 +346,13 @@ namespace Logo {
                 GLuint old = customTexture;
                 UiGL::DeleteTextures(1, &old);
             }
+            if (!customImage.rgba.empty()) {
+                revision++;
+            }
             customTexture = 0;
             customWidth = 0;
             customHeight = 0;
+            customImage = Pixels();
         }
 
         uint32_t uploadLevels(const std::vector<Level>& levels) {
@@ -419,6 +425,31 @@ namespace Logo {
         return rasterize(size, UiTheme::accent() | 0xFF000000u);
     }
 
+    std::vector<unsigned char> iconPixels(int size, bool custom) {
+        if (!custom || size <= 0 || customImage.rgba.empty()) {
+            return pixels(size);
+        }
+        float fit = (float) size / (float) std::max(customImage.width, customImage.height);
+        int w = std::clamp((int) std::lround(customImage.width * fit), 1, size);
+        int h = std::clamp((int) std::lround(customImage.height * fit), 1, size);
+        Pixels scaled = Pixels::resized(customImage, 0, 0, customImage.width, customImage.height, w, h);
+        if (scaled.rgba.empty()) {
+            return pixels(size);
+        }
+        std::vector<unsigned char> out((size_t) size * size * 4, 0);
+        int left = (size - w) / 2;
+        int top = (size - h) / 2;
+        for (int row = 0; row < h; row++) {
+            std::copy_n(scaled.rgba.data() + (size_t) row * w * 4, (size_t) w * 4,
+                        out.data() + ((size_t) (top + row) * size + left) * 4);
+        }
+        return out;
+    }
+
+    int iconRevision() {
+        return revision;
+    }
+
     void draw(float x, float y, float size, float alpha) {
         if (size <= 0.0f || alpha <= 0.0f || !load()) {
             return;
@@ -488,6 +519,7 @@ namespace Logo {
     }
 
     void poll() {
+        configure();
         if (chosen.empty()) {
             releaseCustom();
         }
@@ -520,6 +552,10 @@ namespace Logo {
         customTexture = next;
         customWidth = result->levels.front().width;
         customHeight = result->levels.front().height;
+        customImage.width = customWidth;
+        customImage.height = customHeight;
+        customImage.rgba = std::move(result->levels.front().rgba);
+        revision++;
     }
 
     void shutdown() {

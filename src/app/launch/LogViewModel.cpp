@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <vector>
 
 namespace LogViewModel {
 
@@ -86,6 +87,20 @@ namespace LogViewModel {
         size_t lengthOf(unsigned char lead) {
             return lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : 4;
         }
+
+        constexpr std::string_view DELIMITERS = "/\\()\"'-.,:;<>~!@#$%^&*|+=[]{}?";
+
+        int classOf(std::string_view text, size_t at, size_t length) {
+            unsigned char lead = (unsigned char) text[at];
+            if (lead == ' ' || lead == '\t') {
+                return 0;
+            }
+            if ((length == 1 && DELIMITERS.find((char) lead) != std::string_view::npos) ||
+                text.compare(at, length, "\xE2\x94\x82") == 0) {
+                return 1;
+            }
+            return 2;
+        }
     }
 
     int columnsBefore(std::string_view text, size_t bytes) {
@@ -116,5 +131,116 @@ namespace LogViewModel {
             i += length;
         }
         return start == std::string_view::npos ? std::string_view() : text.substr(start);
+    }
+
+    size_t byteAt(std::string_view text, int column) {
+        int at = 0;
+        size_t i = 0;
+        while (i < text.size() && at < column) {
+            size_t length = lengthOf((unsigned char) text[i]);
+            at += length >= 3 ? 2 : 1;
+            i += length;
+        }
+        return std::min(i, text.size());
+    }
+
+    int nearestColumn(std::string_view text, float column) {
+        int at = 0;
+        for (size_t i = 0; i < text.size();) {
+            size_t length = lengthOf((unsigned char) text[i]);
+            int width = length >= 3 ? 2 : 1;
+            if (column < at + width * 0.5f) {
+                return at;
+            }
+            at += width;
+            i += length;
+        }
+        return at;
+    }
+
+    int stepColumn(std::string_view text, int column, int direction) {
+        int at = 0;
+        int last = 0;
+        for (size_t i = 0; i < text.size();) {
+            size_t length = lengthOf((unsigned char) text[i]);
+            at += length >= 3 ? 2 : 1;
+            i += length;
+            if (direction > 0 && at > column) {
+                return at;
+            }
+            if (direction < 0 && at >= column) {
+                return last;
+            }
+            last = at;
+        }
+        return at;
+    }
+
+    std::vector<int> wrapStarts(std::string_view text, int columns) {
+        std::vector<int> starts = {0};
+        int at = 0;
+        for (size_t i = 0; i < text.size();) {
+            size_t length = lengthOf((unsigned char) text[i]);
+            int width = length >= 3 ? 2 : 1;
+            if (at + width - starts.back() > columns && at > starts.back()) {
+                starts.push_back(at);
+            }
+            at += width;
+            i += length;
+        }
+        return starts;
+    }
+
+    int wrappedRows(std::string_view text, int columns) {
+        if ((int) text.size() <= columns) {
+            return 1;
+        }
+        int rows = 1;
+        int start = 0;
+        int at = 0;
+        for (size_t i = 0; i < text.size();) {
+            size_t length = lengthOf((unsigned char) text[i]);
+            int width = length >= 3 ? 2 : 1;
+            if (at + width - start > columns && at > start) {
+                rows++;
+                start = at;
+            }
+            at += width;
+            i += length;
+        }
+        return rows;
+    }
+
+    std::pair<int, int> wordAround(std::string_view text, int column) {
+        struct Glyph {
+            int start;
+            int end;
+            int kind;
+        };
+        std::vector<Glyph> glyphs;
+        int at = 0;
+        int hit = -1;
+        for (size_t i = 0; i < text.size();) {
+            size_t length = std::min(lengthOf((unsigned char) text[i]), text.size() - i);
+            int width = length >= 3 ? 2 : 1;
+            if (column >= at && column < at + width) {
+                hit = (int) glyphs.size();
+            }
+            glyphs.push_back(Glyph{at, at + width, classOf(text, i, length)});
+            at += width;
+            i += length;
+        }
+        if (hit < 0) {
+            return {at, at};
+        }
+        int first = hit;
+        int last = hit;
+        while (first > 0 && glyphs[(size_t) first - 1].kind == glyphs[(size_t) hit].kind) {
+            first--;
+        }
+        while (last + 1 < (int) glyphs.size() && glyphs[(size_t) last + 1].kind == glyphs[(size_t) hit].kind) {
+            last++;
+        }
+        return {glyphs[(size_t) first].start, glyphs[(size_t) last].end};
     }
 }

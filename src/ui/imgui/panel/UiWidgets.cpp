@@ -40,6 +40,14 @@ namespace UiWidgets {
         UiRender::shadow(cx - radius, cy - radius, radius * 2, radius * 2, radius, 4.0f, 1.0f, UiTheme::knobShadow());
     }
 
+    namespace {
+        uint32_t switchTrack(uint32_t off, float on, float hover) {
+            uint32_t idle = UiRender::over(UiTheme::overlay(Ui::round(22.0f * hover)), off);
+            uint32_t lit = UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover);
+            return UiRender::mix(idle, lit, on);
+        }
+    }
+
     void card(float x, float y, float w, float h, const std::string& title) {
         UiRender::text(title, x + 12, y - 18, UiTheme::textFaint(), UiFont::MEDIUM, TEXT_CAPTION);
         UiRender::roundRect(x, y, w, h, 14.0f, UiTheme::surface());
@@ -49,8 +57,7 @@ namespace UiWidgets {
     void toggle(const std::string& id, float x, float y, bool value, bool enabled, bool hovered) {
         float on = UiState::motion(id + "#on", value ? 1.0f : 0.0f, 19.0f);
         float hover = UiState::motion(id + "#hover", enabled && hovered ? 1.0f : 0.0f, 20.0f);
-        (void) hover;
-        UiRender::roundRect(x, y, 29, 18, 9.0f, UiRender::mix(UiTheme::surfaceRaised(), UiTheme::accent(), on));
+        UiRender::roundRect(x, y, 29, 18, 9.0f, switchTrack(UiTheme::surfaceRaised(), on, hover));
         knobShadow(x + UiRender::lerp(9.0f, 20.0f, on), y + 9, 6.5f);
         UiRender::circle(x + UiRender::lerp(9.0f, 20.0f, on), y + 9, 6.5f,
                          UiRender::mix(UiTheme::knobOff(), UiTheme::onAccent(), on));
@@ -284,9 +291,10 @@ namespace UiWidgets {
         }
     }
 
-    void subToggle(const std::string& id, float x, float y, bool value) {
+    void subToggle(const std::string& id, float x, float y, bool value, bool hovered) {
         float on = UiState::motion(id + "#subon", value ? 1.0f : 0.0f, 19.0f);
-        UiRender::roundRect(x, y, 30, 18, 9.0f, UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), on));
+        float hover = UiState::motion(id + "#subhover", hovered ? 1.0f : 0.0f, 20.0f);
+        UiRender::roundRect(x, y, 30, 18, 9.0f, switchTrack(UiTheme::outlineSoft(), on, hover));
         knobShadow(x + UiRender::lerp(9.0f, 21.0f, on), y + 9, 6.8f);
         UiRender::circle(x + UiRender::lerp(9.0f, 21.0f, on), y + 9, 6.8f, UiTheme::onAccent());
     }

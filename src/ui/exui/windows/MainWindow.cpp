@@ -39,7 +39,7 @@ namespace ForgottenMelody {
         const exui::ControlSpec CONTROLS[] = {
                 {LAUNCH, ControlKind::Button, {430, 310, 150, 75}, L"启动游戏"},
                 {DOWNLOADS, ControlKind::Button, {590, 310, 100, 35}, L"下载中心"},
-                {SETTINGS, ControlKind::Button, {590, 350, 100, 35}, L"设置"},
+                {SETTINGS, ControlKind::Button, {590, 350, 100, 35}, L"选项"},
                 {INSTANCE, ControlKind::Combo, {430, 390, 185, 30}},
                 {.id = FOLDER,
                  .kind = ControlKind::Hyperlink,

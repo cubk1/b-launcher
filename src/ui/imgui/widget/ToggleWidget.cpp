@@ -14,7 +14,7 @@ void ToggleWidget::paint() {
         flag->flip();
     }
     if (compact) {
-        UiWidgets::subToggle(id, x, y, flag->isOn());
+        UiWidgets::subToggle(id, x, y, flag->isOn(), isHovered);
     } else {
         UiWidgets::toggle(id, x, y, flag->isOn(), true, isHovered);
     }

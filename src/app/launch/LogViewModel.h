@@ -5,6 +5,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace LogViewModel {
 
@@ -37,4 +39,10 @@ namespace LogViewModel {
     // four bytes occupy two columns, shorter sequences one.
     int columnsBefore(std::string_view text, size_t bytes);
     std::string_view columnsOf(std::string_view text, int skip, int columns, int& skipped);
+    size_t byteAt(std::string_view text, int column);
+    int nearestColumn(std::string_view text, float column);
+    int stepColumn(std::string_view text, int column, int direction);
+    std::pair<int, int> wordAround(std::string_view text, int column);
+    std::vector<int> wrapStarts(std::string_view text, int columns);
+    int wrappedRows(std::string_view text, int columns);
 }

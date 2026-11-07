@@ -210,10 +210,8 @@ namespace ForgottenMelody {
             names->SetHeaderVisible(false);
             names->SetRowHeight(30);
             names->InsertColumn(L"", frame.listWidth - 6);
-            for (const Section& section : sections) {
-                names->InsertRow({section.name});
-            }
             AddControl(SECTIONS, names);
+            listSections(0);
         }
         // Where 打开下载 was, but the size of the other buttons: in line with the backing's right edge, halfway down
         // the strip between the backing and the frame's line.
@@ -243,11 +241,46 @@ namespace ForgottenMelody {
             FindControl(sections[i].panel)->SetVisible(i == index);
         }
         SetText(TITLE, subject.empty() ? sections[index].name : subject + L" - " + sections[index].name);
-        auto* names = dynamic_cast<exui::ListView*>(FindControl(SECTIONS));
-        if (names != nullptr && names->GetSelectedRow() != index) {
-            names->SetSelectedRow(index);
-        }
+        currentSection = index;
+        listSections(index);
         sectionShown(index);
+    }
+
+    void SectionedForm::listSections(int current) {
+        auto* names = dynamic_cast<exui::ListView*>(FindControl(SECTIONS));
+        if (names == nullptr || current < 0 || current >= (int) sections.size()) {
+            return;
+        }
+        const std::wstring& open = sections[current].group;
+        std::vector<std::wstring> labels;
+        rowSections.clear();
+        rowTargets.clear();
+        for (int i = 0; i < (int) sections.size(); i++) {
+            const Section& section = sections[i];
+            if (!section.group.empty() && (i == 0 || sections[i - 1].group != section.group)) {
+                labels.push_back(section.group);
+                rowSections.push_back(-1);
+                rowTargets.push_back(i);
+            }
+            if (!section.group.empty() && section.group != open) {
+                continue;
+            }
+            labels.push_back(section.group.empty() ? section.name : L"    " + section.name);
+            rowSections.push_back(i);
+            rowTargets.push_back(i);
+        }
+        if (labels != shownRows) {
+            names->ClearRows();
+            for (const std::wstring& label : labels) {
+                names->InsertRow({label});
+            }
+            shownRows = std::move(labels);
+        }
+        auto at = std::find(rowSections.begin(), rowSections.end(), current);
+        int row = at == rowSections.end() ? -1 : (int) (at - rowSections.begin());
+        if (names->GetSelectedRow() != row) {
+            names->SetSelectedRow(row);
+        }
     }
 
     void SectionedForm::setSubject(const std::wstring& title) {
@@ -308,8 +341,13 @@ namespace ForgottenMelody {
     }
 
     void SectionedForm::OnSelection(uint32_t id, int index) {
-        if (id == SECTIONS && index >= 0 && index < (int) sections.size()) {
-            showSection(index);
+        if (id == SECTIONS && index >= 0 && index < (int) rowTargets.size()) {
+            int target = rowTargets[index];
+            if (rowSections[index] < 0 && sections[target].group == sections[currentSection].group) {
+                listSections(currentSection);
+                return;
+            }
+            showSection(target);
         }
     }
 

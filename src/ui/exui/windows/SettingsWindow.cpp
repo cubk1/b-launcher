@@ -57,6 +57,8 @@ namespace ForgottenMelody {
         enum : uint32_t {
             // 游戏设置
             GAME = SectionedForm::FIRST_CONTROL,
+            OPTIONS_PAGE,
+            FOLDERS_PAGE,
             INSTANCES,
             ISOLATION_LABEL,
             ISOLATION,
@@ -76,8 +78,13 @@ namespace ForgottenMelody {
             LOGS,
             PRE_LAUNCH_LABEL,
             PRE_LAUNCH,
-            GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL,
-            KEYS, KEYS_SOURCE_LABEL, KEYS_SOURCE,
+            GAME_OPTIONS_GROUP,
+            GAME_SOURCE_LABEL,
+            GAME_SOURCE,
+            GAME_OPTIONS_PANEL,
+            KEYS,
+            KEYS_SOURCE_LABEL,
+            KEYS_SOURCE,
             // 补丁
             PATCH,
             ENABLE,
@@ -112,19 +119,26 @@ namespace ForgottenMelody {
             LAN_OFFLINE_JOIN,
             DEBUGGING,
             DEBUG_LOG,
-            // 启动器设置
+            // 启动器选项
             LAUNCHER,
+            NETWORK_PAGE,
+            RESET_PAGE,
             LOOK,
             STYLE_LABEL,
             STYLE,
             STYLE_HINT,
             RESTART,
             NETWORK_GROUP,
+            SOURCES_GROUP,
             SYSTEM_PROXY,
-            SOURCE_MINECRAFT_LABEL, SOURCE_MINECRAFT,
-            SOURCE_ASSETS_LABEL, SOURCE_ASSETS,
-            SOURCE_MODRINTH_LABEL, SOURCE_MODRINTH,
-            SOURCE_CURSEFORGE_LABEL, SOURCE_CURSEFORGE,
+            SOURCE_MINECRAFT_LABEL,
+            SOURCE_MINECRAFT,
+            SOURCE_ASSETS_LABEL,
+            SOURCE_ASSETS,
+            SOURCE_MODRINTH_LABEL,
+            SOURCE_MODRINTH,
+            SOURCE_CURSEFORGE_LABEL,
+            SOURCE_CURSEFORGE,
             RESET_GROUP,
             RESET_LABEL,
             RESET_SETTINGS,
@@ -147,9 +161,24 @@ namespace ForgottenMelody {
             // 工具箱
             TOOLS,
             FILE_DOWNLOAD,
-            URL_LABEL, URL, FOLDER_LABEL, FOLDER, PICK_FOLDER, NAME_LABEL, NAME, DOWNLOAD_NOTE,
-            START_DOWNLOAD, OPEN_FOLDER, DOWNLOAD_STATE, PROGRESS, DOWNLOAD_DETAILS, DOWNLOAD_TARGET,
-            PCL_GROUP, PCL_NOTE, UNLOCK_PCL, PCL_RESULT,
+            URL_LABEL,
+            URL,
+            FOLDER_LABEL,
+            FOLDER,
+            PICK_FOLDER,
+            NAME_LABEL,
+            NAME,
+            DOWNLOAD_NOTE,
+            START_DOWNLOAD,
+            OPEN_FOLDER,
+            DOWNLOAD_STATE,
+            PROGRESS,
+            DOWNLOAD_DETAILS,
+            DOWNLOAD_TARGET,
+            PCL_GROUP,
+            PCL_NOTE,
+            UNLOCK_PCL,
+            PCL_RESULT,
             // 关于
             ABOUT,
             PRODUCT,
@@ -164,22 +193,18 @@ namespace ForgottenMelody {
             LINKS,
         };
 
-        constexpr uint32_t PAGE_IDS[] = {GAME, KEYS, PATCH, LAUNCHER, JAVA, TOOLS, ABOUT};
+        constexpr uint32_t PAGE_IDS[] = {GAME,         OPTIONS_PAGE, KEYS, PATCH, FOLDERS_PAGE, LAUNCHER,
+                                         NETWORK_PAGE, RESET_PAGE,   JAVA, TOOLS, ABOUT};
 
         struct DownloadSourceRow {
             uint32_t label, control;
             DownloadSources::Kind kind;
-            const wchar_t* explanation;
         };
         const DownloadSourceRow DOWNLOAD_SOURCES[] = {
-                {SOURCE_MINECRAFT_LABEL, SOURCE_MINECRAFT, DownloadSources::Kind::Minecraft,
-                 L"版本列表、游戏本体、支持库、模组加载器和 Java 运行时，镜像源是 BMCLAPI。"},
-                {SOURCE_ASSETS_LABEL, SOURCE_ASSETS, DownloadSources::Kind::Assets,
-                 L"游戏的声音、语言等资源文件，镜像源是 BMCLAPI。"},
-                {SOURCE_MODRINTH_LABEL, SOURCE_MODRINTH, DownloadSources::Kind::Modrinth,
-                 L"Modrinth 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
-                {SOURCE_CURSEFORGE_LABEL, SOURCE_CURSEFORGE, DownloadSources::Kind::CurseForge,
-                 L"CurseForge 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+                {SOURCE_MINECRAFT_LABEL, SOURCE_MINECRAFT, DownloadSources::Kind::Minecraft},
+                {SOURCE_ASSETS_LABEL, SOURCE_ASSETS, DownloadSources::Kind::Assets},
+                {SOURCE_MODRINTH_LABEL, SOURCE_MODRINTH, DownloadSources::Kind::Modrinth},
+                {SOURCE_CURSEFORGE_LABEL, SOURCE_CURSEFORGE, DownloadSources::Kind::CurseForge},
         };
         const blb::net::source_order SOURCE_ORDERS[] = {
                 blb::net::source_order::mirror_first, blb::net::source_order::official_first, blb::net::source_order::official_only,
@@ -201,9 +226,9 @@ namespace ForgottenMelody {
             const wchar_t* label;
         };
         const Language LANGUAGES[] = {
-                {LaunchDefaults::Language::None, L"不自动设置"},
-                {LaunchDefaults::Language::Chinese, L"自动设置为中文"},
-                {LaunchDefaults::Language::English, L"自动设置为英文"},
+                {LaunchDefaults::Language::None, L"不设置"},
+                {LaunchDefaults::Language::Chinese, L"中文"},
+                {LaunchDefaults::Language::English, L"英文"},
         };
 
         struct Collector {
@@ -218,7 +243,6 @@ namespace ForgottenMelody {
                 {blb::launch::gc_mode::none, L"不指定（可自定义）"},
         };
 
-        // The patch settings with the explanations of the default interface, whose hints for empty fields end them.
         struct Choice {
             const char* value;
             const wchar_t* label;
@@ -236,41 +260,25 @@ namespace ForgottenMelody {
         struct Flag {
             uint32_t id;
             const char* key;
-            const wchar_t* explanation;
         };
         const Flag FLAGS[] = {
-                {SKIN_LEGACY, "skin.legacy",
-                 L"1.7.5 及以下版本使用的 s3.amazonaws.com、skins.minecraft.net "
-                 L"皮肤地址已经失效，改为从皮肤来源加载。"},
-                {SKIN_AUTHLIB, "skin.authlib", L"通过 authlib 从皮肤来源加载皮肤和披风，适用于 1.7.6 及以上版本。"},
-                {SKIN_TRUSTED, "skin.trusted",
-                 L"1.20.3 起游戏只显示其他玩家已签名的材质，开启后自定义材质会被当作已签名。"},
-                {LOG4J, "log4j.enabled", L"修复 log4j2 的远程代码执行漏洞（CVE-2021-44228）。"},
-                {IME, "input.enabled", L"修复 1.12.2 及以下版本（LWJGL 2）无法输入中文的问题。"},
-                {LWJGL, "lwjgl.unsafe",
-                 L"在 Java 25 以上运行 LWJGL 3 时，让 MemoryUtil 改用 jdk.internal.misc.Unsafe，避开 sun.misc.Unsafe "
-                 L"的弃用路径；LWJGL 3.4 会启用自带的对应后端。"},
-                {DEBUG_LOG, "debug", L"在游戏日志里输出每个被修改的类和每次皮肤查询。"},
-                {LAN_OFFLINE_JOIN, "lan.offlineJoin",
-                 L"在加入方的游戏中启用，允许离线账号在认证失败后继续尝试连接局域网世界。服务器仍按自身规则验证玩家。"},
+                {SKIN_LEGACY, "skin.legacy"},   {SKIN_AUTHLIB, "skin.authlib"},
+                {SKIN_TRUSTED, "skin.trusted"}, {LOG4J, "log4j.enabled"},
+                {IME, "input.enabled"},         {LWJGL, "lwjgl.unsafe"},
+                {DEBUG_LOG, "debug"},           {LAN_OFFLINE_JOIN, "lan.offlineJoin"},
         };
 
         struct Value {
             uint32_t label;
             uint32_t id;
             const char* key;
-            const wchar_t* explanation;
         };
         const Value VALUES[] = {
-                {SKIN_IMAGE_LABEL, SKIN_IMAGE, "skin.template.skin",
-                 L"PNG 皮肤图片，也可以填写网址；手臂粗细会自动识别。留空则不使用。"},
-                {CAPE_IMAGE_LABEL, CAPE_IMAGE, "skin.template.cape", L"PNG 披风图片，也可以填写网址。留空则不使用。"},
-                {PLAYER_LABEL, PLAYER, "skin.player",
-                 L"填写后使用这个正版玩家的皮肤和披风，启动游戏时获取；留空则按每个玩家自己的名字查询。"},
-                {WINDOW_TITLE_LABEL, WINDOW_TITLE, "window.title",
-                 L"{title} 代表游戏原来的标题，例如 {title} - 我的服务器。留空则不修改。"},
-                {WINDOW_ICON_LABEL, WINDOW_ICON, "window.icon",
-                 L"图片路径，多个不同尺寸的图片用英文逗号分隔；支持 PNG、ICO、BMP、GIF 等格式。留空则不修改。"},
+                {SKIN_IMAGE_LABEL, SKIN_IMAGE, "skin.template.skin"},
+                {CAPE_IMAGE_LABEL, CAPE_IMAGE, "skin.template.cape"},
+                {PLAYER_LABEL, PLAYER, "skin.player"},
+                {WINDOW_TITLE_LABEL, WINDOW_TITLE, "window.title"},
+                {WINDOW_ICON_LABEL, WINDOW_ICON, "window.icon"},
         };
 
         // Every control of 皮肤 that its rows move or hide.
@@ -323,10 +331,10 @@ namespace ForgottenMelody {
                         {COUNT, ControlKind::Label, {}},
                         {REFRESH, ControlKind::Button, {}, L"重新读取"},
                         {MANAGE, ControlKind::Button, {}, L"实例管理"},
-                        {LAUNCH, ControlKind::Group, {}, L"启动"},
-                        {LANGUAGE_LABEL, ControlKind::Label, {}, L"游戏语言"},
+                        {LAUNCH, ControlKind::Group, {}, L"全局启动项"},
+                        {LANGUAGE_LABEL, ControlKind::Label, {}, L"默认游戏语言"},
                         {LANGUAGE, ControlKind::Combo, {}},
-                        {GC_LABEL, ControlKind::Label, {}, L"内存管理"},
+                        {GC_LABEL, ControlKind::Label, {}, L"垃圾回收器"},
                         {GC, ControlKind::Combo, {}},
                         {JVM_LABEL, ControlKind::Label, {}, L"JVM 参数"},
                         {JVM, ControlKind::Edit, {}},
@@ -335,14 +343,14 @@ namespace ForgottenMelody {
                         {LOGS, ControlKind::Check, {}, L"显示游戏日志"},
                         {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
                         {PRE_LAUNCH, ControlKind::Edit, {}},
-                        {GAME_OPTIONS_GROUP, ControlKind::Group, {}, L"游戏选项"},
+                        {GAME_OPTIONS_GROUP, ControlKind::Group, {}, L"全局游戏选项"},
                         {GAME_SOURCE_LABEL, ControlKind::Label, {}, L"游戏目录"},
                         {GAME_SOURCE, ControlKind::Combo, {}},
                         {KEYS_SOURCE_LABEL, ControlKind::Label, {}, L"游戏目录"},
                         {KEYS_SOURCE, ControlKind::Combo, {}},
                         // 补丁
                         {ENABLE, ControlKind::Group, {}, L"启用"},
-                        {ALL, ControlKind::Check, {}, L"为所有实例启用"},
+                        {ALL, ControlKind::Check, {}, L"应用给默认设置的实例"},
                         {SKINS, ControlKind::Group, {}, L"皮肤"},
                         {SKIN_LEGACY, ControlKind::Check, {}, L"修复旧版皮肤"},
                         {SKIN_AUTHLIB, ControlKind::Check, {}, L"自定义皮肤"},
@@ -358,11 +366,11 @@ namespace ForgottenMelody {
                         {CAPE_IMAGE_PICK, ControlKind::Button, {}, L"浏览"},
                         {PLAYER_LABEL, ControlKind::Label, {}, L"正版玩家名"},
                         {PLAYER, ControlKind::Edit, {}},
-                        {SKIN_TRUSTED, ControlKind::Check, {}, L"标记为已签名"},
+                        {SKIN_TRUSTED, ControlKind::Check, {}, L"自定义材质标记为已签名"},
                         {FIXES, ControlKind::Group, {}, L"修复"},
                         {LOG4J, ControlKind::Check, {}, L"Log4Shell 漏洞修复"},
                         {IME, ControlKind::Check, {}, L"中文输入修复"},
-                        {LWJGL, ControlKind::Check, {}, L"LWJGL 内存访问"},
+                        {LWJGL, ControlKind::Check, {}, L"Java 25 LWJGL 兼容"},
                         {GAME_WINDOW, ControlKind::Group, {}, L"窗口"},
                         {WINDOW_TITLE_LABEL, ControlKind::Label, {}, L"窗口标题"},
                         {WINDOW_TITLE, ControlKind::Edit, {}},
@@ -373,13 +381,14 @@ namespace ForgottenMelody {
                         {LAN_OFFLINE_JOIN, ControlKind::Check, {}, L"离线加入局域网"},
                         {DEBUGGING, ControlKind::Group, {}, L"调试"},
                         {DEBUG_LOG, ControlKind::Check, {}, L"输出调试日志"},
-                        // 启动器设置
+                        // 启动器选项
                         {LOOK, ControlKind::Group, {}, L"外观"},
                         {STYLE_LABEL, ControlKind::Label, {}, L"界面风格"},
                         {STYLE, ControlKind::Combo, {}},
                         {STYLE_HINT, ControlKind::Label, {}},
                         {RESTART, ControlKind::Button, {}, L"立即重启"},
                         {NETWORK_GROUP, ControlKind::Group, {}, L"网络"},
+                        {SOURCES_GROUP, ControlKind::Group, {}, L"下载源"},
                         {SYSTEM_PROXY, ControlKind::Check, {}, L"使用系统代理"},
                         {SOURCE_MINECRAFT_LABEL, ControlKind::Label, {}, L"Minecraft"},
                         {SOURCE_MINECRAFT, ControlKind::Combo, {}},
@@ -390,7 +399,7 @@ namespace ForgottenMelody {
                         {SOURCE_CURSEFORGE_LABEL, ControlKind::Label, {}, L"CurseForge"},
                         {SOURCE_CURSEFORGE, ControlKind::Combo, {}},
                         {RESET_GROUP, ControlKind::Group, {}, L"重置"},
-                        {RESET_LABEL, ControlKind::Label, {}, L"恢复默认启动器设置"},
+                        {RESET_LABEL, ControlKind::Label, {}, L"恢复默认启动器选项"},
                         {RESET_SETTINGS, ControlKind::Button, {}, L"重置并重启"},
                         // Java 管理: the Java found on this computer above, the Java to download below.
                         {INSTALLED, ControlKind::Group, {}, L"本机 Java"},
@@ -416,7 +425,10 @@ namespace ForgottenMelody {
                         {PICK_FOLDER, ControlKind::Button, {}, L"选择文件夹"},
                         {NAME_LABEL, ControlKind::Label, {}, L"文件名"},
                         {NAME, ControlKind::Edit, {}},
-                        {DOWNLOAD_NOTE, ControlKind::Label, {}, L"文件名留空时根据地址生成。关闭设置后，下载仍会继续。"},
+                        {DOWNLOAD_NOTE,
+                         ControlKind::Label,
+                         {},
+                         L"文件名留空时根据地址生成。关闭设置后，下载仍会继续。"},
                         {START_DOWNLOAD, ControlKind::Button, {}, L"开始下载"},
                         {OPEN_FOLDER, ControlKind::Button, {}, L"打开文件夹"},
                         {DOWNLOAD_STATE, ControlKind::Label, {}},
@@ -445,20 +457,21 @@ namespace ForgottenMelody {
                          .bounds = {},
                          .caption = L"an open-source minecraft launcher",
                          .textColor = MUTED},
-                        {.id = UPDATE_STATUS,
-                         .kind = ControlKind::Label,
-                         .bounds = {},
-                         .textColor = 0xD2C00000},
+                        {.id = UPDATE_STATUS, .kind = ControlKind::Label, .bounds = {}, .textColor = 0xD2C00000},
                         {UPDATE, ControlKind::Button, {}},
                         {PROJECT, ControlKind::Group, {}, L"项目"},
                         {THANKS, ControlKind::Group, {}, L"鸣谢"},
                         {CREDITS, ControlKind::Group, {}, L"开源组件"},
                 };
-                if (!createFrame(parent, L"设置", L"",
-                                 {{L"游戏设置", GAME},
-                                  {L"按键绑定", KEYS},
-                                  {L"补丁", PATCH},
-                                  {L"启动器设置", LAUNCHER},
+                if (!createFrame(parent, L"选项", L"",
+                                 {{L"全局启动项", GAME, L"游戏设置"},
+                                  {L"全局游戏选项", OPTIONS_PAGE, L"游戏设置"},
+                                  {L"按键绑定", KEYS, L"游戏设置"},
+                                  {L"补丁", PATCH, L"游戏设置"},
+                                  {L"游戏目录", FOLDERS_PAGE, L"游戏设置"},
+                                  {L"外观", LAUNCHER, L"启动器选项"},
+                                  {L"下载与网络", NETWORK_PAGE, L"启动器选项"},
+                                  {L"重置", RESET_PAGE, L"启动器选项"},
                                   {L"Java 管理", JAVA},
                                   {L"工具箱", TOOLS},
                                   {L"关于", ABOUT}})) {
@@ -477,19 +490,24 @@ namespace ForgottenMelody {
                 keyEditor = &keysPage.Add<KeyBindPanel>();
                 keyEditor->SetBounds(15, 46, keysPage.GetWidth() - 30, keysPage.GetHeight() - 58);
                 MoveInto(pages.at(GAME)->GetContent(),
-                         {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE, LAUNCH,
-                          LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS, LOGS,
-                          PRE_LAUNCH_LABEL, PRE_LAUNCH});
-                MoveInto(pages.at(GAME)->GetContent(), {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL});
+                         {LAUNCH, LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS,
+                          LOGS, PRE_LAUNCH_LABEL, PRE_LAUNCH});
+                MoveInto(pages.at(FOLDERS_PAGE)->GetContent(),
+                         {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE});
+                MoveInto(pages.at(OPTIONS_PAGE)->GetContent(),
+                         {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL});
                 MoveInto(pages.at(PATCH)->GetContent(),
                          {ENABLE, ALL, SKINS, FIXES, LOG4J, IME, LWJGL, GAME_WINDOW, WINDOW_TITLE_LABEL, WINDOW_TITLE,
                           WINDOW_ICON_LABEL, WINDOW_ICON, WINDOW_ICON_PICK, LAN_GROUP, LAN_OFFLINE_JOIN, DEBUGGING, DEBUG_LOG});
                 for (uint32_t id : SKIN_CONTROLS) {
                     MoveInto(pages.at(PATCH)->GetContent(), {id});
                 }
-                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART,
-                                                         NETWORK_GROUP, SYSTEM_PROXY, RESET_GROUP, RESET_LABEL, RESET_SETTINGS});
-                for (const auto& source : DOWNLOAD_SOURCES) MoveInto(pages.at(LAUNCHER)->GetContent(), {source.label, source.control});
+                MoveInto(pages.at(LAUNCHER)->GetContent(), {LOOK, STYLE_LABEL, STYLE, STYLE_HINT, RESTART});
+                MoveInto(pages.at(NETWORK_PAGE)->GetContent(), {SOURCES_GROUP, NETWORK_GROUP, SYSTEM_PROXY});
+                for (const auto& source : DOWNLOAD_SOURCES) {
+                    MoveInto(pages.at(NETWORK_PAGE)->GetContent(), {source.label, source.control});
+                }
+                MoveInto(pages.at(RESET_PAGE)->GetContent(), {RESET_GROUP, RESET_LABEL, RESET_SETTINGS});
                 MoveInto(pages.at(JAVA)->GetContent(),
                          {INSTALLED, JAVA_LIST, ADD_JAVA, REMOVE_JAVA, JAVA_FOLDER, JAVA_COUNT, RESCAN, DOWNLOADS,
                           DOWNLOAD_LIST, MAJOR_LABEL, MAJOR, DOWNLOAD_STATUS, RELOAD, INSTALL});
@@ -498,7 +516,9 @@ namespace ForgottenMelody {
                           DOWNLOAD_NOTE, START_DOWNLOAD, OPEN_FOLDER, DOWNLOAD_STATE, PROGRESS, DOWNLOAD_DETAILS,
                           DOWNLOAD_TARGET, PCL_GROUP, PCL_NOTE, UNLOCK_PCL, PCL_RESULT});
                 MoveInto(pages.at(ABOUT)->GetContent(), {PRODUCT, PRODUCT_VERSION, TAGLINE, UPDATE_STATUS, UPDATE, PROJECT, THANKS, CREDITS});
-                layoutGame();
+                layoutLaunch();
+                layoutFolders();
+                layoutOptions();
                 layoutLauncher();
                 layoutJava();
                 fillGame();
@@ -523,7 +543,7 @@ namespace ForgottenMelody {
                 }
                 refreshAbout();
                 refreshTools();
-                if (FindControl(KEYS)->IsVisible() || FindControl(GAME)->IsVisible()) refreshSources();
+                if (FindControl(KEYS)->IsVisible() || FindControl(OPTIONS_PAGE)->IsVisible()) refreshSources();
                 if (PAGE_IDS[lastSection] != KEYS) revealFocus(*pages.at(PAGE_IDS[lastSection]));
             }
 
@@ -585,7 +605,7 @@ namespace ForgottenMelody {
                     case RESTART:
                         if (Services::busy()) break;
                         if (!Platform::restart()) {
-                            message(GetHwnd(), L"重启失败，请手动重新打开启动器", L"设置");
+                            message(GetHwnd(), L"重启失败，请手动重新打开启动器", L"选项");
                         }
                         break;
                     case ADD_JAVA:
@@ -633,19 +653,20 @@ namespace ForgottenMelody {
         private:
             void resetSettings() {
                 if (Services::busy()) return;
-                if (message(GetHwnd(), L"启动器设置将恢复默认，随后重启。\n账户、已添加的游戏目录和下载的文件会保留。",
-                            L"重置启动器设置", exui::MsgBoxButtons::OkCancel, {L"取消", L"重置并重启"}) != 0) return;
+                if (message(GetHwnd(), L"启动器选项将恢复默认，随后重启。\n账户、已添加的游戏目录和下载的文件会保留。",
+                            L"重置启动器选项", exui::MsgBoxButtons::OkCancel, {L"取消", L"重置并重启"}) != 0)
+                    return;
                 if (!GetHwnd()) return;
                 if (Services::busy()) {
-                    message(GetHwnd(), L"当前有任务进行中，未重置设置。请等待任务结束后重试。", L"重置启动器设置");
+                    message(GetHwnd(), L"当前有任务进行中，未重置设置。请等待任务结束后重试。", L"重置启动器选项");
                     return;
                 }
                 if (!Config::reset()) {
-                    message(GetHwnd(), L"无法保存重置后的设置，请稍后重试。", L"重置启动器设置");
+                    message(GetHwnd(), L"无法保存重置后的设置，请稍后重试。", L"重置启动器选项");
                     return;
                 }
                 if (!Platform::restart()) {
-                    message(GetHwnd(), L"重置已保存，但重启失败。请关闭启动器后重新打开。", L"重置启动器设置");
+                    message(GetHwnd(), L"重置已保存，但重启失败。请关闭启动器后重新打开。", L"重置启动器选项");
                 }
                 CloseWindow();
             }
@@ -682,7 +703,10 @@ namespace ForgottenMelody {
                 gameOptions->SetFile(std::move(file));
                 gameOptions->Refresh();
                 int height = gameOptions->IsVisible() ? gameOptions->PreferredHeight() : 0;
-                if (height != gameOptionsHeight) { gameOptionsHeight = height; layoutGame(); }
+                if (height != gameOptionsHeight) {
+                    gameOptionsHeight = height;
+                    layoutOptions();
+                }
             }
 
             // How 皮肤 is laid out now, so that its rows only move when it changes.
@@ -718,46 +742,76 @@ namespace ForgottenMelody {
                 pages.at(id)->SetContentLayout(std::move(layout), {15, 10, 3, 10});
             }
 
-            void layoutGame() {
+            void layoutLaunch() {
                 using exui::Layout;
-                std::vector<Layout> groups{
-                        formGroup(INSTANCES, {
-                                setting(ISOLATION_LABEL, {field(ISOLATION, 200, 28)}),
-                                setting(COUNT_LABEL, {cell(COUNT, 110, 26),
-                                        Layout::Row({cell(REFRESH, 80), cell(MANAGE, 90)}, 10, 180)}),
-                        }),
-                        formGroup(LAUNCH, {
-                                setting(LANGUAGE_LABEL, {field(LANGUAGE, 200, 28)}),
-                                setting(GC_LABEL, {field(GC, 200, 28)}),
-                                setting(JVM_LABEL, {field(JVM, 505)}),
-                                setting(GAME_ARGS_LABEL, {field(GAME_ARGS, 505)}),
-                                toggle(LOGS, 200),
-                                setting(PRE_LAUNCH_LABEL, {field(PRE_LAUNCH, 505)}),
-                        }),
-                };
-                bool options = gameOptionsHeight > 0;
-                for (uint32_t id : {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE}) FindControl(id)->SetVisible(options);
-                if (options) groups.push_back(formGroup(GAME_OPTIONS_GROUP, {
-                        setting(GAME_SOURCE_LABEL, {field(GAME_SOURCE, 300, 28)}), cell(GAME_OPTIONS_PANEL, gameOptionsHeight),
-                }));
-                setPageLayout(GAME, Layout::Column(std::move(groups), 15));
+                setPageLayout(GAME,
+                              Layout::Column({formGroup(LAUNCH,
+                                                        {
+                                                                setting(LANGUAGE_LABEL, {field(LANGUAGE, 200, 28)}),
+                                                                setting(GC_LABEL, {field(GC, 200, 28)}),
+                                                                setting(JVM_LABEL, {field(JVM, 505)}),
+                                                                setting(GAME_ARGS_LABEL, {field(GAME_ARGS, 505)}),
+                                                                toggle(LOGS, 200),
+                                                                setting(PRE_LAUNCH_LABEL, {field(PRE_LAUNCH, 505)}),
+                                                        })},
+                                             15));
+            }
+
+            void layoutFolders() {
+                using exui::Layout;
+                setPageLayout(
+                        FOLDERS_PAGE,
+                        Layout::Column({formGroup(INSTANCES,
+                                                  {
+                                                          setting(ISOLATION_LABEL, {field(ISOLATION, 200, 28)}),
+                                                          setting(COUNT_LABEL,
+                                                                  {cell(COUNT, 110, 26),
+                                                                   Layout::Row({cell(REFRESH, 80), cell(MANAGE, 90)},
+                                                                               10, 180)}),
+                                                  })},
+                                       15));
+            }
+
+            void layoutOptions() {
+                using exui::Layout;
+                std::vector<Layout> rows{setting(GAME_SOURCE_LABEL, {field(GAME_SOURCE, 300, 28)})};
+                if (gameOptionsHeight > 0) rows.push_back(cell(GAME_OPTIONS_PANEL, gameOptionsHeight));
+                setPageLayout(OPTIONS_PAGE, Layout::Column({formGroup(GAME_OPTIONS_GROUP, std::move(rows))}, 15));
             }
 
             void layoutLauncher() {
                 using exui::Layout;
-                std::vector<Layout> network{toggle(SYSTEM_PROXY)};
-                for (const auto& source : DOWNLOAD_SOURCES) network.push_back(setting(source.label, {field(source.control, 200, 28)}));
-                setPageLayout(LAUNCHER, Layout::Column({group(LOOK, {
-                        row(STYLE_LABEL, {
-                                Layout::Column({Layout::Inset(Layout::Row({field(STYLE, 200, 28)}, 0, 28),
-                                                                    {0, 2, 0, 4})}, 0, 205),
-                                Layout::Row({cell(STYLE_HINT, 195, 26)}, 0, 200),
-                                field(RESTART, 90, 30),
-                        }, 34, 95, Layout::Align::Center),
-                }, {20, 23, 20, 18}),
-                        formGroup(NETWORK_GROUP, std::move(network)),
-                        formGroup(RESET_GROUP, {Layout::Row({cell(RESET_LABEL), cell(RESET_SETTINGS, 110)}, 10, 30)}),
-                }, 15));
+                setPageLayout(
+                        LAUNCHER,
+                        Layout::Column(
+                                {group(LOOK,
+                                       {
+                                               row(STYLE_LABEL,
+                                                   {
+                                                           Layout::Column(
+                                                                   {Layout::Inset(
+                                                                           Layout::Row({field(STYLE, 200, 28)}, 0, 28),
+                                                                           {0, 2, 0, 4})},
+                                                                   0, 205),
+                                                           Layout::Row({cell(STYLE_HINT, 195, 26)}, 0, 200),
+                                                           field(RESTART, 90, 30),
+                                                   },
+                                                   34, 95, Layout::Align::Center),
+                                       },
+                                       {20, 23, 20, 18})},
+                                15));
+                std::vector<Layout> sources;
+                for (const auto& source : DOWNLOAD_SOURCES)
+                    sources.push_back(setting(source.label, {field(source.control, 200, 28)}));
+                setPageLayout(NETWORK_PAGE,
+                              Layout::Column({formGroup(SOURCES_GROUP, std::move(sources)),
+                                              formGroup(NETWORK_GROUP, {toggle(SYSTEM_PROXY)})},
+                                             15));
+                setPageLayout(RESET_PAGE,
+                              Layout::Column({formGroup(RESET_GROUP,
+                                                        {Layout::Row({cell(RESET_LABEL), cell(RESET_SETTINGS, 110)}, 10,
+                                                                     30)})},
+                                             15));
             }
 
             void fillTools() {
@@ -765,8 +819,6 @@ namespace ForgottenMelody {
                     Control<exui::Label>(id).SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
                 Control<exui::Label>(PCL_RESULT).SetMultiline(true);
                 Control<exui::Label>(DOWNLOAD_DETAILS).SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
-                FindControl(URL)->SetTooltipText(L"HTTP 或 HTTPS 文件地址");
-                FindControl(NAME)->SetTooltipText(L"留空时根据下载地址生成文件名");
                 Control<exui::ProgressBar>(PROGRESS).SetRange(0, 1000);
                 if (!downloadInput.initialized) {
                     downloadInput.initialized = true;
@@ -945,14 +997,10 @@ namespace ForgottenMelody {
                 }, 10));
             }
 
-            // A text setting, applied as it is typed, with the explanation of the default interface on its label.
-            void text(uint32_t label, uint32_t id, const std::string& value,
-                      std::function<void(const std::string&)> apply, const wchar_t* explanation) {
+            void text(uint32_t id, const std::string& value, std::function<void(const std::string&)> apply) {
                 auto& edit = Control<exui::EditBox>(id);
                 edit.SetText(Platform::widen(value));
                 edit.OnTextChanged = [apply](const std::wstring& typed) { apply(trimmed(typed)); };
-                FindControl(label)->SetTooltipText(explanation);
-                edit.SetTooltipText(explanation);
             }
 
             void fillGame() {
@@ -970,9 +1018,6 @@ namespace ForgottenMelody {
                     selected = LANGUAGES[i].language == LaunchDefaults::language() ? i : selected;
                 }
                 choose(LANGUAGE, options, selected);
-                FindControl(LANGUAGE_LABEL)
-                        ->SetTooltipText(L"启动时，如果游戏目录里还没有设置过语言（比如新实例第一次启动），就把游戏语言"
-                                         L"设为中文或英文；之后在游戏里改的语言不会被覆盖。");
 
                 options.clear();
                 for (int i = 0; i < (int) std::size(COLLECTORS); i++) {
@@ -980,22 +1025,12 @@ namespace ForgottenMelody {
                     selected = COLLECTORS[i].mode == LaunchDefaults::gc() ? i : selected;
                 }
                 choose(GC, options, selected);
-                FindControl(GC_LABEL)->SetTooltipText(
-                        L"游戏用的垃圾回收器。ZGC 停顿更短，需要 Java 15 以上，分代 ZGC 需要 Java 21 以上，"
-                        L"Java 版本不够时改用标准 G1GC；调优 G1GC 是启动器默认的一组 G1 参数；不指定则不加回收器参数，"
-                        L"可以在 JVM 参数里自己写。实例在高级设置里关闭默认 JVM 参数时，这里不生效。");
 
-                text(JVM_LABEL, JVM, LaunchDefaults::jvmArgs(), LaunchDefaults::setJvmArgs,
-                     L"所有实例都会加上，排在实例自己的 JVM 参数前面。空格分隔，含空格的参数用双引号括起来。");
-                text(GAME_ARGS_LABEL, GAME_ARGS, LaunchDefaults::gameArgs(), LaunchDefaults::setGameArgs,
-                     L"所有实例都会加上，排在实例自己的游戏参数前面。空格分隔，含空格的参数用双引号括起来。");
-                text(PRE_LAUNCH_LABEL, PRE_LAUNCH, LaunchDefaults::preLaunch(), LaunchDefaults::setPreLaunch,
-                     L"每个实例启动前通过 cmd 运行，在实例自己的启动前命令之前，启动器等它结束再启动游戏；工作目录是"
-                     L"游戏目录，可用 %INST_NAME%、%INST_DIR%、%INST_MC_DIR%、%INST_JAVA% 等环境变量。");
+                text(JVM, LaunchDefaults::jvmArgs(), LaunchDefaults::setJvmArgs);
+                text(GAME_ARGS, LaunchDefaults::gameArgs(), LaunchDefaults::setGameArgs);
+                text(PRE_LAUNCH, LaunchDefaults::preLaunch(), LaunchDefaults::setPreLaunch);
 
                 SetChecked(LOGS, LaunchDefaults::showLogs());
-                FindControl(LOGS)->SetTooltipText(
-                        L"游戏启动时打开日志窗口；实例可以在版本设置里另行设置。不显示时，游戏异常退出也会自动打开。");
             }
 
             void refreshGame() {
@@ -1005,8 +1040,7 @@ namespace ForgottenMelody {
                 FindControl(REFRESH)->SetEnabled(!Instances::loading());
             }
 
-            void choosePatch(uint32_t label, uint32_t id, const char* key, std::span<const Choice> choices,
-                             const wchar_t* explanation) {
+            void choosePatch(uint32_t id, const char* key, std::span<const Choice> choices) {
                 std::string current = Patches::value(key);
                 std::vector<std::wstring> options;
                 int selected = 0;
@@ -1015,32 +1049,19 @@ namespace ForgottenMelody {
                     selected = current == choices[i].value ? i : selected;
                 }
                 choose(id, options, selected);
-                FindControl(label)->SetTooltipText(explanation);
-                FindControl(id)->SetTooltipText(explanation);
             }
 
             void fillPatch() {
                 SetChecked(ALL, Patches::all());
-                FindControl(ALL)->SetTooltipText(
-                        L"关闭时，只有在版本设置里把“启动器补丁”设为启用的实例会加载补丁；开启后，实例也可以单独设为"
-                        L"不启用。补丁和 authlib-injector、自己在 JVM 参数里添加的 -javaagent 可以同时使用。");
                 for (const Flag& flag : FLAGS) {
                     SetChecked(flag.id, Patches::flag(flag.key));
-                    FindControl(flag.id)->SetTooltipText(flag.explanation);
                 }
-                choosePatch(
-                        SKIN_MODE_LABEL, SKIN_MODE, "skin.mode", SKIN_MODES,
-                        L"只补全没有皮肤的玩家：正版玩家自带的皮肤不变，只给没有皮肤的玩家（如离线玩家）使用皮肤来源。"
-                        L"强制使用自定义皮肤：先查皮肤来源，皮肤来源没有的材质再用玩家原有的。");
-                choosePatch(SKIN_SOURCE_LABEL, SKIN_SOURCE, "skin.source", SKIN_SOURCES,
-                            L"Mojang：从正版服务器获取皮肤；LittleSkin：按玩家名从 LittleSkin "
-                            L"皮肤站获取；自定义：使用选择的"
-                            L"皮肤和披风图片。");
+                choosePatch(SKIN_MODE, "skin.mode", SKIN_MODES);
+                choosePatch(SKIN_SOURCE, "skin.source", SKIN_SOURCES);
                 for (const Value& value : VALUES) {
                     const char* key = value.key;
-                    text(
-                            value.label, value.id, Patches::value(key),
-                            [key](const std::string& typed) { Patches::setValue(key, typed); }, value.explanation);
+                    text(value.id, Patches::value(key),
+                         [key](const std::string& typed) { Patches::setValue(key, typed); });
                 }
             }
 
@@ -1113,15 +1134,8 @@ namespace ForgottenMelody {
                     selected = &styles[i] == &UiStyles::current() ? i : selected;
                 }
                 choose(STYLE, options, selected);
-                FindControl(STYLE_LABEL)->SetTooltipText(L"整个启动器的界面，重启后生效。");
                 SetChecked(SYSTEM_PROXY, Network::systemProxy());
-                FindControl(SYSTEM_PROXY)->SetTooltipText(L"下载和其他网络请求会使用 Windows 系统代理。代理软件未运行时请关闭。");
-                FindControl(RESET_SETTINGS)->SetTooltipText(L"恢复默认启动器设置并重启；保留账户、已添加的游戏目录和下载的文件。");
                 FindControl(RESET_SETTINGS)->SetTextColor(0xD2C00000);
-                for (const auto& source : DOWNLOAD_SOURCES) {
-                    FindControl(source.label)->SetTooltipText(source.explanation);
-                    FindControl(source.control)->SetTooltipText(source.explanation);
-                }
             }
 
             void refreshLauncher() {

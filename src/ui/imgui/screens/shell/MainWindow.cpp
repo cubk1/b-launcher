@@ -5,6 +5,7 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
@@ -77,9 +78,10 @@ namespace MainWindow {
     static bool foldLoaded = false;
     static const float ITEM_H = 30.0f;
     static const float ITEM_STEP = 32.0f;
-    static const float SEARCH_Y = 50.0f;
     static const float SEARCH_H = 28.0f;
-    static const float LIST_TOP = SEARCH_Y + SEARCH_H + 8.0f;
+    static const float SEARCH_GAP = 6.0f;
+    static float searchY = 50.0f;
+    static float listTop = searchY + SEARCH_H + 8.0f;
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
@@ -117,6 +119,8 @@ namespace MainWindow {
     static const float DRAG_EDGE = 28.0f;
     static std::string holdKey;
     static double holdAt = 0.0;
+    static std::string pressKey;
+    static long long pressAt = 0;
     static float holdX = 0.0f;
     static float holdY = 0.0f;
     static std::string dragKey;
@@ -228,8 +232,9 @@ namespace MainWindow {
     }
 
     void setSize(float w, float h, bool isMaximized) {
-        layoutWidth = std::max(MIN_WIDTH, w);
-        layoutHeight = std::max(MIN_HEIGHT, h);
+        bool compact = Compact::active();
+        layoutWidth = compact ? w : std::max(MIN_WIDTH, w);
+        layoutHeight = compact ? h : std::max(MIN_HEIGHT, h);
         layoutMaximized = isMaximized;
     }
 
@@ -270,27 +275,33 @@ namespace MainWindow {
     }
 
     void showAccounts() {
+        Compact::request(false);
         pages.go(PAGE_ACCOUNTS);
     }
 
     void showNewInstance() {
+        Compact::request(false);
         pages.go(PAGE_NEW_INSTANCE);
     }
 
     void showDownloads() {
+        Compact::request(false);
         pages.go(PAGE_DOWNLOADS);
     }
 
     void showVersions() {
+        Compact::request(false);
         VersionsScreen::open();
         pages.go(PAGE_VERSIONS);
     }
 
     void showLoaderEdit() {
+        Compact::request(false);
         pages.go(PAGE_EDIT_LOADERS);
     }
 
     void openVersionSettings(const std::string& id) {
+        Compact::request(false);
         Instances::select(id);
         pages.go(pageOf(id));
     }
@@ -381,20 +392,12 @@ namespace MainWindow {
         return b_launcher_base::replace_all(Appearance::brandTitle(), "{FPS}", std::to_string(fpsShown));
     }
 
-    static void brand() {
-        float logo = 20.0f;
-        float logoY = (TITLE_HEIGHT - logo) * 0.5f;
-        float cx = ITEM_X + ICON_CENTER;
-        float cy = TITLE_HEIGHT * 0.5f;
-        const float size = 28.0f;
-        float x = cx - size * 0.5f;
-        float y = cy - size * 0.5f;
+    static float foldToggle(float x, float y, float size, float radius) {
         bool rail = fold > 0.5f;
         bool hovered = NewUi::hit(x, y, size, size);
         float wake = UiState::motion("sidebar#expand", hovered ? 1.0f : 0.0f, 18.0f);
-        titleControls.push_back({x, y, size, size});
         if (wake > 0.001f) {
-            UiRender::roundRect(x, y, size, size, 7.0f, UiTheme::overlay(Ui::round(16 * wake)));
+            UiRender::roundRect(x, y, size, size, radius, UiTheme::overlay(Ui::round(16 * wake)));
         }
         if (hovered) {
             if (rail) {
@@ -407,11 +410,35 @@ namespace MainWindow {
             UiSound::request(UiSound::TICK);
             setFolded(!folded);
         }
+        return wake;
+    }
+
+    static float foldButtonX() {
+        return UiRender::lerp(ITEM_X + itemW - SEARCH_H, (sideW - SEARCH_H) * 0.5f, fold);
+    }
+
+    static void foldButton() {
+        float x = foldButtonX();
+        float wake = foldToggle(x, searchY, SEARCH_H, 8.0f);
+        UiWidgets::icon(Ui::glyph(folded ? 0xf101 : 0xf100), x + SEARCH_H * 0.5f, searchY + SEARCH_H * 0.5f,
+                        UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), wake), 11.0f);
+    }
+
+    static void brand() {
+        float logo = 20.0f;
+        float logoY = (TITLE_HEIGHT - logo) * 0.5f;
+        float cx = ITEM_X + ICON_CENTER;
+        float cy = TITLE_HEIGHT * 0.5f;
+        const float size = 28.0f;
+        float x = cx - size * 0.5f;
+        float y = cy - size * 0.5f;
+        titleControls.push_back({x, y, size, size});
+        float wake = foldToggle(x, y, size, 7.0f);
         Logo::brand(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
         fadeGlyph(folded ? 0xf101 : 0xf100, cx, cy, UiTheme::textPrimary(), wake, 11.0f);
         float savedAlpha = UiRender::alphaMul;
         UiRender::alphaMul = savedAlpha * fading();
-        float room = SIDEBAR_WIDTH - ITEM_X - LABEL_X - (ITEM_X + ICON_CENTER + 20.0f);
+        float room = ITEM_W - LABEL_X;
         std::string title = UiFont::fitEnd(brandText(), UiFont::MEDIUM, 15.0f, room);
         UiRender::textY(title, ITEM_X + LABEL_X, logoY, logo, UiTheme::textPrimary(), UiFont::MEDIUM, 15.0f);
         UiRender::alphaMul = savedAlpha;
@@ -436,29 +463,7 @@ namespace MainWindow {
         UiRender::pivotY = savedPivotY;
     }
 
-    static void themeSwitch() {
-        if (fold > 0.5f) {
-            return;
-        }
-        const float size = 28.0f;
-        float cx = sideW - ITEM_X - ICON_CENTER;
-        float cy = TITLE_HEIGHT * 0.5f;
-        float x = cx - size * 0.5f;
-        float y = cy - size * 0.5f;
-        titleControls.push_back({x, y, size, size});
-        bool light = UiTheme::isLight();
-        float lit = UiState::motion("theme#hover", NewUi::hit(x, y, size, size) ? 1.0f : 0.0f, 18.0f);
-        float sun = UiState::motionFrom("theme#sun", light ? 1.0f : 0.0f, 14.0f, light ? 1.0f : 0.0f);
-        uint32_t tint = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
-        fadeGlyph(0xf185, cx, cy, tint, sun * fading(), 13.0f);
-        fadeGlyph(0xf186, cx, cy, tint, (1.0f - sun) * fading(), 13.0f);
-        if (NewUi::click(x, y, size, size)) {
-            UiSound::request(UiSound::TICK);
-            Appearance::toggleLight();
-        }
-    }
-
-    static bool isCollapsed(const std::string& source) {
+    bool isCollapsed(const std::string& source) {
         if (!collapsedLoaded) {
             collapsedLoaded = true;
             for (const std::string& group : b_launcher_base::json_strings(Config::data(), "collapsedGroups")) {
@@ -468,7 +473,7 @@ namespace MainWindow {
         return collapsed.count(source) != 0;
     }
 
-    static void toggleGroup(const std::string& source) {
+    void toggleGroup(const std::string& source) {
         if (isCollapsed(source)) {
             collapsed.erase(source);
         } else {
@@ -488,11 +493,15 @@ namespace MainWindow {
     }
 
     static void searchBox() {
+        bool framed = Appearance::systemFrameRunning();
         float x = ITEM_X;
-        float y = SEARCH_Y;
-        float w = itemW;
+        float y = searchY;
+        float w = framed ? foldButtonX() - SEARCH_GAP - ITEM_X : itemW;
         float h = SEARCH_H;
         if (fold > 0.5f) {
+            if (framed) {
+                return;
+            }
             bool over = NewUi::hit(x, y, w, h);
             float lit = UiState::motion("search#ring", over ? 0.5f : 0.0f, 18.0f);
             UiRender::roundRect(x, y, w, h, 8.0f, UiTheme::overlay(10));
@@ -508,6 +517,10 @@ namespace MainWindow {
                 focusSearch();
             }
             return;
+        }
+        float savedAlpha = UiRender::alphaMul;
+        if (framed) {
+            UiRender::alphaMul = savedAlpha * fading();
         }
         bool focused = UiInput::isFocused(SEARCH_ID);
         bool hasText = !UiInput::get(SEARCH_ID).empty();
@@ -537,10 +550,35 @@ namespace MainWindow {
                 UiInput::set(SEARCH_ID, "");
             }
         }
+        UiRender::alphaMul = savedAlpha;
     }
 
     static int groupRows(const std::vector<const Instances::Entry*>& rows) {
         return rows.empty() ? 1 : (int) rows.size();
+    }
+
+    static void addFolder() {
+        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::userDirectory())) {
+            std::string problem = Instances::addFolder(*picked);
+            if (!problem.empty()) {
+                Instances::notify(problem, true);
+            }
+        }
+    }
+
+    static void folderItems(MenuItems& items) {
+        items.push_back(ActionMenuItem::make("添加游戏目录", 0xf65e, [] { addFolder(); }));
+        MenuItems hidden;
+        for (const Instances::Source& source : Instances::sources()) {
+            if (!source.hidden) {
+                continue;
+            }
+            std::string key = source.key;
+            hidden.push_back(ActionMenuItem::make(source.label, 0xf06e, [key] { Instances::setHidden(key, false); }));
+        }
+        if (!hidden.empty()) {
+            items.push_back(ActionMenuItem::make("已隐藏的目录", 0xf070)->nest(hidden));
+        }
     }
 
     static void groupHeader(const Instances::Source& source, size_t count, float y, float open, bool blocked) {
@@ -589,6 +627,7 @@ namespace MainWindow {
                         items.push_back(ActionMenuItem::make("下移", 0xf063, [key] { Instances::moveSource(key, 1); }));
                         items.push_back(ActionMenuItem::make("在侧栏隐藏", 0xf06e,
                                                              [key] { Instances::setHidden(key, true); }));
+                        folderItems(items);
                         if (found->custom) {
                             items.push_back(
                                     ActionMenuItem::make("移除", 0xf2ed, [key] { Instances::removeFolder(key); })
@@ -603,57 +642,6 @@ namespace MainWindow {
             UiSound::request(UiSound::TICK);
             toggleGroup(source.key);
         }
-    }
-
-    static void addFolderRow(float y, bool blocked) {
-        NavItemWidget item("nav#addFolder", Ui::glyph(0xf65e), "添加游戏目录");
-        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
-        item.paint();
-        if (!item.pressed) {
-            return;
-        }
-        if (std::optional<std::filesystem::path> picked = Platform::pickFolder(Platform::userDirectory())) {
-            std::string problem = Instances::addFolder(*picked);
-            if (!problem.empty()) {
-                Instances::notify(problem, true);
-            }
-        }
-    }
-
-    static size_t hiddenCount() {
-        size_t count = 0;
-        for (const Instances::Source& source : Instances::sources()) {
-            count += source.hidden ? 1 : 0;
-        }
-        return count;
-    }
-
-    // One entry for every folder the player put away, so nothing is out of reach for good.
-    static void hiddenFolderRow(float y, bool blocked) {
-        if (hiddenCount() == 0) {
-            return;
-        }
-        NavItemWidget item("nav#hiddenFolders", Ui::glyph(0xf06e), "已隐藏的目录");
-        item.folded(fold, fullListW).bounds(ITEM_X, y, listW, ITEM_H).block(blocked);
-        item.paint();
-        if (!item.pressed) {
-            return;
-        }
-        NewUi::openMenu(
-                "sidebar#hiddenFolders",
-                [] {
-                    MenuItems items;
-                    for (const Instances::Source& source : Instances::sources()) {
-                        if (!source.hidden) {
-                            continue;
-                        }
-                        std::string key = source.key;
-                        items.push_back(ActionMenuItem::make(source.label, 0xf06e,
-                                                             [key] { Instances::setHidden(key, false); }));
-                    }
-                    return items;
-                },
-                NewUi::mouseX, NewUi::mouseY, 180.0f);
     }
 
     static float playingWidth(const std::string& key) {
@@ -737,7 +725,19 @@ namespace MainWindow {
                     "sidebar#instance#" + key,
                     [key, source] {
                         MenuItems items;
-                        items.push_back(ActionMenuItem::make("版本设置", 0xf013, [key] { openVersionSettings(key); }));
+                        auto idle = [key] {
+                            const Instances::Entry* found = Instances::find(key);
+                            return found != nullptr && found->info.valid && Game::state(key) == Game::State::Idle;
+                        };
+                        items.push_back(ActionMenuItem::make("启动", 0xf04b, [key] {
+                                            LaunchButton::start(key);
+                                        })->enabledIf(idle));
+                        items.push_back(ActionMenuItem::make("实例设置", 0xf013, [key] { openVersionSettings(key); }));
+                        items.push_back(ActionMenuItem::make("打开游戏目录", 0xf07c, [key] {
+                            if (const Instances::Entry* found = Instances::find(key)) {
+                                Platform::open(found->gameDirectory);
+                            }
+                        }));
                         items.push_back(
                                 ActionMenuItem::make("置顶", 0xf062, [source, key] { moveVersion(source, key, 0); }));
                         items.push_back(
@@ -760,12 +760,19 @@ namespace MainWindow {
         item.paint();
         playing(key, y);
         if (item.pressed) {
+            long long now = Ui::millis();
+            bool twice = pressKey == key && now - pressAt < 400;
+            pressKey = twice ? std::string() : key;
+            pressAt = now;
             Instances::select(key);
             pages.go(PAGE_HOME);
-            holdKey = key;
+            holdKey = twice ? std::string() : key;
             holdAt = ImGui::GetTime();
             holdX = NewUi::mouseX;
             holdY = NewUi::mouseY;
+            if (twice) {
+                LaunchButton::start(key);
+            }
         }
     }
 
@@ -795,7 +802,7 @@ namespace MainWindow {
         int last = (int) rows.size() - 1;
         float y = UiRender::clamp(NewUi::mouseY - dragGrab, top - 6.0f, top + last * ITEM_STEP + 6.0f);
         UiState::put("sidebar#lift", 1.0f);
-        UiRender::scissor(0, LIST_TOP, sideW, viewH);
+        UiRender::scissor(0, listTop, sideW, viewH);
         raised(y, 1.0f);
         instanceRow(*rows[from], y, true);
         UiRender::unscissor();
@@ -861,9 +868,13 @@ namespace MainWindow {
 
     static void sidebar() {
         UiRender::scissor(0, 0, sideW, height());
-        brand();
-        themeSwitch();
-        searchBox();
+        if (Appearance::systemFrameRunning()) {
+            searchBox();
+            foldButton();
+        } else {
+            brand();
+            searchBox();
+        }
 
         std::string query = searchQuery();
         bool searching = !query.empty();
@@ -889,13 +900,9 @@ namespace MainWindow {
                                        isCollapsed(sources[i].key) && !searching ? 0.0f : 1.0f, 16.0f);
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
-        contentH += ITEM_STEP;
-        if (hiddenCount() > 0) {
-            contentH += ITEM_STEP;
-        }
 
         float listBottom = height() - FOOTER_H - 10.0f;
-        float viewH = listBottom - LIST_TOP;
+        float viewH = listBottom - listTop;
         float maxScroll = std::max(0.0f, contentH - viewH);
         if (searching) {
             holdKey.clear();
@@ -919,13 +926,13 @@ namespace MainWindow {
                 listSmooth = listScroll;
             }
         }
-        if (NewUi::hit(0, LIST_TOP, sideW, viewH) && ImGui::GetIO().MouseWheel != 0.0f) {
-            listScroll -= ImGui::GetIO().MouseWheel * ITEM_STEP;
+        if (NewUi::hit(0, listTop, sideW, viewH) && NewUi::wheel() != 0.0f) {
+            listScroll -= NewUi::wheel() * ITEM_STEP;
         }
         if (dragging) {
             float step = 10.0f * ImGui::GetIO().DeltaTime;
-            if (NewUi::mouseY < LIST_TOP + DRAG_EDGE) {
-                listScroll -= std::min(60.0f, LIST_TOP + DRAG_EDGE - NewUi::mouseY) * step;
+            if (NewUi::mouseY < listTop + DRAG_EDGE) {
+                listScroll -= std::min(60.0f, listTop + DRAG_EDGE - NewUi::mouseY) * step;
             } else if (NewUi::mouseY > listBottom - DRAG_EDGE) {
                 listScroll += std::min(60.0f, NewUi::mouseY - (listBottom - DRAG_EDGE)) * step;
             }
@@ -933,16 +940,16 @@ namespace MainWindow {
         listScroll = UiRender::clamp(listScroll, 0, maxScroll);
         listSmooth = UiRender::clamp(UiRender::approach(listSmooth, listScroll, 18.0f), 0, maxScroll);
 
-        float cursor = LIST_TOP - UiRender::snapLayout(listSmooth);
+        float cursor = listTop - UiRender::snapLayout(listSmooth);
         bool carried = false;
         for (size_t i = 0; i < sources.size(); i++) {
             const Instances::Source& source = sources[i];
             if (source.hidden) {
                 continue;
             }
-            UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            bool headerBlocked = !NewUi::rawHit(0, std::max(LIST_TOP, cursor), sideW,
-                                                std::min(listBottom, cursor + GROUP_H) - std::max(LIST_TOP, cursor));
+            UiRender::scissor(0, listTop, sideW, viewH);
+            bool headerBlocked = !NewUi::rawHit(0, std::max(listTop, cursor), sideW,
+                                                std::min(listBottom, cursor + GROUP_H) - std::max(listTop, cursor));
             groupHeader(source, grouped[i].size(), cursor, opens[i], headerBlocked || dragging);
             UiRender::unscissor();
             cursor += GROUP_H;
@@ -959,7 +966,7 @@ namespace MainWindow {
                                     (int) entries.size() - 1);
                 }
             }
-            float clipTop = std::max(LIST_TOP, cursor);
+            float clipTop = std::max(listTop, cursor);
             float clipBottom = std::min(listBottom, cursor + shownH);
             if (clipBottom > clipTop + 0.5f) {
                 UiRender::scissor(0, clipTop, sideW, clipBottom - clipTop);
@@ -1021,21 +1028,24 @@ namespace MainWindow {
             arrangeSource.clear();
             arrangeKeys.clear();
         }
-        if (cursor + ITEM_H >= LIST_TOP && cursor <= listBottom) {
-            UiRender::scissor(0, LIST_TOP, sideW, viewH);
-            bool blocked = dragging || !NewUi::rawHit(0, LIST_TOP, sideW, viewH);
-            addFolderRow(cursor, blocked);
-            if (hiddenCount() > 0) {
-                hiddenFolderRow(cursor + ITEM_STEP, blocked);
-            }
-            UiRender::unscissor();
+        if (!dragging && NewUi::rightClick && !NewUi::overlayCoversMouse() && NewUi::hit(0, listTop, sideW, viewH)) {
+            NewUi::rightClick = false;
+            UiSound::request(UiSound::PAGE);
+            NewUi::openMenu(
+                    "sidebar#list",
+                    [] {
+                        MenuItems items;
+                        folderItems(items);
+                        return items;
+                    },
+                    NewUi::mouseX, NewUi::mouseY, 160.0f);
         }
 
         if (maxScroll > 0.5f && fold < 0.5f) {
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * fading();
-            float dragged = NewUi::listScrollbar("sidebar#scrollbar", sideW - 7.0f, LIST_TOP + 2.0f, viewH - 4.0f,
-                                                 viewH, maxScroll, listSmooth, listScroll);
+            float dragged = NewUi::listScrollbar("sidebar#scrollbar", sideW - 7.0f, listTop + 2.0f, viewH - 4.0f, viewH,
+                                                 maxScroll, listSmooth, listScroll);
             UiRender::alphaMul = savedAlpha;
             if (dragged != listScroll) {
                 listScroll = dragged;
@@ -1057,7 +1067,7 @@ namespace MainWindow {
         }
         navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
-        navItem("nav#settings", 0xf013, "设置", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
+        navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
         UiRender::unscissor();
     }
 
@@ -1186,6 +1196,8 @@ namespace MainWindow {
         fold = UiState::motionFrom("sidebar#fold", folded ? 1.0f : 0.0f, 12.0f, folded ? 1.0f : 0.0f);
         sideW = UiRender::snapLayout(UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold));
         itemW = sideW - 2.0f * ITEM_X;
+        searchY = Appearance::systemFrameRunning() ? 10.0f : 50.0f;
+        listTop = searchY + SEARCH_H + 8.0f;
     }
 
     void draw() {
@@ -1196,6 +1208,7 @@ namespace MainWindow {
             unfold();
             followList();
             searchShortcut();
+            Compact::shortcut();
             shell();
         }
         if (Onboarding::drawing()) {
@@ -1336,10 +1349,13 @@ namespace MainWindow {
     }
 
     bool isDragArea(float x, float y) {
-        if (NewUi::popupOpen || !UiOverlays::isEmpty()) {
+        if (Compact::active() || NewUi::popupOpen || !UiOverlays::isEmpty()) {
             return false;
         }
         if (y < 0 || y >= TITLE_HEIGHT) {
+            return false;
+        }
+        if (Appearance::systemFrameRunning() && x < sideW) {
             return false;
         }
         for (const Rect& rect : titleControls) {
