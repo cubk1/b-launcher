@@ -93,9 +93,8 @@ load_json (zip_reader &zip, const std::string &name)
 }
 
 result<pack_manifest>
-read_modrinth (zip_reader &zip)
+parse_modrinth (const json &doc)
 {
-  auto doc = load_json (zip, "modrinth.index.json");
   if (!doc.is_object ())
     return make_error (errc::parse, "invalid modrinth.index.json");
   pack_manifest m;
@@ -142,6 +141,12 @@ read_modrinth (zip_reader &zip)
   return m;
 }
 
+result<pack_manifest>
+read_modrinth (zip_reader &zip)
+{
+  return parse_modrinth (load_json (zip, "modrinth.index.json"));
+}
+
 void
 read_curse_files (const json &doc, pack_manifest &m)
 {
@@ -162,9 +167,8 @@ read_curse_files (const json &doc, pack_manifest &m)
 }
 
 result<pack_manifest>
-read_curseforge (zip_reader &zip)
+parse_curseforge (const json &doc)
 {
-  auto doc = load_json (zip, "manifest.json");
   if (!doc.is_object ())
     return make_error (errc::parse, "invalid manifest.json");
   pack_manifest m;
@@ -193,6 +197,12 @@ read_curseforge (zip_reader &zip)
   m.overrides
       = { (overrides.empty () ? std::string ("overrides") : overrides) + "/" };
   return m;
+}
+
+result<pack_manifest>
+read_curseforge (zip_reader &zip)
+{
+  return parse_curseforge (load_json (zip, "manifest.json"));
 }
 
 result<pack_manifest>
@@ -355,6 +365,16 @@ read_multimc (zip_reader &zip, const std::string &prefix,
   return m;
 }
 
+result<void>
+finish (pack_manifest &m)
+{
+  if (m.minecraft.empty ())
+    return make_error (errc::parse, "modpack does not specify minecraft");
+  std::erase_if (m.files, [] (const pack_file &f) {
+    return f.curseforge_file == 0 && !fs::safe_relative (f.path);
+  });
+  return {};
+}
 }
 
 std::string_view
@@ -405,11 +425,7 @@ try
         }
   if (!parsed)
     return parsed;
-  if (parsed->minecraft.empty ())
-    return make_error (errc::parse, "modpack does not specify minecraft");
-  std::erase_if (parsed->files, [] (const pack_file &f) {
-    return f.curseforge_file == 0 && !fs::safe_relative (f.path);
-  });
+  BLB_TRY (finish (*parsed));
   if (parsed->name.empty ())
     parsed->name = path_to_utf8 (archive.stem ());
   return parsed;
@@ -419,4 +435,23 @@ catch (const json::exception &)
   return make_error (errc::parse, "invalid modpack field type");
 }
 
+result<pack_manifest>
+parse_pack_index (std::string_view name, std::string_view text)
+try
+  {
+    auto doc = detail::parse_json (text);
+    result<pack_manifest> parsed
+        = name == "modrinth.index.json" ? parse_modrinth (doc)
+          : name == "manifest.json"
+              ? parse_curseforge (doc)
+              : make_error (errc::unsupported, "unrecognized modpack format");
+    if (!parsed)
+      return parsed;
+    BLB_TRY (finish (*parsed));
+    return parsed;
+  }
+catch (const json::exception &)
+  {
+    return make_error (errc::parse, "invalid modpack field type");
+  }
 }

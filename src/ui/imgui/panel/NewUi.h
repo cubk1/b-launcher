@@ -18,6 +18,9 @@ namespace NewUi {
 
     extern const std::string INPUT_COLOR;
     extern const std::string INPUT_TEXT;
+    extern const std::string INPUT_POPUP;
+    void endPopupSearch();
+    void tooltipNow(const std::string& text, float x, float y);
     extern const std::string INPUT_SLIDER;
 
     extern float mouseX;
@@ -41,6 +44,7 @@ namespace NewUi {
     extern long long subOpenedFrame;
     extern bool drawingOverlay;
     extern bool drawingDialog;
+    extern bool wheelTaken;
     extern bool overlayActive;
     extern float overlayX;
     extern float overlayY;
@@ -311,6 +315,7 @@ namespace NewUi {
     void fieldAction(const std::string& id, int index);
     bool onMouseClick(int button, int action);
     bool onMouseScroll(double amount);
+    float wheel();
     void pollInput();
     float limitX();
     float limitY();

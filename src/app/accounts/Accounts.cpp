@@ -398,7 +398,7 @@ namespace Accounts {
         name.erase(0, name.find_first_not_of(" \t"));
         name.erase(name.find_last_not_of(" \t") + 1);
         if (std::none_of(accounts.begin(), accounts.end(),
-                         [](const blb::auth::account& a) { return a.type == blb::auth::account_type::microsoft; })) {
+                         [](const blb::auth::account& a) { return a.type != blb::auth::account_type::offline; })) {
             return "先登录一个微软账户才能添加离线账户";
         }
         if (name.empty()) {

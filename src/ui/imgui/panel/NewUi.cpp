@@ -16,6 +16,7 @@
 #include "../widget/BindWidget.h"
 #include "../widget/ColorPickerWidget.h"
 #include "../widget/DotsWidget.h"
+#include "../widget/InputWidget.h"
 #include "../widget/SelectWidget.h"
 #include "../widget/SliderWidget.h"
 #include "../widget/SwatchWidget.h"
@@ -42,6 +43,7 @@ namespace NewUi {
 
     const std::string INPUT_COLOR = "colorField";
     const std::string INPUT_TEXT = "textProp";
+    const std::string INPUT_POPUP = "popupSearch";
     const std::string INPUT_SLIDER = "sliderEdit";
 
     float mouseX;
@@ -68,6 +70,7 @@ namespace NewUi {
     long long subOpenedFrame;
     bool drawingOverlay;
     bool drawingDialog;
+    bool wheelTaken;
     bool overlayActive;
     float overlayX;
     float overlayY;
@@ -238,6 +241,7 @@ namespace NewUi {
                 onCharTyped((char32_t) c);
             }
         }
+        wheelTaken = false;
         if (io.MouseWheel != 0.0f) {
             onMouseScroll(io.MouseWheel);
         }
@@ -245,6 +249,7 @@ namespace NewUi {
 
     bool onMouseScroll(double amount) {
         if (UiOverlays::scroll(amount)) {
+            wheelTaken = true;
             return true;
         }
         if (hoveredSlider != nullptr) {
@@ -252,6 +257,10 @@ namespace NewUi {
             return true;
         }
         return false;
+    }
+
+    float wheel() {
+        return wheelTaken && !drawingOverlay && !drawingDialog ? 0.0f : ImGui::GetIO().MouseWheel;
     }
 
     void beginFrame() {
@@ -677,6 +686,33 @@ namespace NewUi {
         return Ui::javaFixed(value, 1);
     }
 
+    namespace {
+        constexpr size_t POPUP_SEARCH_MIN = 12;
+        constexpr float POPUP_SEARCH_H = 32.0f;
+        std::string popupFilter;
+        bool popupSearchFocused = false;
+
+        bool searchable(Choice& choice, size_t count) {
+            return count >= POPUP_SEARCH_MIN && !choice.reorderable();
+        }
+
+        std::string folded(std::string text) {
+            for (char& c : text) {
+                if (c >= 'A' && c <= 'Z') {
+                    c = (char) (c - 'A' + 'a');
+                }
+            }
+            return text;
+        }
+    }
+
+    void endPopupSearch() {
+        popupSearchFocused = false;
+        if (UiInput::isFocused(INPUT_POPUP)) {
+            UiInput::blur();
+        }
+    }
+
     void openChoice(const std::shared_ptr<Choice>& choice, float anchorX, float anchorY, float width,
                     const std::string& source) {
         bool same = popupOpen && choice->owner == popupOwner && source == popupSource;
@@ -699,6 +735,14 @@ namespace NewUi {
         }
         UiState::put("popup#checks", choice->multi() && anySelected ? 1.0f : 0.0f);
         UiState::put("popup#open", 0.0f);
+        UiState::remove("popup#height");
+        UiInput::set(INPUT_POPUP, "");
+        popupFilter.clear();
+        if (searchable(*choice, nextOptions.size())) {
+            UiInput::focus(INPUT_POPUP, 40);
+        } else {
+            endPopupSearch();
+        }
         popupOpen = true;
         popupChoice = choice;
         popupOwner = choice->owner;
@@ -765,6 +809,16 @@ namespace NewUi {
     float tooltipWaited = 0.0f;
     constexpr float TOOLTIP_DELAY = 0.5f;
 
+    void tooltipNow(const std::string& text, float x, float y) {
+        if (tooltipWaiting != text) {
+            tooltipWaiting = text;
+            tooltipWaited = TOOLTIP_DELAY;
+        }
+        tooltipText = text;
+        tooltipX = x;
+        tooltipY = y;
+    }
+
     void tooltipLayer() {
         if (tooltipText.empty()) {
             tooltipWaiting.clear();
@@ -805,17 +859,43 @@ namespace NewUi {
             return;
         }
         std::shared_ptr<Choice> choice = popupChoice;
-        std::vector<std::string> options = choice->options();
+        std::vector<std::string> all = choice->options();
+        int total = (int) all.size();
+        bool search = searchable(*choice, all.size());
+        std::string query = search ? folded(Ui::trim(UiInput::get(INPUT_POPUP))) : std::string();
+        if (query != popupFilter) {
+            popupFilter = query;
+            popupScroll = 0;
+            popupScrollSmooth = 0;
+        }
+        std::vector<std::string> labels;
+        std::vector<std::string> details;
+        std::vector<std::string> options;
+        labels.reserve(total);
+        details.reserve(total);
+        for (const std::string& option : all) {
+            labels.push_back(choice->optionLabel(option));
+            details.push_back(choice->optionDetail(option));
+            if (query.empty() || folded(labels.back()).find(query) != std::string::npos ||
+                folded(details.back()).find(query) != std::string::npos ||
+                folded(option).find(query) != std::string::npos) {
+                options.push_back(option);
+            }
+        }
         int count = (int) options.size();
         int maxVisible = 6;
         bool scrollable = count > maxVisible;
-        std::vector<std::string> labels;
-        std::vector<std::string> details;
-        labels.reserve(count);
-        details.reserve(count);
-        for (const std::string& option : options) {
-            labels.push_back(choice->optionLabel(option));
-            details.push_back(choice->optionDetail(option));
+        if (popupOpen && search && popupSearchFocused && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            UiOverlays::close(UiOverlays::popup);
+        }
+        if (popupOpen && search && popupSearchFocused && !query.empty() && count > 0 &&
+            (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))) {
+            UiSound::request(UiSound::TICK);
+            choice->choose(options.front());
+            if (!popupMulti) {
+                popupOpen = false;
+                endPopupSearch();
+            }
         }
         static std::vector<std::string> measuredLabels;
         static std::vector<std::string> measuredDetails;
@@ -836,24 +916,28 @@ namespace NewUi {
             }
         }
         float widest = measuredWidest;
-        bool anyOptionIcon = choice->anchorGlyphs() ||
-                std::any_of(options.begin(), options.end(), [&](const std::string& option) {
+        bool anyOptionIcon =
+                choice->anchorGlyphs() || std::any_of(all.begin(), all.end(), [&](const std::string& option) {
                     return !choice->optionIcon(option).empty() || choice->optionImage(option) != 0;
                 });
         if (anyOptionIcon) {
             widest += 18;
         }
         bool anySelected = false;
-        for (int i = 0; i < count && popupMulti && !anySelected; i++) {
-            anySelected = choice->selected(options[i]);
+        for (int i = 0; i < total && popupMulti && !anySelected; i++) {
+            anySelected = choice->selected(all[i]);
         }
         float checkColumn = UiState::motion("popup#checks", popupMulti && anySelected ? 1.0f : 0.0f, 16.0f);
         float textIndent = 14.0f + 20.0f * checkColumn;
-        float sizeX = std::max(popupWidth,
-                               widest + textIndent + 20 + (scrollable ? 12 : 0) + (choice->reorderable() ? 24 : 0));
-        float sizeY = std::min(count, maxVisible) * 32.0f + 8.0f;
+        float sizeX =
+                std::max(popupWidth,
+                         widest + textIndent + 20 + (total > maxVisible ? 12 : 0) + (choice->reorderable() ? 24 : 0));
+        float searchH = search ? POPUP_SEARCH_H : 0.0f;
+        float fullH = std::min(total, maxVisible) * 32.0f + 8.0f + searchH;
+        float fitH = std::min(std::max(count, 1), maxVisible) * 32.0f + 8.0f + searchH;
+        float sizeY = search ? UiState::motionFrom("popup#height", fitH, 22.0f, fitH) : fullH;
+        float viewH = sizeY - 8.0f - searchH;
         float contentH = count * 32.0f;
-        float viewH = sizeY - 8.0f;
         if (!scrollable) {
             popupScroll = 0;
         }
@@ -892,8 +976,32 @@ namespace NewUi {
         popupRectH = sizeY;
         bool accepts = popupOpen && frameCounter > popupOpenedFrame && pressSerial != popupOpenedPress;
         bool reorderable = choice->reorderable();
+        if (search) {
+            float fieldX = px + 6.0f;
+            float fieldY = py + 6.0f;
+            float fieldW = sizeX - 12.0f;
+            float fieldH = 26.0f;
+            bool focused = UiInput::isFocused(INPUT_POPUP);
+            UiRender::roundRect(fieldX, fieldY, fieldW, fieldH, 7.0f, UiTheme::overlay(10));
+            UiRender::outline(fieldX, fieldY, fieldW, fieldH, 7.0f,
+                              focused ? UiTheme::accent() : UiTheme::outlineSoft());
+            UiWidgets::icon(Ui::glyph(0xf002), fieldX + 13.0f, fieldY + fieldH * 0.5f, UiTheme::textFaint(), 10.0f);
+            InputWidget input(INPUT_POPUP);
+            input.area(fieldX + 26.0f, fieldW - 34.0f, UiWidgets::TEXT_CONTROL, 14.0f)
+                    .limit(40)
+                    .hint("搜索")
+                    .bounds(fieldX, fieldY, fieldW, fieldH)
+                    .block(!popupOpen);
+            input.paint();
+            if (count == 0) {
+                std::string none = "没有匹配的选项";
+                float noneW = UiFont::width(none, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(none, px + (sizeX - noneW) * 0.5f, py + 4 + searchH, 32.0f, UiTheme::textFaint(),
+                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            }
+        }
         float rowW = sizeX - 8 - (scrollable ? 14 : 0);
-        float listTop = py + 4 - UiRender::snapLayout(popupScrollSmooth);
+        float listTop = py + 4 + searchH - UiRender::snapLayout(popupScrollSmooth);
         int dropIndex = -1;
         if (popupDragFrom >= count || (popupDragFrom >= 0 && !reorderable)) {
             popupDragFrom = -1;
@@ -902,9 +1010,10 @@ namespace NewUi {
             dropIndex = std::max(0, std::min(count - 1, Ui::round((mouseY - popupDragGrab - listTop) / 32.0f)));
         }
         popupGripLit = UiState::motion("popup#grips", popupDragFrom >= 0 ? 1.0f : 0.0f, 14.0f);
-        UiRender::enableScissor((int) (UiRender::transformX(px)), (int) (UiRender::transformY(py + 4)),
+        float viewTop = py + 4 + searchH;
+        UiRender::enableScissor((int) (UiRender::transformX(px)), (int) (UiRender::transformY(viewTop)),
                                 (int) std::ceil(UiRender::transformX(px + sizeX)),
-                                (int) std::ceil(UiRender::transformY(py + 4 + viewH)));
+                                (int) std::ceil(UiRender::transformY(viewTop + viewH)));
         for (int i = 0; i < count; i++) {
             const std::string& option = options[i];
             float shiftTarget = 0.0f;
@@ -919,11 +1028,12 @@ namespace NewUi {
             }
             float rx = px + 4;
             float ry = listTop + i * 32 + shift;
-            if (ry + 32 < py + 4 || ry > py + 4 + viewH) {
+            if (ry + 32 < viewTop || ry > viewTop + viewH) {
                 continue;
             }
-            bool inView = mouseY >= py + 4 && mouseY <= py + 4 + viewH;
-            bool rowHover = popupOpen && popupDragFrom < 0 && hit(rx, ry, rowW, 32) && inView;
+            bool inView = mouseY >= viewTop && mouseY <= viewTop + viewH;
+            bool keyTarget = search && i == 0 && !query.empty() && !rawHit(px, viewTop, sizeX, viewH);
+            bool rowHover = popupOpen && popupDragFrom < 0 && ((hit(rx, ry, rowW, 32) && inView) || keyTarget);
             float hover = UiState::motion("popup#row" + option, rowHover ? 1.0f : 0.0f, 22.0f);
             float lift = UiState::motion("popup#lift" + option, 0.0f, 16.0f);
             if (lift > 0.001f) {
@@ -944,12 +1054,13 @@ namespace NewUi {
                 choice->choose(option);
                 if (!popupMulti) {
                     popupOpen = false;
+                    endPopupSearch();
                 }
             }
         }
         if (popupDragFrom >= 0) {
             std::string dragged = options[popupDragFrom];
-            float dragY = UiRender::clamp(mouseY - popupDragGrab, py + 4 - 8, py + 4 + viewH - 24);
+            float dragY = UiRender::clamp(mouseY - popupDragGrab, viewTop - 8, viewTop + viewH - 24);
             UiRender::shadow(px + 4, dragY, rowW, 32, 8.0f, 6.0f, 2.0f, UiTheme::shadow());
             UiRender::roundRect(px + 6, dragY + 2, rowW - 4, 28, 8, UiTheme::surfaceRaised());
             popupRow(dragged, px + 4, dragY, rowW, textIndent, checkColumn, 1.0f, true);
@@ -975,7 +1086,7 @@ namespace NewUi {
         UiRender::unscissor();
         if (scrollable) {
             float trackX = px + sizeX - 10;
-            float trackY = py + 6;
+            float trackY = viewTop + 2;
             float trackH = viewH - 4;
             float thumbH = std::max(24.0f, trackH * (viewH / contentH));
             float maxScrollLocal = std::max(1.0f, contentH - viewH);
@@ -1003,6 +1114,7 @@ namespace NewUi {
                                 dragging ? UiTheme::textFaint() : UiTheme::outlineSoft());
         }
 
+        popupSearchFocused = popupOpen && UiInput::isFocused(INPUT_POPUP);
         UiRender::alphaMul = savedAlpha;
         UiRender::scaleFactor = savedScale;
         UiRender::pivotX = savedPivotX;

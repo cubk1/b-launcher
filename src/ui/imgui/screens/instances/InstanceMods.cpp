@@ -245,6 +245,9 @@ namespace InstanceMods {
             toggle.paint();
             if (Page::iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
                 rowMenu(key, mod, menuX - 132.0f, rowY + Page::ROW_H - 4.0f);
+            } else if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
+                NewUi::rightClick = false;
+                rowMenu(key, mod, NewUi::mouseX, NewUi::mouseY);
             }
         }
 

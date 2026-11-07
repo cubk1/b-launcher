@@ -38,10 +38,14 @@ public:
     // swap() captures the frame without presenting or changing the native window.
     std::function<void()> onModalFrame;
     std::function<bool(unsigned long long kind, const std::wstring& text)> onCopyData;
+    std::function<bool(UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result)> onMessage;
     void* imguiContext = nullptr;
 
     bool create(const std::wstring& title, int clientWidth, int clientHeight, HGLRC share = nullptr);
     void resize(int clientWidth, int clientHeight);
+    void place(int x, int y, int clientWidth, int clientHeight);
+    void setFramed(bool on);
+    void cloak(bool on);
     void setMinimumSize(int clientWidth, int clientHeight);
     void destroy();
     void show(bool maximized = false);

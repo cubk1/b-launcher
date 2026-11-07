@@ -19,12 +19,10 @@ namespace ForgottenMelody {
         for (size_t i = 0; i < GameOptions::OPTIONS.size(); ++i) {
             const auto& spec = GameOptions::OPTIONS[i];
             labels[i] = &Add<exui::Label>(0, 0, 0, 0, Platform::widen(spec.label));
-            labels[i]->SetTooltipText(Platform::widen(spec.description));
             if (spec.id == GameOptions::Option::GuiScale) continue;
             auto* slider = &Add<exui::Slider>(); sliders[i] = slider;
             slider->SetId((uint32_t) i + 1);
             slider->SetRange(spec.low, spec.high);
-            slider->SetTooltipText(Platform::widen(spec.description));
             values[i] = &Add<exui::Label>();
             values[i]->SetAlignment(Gdiplus::StringAlignmentFar, Gdiplus::StringAlignmentCenter);
             slider->OnChanged = [this, i](int value) {
@@ -33,7 +31,6 @@ namespace ForgottenMelody {
             slider->OnCommit = [this, id = spec.id](int value) { Save(id, value); };
         }
         scale = &Add<exui::ComboBox>(); scale->SetId(5);
-        scale->SetTooltipText(Platform::widen(GameOptions::OPTIONS.back().description));
         scale->OnSelectionChanged = [this](int index) {
             if (index >= 0 && index < (int) scales.size()) Save(GameOptions::Option::GuiScale, scales[index]);
         };

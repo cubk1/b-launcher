@@ -35,10 +35,6 @@ namespace InstanceShortcut {
         constexpr int PREVIEW_PIXELS = 64;
         // In the order of Shortcuts::Icon.
         const char* const ICON_LABELS[] = {"启动器图标", "实例图标", "自定义图片"};
-        const char* const HEADLESS_DOC =
-                "不显示启动器窗口，直接启动游戏；游戏启动后启动器自动退出，启动失败时才显示窗口。"
-                "启动器已经打开时在后台启动，不切换到启动器窗口。";
-
         struct Preview {
             std::filesystem::path file;
             uint32_t texture = 0;
@@ -121,7 +117,7 @@ namespace InstanceShortcut {
         }
 
         void headlessRow(const std::string& key, float rowY, bool blocked) {
-            Page::label("静默启动", rowY);
+            Page::label("不显示启动器窗口", rowY);
             std::string id = "shortcut#headless#" + key;
             auto flag = std::make_shared<FlagBinding>(
                     id, [key] { return Shortcuts::draft(key).headless; },
@@ -131,9 +127,6 @@ namespace InstanceShortcut {
                     .hitArea(Page::left(), rowY, Page::width(), Page::ROW_H)
                     .block(blocked);
             widget.paint();
-            if (!blocked && NewUi::hit(Page::left(), rowY, Page::controlRight() - 60.0f - Page::left(), Page::ROW_H)) {
-                NewUi::markDoc(id + "#doc", HEADLESS_DOC, Page::left() + 6.0f, rowY + Page::ROW_H + 10.0f);
-            }
         }
     }
 

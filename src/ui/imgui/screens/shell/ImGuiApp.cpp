@@ -2,6 +2,8 @@
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
+#include "ui/imgui/screens/shell/Compact.h"
+#include "ui/imgui/screens/shell/TrayPanel.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/Drop.h"
 #include "app/launch/GameLog.h"
@@ -39,7 +41,7 @@
 namespace {
 
     HICON iconOf(int size) {
-        std::vector<unsigned char> rgba = Logo::pixels(size);
+        std::vector<unsigned char> rgba = Logo::iconPixels(size, Appearance::systemFrameRunning());
         if (rgba.empty()) {
             return nullptr;
         }
@@ -79,14 +81,16 @@ namespace {
 
     struct WindowIcons {
         uint32_t accent = 0;
+        int revision = -1;
         HICON big = nullptr;
         HICON compact = nullptr;
 
         void follow(BorderlessWindow& window) {
             uint32_t current = UiTheme::accent() | 0xFF000000u;
-            if (current == accent && big != nullptr) {
+            if (current == accent && revision == Logo::iconRevision() && big != nullptr) {
                 return;
             }
+            revision = Logo::iconRevision();
             HICON nextBig = iconOf(GetSystemMetrics(SM_CXICON));
             HICON nextSmall = iconOf(GetSystemMetrics(SM_CXSMICON));
             if (nextBig == nullptr || nextSmall == nullptr) {
@@ -279,6 +283,39 @@ namespace ImGuiApp {
         Platform::window = window.hwnd;
         Platform::claimLaunches();
         window.onCopyData = ShortcutLaunch::receive;
+        TrayPanel panel(window);
+        auto toFull = [&]() {
+            panel.leave(true, pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
+        };
+        panel.onOpenMain = toFull;
+        panel.onQuit = [&window]() { window.close(); };
+        panel.setTip(Platform::widen(shownTitle));
+        window.onMessage = [&panel](UINT msg, WPARAM wParam, LPARAM lParam, LRESULT& result) {
+            return panel.message(msg, wParam, lParam, result);
+        };
+        if (Compact::stored()) {
+            panel.enter(scale, false, startMaximized);
+        }
+        auto reveal = [&]() {
+            if (panel.active()) {
+                panel.show();
+            } else {
+                window.show(startMaximized);
+            }
+        };
+        auto follow = [&]() {
+            bool compact = false;
+            if (Compact::takeRequest(compact)) {
+                if (compact) {
+                    panel.enter(scale, true);
+                } else {
+                    toFull();
+                }
+            }
+            if (Compact::takeDismiss()) {
+                panel.hide();
+            }
+        };
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -311,10 +348,14 @@ namespace ImGuiApp {
                 float layoutW = window.width / scale;
                 float layoutH = window.height / scale;
                 scale = next;
-                window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
-                if (!window.maximized()) {
-                    window.resize(pixels(std::max(MainWindow::MIN_WIDTH, layoutW), scale),
-                                  pixels(std::max(MainWindow::MIN_HEIGHT, layoutH), scale));
+                if (panel.active()) {
+                    panel.fit(scale);
+                } else {
+                    window.setMinimumSize(pixels(MainWindow::MIN_WIDTH, scale), pixels(MainWindow::MIN_HEIGHT, scale));
+                    if (!window.maximized()) {
+                        window.resize(pixels(std::max(MainWindow::MIN_WIDTH, layoutW), scale),
+                                      pixels(std::max(MainWindow::MIN_HEIGHT, layoutH), scale));
+                    }
                 }
             }
             MainWindow::setSize(window.width / scale, window.height / scale, window.maximized());
@@ -342,7 +383,7 @@ namespace ImGuiApp {
             }
             UiRender::uiScale = scale / (float) UiRender::guiScale();
             UiRender::begin(ImGui::GetForegroundDrawList());
-            NewUi::render(MainWindow::draw);
+            NewUi::render(panel.active() ? Compact::draw : MainWindow::draw);
             UiRender::end();
             if (NewUi::caretFrame == NewUi::frameCounter) {
                 window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH);
@@ -359,19 +400,22 @@ namespace ImGuiApp {
             if (window.preparingResize()) {
                 return;
             }
+            panel.presented();
             if (!shown) {
                 shown = true;
                 if (!headless) {
-                    window.show(startMaximized);
+                    reveal();
                 }
             }
             LogWindow::frame(scale);
 
             icons.follow(window);
+            panel.setIcon(icons.compact);
             if (std::string title = Appearance::windowTitle(); title != shownTitle) {
                 shownTitle = title;
                 window.setTitle(Platform::widen(title));
                 LogWindow::setTitle(Platform::widen(title));
+                panel.setTip(Platform::widen(title));
             }
             if (UiTheme::isLight() != windowLight) {
                 windowLight = UiTheme::isLight();
@@ -390,7 +434,8 @@ namespace ImGuiApp {
                 MainWindow::closeRequested = false;
                 window.close();
             }
-            if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd) && !window.sizing() &&
+            follow();
+            if (Appearance::rememberWindow() && !panel.active() && IsWindowVisible(window.hwnd) && !window.sizing() &&
                 storeWindow(window, scale)) {
                 Config::save();
             }
@@ -416,9 +461,10 @@ namespace ImGuiApp {
         auto closingSince = std::chrono::steady_clock::now();
         auto finishClose = [&]() {
             closingRoom = false;
-            if (Appearance::rememberWindow() && IsWindowVisible(window.hwnd)) {
+            if (Appearance::rememberWindow() && !panel.active() && IsWindowVisible(window.hwnd)) {
                 storeWindow(window, scale);
             }
+            panel.removeIcon();
             DestroyWindow(window.hwnd);
         };
         window.onClose = [&]() {
@@ -445,6 +491,7 @@ namespace ImGuiApp {
                     releaseMemory();
                 }
                 Services::poll();
+                follow();
                 LogWindow::frame(scale);
                 Sleep(LogWindow::isOpen() ? 15 : 10);
                 continue;
@@ -458,7 +505,7 @@ namespace ImGuiApp {
                 } else if (launchFailed || (launchSent && !Game::active())) {
                     headless = false;
                     Game::setQuiet(false);
-                    window.show(startMaximized);
+                    reveal();
                 }
             }
             if (sinceMs(lastInput) > 20000.0 && sinceMs(lastCompact) > 180000.0) {
@@ -488,6 +535,8 @@ namespace ImGuiApp {
         }
 
         window.onModalFrame = nullptr;
+        window.onMessage = nullptr;
+        panel.removeIcon();
         MainWindow::save();
         Config::save();
 

@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/instances/ScreenshotViewer.h"
 #include "app/instances/Screenshots.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/home/WebImages.h"
 #include "ui/imgui/screens/instances/InstanceScreenshots.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -41,6 +42,8 @@ namespace ScreenshotViewer {
         std::string key;
         int index = -1;
         std::filesystem::path current;
+        bool remote = false;
+        std::vector<Picture> web;
         bool closing = false;
         float zoom = 1.0f;
         float zoomTarget = 1.0f;
@@ -81,6 +84,8 @@ namespace ScreenshotViewer {
                 key.clear();
                 index = -1;
                 current.clear();
+                remote = false;
+                web.clear();
                 Screenshots::forgetFullImage();
             }
 
@@ -105,14 +110,16 @@ namespace ScreenshotViewer {
 
         void go(int at) {
             index = at;
-            current = Screenshots::of(key).entries[at].path;
             zoom = zoomTarget = 1.0f;
             panX = panY = panTargetX = panTargetY = 0.0f;
             pressing = false;
             lastPress = -1.0;
             copiedAt = -10.0;
             ++copyVersion;
-            Screenshots::forgetFullImage();
+            if (!remote) {
+                current = Screenshots::of(key).entries[at].path;
+                Screenshots::forgetFullImage();
+            }
         }
 
         void copy(const std::filesystem::path& path) {
@@ -167,7 +174,7 @@ namespace ScreenshotViewer {
         }
 
         int count() {
-            return (int) Screenshots::of(key).entries.size();
+            return remote ? (int) web.size() : (int) Screenshots::of(key).entries.size();
         }
 
         bool wheelAt(double amount) {
@@ -251,25 +258,30 @@ namespace ScreenshotViewer {
             if (!layer.active) {
                 return;
             }
-            const Screenshots::List& list = Screenshots::of(key);
-            int total = (int) list.entries.size();
+            int total = count();
             if (total == 0) {
                 finish();
                 return;
             }
-            auto found = std::find_if(list.entries.begin(), list.entries.end(),
-                                      [](const Screenshots::Entry& item) { return item.path == current; });
-            if (found != list.entries.end()) {
-                index = (int) std::distance(list.entries.begin(), found);
+            if (remote) {
+                index = std::clamp(index, 0, total - 1);
             } else {
-                go(std::clamp(index, 0, total - 1));
+                const Screenshots::List& list = Screenshots::of(key);
+                auto found = std::find_if(list.entries.begin(), list.entries.end(),
+                                          [](const Screenshots::Entry& item) { return item.path == current; });
+                if (found != list.entries.end()) {
+                    index = (int) std::distance(list.entries.begin(), found);
+                } else {
+                    go(std::clamp(index, 0, total - 1));
+                }
             }
             float open = UiState::motionFrom(OPEN, closing ? 0.0f : 1.0f, closing ? 22.0f : 14.0f, 0.0f);
             if (closing && open < 0.02f) {
                 finish();
                 return;
             }
-            const Screenshots::Entry entry = list.entries[index];
+            const Screenshots::Entry entry = remote ? Screenshots::Entry() : Screenshots::of(key).entries[index];
+            const Picture shot = remote ? web[index] : Picture();
             float windowW = MainWindow::width();
             float windowH = MainWindow::height();
             float mx = NewUi::mouseX;
@@ -282,15 +294,47 @@ namespace ScreenshotViewer {
             NewUi::markOverlayUnion(0.0f, 0.0f, windowW, windowH);
             NewUi::markAbove(0.0f, 0.0f, windowW, windowH);
 
-            std::shared_ptr<const Pixels> full = Screenshots::fullImage(entry.path, entry.modified);
-            std::shared_ptr<const Pixels> thumb = Screenshots::thumbnail(entry.path, entry.modified);
-            std::shared_ptr<const Pixels> shown = full ? full : thumb;
-            uint32_t texture = Textures::of(shown);
-            if (shown && shown->width > 0 && shown->height > 0) {
-                float fit = std::min((windowW - 2.0f * SIDE_W) / (float) shown->width,
-                                     (windowH - 2.0f * BAR_H) / (float) shown->height);
-                fitW = (float) shown->width * fit;
-                fitH = (float) shown->height * fit;
+            uint32_t texture = 0;
+            int shownW = 0;
+            int shownH = 0;
+            int nativeW = 0;
+            int nativeH = 0;
+            bool failed = false;
+            std::string original = shot.full.empty() ? shot.thumb : shot.full;
+            if (remote) {
+                const WebImages::Image& full = WebImages::get(original);
+                if (full.texture != 0 && full.done) {
+                    texture = full.texture;
+                    shownW = nativeW = full.width;
+                    shownH = nativeH = full.height;
+                } else if (!shot.thumb.empty() && shot.thumb != original) {
+                    const WebImages::Image& thumb = WebImages::get(shot.thumb);
+                    if (thumb.texture != 0 && thumb.done) {
+                        texture = thumb.texture;
+                        shownW = thumb.width;
+                        shownH = thumb.height;
+                    }
+                }
+                failed = texture == 0 && full.done && full.failed;
+            } else {
+                std::shared_ptr<const Pixels> full = Screenshots::fullImage(entry.path, entry.modified);
+                std::shared_ptr<const Pixels> thumb = Screenshots::thumbnail(entry.path, entry.modified);
+                std::shared_ptr<const Pixels> shown = full ? full : thumb;
+                texture = Textures::of(shown);
+                if (shown) {
+                    shownW = shown->width;
+                    shownH = shown->height;
+                }
+                if (full) {
+                    nativeW = full->width;
+                    nativeH = full->height;
+                }
+            }
+            if (shownW > 0 && shownH > 0) {
+                float fit =
+                        std::min((windowW - 2.0f * SIDE_W) / (float) shownW, (windowH - 2.0f * BAR_H) / (float) shownH);
+                fitW = (float) shownW * fit;
+                fitH = (float) shownH * fit;
             }
 
             float t = 1.0f - std::exp(-ImGui::GetIO().DeltaTime * 18.0f);
@@ -309,6 +353,11 @@ namespace ScreenshotViewer {
             float imageY = windowH * 0.5f + panY - drawH * 0.5f;
             if (texture != 0 && drawW > 0.0f && drawH > 0.0f) {
                 picture(texture, imageX, imageY, drawW, drawH);
+            } else if (failed) {
+                std::string text = "图片加载失败";
+                float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(text, (windowW - textW) * 0.5f, windowH * 0.5f - 12.0f, 24.0f, white(0.6f),
+                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             } else {
                 Page::spinner(windowW * 0.5f, windowH * 0.5f, 10.0f, 0xFFFFFFFFu);
             }
@@ -329,26 +378,32 @@ namespace ScreenshotViewer {
                 ScreenshotViewer::close();
             }
             x -= GROUP_GAP + TOOL;
-            if (tool("delete", 0xf2ed, "删除", x, toolY, true)) {
-                Screenshots::remove(key, entry.path);
-                removed = true;
-            }
-            x -= TOOL_GAP + TOOL;
-            if (tool("reveal", 0xf07c, "在文件夹中显示", x, toolY, true)) {
-                Platform::reveal(entry.path);
-            }
-            x -= TOOL_GAP + TOOL;
-            if (tool("copy", 0xf0c5, "复制", x, toolY, true)) {
-                copy(entry.path);
+            if (remote) {
+                if (tool("browser", 0xf35d, "在浏览器中打开原图", x, toolY, !original.empty())) {
+                    Platform::openUrl(original);
+                }
+            } else {
+                if (tool("delete", 0xf2ed, "删除", x, toolY, true)) {
+                    Screenshots::remove(key, entry.path);
+                    removed = true;
+                }
+                x -= TOOL_GAP + TOOL;
+                if (tool("reveal", 0xf07c, "在文件夹中显示", x, toolY, true)) {
+                    Platform::reveal(entry.path);
+                }
+                x -= TOOL_GAP + TOOL;
+                if (tool("copy", 0xf0c5, "复制", x, toolY, true)) {
+                    copy(entry.path);
+                }
             }
             x -= GROUP_GAP + TOOL;
             if (tool("zoomIn", 0xf00e, "放大", x, toolY, zoomTarget < ZOOM_MAX - 0.001f)) {
                 zoomStep(1);
             }
             x -= PERCENT_W;
-            if (full) {
+            if (nativeW > 0) {
                 float physicalWidth = drawW * UiRender::uiScale * UiRender::pixelScale();
-                int percent = (int) std::lround(physicalWidth / (float) full->width * 100.0f);
+                int percent = (int) std::lround(physicalWidth / (float) nativeW * 100.0f);
                 std::string text = std::to_string(percent) + "%";
                 bool hovered = !closing && NewUi::hit(x, toolY, PERCENT_W, TOOL);
                 float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
@@ -369,19 +424,32 @@ namespace ScreenshotViewer {
 
             float titleX = 20.0f;
             float room = x - 24.0f - titleX;
-            std::string meta = InstanceScreenshots::dateText(entry.modified) + "  " +
-                    InstanceScreenshots::sizeText(entry.size) +
-                    (full ? "  " + std::to_string(full->width) + "×" + std::to_string(full->height) : std::string());
+            std::string dimensions =
+                    nativeW > 0 ? std::to_string(nativeW) + "×" + std::to_string(nativeH) : std::string();
+            std::string meta;
+            std::string title;
+            if (remote) {
+                title = !shot.title.empty() ? shot.title : shot.description;
+                meta = !shot.title.empty() && !shot.description.empty() ? shot.description : dimensions;
+                float titleW = std::min(room, UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL));
+                meta = UiFont::fitEnd(meta, UiFont::MEDIUM, UiWidgets::TEXT_SMALL,
+                                      std::max(0.0f, room - titleW - (title.empty() ? 0.0f : 14.0f)));
+            } else {
+                title = entry.filename;
+                meta = InstanceScreenshots::dateText(entry.modified) + "  " +
+                        InstanceScreenshots::sizeText(entry.size) +
+                        (dimensions.empty() ? std::string() : "  " + dimensions);
+            }
             float metaW = UiFont::width(meta, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            bool withMeta = room - metaW - 14.0f >= 120.0f;
-            std::string name = UiFont::fitEnd(entry.filename, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
-                                              std::max(0.0f, withMeta ? room - metaW - 14.0f : room));
+            bool withMeta = !meta.empty() && (remote ? metaW > 0.0f : room - metaW - 14.0f >= 120.0f);
+            float nameRoom = withMeta ? room - metaW - (title.empty() ? 0.0f : 14.0f) : room;
+            std::string name = UiFont::fitEnd(title, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, std::max(0.0f, nameRoom));
             float nameY = (BAR_H - UiWidgets::TEXT_CONTROL) * 0.5f;
             UiFont::draw(name, titleX, nameY, white(1.0f), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             if (withMeta) {
                 float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float baseline = nameY + UiFont::ascent(UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiFont::draw(meta, titleX + nameW + 14.0f,
+                UiFont::draw(meta, titleX + nameW + (name.empty() ? 0.0f : 14.0f),
                              baseline - UiFont::ascent(UiFont::MEDIUM, UiWidgets::TEXT_SMALL), white(0.55f),
                              UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             }
@@ -430,7 +498,7 @@ namespace ScreenshotViewer {
                 dragged = false;
                 pressing = !twice;
                 if (twice) {
-                    toggleZoom(full ? full->width : 0, mx, my);
+                    toggleZoom(nativeW, mx, my);
                 }
             }
             if (pressing) {
@@ -479,7 +547,7 @@ namespace ScreenshotViewer {
                 zoomStep(-1);
             } else if (ImGui::IsKeyPressed(ImGuiKey_0, false) || ImGui::IsKeyPressed(ImGuiKey_Keypad0, false)) {
                 zoomAt(1.0f, windowW * 0.5f, windowH * 0.5f);
-            } else if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+            } else if (!remote && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
                 copy(entry.path);
             }
         }
@@ -499,8 +567,29 @@ namespace ScreenshotViewer {
         UiOverlays::openOn(nullptr, &layer);
         layer.active = true;
         closing = false;
+        remote = false;
+        web.clear();
         key = instanceKey;
         go(at);
+        UiState::remove(OPEN);
+    }
+
+    void openWeb(std::vector<Picture> pictures, int at) {
+        if (pictures.empty()) {
+            return;
+        }
+        UiOverlays::addLayerBefore(&layer, UiOverlays::sub);
+        NewUi::closeAllOverlays();
+        UiInput::blur();
+        UiOverlays::openOn(nullptr, &layer);
+        layer.active = true;
+        closing = false;
+        remote = true;
+        web = std::move(pictures);
+        key.clear();
+        current.clear();
+        Screenshots::forgetFullImage();
+        go(std::clamp(at, 0, (int) web.size() - 1));
         UiState::remove(OPEN);
     }
 

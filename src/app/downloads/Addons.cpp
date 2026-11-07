@@ -1,9 +1,14 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/Aggregate.h"
+#include "app/downloads/Authors.h"
 #include "app/downloads/CurseForge.h"
+#include "app/downloads/Dependencies.h"
 #include "app/downloads/DownloadSources.h"
+#include "app/downloads/Mcmod.h"
 #include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
+#include "app/downloads/PackContents.h"
+#include "app/downloads/Projects.h"
 #include "app/downloads/Recent.h"
 #include "app/system/CallbackQueue.h"
 
@@ -39,7 +44,7 @@ namespace Addons {
     namespace {
         constexpr int ICON_SIZE = 64;
         // 16 KB each: the icons used last, the categories' and a few pages of results.
-        constexpr size_t KEPT_ICONS = 100;
+        constexpr size_t KEPT_ICONS = 400;
         constexpr int ICON_WORKERS = 4;
 
         CallbackQueue finished;
@@ -304,6 +309,11 @@ namespace Addons {
         CurseForge::poll();
         Aggregate::poll();
         ModNames::poll();
+        Projects::poll();
+        Mcmod::poll();
+        Authors::poll();
+        PackContents::poll();
+        Dependencies::poll();
         finished.poll();
         // An icon still on its way, or that failed, is only its address.
         iconUse.trim(icons, KEPT_ICONS, [](const Icon& icon) { return icon.pixels != nullptr; });
@@ -326,5 +336,10 @@ namespace Addons {
         CurseForge::shutdown();
         Aggregate::shutdown();
         ModNames::shutdown();
+        Projects::shutdown();
+        Mcmod::shutdown();
+        Authors::shutdown();
+        PackContents::shutdown();
+        Dependencies::shutdown();
     }
 }

@@ -2,6 +2,7 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "app/system/About.h"
 #include "app/system/Catalog.h"
@@ -36,11 +37,13 @@
 #include <core/base/strings.hpp>
 
 #include "ui/imgui/menu/MenuItems.h"
+#include "ui/imgui/overlay/UiOverlays.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiPageTransition.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiSound.h"
 #include "ui/imgui/panel/UiState.h"
@@ -85,12 +88,6 @@ namespace SettingsScreen {
             return Page::right() - mainX();
         }
 
-        void explain(const std::string& id, const std::string& text, float rowY, float labelRight, bool blocked) {
-            if (!blocked && NewUi::hit(mainX(), rowY, labelRight - mainX(), Page::ROW_H)) {
-                NewUi::markDoc(id, text, mainX() + 6.0f, rowY + Page::ROW_H + 10.0f);
-            }
-        }
-
         void select(const std::string& id, const std::shared_ptr<Choice>& choice, float rowY, bool blocked) {
             SelectWidget widget(id, choice);
             widget.bounds(Page::controlRight() - SELECT_W, rowY + Page::FIELD_Y, SELECT_W, FIELD_H).block(blocked);
@@ -132,7 +129,7 @@ namespace SettingsScreen {
             return false;
         }
 
-        void textRow(const std::string& id, const char* label, const char* doc, std::function<std::string()> read,
+        void textRow(const std::string& id, const char* label, std::function<std::string()> read,
                      std::function<void(const std::string&)> write, float rowY, bool blocked, const char* hint = "无") {
             Page::label(label, rowY);
             auto binding = std::make_shared<TextBinding>(
@@ -144,7 +141,6 @@ namespace SettingsScreen {
                     .bounds(x, rowY + Page::FIELD_Y, WIDE_FIELD, FIELD_H)
                     .block(blocked);
             field.paint();
-            explain(id, doc, rowY, x - 8.0f, blocked);
         }
 
         std::string fitTail(const std::string& text, float available) {
@@ -174,20 +170,16 @@ namespace SettingsScreen {
         }
 
         void launchRows(float y, bool blocked) {
-            Page::label("游戏语言", y);
+            Page::label("默认游戏语言", y);
             static auto language = ModeBinding::mapped<LaunchDefaults::Language>(
                     "settings#language", LaunchDefaults::language, LaunchDefaults::setLanguage,
-                    {{LaunchDefaults::Language::None, "不自动设置"},
-                     {LaunchDefaults::Language::Chinese, "自动设置为中文"},
-                     {LaunchDefaults::Language::English, "自动设置为英文"}});
+                    {{LaunchDefaults::Language::None, "不设置"},
+                     {LaunchDefaults::Language::Chinese, "中文"},
+                     {LaunchDefaults::Language::English, "英文"}});
             select("settings#language", language, y, blocked);
-            explain("settings#language",
-                    "启动时，如果游戏目录里还没有设置过语言（比如新实例第一次启动），就把游戏语言设为中文或英文；之后在"
-                    "游戏里改的语言不会被覆盖。",
-                    y, Page::controlRight() - SELECT_W - 8.0f, blocked);
             y += Page::ROW_H;
 
-            Page::label("内存管理", y);
+            Page::label("垃圾回收器", y);
             static auto gc = ModeBinding::mapped<blb::launch::gc_mode>(
                     "settings#gc", LaunchDefaults::gc, LaunchDefaults::setGc,
                     {{blb::launch::gc_mode::zgc, "尽量使用 ZGC"},
@@ -196,24 +188,15 @@ namespace SettingsScreen {
                      {blb::launch::gc_mode::tuned_g1, "调优 G1GC"},
                      {blb::launch::gc_mode::none, "不指定（可自定义）"}});
             select("settings#gc", gc, y, blocked);
-            explain("settings#gc",
-                    "游戏用的垃圾回收器。ZGC 停顿更短，需要 Java 15 以上，分代 ZGC 需要 Java 21 以上，Java "
-                    "版本不够时改用标准 G1GC；调优 G1GC 是启动器默认的一组 G1 参数；不指定则不加回收器参数，可以在 JVM "
-                    "参数里自己写。实例在高级设置里关闭默认 JVM 参数时，这里不生效。",
-                    y, Page::controlRight() - SELECT_W - 8.0f, blocked);
             y += Page::ROW_H;
 
             textRow(
-                    "settings#jvmArgs", "JVM 参数",
-                    "所有实例都会加上，排在实例自己的 JVM 参数前面。空格分隔，含空格的参数用双引号括起来。",
-                    [] { return LaunchDefaults::jvmArgs(); },
+                    "settings#jvmArgs", "JVM 参数", [] { return LaunchDefaults::jvmArgs(); },
                     [](const std::string& value) { LaunchDefaults::setJvmArgs(value); }, y, blocked);
             y += Page::ROW_H;
 
             textRow(
-                    "settings#gameArgs", "游戏参数",
-                    "所有实例都会加上，排在实例自己的游戏参数前面。空格分隔，含空格的参数用双引号括起来。",
-                    [] { return LaunchDefaults::gameArgs(); },
+                    "settings#gameArgs", "游戏参数", [] { return LaunchDefaults::gameArgs(); },
                     [](const std::string& value) { LaunchDefaults::setGameArgs(value); }, y, blocked);
             y += Page::ROW_H;
 
@@ -221,18 +204,10 @@ namespace SettingsScreen {
             toggle(
                     "settings#showLogs", [] { return LaunchDefaults::showLogs(); },
                     [](bool on) { LaunchDefaults::setShowLogs(on); }, y, blocked);
-            explain("settings#showLogs",
-                    "游戏启动时打开日志窗口；实例可以在版本设置里另行设置，实例菜单的“测试游戏”总会打开。不显示时，游戏"
-                    "异常退出也会自动打开。",
-                    y, Page::controlRight() - 40.0f, blocked);
             y += Page::ROW_H;
 
             textRow(
-                    "settings#preLaunch", "启动前命令",
-                    "每个实例启动前通过 cmd "
-                    "运行，在实例自己的启动前命令之前，启动器等它结束再启动游戏；工作目录是游戏目录，可用 "
-                    "%INST_NAME%、%INST_DIR%、%INST_MC_DIR%、%INST_JAVA% 等环境变量。",
-                    [] { return LaunchDefaults::preLaunch(); },
+                    "settings#preLaunch", "启动前命令", [] { return LaunchDefaults::preLaunch(); },
                     [](const std::string& value) { LaunchDefaults::setPreLaunch(value); }, y, blocked);
         }
 
@@ -291,12 +266,17 @@ namespace SettingsScreen {
                          y, blocked);
         }
 
-        int appearanceCount() {
+        int lookCount() {
 #if defined(_WIN32)
-            return Appearance::backgroundImage() ? 12 : 11;
+            int count = 6;
 #else
-            return Appearance::backgroundImage() ? 11 : 10;
+            int count = 5;
 #endif
+            return Appearance::backgroundImage() ? count + 1 : count;
+        }
+
+        int windowCount() {
+            return Appearance::systemFrameRunning() ? 6 : 7;
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -340,7 +320,6 @@ namespace SettingsScreen {
             const std::string label = "界面风格";
             Page::label(label, y);
             float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
-            std::string doc = "忘却的旋律，开发中";
             auto uiStyle = std::make_shared<ModeBinding>(
                     "settings#uiStyle", [] { return std::string(UiStyles::current().label); },
                     [](const std::string& option) {
@@ -358,19 +337,15 @@ namespace SettingsScreen {
                         return options;
                     });
             select("settings#uiStyle", uiStyle, y, blocked);
-            float labelRight = Page::controlRight() - SELECT_W - 8.0f;
             if (&UiStyles::current() != &UiStyles::running()) {
                 std::string unshown;
-                labelRight = restartControls("settings#restart", labelRight, labelEnd, y, blocked, unshown);
-                if (!unshown.empty()) {
-                    doc += "。" + unshown;
-                }
+                restartControls("settings#restart", Page::controlRight() - SELECT_W - 8.0f, labelEnd, y, blocked,
+                                unshown);
             }
-            explain("settings#uiStyle", doc, y, std::max(labelEnd - 12.0f, labelRight), blocked);
         }
 #endif
 
-        void appearanceRows(float y, bool blocked) {
+        void lookRows(float y, bool blocked) {
 #if defined(_WIN32)
             uiStyleRow(y, blocked);
             y += Page::ROW_H;
@@ -447,6 +422,23 @@ namespace SettingsScreen {
             toggle(
                     "settings#sounds", [] { return Appearance::uiSounds(); },
                     [](bool on) { Appearance::setUiSounds(on); }, y, blocked);
+        }
+
+        void compactRow(float y, bool blocked) {
+            const std::string label = "紧凑模式";
+            Page::label(label, y);
+            float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 10.0f;
+            Page::tag("Ctrl+M", labelEnd, y, UiTheme::surfaceRaised(), UiTheme::textSecondary(), 7.0f);
+            std::string text = "切换";
+            float w = Page::buttonWidth(text, 0xf422);
+            if (Page::button("settings#compact", text, Page::controlRight() - w, y + Page::FIELD_Y, w, false, blocked,
+                             0xf422)) {
+                Compact::request(true);
+            }
+        }
+
+        void windowSettingRows(float y, bool blocked) {
+            compactRow(y, blocked);
             y += Page::ROW_H;
 
             Page::label("记住窗口大小", y);
@@ -455,12 +447,23 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setRememberWindow(on); }, y, blocked);
             y += Page::ROW_H;
 
+            Page::label("允许多个启动器同时开启", y);
+            toggle(
+                    "settings#allowMultipleInstances",
+                    [] { return Config::data().value("allowMultipleInstances", true); },
+                    [](bool on) {
+                        Config::data()["allowMultipleInstances"] = on;
+                        Config::save();
+                        Platform::claimLaunches();
+                    },
+                    y, blocked);
+            y += Page::ROW_H;
+
             systemFrameRow(y, blocked);
             y += Page::ROW_H;
 
             textRow(
-                    "settings#windowTitle", "窗口标题", "任务栏和窗口切换时显示的名字，留空使用默认标题。",
-                    [] { return Appearance::customWindowTitle(); },
+                    "settings#windowTitle", "窗口标题", [] { return Appearance::customWindowTitle(); },
                     [](const std::string& value) { Appearance::setWindowTitle(value); }, y, blocked,
                     Appearance::defaultWindowTitle());
             y += Page::ROW_H;
@@ -468,46 +471,374 @@ namespace SettingsScreen {
             logoFileRow(y, blocked);
             y += Page::ROW_H;
 
-            textRow(
-                    "settings#brandTitle", "左上角标题", "侧栏左上角标志旁边的文字，留空使用默认标题；",
-                    [] { return Appearance::customBrandTitle(); },
-                    [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
-                    Appearance::defaultBrandTitle());
+            if (!Appearance::systemFrameRunning()) {
+                textRow(
+                        "settings#brandTitle", "侧栏标题", [] { return Appearance::customBrandTitle(); },
+                        [](const std::string& value) { Appearance::setBrandTitle(value); }, y, blocked,
+                        Appearance::defaultBrandTitle());
+            }
+        }
+
+        void cardPage(const std::string& id, int rows, bool covered, const std::function<void(float, bool)>& paint) {
+            Page::Scroll body(id, Page::TOP, MainWindow::height() - 14.0f, rows * Page::ROW_H);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            Page::card(y, rows);
+            paint(y, blocked);
+            body.end();
         }
     }
 
     namespace {
-        constexpr int TAB_GAME = 0;
-        constexpr int TAB_LAUNCHER = 1;
-        constexpr int TAB_JAVA = 2;
-        constexpr int TAB_ABOUT = 3;
-        constexpr int TAB_PATCH = 4;
-        constexpr int TAB_TOOLS = 5;
-        constexpr int TAB_KEYS = 6;
-        PageTransition sections(TAB_GAME);
+        constexpr int SECTION_LAUNCH = 0;
+        constexpr int SECTION_OPTIONS = 1;
+        constexpr int SECTION_KEYS = 2;
+        constexpr int SECTION_PATCH = 3;
+        constexpr int SECTION_FOLDERS = 4;
+        constexpr int SECTION_LOOK = 5;
+        constexpr int SECTION_WINDOW = 6;
+        constexpr int SECTION_HOME = 7;
+        constexpr int SECTION_NETWORK = 8;
+        constexpr int SECTION_RESET = 9;
+        constexpr int SECTION_JAVA = 10;
+        constexpr int SECTION_TOOLS = 11;
+        constexpr int SECTION_ABOUT = 12;
+        PageTransition sections(SECTION_LAUNCH);
+
+        constexpr int GROUP_NONE = -1;
+        constexpr int GROUP_GAME = 0;
+        constexpr int GROUP_LAUNCHER = 1;
+
+        struct Group {
+            int glyph;
+            const char* label;
+        };
+
+        const Group GROUPS[] = {{0xf11b, "游戏设置"}, {0xf108, "启动器选项"}};
 
         struct Tab {
             int section;
             int glyph;
             const char* label;
+            int group;
         };
 
         const Tab TABS[] = {
-                {TAB_GAME, 0xf11b, "游戏设置"},       {TAB_KEYS, 0xf11c, "按键绑定"},  {TAB_PATCH, 0xf462, "补丁"},
-                {TAB_LAUNCHER, 0xf1de, "启动器设置"}, {TAB_JAVA, 0xf0f4, "Java 管理"}, {TAB_TOOLS, 0xf0ad, "工具箱"},
-                {TAB_ABOUT, 0xf05a, "关于"},
+                {SECTION_LAUNCH, 0xf04b, "全局启动项", GROUP_GAME},
+                {SECTION_OPTIONS, 0xf1de, "全局游戏选项", GROUP_GAME},
+                {SECTION_KEYS, 0xf11c, "按键绑定", GROUP_GAME},
+                {SECTION_PATCH, 0xf462, "补丁", GROUP_GAME},
+                {SECTION_FOLDERS, 0xf07b, "游戏目录", GROUP_GAME},
+                {SECTION_LOOK, 0xf53f, "外观", GROUP_LAUNCHER},
+                {SECTION_WINDOW, 0xf2d0, "窗口", GROUP_LAUNCHER},
+                {SECTION_HOME, 0xf015, "主页", GROUP_LAUNCHER},
+                {SECTION_NETWORK, 0xf019, "下载与网络", GROUP_LAUNCHER},
+                {SECTION_RESET, 0xf2f1, "引导与重置", GROUP_LAUNCHER},
+                {SECTION_JAVA, 0xf0f4, "Java 管理", GROUP_NONE},
+                {SECTION_TOOLS, 0xf0ad, "工具箱", GROUP_NONE},
+                {SECTION_ABOUT, 0xf05a, "关于", GROUP_NONE},
         };
 
-        void rail(bool covered) {
-            float y = Page::TOP;
+        int groupOf(int section) {
             for (const Tab& tab : TABS) {
-                NavItemWidget item("settings#tab#" + std::to_string(tab.section), Ui::glyph(tab.glyph), tab.label);
-                item.selected(sections.page == tab.section).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
-                item.paint();
-                if (item.pressed) {
-                    sections.go(tab.section);
+                if (tab.section == section) {
+                    return tab.group;
+                }
+            }
+            return GROUP_NONE;
+        }
+
+        constexpr float SEARCH_H = 28.0f;
+        const char* const SEARCH_OWNER = "settings#search";
+        std::string searchText;
+
+        std::shared_ptr<TextBinding> searchValue() {
+            static std::shared_ptr<TextBinding> value = [] {
+                auto binding = std::make_shared<TextBinding>(
+                        SEARCH_OWNER, [] { return searchText; }, [](const std::string& text) { searchText = text; },
+                        "搜索选项");
+                binding->limit = 40;
+                return binding;
+            }();
+            return value;
+        }
+
+        std::string typedSearch() {
+            return NewUi::textEditing == SEARCH_OWNER ? UiInput::get(NewUi::INPUT_TEXT) : searchText;
+        }
+
+        struct Entry {
+            int section;
+            const char* label;
+            const char* keywords;
+        };
+
+        const Entry ENTRIES[] = {
+                {SECTION_LAUNCH, "默认游戏语言", "语言 中文 英文"},
+                {SECTION_LAUNCH, "垃圾回收器", "GC ZGC G1 内存"},
+                {SECTION_LAUNCH, "JVM 参数", "Java 虚拟机"},
+                {SECTION_LAUNCH, "游戏参数", nullptr},
+                {SECTION_LAUNCH, "显示游戏日志", nullptr},
+                {SECTION_LAUNCH, "启动前命令", "cmd 脚本"},
+                {SECTION_KEYS, nullptr, "快捷键 键位"},
+                {SECTION_PATCH, "应用给默认设置的实例", "启用"},
+                {SECTION_PATCH, "修复旧版皮肤", nullptr},
+                {SECTION_PATCH, "自定义皮肤", "authlib 披风"},
+                {SECTION_PATCH, "皮肤优先级", nullptr},
+                {SECTION_PATCH, "皮肤来源", "Mojang LittleSkin"},
+                {SECTION_PATCH, "皮肤图片", nullptr},
+                {SECTION_PATCH, "披风图片", nullptr},
+                {SECTION_PATCH, "正版玩家名", nullptr},
+                {SECTION_PATCH, "自定义材质标记为已签名", nullptr},
+                {SECTION_PATCH, "Log4Shell 漏洞修复", "log4j 安全"},
+                {SECTION_PATCH, "中文输入修复", "输入法 IME"},
+                {SECTION_PATCH, "Java 25 LWJGL 兼容", "Unsafe"},
+                {SECTION_PATCH, "窗口标题", nullptr},
+                {SECTION_PATCH, "窗口图标", nullptr},
+                {SECTION_PATCH, "离线加入局域网", "LAN 联机"},
+                {SECTION_PATCH, "输出调试日志", "debug"},
+                {SECTION_FOLDERS, "默认版本隔离", "隔离"},
+                {SECTION_FOLDERS, "实例列表", nullptr},
+#if defined(_WIN32)
+                {SECTION_FOLDERS, "搜索硬盘上的 .minecraft", "扫描 游戏目录"},
+                {SECTION_LOOK, "界面风格", "EXUI"},
+#endif
+                {SECTION_LOOK, "主题", "强调色 颜色 深色 浅色"},
+                {SECTION_LOOK, "界面缩放", "缩放 大小"},
+                {SECTION_LOOK, "模组名称", "中文名 原名"},
+                {SECTION_LOOK, "背景图片", nullptr},
+                {SECTION_LOOK, "背景图片文件", nullptr},
+                {SECTION_LOOK, "界面音效", "声音"},
+                {SECTION_WINDOW, "紧凑模式", "托盘 迷你 小窗 Ctrl+M"},
+                {SECTION_WINDOW, "记住窗口大小", nullptr},
+                {SECTION_WINDOW, "允许多个启动器同时开启", "多开 单实例"},
+                {SECTION_WINDOW, "使用系统窗口边框", "标题栏 边框"},
+                {SECTION_WINDOW, "窗口标题", "任务栏"},
+                {SECTION_WINDOW, "启动器标志", "图标 logo"},
+                {SECTION_WINDOW, "侧栏标题", nullptr},
+                {SECTION_HOME, "主页内容", "PCL XAML"},
+                {SECTION_HOME, "主页组件", nullptr},
+                {SECTION_HOME, "组件位置", nullptr},
+                {SECTION_HOME, "快捷操作", nullptr},
+                {SECTION_HOME, "已保存的服务器", nullptr},
+                {SECTION_HOME, "服务器地址", nullptr},
+                {SECTION_HOME, "服务器名称", nullptr},
+                {SECTION_HOME, "主页文件", "XAML"},
+                {SECTION_HOME, "联网主页网址", "XAML"},
+                {SECTION_NETWORK, "Minecraft", "下载源 镜像 BMCLAPI"},
+                {SECTION_NETWORK, "资源文件", "下载源 镜像 BMCLAPI"},
+                {SECTION_NETWORK, "Modrinth", "下载源 镜像 MCIM"},
+                {SECTION_NETWORK, "CurseForge", "下载源 镜像 MCIM"},
+                {SECTION_NETWORK, "使用系统代理", "代理 proxy"},
+                {SECTION_RESET, "使用启动引导", "引导"},
+                {SECTION_RESET, "重置启动器选项", "恢复默认"},
+                {SECTION_JAVA, nullptr, "JDK JRE 运行时"},
+                {SECTION_TOOLS, nullptr, "自定义下载 PCL 主题"},
+                {SECTION_ABOUT, nullptr, "版本 更新 鸣谢 开源"},
+        };
+
+        struct Hit {
+            const Tab* tab;
+            std::string label;
+            bool row;
+        };
+
+        std::unordered_map<int, std::vector<std::string>> collectedLabels;
+        bool labelsCollected = false;
+
+        const char* keywordsOf(int section, const std::string& label) {
+            for (const Entry& entry : ENTRIES) {
+                if (entry.section == section && entry.label != nullptr && label == entry.label) {
+                    return entry.keywords;
+                }
+            }
+            return nullptr;
+        }
+
+        std::vector<std::string> labelsOf(int section) {
+            std::vector<std::string> labels;
+            auto add = [&](const std::string& label) {
+                if (std::find(labels.begin(), labels.end(), label) == labels.end()) {
+                    labels.push_back(label);
+                }
+            };
+            if (auto found = collectedLabels.find(section); found != collectedLabels.end()) {
+                for (const std::string& label : found->second) {
+                    add(label);
+                }
+            }
+            for (const Entry& entry : ENTRIES) {
+                if (entry.section == section && entry.label != nullptr) {
+                    add(entry.label);
+                }
+            }
+            if (section == SECTION_OPTIONS) {
+                for (const GameOptions::OptionSpec& option : GameOptions::OPTIONS) {
+                    add(option.label);
+                }
+            }
+            return labels;
+        }
+
+        std::vector<Hit> hitsFor(const std::string& query) {
+            auto matches = [&](const char* text) { return text != nullptr && blb::icontains(text, query); };
+            std::vector<Hit> hits;
+            for (const Tab& tab : TABS) {
+                bool whole = matches(tab.label) || (tab.group != GROUP_NONE && matches(GROUPS[tab.group].label));
+                for (const Entry& entry : ENTRIES) {
+                    whole = whole ||
+                            (entry.section == tab.section && entry.label == nullptr && matches(entry.keywords));
+                }
+                if (whole) {
+                    hits.push_back({&tab, tab.label, false});
+                }
+                for (const std::string& label : labelsOf(tab.section)) {
+                    if (matches(label.c_str()) || matches(keywordsOf(tab.section, label))) {
+                        hits.push_back({&tab, label, true});
+                    }
+                }
+            }
+            return hits;
+        }
+
+        std::string pathOf(const Hit& hit) {
+            if (hit.tab->group == GROUP_NONE) {
+                return std::string();
+            }
+            std::string group = GROUPS[hit.tab->group].label;
+            return hit.row ? group + " › " + hit.tab->label : group;
+        }
+
+        void searchField(bool covered) {
+            float x = Page::left();
+            float y = Page::TOP;
+            bool filled = !typedSearch().empty();
+            float clearX = x + SIDE_W - 14.0f;
+            bool clearOver = filled && !covered && NewUi::hit(clearX - 10.0f, y, 20.0f, SEARCH_H);
+            if (filled && !covered && NewUi::click(clearX - 10.0f, y, 20.0f, SEARCH_H)) {
+                UiSound::request(UiSound::RELEASE);
+                searchText.clear();
+                if (NewUi::textEditing == SEARCH_OWNER) {
+                    UiInput::set(NewUi::INPUT_TEXT, "");
+                }
+                filled = false;
+            }
+            TextFieldWidget field(searchValue());
+            field.lead(22.0f)
+                    .radius(8.0f)
+                    .room(filled ? 18.0f : 0.0f)
+                    .box(x, y, SIDE_W, SEARCH_H)
+                    .bounds(x, y, filled ? SIDE_W - 24.0f : SIDE_W, SEARCH_H)
+                    .block(covered);
+            field.paint();
+            UiWidgets::icon(Ui::glyph(0xf002), x + 16.0f, y + SEARCH_H * 0.5f, UiTheme::textFaint(), 11.0f);
+            if (filled) {
+                UiWidgets::icon(Ui::glyph(0xf00d), clearX, y + SEARCH_H * 0.5f,
+                                clearOver ? UiTheme::textPrimary() : UiTheme::textFaint(), 9.0f);
+            }
+        }
+
+        void openHit(const Hit& hit) {
+            searchText.clear();
+            if (NewUi::textEditing == SEARCH_OWNER) {
+                NewUi::cancelTextEdit();
+            }
+            sections.go(hit.tab->section);
+            if (hit.row) {
+                Page::reveal(hit.label);
+            }
+        }
+
+        void emptyState(int glyph, const std::string& text) {
+            float cx = Page::columnLeft() + Page::columnWidth() * 0.5f;
+            float cy = Page::TOP + (MainWindow::height() - 14.0f - Page::TOP) * 0.38f;
+            UiWidgets::icon(Ui::glyph(glyph), cx, cy - 16.0f, UiTheme::textFaint(), 22.0f);
+            Page::centredText(
+                    UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::columnWidth() - 32.0f), cx,
+                    cy + 6.0f, 24.0f, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
+        }
+
+        void resultsView(const std::string& query, bool covered) {
+            std::vector<Hit> hits = hitsFor(query);
+            if (hits.empty()) {
+                emptyState(0xf002, "没有找到“" + query + "”");
+                return;
+            }
+            int count = (int) hits.size();
+            Page::Scroll body("settings#results", Page::TOP, MainWindow::height() - 14.0f, count * Page::ROW_H);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            Page::card(y, count);
+            for (int i = 0; i < count; i++) {
+                float rowY = y + i * Page::ROW_H;
+                if (!Page::shown(rowY)) {
+                    continue;
+                }
+                const Hit& hit = hits[i];
+                if (Page::navRow("settings#hit#" + std::to_string(i), hit.label, pathOf(hit), rowY, blocked,
+                                 Page::rowCorners(i, count), hit.tab->glyph)) {
+                    openHit(hit);
+                    break;
+                }
+            }
+            body.end();
+        }
+
+        void tabItem(const Tab& tab, float y, bool blocked) {
+            NavItemWidget item("settings#tab#" + std::to_string(tab.section), Ui::glyph(tab.glyph), tab.label);
+            item.selected(sections.page == tab.section)
+                    .nested(tab.group != GROUP_NONE)
+                    .bounds(Page::left(), y, SIDE_W, NAV_ITEM_H)
+                    .block(blocked);
+            item.paint();
+            if (item.pressed) {
+                sections.go(tab.section);
+            }
+        }
+
+        void rail(bool covered) {
+            searchField(covered);
+            float y = Page::TOP + SEARCH_H + 10.0f;
+            int open = groupOf(sections.page);
+            size_t count = std::size(TABS);
+            size_t i = 0;
+            while (i < count) {
+                const Tab& first = TABS[i];
+                if (first.group == GROUP_NONE) {
+                    tabItem(first, y, covered);
+                    y += NAV_STEP;
+                    i++;
+                    continue;
+                }
+                size_t end = i;
+                while (end < count && TABS[end].group == first.group) {
+                    end++;
+                }
+                std::string key = "settings#group#" + std::to_string(first.group);
+                const Group& group = GROUPS[first.group];
+                NavItemWidget header(key, Ui::glyph(group.glyph), group.label);
+                header.bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+                header.paint();
+                if (header.pressed && open != first.group) {
+                    sections.go(first.section);
                 }
                 y += NAV_STEP;
+                float shown = UiState::motion(key + "#open", open == first.group ? 1.0f : 0.0f, 16.0f);
+                float height = UiRender::snapLayout((float) (end - i) * NAV_STEP * shown);
+                if (shown > 0.001f) {
+                    UiRender::scissor(Page::left() - 4.0f, y, SIDE_W + 8.0f, height);
+                    float savedAlpha = UiRender::alphaMul;
+                    UiRender::alphaMul = savedAlpha * shown;
+                    for (size_t k = i; k < end; k++) {
+                        tabItem(TABS[k], y + (float) (k - i) * NAV_STEP, covered || shown < 0.999f);
+                    }
+                    UiRender::alphaMul = savedAlpha;
+                    UiRender::unscissor();
+                }
+                y += height;
+                i = end;
             }
         }
 
@@ -740,25 +1071,42 @@ namespace SettingsScreen {
             }
         }
 
-        void gameTab(bool covered) {
+        void noFolder() {
+            emptyState(0xf07b, "还没有游戏目录");
+        }
+
+        void optionsSection(bool covered) {
+            std::string source = optionsSource();
+            std::filesystem::path shared = GameOptions::sharedFile(source);
+            if (shared.empty()) {
+                noFolder();
+                return;
+            }
+            const Instances::Source* found = Instances::source(source);
+            std::string title = found != nullptr ? found->label : std::string("游戏目录");
+            float contentH = Page::CAPTION_H + GameOptionRows::COUNT * Page::ROW_H;
+            Page::Scroll body("settings#optionsPage", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            GameOptionRows::caption(title, shared, "版本独立的实例在实例设置里修改", y);
+            Page::card(y + Page::CAPTION_H, GameOptionRows::COUNT);
+            GameOptionRows::draw("settings#options", shared, y + Page::CAPTION_H, blocked);
+            body.end();
+        }
+
+        void foldersSection(bool covered) {
 #if defined(_WIN32)
             const int instanceCount = 3;
 #else
             const int instanceCount = 2;
 #endif
             const int foundCount = (int) DiskScan::status().folders.size();
-            const int launchCount = 6;
-            std::string source = optionsSource();
-            std::filesystem::path shared = GameOptions::sharedFile(source);
-            const int optionCount = shared.empty() ? 0 : GameOptionRows::COUNT;
-            float contentH = 2 * Page::CAPTION_H + (instanceCount + launchCount) * Page::ROW_H + Page::GAP;
+            float contentH = Page::CAPTION_H + instanceCount * Page::ROW_H;
             if (foundCount > 0) {
-                contentH += Page::CAPTION_H + foundCount * Page::ROW_H + Page::GAP;
+                contentH += Page::GAP + Page::CAPTION_H + foundCount * Page::ROW_H;
             }
-            if (optionCount > 0) {
-                contentH += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
-            }
-            Page::Scroll body("settings#game", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#folders", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -773,29 +1121,10 @@ namespace SettingsScreen {
             }
             y += Page::CAPTION_H + instanceCount * Page::ROW_H + Page::GAP;
 
-            if (foundCount > 0) {
-                if (Page::shown(y, Page::CAPTION_H + foundCount * Page::ROW_H)) {
-                    Page::caption("找到的游戏目录", y);
-                    Page::card(y + Page::CAPTION_H, foundCount);
-                    foundRows(y + Page::CAPTION_H, blocked);
-                }
-                y += Page::CAPTION_H + foundCount * Page::ROW_H + Page::GAP;
-            }
-
-            if (Page::shown(y, Page::CAPTION_H + launchCount * Page::ROW_H)) {
-                Page::caption("启动", y);
-                Page::card(y + Page::CAPTION_H, launchCount);
-                launchRows(y + Page::CAPTION_H, blocked);
-            }
-            y += Page::CAPTION_H + launchCount * Page::ROW_H + Page::GAP;
-
-            if (optionCount > 0 && Page::shown(y, Page::CAPTION_H + optionCount * Page::ROW_H)) {
-                const Instances::Source* found = Instances::source(source);
-                std::string note = (found != nullptr ? found->label : std::string("游戏目录")) +
-                        " 里共用的设置，版本独立的实例在版本设置里修改";
-                GameOptionRows::caption("游戏选项", shared, note, y);
-                Page::card(y + Page::CAPTION_H, optionCount);
-                GameOptionRows::draw("settings#options", shared, y + Page::CAPTION_H, blocked);
+            if (foundCount > 0 && Page::shown(y, Page::CAPTION_H + foundCount * Page::ROW_H)) {
+                Page::caption("找到的游戏目录", y);
+                Page::card(y + Page::CAPTION_H, foundCount);
+                foundRows(y + Page::CAPTION_H, blocked);
             }
             body.end();
         }
@@ -804,13 +1133,12 @@ namespace SettingsScreen {
             std::string source = optionsSource();
             std::filesystem::path shared = GameOptions::sharedFile(source);
             if (shared.empty()) {
-                UiRender::textY("还没有游戏目录", Page::columnLeft() + 2.0f, Page::TOP + 20.0f, 24.0f,
-                                UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                noFolder();
                 return;
             }
             const Instances::Source* found = Instances::source(source);
             std::string note = (found != nullptr ? found->label : std::string("游戏目录")) +
-                    " 里共用的按键，版本独立的实例在版本设置里修改";
+                    " 里共用的按键，版本独立的实例在实例设置里修改";
             KeyBindEditor::draw("settings#keys", shared, false, note, Page::TOP, covered);
         }
 
@@ -946,10 +1274,6 @@ namespace SettingsScreen {
             if (Homepage::source() == Homepage::SOURCE_NONE) {
                 Page::label("主页组件", y);
                 select("settings#homeWidgets", HomeWidgets::choice(), y, blocked);
-                explain("settings#homeWidgets",
-                        "显示在主页上，可以多选，拖动右侧的手柄调整顺序；不显示启动游戏时，右下角会有启动按钮，全部取消"
-                        "就只显示标志。",
-                        y, Page::controlRight() - SELECT_W - 8.0f, blocked);
                 if (HomeWidgets::enabled(HomeWidgets::LAUNCH)) {
                     y += Page::ROW_H;
                     Page::label("组件位置", y);
@@ -960,30 +1284,23 @@ namespace SettingsScreen {
                                    [](const std::string& value) { HomeWidgets::setAlignBottom(value == "靠下"); },
                                    [] { return std::vector<std::string>{"垂直居中", "靠下"}; }),
                            y, blocked);
-                    explain("settings#homeAlign", "主页组件放在页面中间，还是靠近底部。", y,
-                            Page::controlRight() - SELECT_W - 8.0f, blocked);
                 }
                 if (HomeWidgets::enabled(HomeWidgets::QUICK)) {
                     y += Page::ROW_H;
                     Page::label("快捷操作", y);
                     select("settings#quickActions", QuickActions::choice(), y, blocked);
-                    explain("settings#quickActions", "快捷操作卡片里的按钮，可以多选，拖动右侧的手柄调整顺序。", y,
-                            Page::controlRight() - SELECT_W - 8.0f, blocked);
                 }
                 if (HomeWidgets::enabled(HomeWidgets::SERVER)) {
                     y += Page::ROW_H;
                     savedServerRow(y, blocked);
                     y += Page::ROW_H;
                     textRow(
-                            "settings#serverAddress", "服务器地址",
-                            "要显示状态的 Minecraft 服务器",
-                            [] { return HomeWidgets::serverAddress(); },
+                            "settings#serverAddress", "服务器地址", [] { return HomeWidgets::serverAddress(); },
                             [](const std::string& value) { HomeWidgets::setServerAddress(value); }, y, blocked,
                             "例如 mc.example.com");
                     y += Page::ROW_H;
                     textRow(
-                            "settings#serverName", "服务器名称", "卡片上显示的名字，留空显示服务器地址。",
-                            [] { return HomeWidgets::serverName(); },
+                            "settings#serverName", "服务器名称", [] { return HomeWidgets::serverName(); },
                             [](const std::string& value) { HomeWidgets::setServerName(value); }, y, blocked,
                             "使用服务器地址");
                 }
@@ -991,9 +1308,8 @@ namespace SettingsScreen {
                 homepageFileRow(y, blocked);
             } else if (Homepage::source() == Homepage::SOURCE_URL) {
                 textRow(
-                        "settings#homepageUrl", "主页网址", "PCL2 联网主页的地址，返回 XAML 内容",
-                        [] { return Homepage::url(); }, [](const std::string& value) { Homepage::setUrl(value); }, y,
-                        blocked);
+                        "settings#homepageUrl", "联网主页网址", [] { return Homepage::url(); },
+                        [](const std::string& value) { Homepage::setUrl(value); }, y, blocked);
             }
         }
 
@@ -1002,17 +1318,12 @@ namespace SettingsScreen {
                 DownloadSources::Kind kind;
                 const char* id;
                 const char* label;
-                const char* doc;
             };
             const Row rows[] = {
-                    {DownloadSources::Kind::Minecraft, "settings#sourceMinecraft", "Minecraft",
-                     "版本列表、游戏本体、支持库、模组加载器和 Java 运行时，镜像源是 BMCLAPI。"},
-                    {DownloadSources::Kind::Assets, "settings#sourceAssets", "资源文件",
-                     "游戏的声音、语言等资源文件，镜像源是 BMCLAPI。"},
-                    {DownloadSources::Kind::Modrinth, "settings#sourceModrinth", "Modrinth",
-                     "Modrinth 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
-                    {DownloadSources::Kind::CurseForge, "settings#sourceCurseForge", "CurseForge",
-                     "CurseForge 的搜索、版本信息和文件下载，镜像源是 MCIM。"},
+                    {DownloadSources::Kind::Minecraft, "settings#sourceMinecraft", "Minecraft"},
+                    {DownloadSources::Kind::Assets, "settings#sourceAssets", "资源文件"},
+                    {DownloadSources::Kind::Modrinth, "settings#sourceModrinth", "Modrinth"},
+                    {DownloadSources::Kind::CurseForge, "settings#sourceCurseForge", "CurseForge"},
             };
             for (const Row& row : rows) {
                 DownloadSources::Kind kind = row.kind;
@@ -1025,7 +1336,6 @@ namespace SettingsScreen {
                                 {blb::net::source_order::official_first, "官方源优先"},
                                 {blb::net::source_order::official_only, "仅官方源"}}),
                        y, blocked);
-                explain(row.id, row.doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
                 y += Page::ROW_H;
             }
         }
@@ -1035,23 +1345,12 @@ namespace SettingsScreen {
             toggle(
                     "settings#systemProxy", [] { return Network::systemProxy(); },
                     [](bool on) { Network::setSystemProxy(on); }, y, blocked);
-#if defined(_WIN32)
-            explain("settings#systemProxy",
-                    "开启后，下载和其他网络请求会走 Windows 系统代理，例如 Clash、v2rayN 设置的代理。"
-                    "代理软件没有运行时请关闭。",
-                    y, Page::controlRight() - 40.0f, blocked);
-#else
-            explain("settings#systemProxy",
-                    "开启后，下载和其他网络请求会使用 http_proxy、https_proxy 环境变量里的代理。"
-                    "代理软件没有运行时请关闭。",
-                    y, Page::controlRight() - 40.0f, blocked);
-#endif
         }
 
         void confirmReset() {
             Dialog::open("settings#resetAll", 480.0f, 186.0f, [](float x, float y, float w, float h) {
-                UiRender::textY("重置启动器设置？", x + 20.0f, y + 20.0f, 26.0f, UiTheme::textPrimary(),
-                                UiFont::MEDIUM, 16.0f);
+                UiRender::textY("重置启动器选项？", x + 20.0f, y + 20.0f, 26.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
+                                16.0f);
                 UiRender::textY("外观、主页、窗口等设置恢复默认，启动器会重启。", x + 20.0f, y + 56.0f, 20.0f,
                                 UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 UiRender::textY("账户、实例和下载的文件不受影响。", x + 20.0f, y + 76.0f, 20.0f,
@@ -1084,13 +1383,10 @@ namespace SettingsScreen {
             if (Page::button("settings#guide", text, x, y + Page::FIELD_Y, w, false, blocked, 0xf0d0)) {
                 Onboarding::start();
             }
-            explain("settings#guide",
-                    "走一遍主题色、缩放、背景和主页组件的外观设置，当前设置会保留，随时可以跳过。",
-                    y, x - 8.0f, blocked);
         }
 
         void resetRow(float y, bool blocked) {
-            const std::string label = "重置启动器设置";
+            const std::string label = "重置启动器选项";
             const std::string text = "重置并重启";
             Page::label(label, y);
             float w = Page::buttonWidth(text, 0xf2f1);
@@ -1098,54 +1394,21 @@ namespace SettingsScreen {
             if (dangerButton("settings#resetAll", text, x, y + Page::FIELD_Y, w, 0xf2f1, blocked || Services::busy())) {
                 confirmReset();
             }
-            explain("settings#resetAll",
-                    "主题、缩放、背景、主页组件、窗口大小、侧栏展开状态等设置全部恢复默认，启动器随即重启。"
-                    "账户、实例和下载的文件不受影响。",
-                    y, x - 8.0f, blocked);
         }
 
-        void launcherTab(bool covered) {
-            int lookCount = appearanceCount();
-            int homeCount = homepageCount();
-            float contentH = Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP + Page::CAPTION_H +
-                    homeCount * Page::ROW_H + Page::GAP + Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP +
-                    Page::CAPTION_H + Page::ROW_H + Page::GAP + Page::CAPTION_H + 2 * Page::ROW_H +
-                    Page::GAP + Page::CAPTION_H + Page::ROW_H;
-            Page::Scroll body("settings#launcher", Page::TOP, MainWindow::height() - 14.0f, contentH);
+        void networkSection(bool covered) {
+            float contentH = 2 * Page::CAPTION_H + 5 * Page::ROW_H + Page::GAP;
+            Page::Scroll body("settings#network", Page::TOP, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
-            Page::caption("外观", y);
-            Page::card(y + Page::CAPTION_H, lookCount);
-            appearanceRows(y + Page::CAPTION_H, blocked);
-            y += Page::CAPTION_H + lookCount * Page::ROW_H + Page::GAP;
-            Page::caption("主页", y);
-            Page::card(y + Page::CAPTION_H, homeCount);
-            homepageRows(y + Page::CAPTION_H, blocked);
-            y += Page::CAPTION_H + homeCount * Page::ROW_H + Page::GAP;
-            Page::caption("下载", y);
+            Page::caption("下载源", y);
             Page::card(y + Page::CAPTION_H, 4);
             downloadRows(y + Page::CAPTION_H, blocked);
             y += Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP;
             Page::caption("网络", y);
             Page::card(y + Page::CAPTION_H, 1);
             networkRows(y + Page::CAPTION_H, blocked);
-            y += Page::CAPTION_H + Page::ROW_H + Page::GAP;
-            Page::caption("引导与重置", y);
-            Page::card(y + Page::CAPTION_H, 2);
-            guideRow(y + Page::CAPTION_H, blocked);
-            resetRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
-            y += Page::CAPTION_H + 2 * Page::ROW_H + Page::GAP;
-            Page::caption("行为", y);
-            Page::card(y + Page::CAPTION_H, 1);
-            Page::label("允许多个启动器同时开启", y + Page::CAPTION_H);
-            toggle("settings#allowMultipleInstances",
-                   [] { return Config::data().value("allowMultipleInstances", true); },
-                   [](bool on) {
-                       Config::data()["allowMultipleInstances"] = on;
-                       Config::save();
-                       Platform::claimLaunches();
-                   }, y + Page::CAPTION_H, blocked);
             body.end();
         }
 
@@ -1302,6 +1565,9 @@ namespace SettingsScreen {
                 }
                 if (Page::iconButton(id + "#menu", 0xf141, "更多操作", menuX, rowY + (Page::ROW_H - 28.0f) * 0.5f, blocked)) {
                     javaMenu(java, menuX - 142.0f, rowY + Page::ROW_H - 4.0f);
+                } else if (hovered && !NewUi::overlayCoversMouse() && NewUi::rightClick) {
+                    NewUi::rightClick = false;
+                    javaMenu(java, NewUi::mouseX, NewUi::mouseY);
                 }
             }
             body.end();
@@ -1579,11 +1845,10 @@ namespace SettingsScreen {
             return std::string("settings#patch#") + key;
         }
 
-        void patchToggle(const char* label, const char* key, const char* doc, float y, bool blocked) {
+        void patchToggle(const char* label, const char* key, float y, bool blocked) {
             Page::label(label, y);
             std::string id = patchId(key);
             toggle(id, [key] { return Patches::flag(key); }, [key](bool on) { Patches::setFlag(key, on); }, y, blocked);
-            explain(id, doc, y, Page::controlRight() - 40.0f, blocked);
         }
 
         std::shared_ptr<ModeBinding> patchChoice(std::string key,
@@ -1595,15 +1860,12 @@ namespace SettingsScreen {
                     std::move(options), std::move(fallback));
         }
 
-        void patchSelect(const char* label, const std::shared_ptr<ModeBinding>& choice, const char* doc,
-                         float y, bool blocked) {
+        void patchSelect(const char* label, const std::shared_ptr<ModeBinding>& choice, float y, bool blocked) {
             Page::label(label, y);
             select(choice->owner, choice, y, blocked);
-            explain(choice->owner, doc, y, Page::controlRight() - SELECT_W - 8.0f, blocked);
         }
 
-        float patchText(const char* label, const char* key, const char* hint, const char* doc, float y, bool blocked,
-                        float lead, int limit) {
+        float patchText(const char* label, const char* key, const char* hint, float y, bool blocked, int limit) {
             Page::label(label, y);
             std::string id = patchId(key);
             auto binding = std::make_shared<TextBinding>(
@@ -1616,13 +1878,11 @@ namespace SettingsScreen {
                     .bounds(x, y + Page::FIELD_Y, WIDE_FIELD, FIELD_H)
                     .block(blocked);
             field.paint();
-            explain(id, doc, y, x - lead - 8.0f, blocked);
             return x;
         }
 
-        void pathRow(const char* label, const char* key, const char* hint, const char* doc, bool png, float y,
-                     bool blocked) {
-            float x = patchText(label, key, hint, doc, y, blocked, 36.0f, 1024);
+        void pathRow(const char* label, const char* key, const char* hint, bool png, float y, bool blocked) {
+            float x = patchText(label, key, hint, y, blocked, 1024);
             if (!Page::iconButton(patchId(key) + "#pick", 0xf07c, "选择图片", x - 36.0f, y + 6.0f, blocked)) {
                 return;
             }
@@ -1655,90 +1915,62 @@ namespace SettingsScreen {
         }
 
         void enableRows(float y, bool blocked) {
-            Page::label("为所有实例启用", y);
+            Page::label("应用给默认设置的实例", y);
             toggle(
                     "settings#patch#all", [] { return Patches::all(); }, [](bool on) { Patches::setAll(on); }, y,
                     blocked);
-            explain("settings#patch#all",
-                    "关闭时，只有在版本设置里把“启动器补丁”设为启用的实例会加载补丁；开启后，实例也可以单独设为不启用。"
-                    "补丁和 authlib-injector、自己在 JVM 参数里添加的 -javaagent 可以同时使用。",
-                    y, Page::controlRight() - 40.0f, blocked);
         }
 
         void skinRows(float y, bool blocked) {
-            patchToggle("修复旧版皮肤", "skin.legacy",
-                        "1.7.5 及以下版本使用的 s3.amazonaws.com、skins.minecraft.net 皮肤地址已经失效，改为从皮肤来源"
-                        "加载。",
-                        y, blocked);
+            patchToggle("修复旧版皮肤", "skin.legacy", y, blocked);
             y += Page::ROW_H;
-            patchToggle("自定义皮肤", "skin.authlib",
-                        "通过 authlib 从皮肤来源加载皮肤和披风，适用于 1.7.6 及以上版本。", y, blocked);
+            patchToggle("自定义皮肤", "skin.authlib", y, blocked);
             y += Page::ROW_H;
             if (!Patches::flag("skin.authlib")) {
                 return;
             }
             static auto skinMode = patchChoice("skin.mode", {{"fallback", "只补全没有皮肤的玩家"},
                                                              {"override", "强制使用自定义皮肤"}});
-            patchSelect("皮肤优先级", skinMode,
-                        "只补全没有皮肤的玩家：正版玩家自带的皮肤不变，只给没有皮肤的玩家（如离线玩家）使用皮肤来源。"
-                        "强制使用自定义皮肤：先查皮肤来源，皮肤来源没有的材质再用玩家原有的。",
-                        y, blocked);
+            patchSelect("皮肤优先级", skinMode, y, blocked);
             y += Page::ROW_H;
             static auto skinSource = patchChoice("skin.source", {{"mojang", "Mojang"},
                                                                  {"littleskin", "LittleSkin"},
                                                                  {"custom", "自定义"}});
-            patchSelect("皮肤来源", skinSource,
-                        "Mojang：从正版服务器获取皮肤；LittleSkin：按玩家名从 LittleSkin 皮肤站获取；自定义：使用选择的"
-                        "皮肤和披风图片。",
-                        y, blocked);
+            patchSelect("皮肤来源", skinSource, y, blocked);
             y += Page::ROW_H;
             std::string source = Patches::value("skin.source");
             if (source == "custom") {
-                pathRow("皮肤图片", "skin.template.skin", "不使用",
-                        "PNG 皮肤图片，也可以填写网址；手臂粗细会自动识别。", true, y, blocked);
+                pathRow("皮肤图片", "skin.template.skin", "不使用", true, y, blocked);
                 y += Page::ROW_H;
-                pathRow("披风图片", "skin.template.cape", "不使用", "PNG 披风图片，也可以填写网址。", true, y, blocked);
+                pathRow("披风图片", "skin.template.cape", "不使用", true, y, blocked);
                 y += Page::ROW_H;
             } else if (source != "littleskin") {
-                patchText("正版玩家名", "skin.player", "留空则按玩家自己的名字查询",
-                          "填写后使用这个正版玩家的皮肤和披风，启动游戏时获取；留空则按每个玩家自己的名字查询。", y,
-                          blocked, 0.0f, 16);
+                patchText("正版玩家名", "skin.player", "留空则按玩家自己的名字查询", y, blocked, 16);
                 y += Page::ROW_H;
             }
-            patchToggle("标记为已签名", "skin.trusted",
-                        "1.20.3 起游戏只显示其他玩家已签名的材质，开启后自定义材质会被当作已签名。", y, blocked);
+            patchToggle("自定义材质标记为已签名", "skin.trusted", y, blocked);
         }
 
         void fixRows(float y, bool blocked) {
-            patchToggle("Log4Shell 漏洞修复", "log4j.enabled", "修复 log4j2 的远程代码执行漏洞（CVE-2021-44228）。", y,
-                        blocked);
+            patchToggle("Log4Shell 漏洞修复", "log4j.enabled", y, blocked);
             y += Page::ROW_H;
-            patchToggle("中文输入修复", "input.enabled", "修复 1.12.2 及以下版本（LWJGL 2）无法输入中文的问题。", y,
-                        blocked);
+            patchToggle("中文输入修复", "input.enabled", y, blocked);
             y += Page::ROW_H;
-            patchToggle("LWJGL 内存访问", "lwjgl.unsafe",
-                        "在 Java 25 以上运行 LWJGL 3 时，让 MemoryUtil 改用 jdk.internal.misc.Unsafe，避开 "
-                        "sun.misc.Unsafe 的弃用路径；LWJGL 3.4 会启用自带的对应后端。",
-                        y, blocked);
+            patchToggle("Java 25 LWJGL 兼容", "lwjgl.unsafe", y, blocked);
         }
 
         void windowRows(float y, bool blocked) {
-            patchText("窗口标题", "window.title", "不修改", "{title} 代表游戏原来的标题，例如 {title} - 我的服务器。",
-                      y, blocked, 0.0f, 1024);
+            patchText("窗口标题", "window.title", "不修改", y, blocked, 1024);
             y += Page::ROW_H;
-            pathRow("窗口图标", "window.icon", "不修改",
-                    "图片路径，多个不同尺寸的图片用英文逗号分隔；支持 PNG、ICO、BMP、GIF 等格式。", false, y, blocked);
+            pathRow("窗口图标", "window.icon", "不修改", false, y, blocked);
         }
 
         void lanRows(float y, bool blocked) {
-            patchToggle(
-                    "离线加入局域网", "lan.offlineJoin",
-                    "在加入方的游戏中启用，允许离线账号在认证失败后继续尝试连接局域网世界。服务器仍按自身规则验证玩家。",
-                    y, blocked);
+            patchToggle("离线加入局域网", "lan.offlineJoin", y, blocked);
         }
 
         void debugRows(float y, bool blocked) {
-            patchToggle("输出调试日志", "debug", "在游戏日志里输出每个被修改的类和每次皮肤查询。", y, blocked);
+            patchToggle("输出调试日志", "debug", y, blocked);
         }
 
         float patchCard(const char* title, int rows, float y, const std::function<void(float)>& paint) {
@@ -1792,19 +2024,81 @@ namespace SettingsScreen {
         }
     }
 
+    namespace {
+        void drawSection(int section, bool covered) {
+            switch (section) {
+                case SECTION_OPTIONS: optionsSection(covered); break;
+                case SECTION_KEYS: keysTab(covered); break;
+                case SECTION_PATCH: patchTab(covered); break;
+                case SECTION_FOLDERS: foldersSection(covered); break;
+                case SECTION_LOOK: cardPage("settings#look", lookCount(), covered, lookRows); break;
+                case SECTION_WINDOW: cardPage("settings#window", windowCount(), covered, windowSettingRows); break;
+                case SECTION_HOME: cardPage("settings#home", homepageCount(), covered, homepageRows); break;
+                case SECTION_NETWORK: networkSection(covered); break;
+                case SECTION_RESET:
+                    cardPage("settings#reset", 2, covered, [](float y, bool blocked) {
+                        guideRow(y, blocked);
+                        resetRow(y + Page::ROW_H, blocked);
+                    });
+                    break;
+                case SECTION_JAVA: javaTab(covered); break;
+                case SECTION_TOOLS: ToolboxTab::draw(covered); break;
+                case SECTION_ABOUT: aboutTab(covered); break;
+                default: cardPage("settings#launch", 6, covered, launchRows); break;
+            }
+        }
+
+        void collectLabels() {
+            collectedLabels.clear();
+            float savedAlpha = UiRender::alphaMul;
+            float savedMouseX = NewUi::mouseX;
+            float savedMouseY = NewUi::mouseY;
+            bool savedDown = NewUi::mouseDown;
+            NewUi::mouseX = -1.0e6f;
+            NewUi::mouseY = -1.0e6f;
+            NewUi::mouseDown = false;
+            UiRender::alphaMul = 0.0f;
+            UiRender::scissor(0.0f, 0.0f, 0.0f, 0.0f);
+            {
+                Page::ScrollScope scope("settings#collect");
+                for (const Tab& tab : TABS) {
+                    if (tab.section == SECTION_KEYS || tab.section == SECTION_JAVA || tab.section == SECTION_ABOUT) {
+                        continue;
+                    }
+                    Page::collect(&collectedLabels[tab.section]);
+                    drawSection(tab.section, true);
+                    Page::collect(nullptr);
+                }
+            }
+            UiRender::unscissor();
+            UiRender::alphaMul = savedAlpha;
+            NewUi::mouseX = savedMouseX;
+            NewUi::mouseY = savedMouseY;
+            NewUi::mouseDown = savedDown;
+        }
+    }
+
     void draw() {
         bool covered = NewUi::overlayCoversMouse();
+        MainWindow::claimSearch();
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false) && !NewUi::popupOpen &&
+            UiOverlays::isEmpty() && NewUi::textEditing != SEARCH_OWNER) {
+            NewUi::beginTextEdit(searchValue());
+        }
         rail(covered);
+        std::string query = Ui::trim(typedSearch());
         sections.begin();
         Page::Column column(mainX());
-        switch (sections.page) {
-            case TAB_LAUNCHER: launcherTab(covered); break;
-            case TAB_JAVA: javaTab(covered); break;
-            case TAB_TOOLS: ToolboxTab::draw(covered); break;
-            case TAB_KEYS: keysTab(covered); break;
-            case TAB_ABOUT: aboutTab(covered); break;
-            case TAB_PATCH: patchTab(covered); break;
-            default: gameTab(covered); break;
+        if (query.empty()) {
+            labelsCollected = false;
+            drawSection(sections.page, covered);
+        } else {
+            if (!labelsCollected && !NewUi::popupOpen) {
+                collectLabels();
+                labelsCollected = true;
+            }
+            resultsView(query, covered);
         }
         sections.end();
     }

@@ -128,6 +128,7 @@ bool PopupOverlay::isOpen() {
 void PopupOverlay::release() {
     NewUi::popupOpen = false;
     NewUi::popupDragFrom = -1;
+    NewUi::endPopupSearch();
 }
 
 void PopupOverlay::draw() {

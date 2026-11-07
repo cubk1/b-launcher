@@ -31,6 +31,7 @@ namespace UiRender {
     float pixelScale();
     float scale();
     float stableScale();
+    float settledScale();
     float transformX(float x);
     float transformY(float y);
     float transformW(float w);

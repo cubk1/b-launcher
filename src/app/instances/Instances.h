@@ -43,6 +43,7 @@ namespace Instances {
     const Source* source(const std::string& key);
     // Prefer the chosen source, then an existing local source, then the first.
     const Source* installSource(const std::string& preferred);
+    const Source* soleSource();
     const std::vector<Entry>& list();
     const Entry* find(const std::string& key);
     bool hasModLoader(const Entry& entry);

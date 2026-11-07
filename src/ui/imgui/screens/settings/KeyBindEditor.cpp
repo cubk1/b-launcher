@@ -55,6 +55,7 @@ namespace KeyBindEditor {
         constexpr float RAIL_ROW = 36.0f;
         constexpr float RAIL_MIN = 170.0f;
         constexpr float RAIL_MAX = 230.0f;
+        constexpr float STICKY_GAP = 10.0f;
         const char* const PAGES[] = {"键盘", "鼠标"};
         constexpr float MOUSE_W = 3.1f;
         constexpr float MOUSE_H = 6.0f;
@@ -107,6 +108,8 @@ namespace KeyBindEditor {
             float boardY = 0.0f;
             float boardW = 0.0f;
             float boardH = 0.0f;
+            std::string listGroup;
+            float listShift = 0.0f;
         };
 
         struct Spot {
@@ -1405,7 +1408,17 @@ namespace KeyBindEditor {
 
             int count = (int) shown.size();
             float rowW = listW;
-            float listTop = y;
+            float listH = (float) count * Page::ROW_H;
+            float high = body.top + STICKY_GAP - y;
+            float low = body.bottom - STICKY_GAP - listH - y;
+            if (low >= high || state.listGroup != state.group) {
+                state.listShift = high;
+                state.listGroup = state.group;
+            } else {
+                state.listShift = std::clamp(state.listShift, low, high);
+            }
+            state.listShift = std::clamp(state.listShift, 0.0f, std::max(0.0f, (float) tabs.size() * RAIL_ROW - listH));
+            float listTop = y + state.listShift;
             Page::listCard(listX, listTop, rowW, Page::ROW_H, count);
             for (int i = 0; i < count; i++) {
                 float rowY = listTop + (float) i * Page::ROW_H;

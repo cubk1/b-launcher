@@ -110,9 +110,8 @@ namespace VersionsScreen {
                                                 Instances::select(key);
                                                 MainWindow::showHome();
                                             })->enabledIf([key] { return Instances::selected() != key; }));
-                            items.push_back(ActionMenuItem::make("版本设置", 0xf013, [key] {
-                                                MainWindow::openVersionSettings(key);
-                                            }));
+                            items.push_back(ActionMenuItem::make("实例设置", 0xf013,
+                                                                 [key] { MainWindow::openVersionSettings(key); }));
                             return items;
                         },
                         NewUi::mouseX, NewUi::mouseY, 170.0f);
