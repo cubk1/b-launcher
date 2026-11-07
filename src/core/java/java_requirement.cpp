@@ -119,6 +119,9 @@ select_java (std::span<const java_installation> installs,
   const java_installation *best = nullptr;
   auto host = current_platform ().arch;
   auto score = [&] (const java_installation &j) {
+    int environment_source = !is_nixos () ? 0
+        : j.source == java_source::java_home ? 0
+        : j.source == java_source::path ? 1 : 2;
     int exact = j.major == requirement.preferred_major ? 0 : 1;
     int native = j.arch == host ? 0 : 1;
     int distance = std::abs (j.major - requirement.preferred_major);
@@ -127,7 +130,7 @@ select_java (std::span<const java_installation> installs,
                          || j.source == java_source::minecraft_runtime
                      ? 0
                      : 1;
-    return std::make_tuple (exact, native, below, distance, source);
+    return std::make_tuple (environment_source, exact, native, below, distance, source);
   };
   for (const auto &j : installs)
     {

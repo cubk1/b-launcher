@@ -48,6 +48,7 @@ unsigned arch_bits (cpu_arch arch) noexcept;
 std::optional<std::string> environment (std::string_view name);
 std::filesystem::path home_directory ();
 std::filesystem::path app_data_directory ();
+std::filesystem::path launcher_data_directory ();
 std::filesystem::path default_minecraft_directory ();
 std::string_view executable_suffix () noexcept;
 char path_list_separator () noexcept;

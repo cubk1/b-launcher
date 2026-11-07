@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <condition_variable>
 #include <mutex>
+#include <map>
 #include <thread>
 #include <vector>
 
@@ -304,23 +305,26 @@ process::start (const process_options &options, output_callback on_output)
   std::vector<std::string> env_storage;
   std::vector<const char *> env;
 #if !defined(_WIN32)
-  // reproc puts the extra variables after environ, and getenv finds the first
-  // one, so copy environ without the variables that options.environment sets.
-  auto replaced = [&] (std::string_view name) {
-    return std::any_of (options.environment.begin (),
-                        options.environment.end (),
-                        [&] (const auto &entry) { return entry.first == name; });
-  };
+  // A child gets one value per key. The last explicit value takes precedence.
+  std::map<std::string, std::string> merged;
   if (!options.environment.empty ())
-    for (char **entry = environ; entry && *entry; ++entry)
-      {
-        std::string_view text (*entry);
-        if (!replaced (text.substr (0, text.find ('='))))
-          env_storage.emplace_back (text);
-      }
-#endif
+    {
+      for (char **entry = environ; entry && *entry; ++entry)
+        {
+          std::string_view text (*entry);
+          auto equals = text.find ('=');
+          if (equals != std::string_view::npos)
+            merged[std::string (text.substr (0, equals))] = text.substr (equals + 1);
+        }
+      for (const auto &[key, value] : options.environment)
+        merged[key] = value;
+      for (const auto &[key, value] : merged)
+        env_storage.push_back (key + "=" + value);
+    }
+#else
   for (const auto &[key, value] : options.environment)
     env_storage.push_back (key + "=" + value);
+#endif
   for (const auto &entry : env_storage)
     env.push_back (entry.c_str ());
   env.push_back (nullptr);

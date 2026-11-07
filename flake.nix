@@ -38,7 +38,10 @@
               pkgs.gdb
             ];
             # SDL3 and fontconfig are opened with dlopen, so ./build/b-launcher needs these.
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath b-launcher.runtimeLibs;
+            LD_LIBRARY_PATH = "${pkgs.addDriverRunpath.driverLink}/lib:${pkgs.lib.makeLibraryPath b-launcher.runtimeLibs}";
+            BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
+            BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
+            BLB_NIXOS_PATH = b-launcher.nixosPath;
           };
         }
       );

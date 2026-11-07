@@ -57,7 +57,7 @@ namespace Catalog {
     blb::java::scan_options javaScanOptions();
     std::optional<std::vector<blb::java::java_installation>> javaCandidates();
     int addFound(const std::vector<blb::java::java_installation>& found);
-    void seenJava(const std::filesystem::path& executable);
+    void seenJava(const blb::java::java_installation& java);
     void refreshJava();
     void addJava(const std::filesystem::path& path);
     bool addedByHand(const std::filesystem::path& executable);

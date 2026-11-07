@@ -32,9 +32,14 @@ cmake --build build --config MinSizeRel
 # For NixOS:
 nix run github:cubk1/b-launcher
 # or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
-# The package does not include Java. Set programs.nix-ld.enable = true to use Mojang's Java,
-# or put a JDK on PATH, for example environment.systemPackages = [ pkgs.jdk21 ].
+# NixOS uses local Java from JAVA_HOME, PATH, or installed JDKs.
+# Declare the required JDKs, for example environment.systemPackages = [ pkgs.jdk21 ].
+# Other Linux systems can download Java through the launcher.
 ```
+
+## Unix数据目录
+
+Linux和macOS将配置、账户写入`$XDG_DATA_HOME/b-launcher/`，默认路径为`~/.local/share/b-launcher/`。`XDG_DATA_HOME`必须是绝对路径。首次读取时会迁移旧目录中的配置和账户。
 
 ## 截图
 

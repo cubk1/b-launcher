@@ -456,8 +456,22 @@ namespace Platform {
 
     std::optional<std::string> loadValue(const std::string& name) {
         std::filesystem::path file = storeFile(name);
-        if (file.empty() || !blb::fs::exists(file)) {
+        if (file.empty()) {
             return std::nullopt;
+        }
+        if (!blb::fs::exists(file)) {
+#if defined(__APPLE__)
+            std::filesystem::path legacy = blb::home_directory() / "Library" / "Application Support";
+#else
+            auto xdg = blb::environment("XDG_CONFIG_HOME");
+            std::filesystem::path legacy = xdg && blb::path_from_utf8(*xdg).is_absolute()
+                    ? blb::path_from_utf8(*xdg) : blb::home_directory() / ".config";
+#endif
+            auto data = blb::fs::read_file(legacy / "b-launcher" / name);
+            if (!data || !storeValue(name, *data, false)) {
+                return std::nullopt;
+            }
+            return std::move(*data);
         }
         blb::result<std::string> data = blb::fs::read_file(file);
         if (!data) {

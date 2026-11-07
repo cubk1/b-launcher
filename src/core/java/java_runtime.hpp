@@ -61,8 +61,7 @@ fetch_runtime_index (const net::mirror_provider &mirror,
 std::filesystem::path runtime_home (const meta::game_layout &layout,
                                     std::string_view component,
                                     std::string_view platform);
-// Mojang's runtime is a generic Linux build, which NixOS starts only with nix-ld.
-// There this gives the error to show for a missing Java, instead of install_runtime.
+// NixOS uses local Java installations. Other systems can download a runtime.
 std::optional<error> runtime_blocked (int major);
 result<java_installation>
 install_runtime (install::game_installer &installer,

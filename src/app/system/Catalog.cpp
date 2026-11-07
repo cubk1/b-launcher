@@ -2,6 +2,7 @@
 #include "app/downloads/DownloadSources.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Config.h"
+#include "app/system/Notices.h"
 #include "app/instances/Instances.h"
 #include "app/launch/JavaDownloads.h"
 
@@ -383,16 +384,8 @@ namespace Catalog {
         return added;
     }
 
-    void seenJava(const std::filesystem::path& executable) {
-        if (javaList.status != Status::Ready || listed(pathList("javaHidden"), executable) ||
-            std::any_of(javaList.list.begin(), javaList.list.end(), [&](const blb::java::java_installation& known) {
-                std::error_code error;
-                return known.executable == executable ||
-                        std::filesystem::equivalent(known.executable, executable, error);
-            })) {
-            return;
-        }
-        scanJava();
+    void seenJava(const blb::java::java_installation& java) {
+        addFound({java});
     }
 
     void refreshJava() {
@@ -404,9 +397,10 @@ namespace Catalog {
     void addJava(const std::filesystem::path& path) {
         tasks.run(
                 [path](blb::cancellation_token token) -> Continuation {
-                    auto probed = blb::java::probe_java(path, true, token);
+                    auto probed = blb::java::probe_java(path, true, token, {}, true);
                     if (!probed) {
-                        return nullptr;
+                        std::string error = probed.err().message;
+                        return [error] { Notices::add(Notices::Kind::Failed, "添加Java失败：" + error, 5000); };
                     }
                     blb::java::java_installation java = *probed;
                     return [java] {
@@ -427,9 +421,12 @@ namespace Catalog {
                             javaList.list.push_back(java);
                             sortJava(javaList.list);
                         }
+                        Notices::add(Notices::Kind::Done, "已添加Java " + java.version, 3000);
                     };
                 },
-                [](const std::string&) -> Continuation { return nullptr; });
+                [](const std::string& error) -> Continuation {
+                    return [error] { Notices::add(Notices::Kind::Failed, "添加Java失败：" + error, 5000); };
+                });
     }
 
     bool addedByHand(const std::filesystem::path& executable) {

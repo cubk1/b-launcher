@@ -64,6 +64,7 @@ namespace Game {
             std::string failure;
             bool cancelled = false;
             std::string javaUsed;
+            std::optional<blb::java::java_installation> javaInstall;
             std::optional<blb::auth::account> refreshedAccount;
             bool accountExpired = false;
 
@@ -254,7 +255,7 @@ namespace Game {
             std::optional<blb::process> game;
             std::string error;
             bool wasCancelled;
-            std::string javaUsed;
+            std::optional<blb::java::java_installation> javaInstall;
             {
                 std::lock_guard<std::mutex> guard(live.lock);
                 game = std::move(live.started);
@@ -262,13 +263,13 @@ namespace Game {
                 error = live.failure;
                 wasCancelled = live.cancelled;
                 live.prepared = false;
-                javaUsed = live.javaUsed;
+                javaInstall = live.javaInstall;
                 if (!live.javaUsed.empty()) {
                     live.variables.emplace_back("INST_JAVA", live.javaUsed);
                 }
             }
-            if (!javaUsed.empty()) {
-                Catalog::seenJava(blb::path_from_utf8(javaUsed));
+            if (javaInstall) {
+                Catalog::seenJava(*javaInstall);
             }
             takeAccount(live);
             if (game && game->valid()) {
@@ -641,6 +642,7 @@ namespace Game {
                     {
                         std::lock_guard<std::mutex> guard(self->lock);
                         self->javaUsed = java;
+                        self->javaInstall = ready->java;
                     }
                     LaunchDefaults::applyLanguage(language, directory, minecraft, optionsFile);
                     if (!preLaunch.empty()) {
