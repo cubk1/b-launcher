@@ -340,6 +340,13 @@ endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif ()
+if (UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS b-launcher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES assets/b-launcher.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES assets/images/logo.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+            RENAME b-launcher.svg)
+endif ()
 if (WIN32)
     find_program(UPX_EXECUTABLE upx)
     add_custom_command(TARGET b-launcher POST_BUILD
