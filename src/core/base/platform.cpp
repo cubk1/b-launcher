@@ -18,16 +18,6 @@
 #endif
 #endif
 
-#if !defined(BLB_NIXOS_JAVA)
-#define BLB_NIXOS_JAVA ""
-#endif
-#if !defined(BLB_NIXOS_LIBRARY_PATH)
-#define BLB_NIXOS_LIBRARY_PATH ""
-#endif
-#if !defined(BLB_NIXOS_PATH)
-#define BLB_NIXOS_PATH ""
-#endif
-
 namespace b_launcher_base
 {
 
