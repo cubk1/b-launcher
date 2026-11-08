@@ -44,6 +44,7 @@ namespace GameLog {
             size_t counts[LEVEL_COUNT] = {};
             bool paused = false;
             bool live = true;
+            std::vector<std::string> secrets;
         };
 
         std::mutex lock;
@@ -160,6 +161,11 @@ namespace GameLog {
         }
 
         void push(Log& log, std::string text, Level level) {
+            for (const std::string& secret : log.secrets) {
+                for (size_t at = text.find(secret); at != std::string::npos; at = text.find(secret, at)) {
+                    text.replace(at, secret.size(), "<access token>");
+                }
+            }
             bool trace = stackLine(text);
             uint64_t at = (uint64_t) std::chrono::duration_cast<std::chrono::milliseconds>(
                                   std::chrono::steady_clock::now().time_since_epoch())
@@ -374,6 +380,18 @@ namespace GameLog {
         }
     }
 
+    void conceal(int id, const std::string& secret) {
+        if (secret.size() < 16) {
+            return;
+        }
+        std::lock_guard<std::mutex> guard(lock);
+        if (std::shared_ptr<Log> log = find(id)) {
+            if (std::find(log->secrets.begin(), log->secrets.end(), secret) == log->secrets.end()) {
+                log->secrets.push_back(secret);
+            }
+        }
+    }
+
     void finish(int id) {
         std::shared_ptr<Log> log;
         {
@@ -393,6 +411,28 @@ namespace GameLog {
         }
         std::lock_guard<std::mutex> guard(lock);
         log->live = false;
+    }
+
+    std::string text(int id) {
+        std::shared_ptr<Log> log;
+        std::vector<Line> arrived;
+        {
+            std::lock_guard<std::mutex> guard(lock);
+            log = find(id);
+            if (log == nullptr) {
+                return {};
+            }
+            arrived = log->pending;
+        }
+        std::string out;
+        auto add = [&out](const Line& line) {
+            out += line.text;
+            out += '\n';
+        };
+        std::for_each(log->kept.begin(), log->kept.end(), add);
+        std::for_each(log->waiting.begin(), log->waiting.end(), add);
+        std::for_each(arrived.begin(), arrived.end(), add);
+        return out;
     }
 
     void poll() {

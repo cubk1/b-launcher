@@ -60,7 +60,7 @@ namespace UiWidgets {
         UiRender::roundRect(x, y, 29, 18, 9.0f, switchTrack(UiTheme::surfaceRaised(), on, hover));
         knobShadow(x + UiRender::lerp(9.0f, 20.0f, on), y + 9, 6.5f);
         UiRender::circle(x + UiRender::lerp(9.0f, 20.0f, on), y + 9, 6.5f,
-                         UiRender::mix(UiTheme::knobOff(), UiTheme::onAccent(), on));
+                         UiRender::mix(UiTheme::knobOff(), 0xFFFFFFFFu, on));
     }
 
     void select(const std::string& id, float x, float y, float w, const std::string& value, bool hovered, bool open) {
@@ -296,6 +296,6 @@ namespace UiWidgets {
         float hover = UiState::motion(id + "#subhover", hovered ? 1.0f : 0.0f, 20.0f);
         UiRender::roundRect(x, y, 30, 18, 9.0f, switchTrack(UiTheme::outlineSoft(), on, hover));
         knobShadow(x + UiRender::lerp(9.0f, 21.0f, on), y + 9, 6.8f);
-        UiRender::circle(x + UiRender::lerp(9.0f, 21.0f, on), y + 9, 6.8f, UiTheme::onAccent());
+        UiRender::circle(x + UiRender::lerp(9.0f, 21.0f, on), y + 9, 6.8f, 0xFFFFFFFFu);
     }
 }

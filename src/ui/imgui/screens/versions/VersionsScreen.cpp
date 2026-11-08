@@ -210,7 +210,7 @@ namespace VersionsScreen {
             float buttonW = std::max(88.0f, Page::buttonWidth("下载游戏"));
             if (Page::button("versions#install", "下载游戏", (left + right) * 0.5f - buttonW * 0.5f,
                              (listTop + bottom) * 0.5f + 4.0f, buttonW, true, covered)) {
-                MainWindow::showNewInstance();
+                MainWindow::startNewInstance();
             }
             return;
         }

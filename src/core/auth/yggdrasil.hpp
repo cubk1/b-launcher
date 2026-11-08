@@ -61,6 +61,13 @@ result<yggdrasil_session> yggdrasil_login (account_type type,
 result<account> yggdrasil_select (const account &base,
                                   const yggdrasil_profile &profile,
                                   cancellation_token token = {});
+result<std::vector<yggdrasil_profile>>
+yggdrasil_oauth_profiles (const account &base, std::string_view bearer,
+                          cancellation_token token = {});
+result<account> yggdrasil_oauth_select (const account &base,
+                                        std::string_view bearer,
+                                        const yggdrasil_profile &profile,
+                                        cancellation_token token = {});
 result<account> yggdrasil_refresh (const account &current,
                                    cancellation_token token = {});
 result<account> yggdrasil_ensure (const account &current,

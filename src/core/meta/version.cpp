@@ -579,16 +579,91 @@ minecraft_from_loader (const version &value)
 
 }
 
+namespace
+{
+
+std::size_t
+count_digits (std::string_view text, std::size_t at) noexcept
+{
+  std::size_t end = at;
+  while (end < text.size () && text[end] >= '0' && text[end] <= '9')
+    ++end;
+  return end - at;
+}
+
+bool
+looks_like_minecraft (std::string_view id) noexcept
+{
+  if (id.size () == 6 && count_digits (id, 0) == 2 && id[2] == 'w'
+      && count_digits (id, 3) == 2 && id[5] >= 'a' && id[5] <= 'z')
+    return true;
+  std::size_t at = !id.empty () && (id[0] == 'a' || id[0] == 'b') ? 1 : 0;
+  int parts = 0;
+  while (true)
+    {
+      std::size_t length = count_digits (id, at);
+      if (length == 0)
+        return false;
+      at += length;
+      ++parts;
+      if (parts < 3 && at < id.size () && id[at] == '.')
+        {
+          ++at;
+          continue;
+        }
+      break;
+    }
+  if (parts < 2)
+    return false;
+  std::string_view rest = id.substr (at);
+  if (rest.empty ())
+    return true;
+  for (std::string_view tag : { "-pre", "-rc", "-snapshot-", " Pre-Release ",
+                                " Release Candidate ", "_" })
+    if (rest.starts_with (tag) && rest.size () > tag.size ()
+        && count_digits (rest, tag.size ()) == rest.size () - tag.size ())
+      return true;
+  return false;
+}
+
+std::string
+minecraft_from_assets (std::string_view asset)
+{
+  static constexpr std::pair<std::string_view, std::string_view> finals[] = {
+    { "1.7.3", "1.7.3" },   { "1.7.4", "1.7.9" }, { "1.7.10", "1.7.10" },
+    { "1.8", "1.8.9" },     { "1.9", "1.9.4" },   { "1.10", "1.10.2" },
+    { "1.11", "1.11.2" },   { "1.12", "1.12.2" }, { "1.13", "1.13" },
+    { "1.13.1", "1.13.2" }, { "1.14", "1.14.4" }, { "1.15", "1.15.2" },
+    { "1.16", "1.16.5" },   { "1.17", "1.17.1" }, { "1.18", "1.18.2" },
+    { "1.19", "1.19.2" },   { "2", "1.19.3" },    { "3", "1.19.4" },
+    { "5", "1.20.1" },      { "8", "1.20.2" },    { "12", "1.20.4" },
+    { "16", "1.20.6" },     { "17", "1.21.1" },   { "18", "1.21.3" },
+    { "19", "1.21.4" },     { "24", "1.21.5" },   { "26", "1.21.8" },
+    { "27", "1.21.10" },    { "29", "1.21.11" },  { "30", "26.1.2" },
+    { "32", "26.2" },       { "34", "26.3" },
+  };
+  for (const auto &[index, release] : finals)
+    if (index == asset)
+      return std::string (release);
+  return {};
+}
+
+}
+
 std::string
 version::minecraft () const
 {
   if (!client_version.empty ())
     return client_version;
-  if (chain.size () > 1)
-    return chain.front ();
+  std::string base = chain.empty () ? id : chain.front ();
+  if (chain.size () > 1 && looks_like_minecraft (base))
+    return base;
   if (auto found = minecraft_from_loader (*this); !found.empty ())
     return found;
-  return chain.empty () ? id : chain.front ();
+  if (!looks_like_minecraft (base))
+    if (auto guessed = minecraft_from_assets (asset_id ()); !guessed.empty ())
+      return guessed;
+  return base;
 }
 
 std::string

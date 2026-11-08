@@ -108,11 +108,13 @@ struct process::impl
   std::mutex mutex;
   std::condition_variable cv;
   std::optional<int> exit_code;
+  bool failed = false;
   int pid = -1;
   std::mutex callback_mutex;
 #if defined(_WIN32)
   HANDLE out_read = nullptr;
   HANDLE err_read = nullptr;
+  HANDLE child = nullptr;
 #endif
 
   ~impl ()
@@ -124,6 +126,8 @@ struct process::impl
       CloseHandle (out_read);
     if (err_read)
       CloseHandle (err_read);
+    if (child)
+      CloseHandle (child);
 #endif
   }
 
@@ -148,11 +152,12 @@ struct process::impl
   }
 
   void
-  publish (int code)
+  publish (int code, bool error)
   {
     {
       std::lock_guard lock (mutex);
       exit_code = code;
+      failed = error;
     }
     cv.notify_all ();
   }
@@ -219,7 +224,14 @@ struct process::impl
     }
     for (auto &t : readers)
       t.join ();
-    publish (code);
+    bool error = code < 0;
+    DWORD status = 0;
+    if (child && GetExitCodeProcess (child, &status) && status != STILL_ACTIVE)
+      {
+        code = static_cast<int> (status);
+        error = false;
+      }
+    publish (code, error);
   }
 
 #else
@@ -264,7 +276,8 @@ struct process::impl
       }
     finish (out, output_stream::out, callback);
     finish (err, output_stream::err, callback);
-    publish (reproc_wait (handle, REPROC_INFINITE));
+    int code = reproc_wait (handle, REPROC_INFINITE);
+    publish (code, code < 0);
   }
 
 #endif
@@ -385,6 +398,10 @@ process::start (const process_options &options, output_callback on_output)
   if (rc < 0)
     return reproc_error (sformat ("cannot start '{}'", options.args[0]), rc);
   state->pid = reproc_pid (state->handle);
+#if defined(_WIN32)
+  state->child = OpenProcess (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+                              FALSE, static_cast<DWORD> (state->pid));
+#endif
   state->reader = std::thread ([state, callback = std::move (on_output),
                                 capture = options.capture_output] () mutable {
     state->run (std::move (callback), capture);
@@ -432,11 +449,12 @@ process::wait (std::optional<std::chrono::milliseconds> timeout)
   else
     m_impl->cv.wait (lock, done);
   int code = *m_impl->exit_code;
+  bool failed = m_impl->failed;
   lock.unlock ();
   if (m_impl->reader.joinable ()
       && m_impl->reader.get_id () != std::this_thread::get_id ())
     m_impl->reader.join ();
-  if (code < 0)
+  if (failed)
     return reproc_error ("wait failed", code);
   return code;
 }

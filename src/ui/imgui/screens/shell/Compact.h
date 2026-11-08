@@ -13,5 +13,7 @@ namespace Compact {
     bool takeDismiss();
     void shortcut();
     void hidden();
+    void reveal();
+    bool takeReveal();
     void draw();
 }

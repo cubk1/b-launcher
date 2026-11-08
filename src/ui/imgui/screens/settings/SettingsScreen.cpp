@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/settings/SettingsScreen.h"
+#include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
@@ -15,7 +16,9 @@
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "app/instances/Covers.h"
 #include "app/instances/Instances.h"
+#include "app/launch/AskAi.h"
 #include "app/launch/GameOptions.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
@@ -205,6 +208,26 @@ namespace SettingsScreen {
             toggle(
                     "settings#showLogs", [] { return LaunchDefaults::showLogs(); },
                     [](bool on) { LaunchDefaults::setShowLogs(on); }, y, blocked);
+            y += Page::ROW_H;
+
+            Page::label("崩溃时问 AI", y);
+            static auto ai = [] {
+                std::vector<std::pair<std::string, std::string>> options = {{std::string(), "每次选择"}};
+                for (const AskAi::Service& service : AskAi::services()) {
+                    options.emplace_back(service.key, service.name);
+                }
+                auto binding = ModeBinding::mapped<std::string>("settings#askAi", AskAi::chosen, AskAi::setChosen,
+                                                                std::move(options));
+                binding->icon("每次选择", 0xf544);
+                return binding;
+            }();
+            int side = (int) std::lround(16.0f * UiRender::stableScale() * UiRender::pixelScale());
+            for (const AskAi::Service& service : AskAi::services()) {
+                if (uint32_t texture = Textures::of(Covers::logo(service.icon, side, !UiTheme::isLight()))) {
+                    ai->image(service.name, texture);
+                }
+            }
+            select("settings#askAi", ai, y, blocked);
             y += Page::ROW_H;
 
             textRow(
@@ -593,6 +616,7 @@ namespace SettingsScreen {
                 {SECTION_LAUNCH, "JVM 参数", "Java 虚拟机"},
                 {SECTION_LAUNCH, "游戏参数", nullptr},
                 {SECTION_LAUNCH, "显示游戏日志", nullptr},
+                {SECTION_LAUNCH, "崩溃时问 AI", "ChatGPT Claude Grok DeepSeek Kimi"},
                 {SECTION_LAUNCH, "启动前命令", "cmd 脚本"},
                 {SECTION_KEYS, nullptr, "快捷键 键位"},
                 {SECTION_PATCH, "应用给默认设置的实例", "启用"},
@@ -1459,8 +1483,6 @@ namespace SettingsScreen {
                     x, y, 170.0f);
         }
 
-        PageTransition javaViews(0);
-        int javaMajor = 21;
 
         void javaList(bool covered) {
             const Catalog::JavaList& javas = Catalog::java();
@@ -1506,7 +1528,7 @@ namespace SettingsScreen {
             float downloadX = canDownload ? addX - 8.0f - downloadW : addX;
             if (canDownload && Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
                              0xf019)) {
-                javaViews.go(1);
+                DownloadsScreen::openJava();
             }
             if (javaScanning) {
                 float barX = drivesX + 8.0f;
@@ -1592,138 +1614,8 @@ namespace SettingsScreen {
             body.end();
         }
 
-        std::shared_ptr<ModeBinding> majorChoice(const std::vector<JavaDownloads::Package>& packages) {
-            std::vector<std::string> options = {"全部版本"};
-            for (const JavaDownloads::Package& package : packages) {
-                std::string label = "Java " + std::to_string(package.major);
-                if (std::find(options.begin(), options.end(), label) == options.end()) {
-                    options.push_back(label);
-                }
-            }
-            return std::make_shared<ModeBinding>(
-                    "settings#java#major",
-                    [] { return javaMajor == 0 ? std::string("全部版本") : "Java " + std::to_string(javaMajor); },
-                    [](const std::string& value) {
-                        javaMajor = value.rfind("Java ", 0) == 0 ? std::atoi(value.c_str() + 5) : 0;
-                    },
-                    [options] { return options; });
-        }
-
-        void javaDownloads(bool covered) {
-            const JavaDownloads::List& list = JavaDownloads::list();
-            bool loading = list.status == JavaDownloads::Status::Loading;
-            if (Page::iconButton("settings#java#back", 0xf053, "返回", mainX() - 4.0f, Page::TOP + 1.0f, covered)) {
-                javaViews.go(0);
-            }
-            UiRender::textY("下载 Java", mainX() + 30.0f, Page::TOP, NAV_ITEM_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_BODY);
-            float refreshX = Page::right() - 28.0f;
-            if (Page::iconButton("settings#java#reload", 0xf2f1, "刷新列表", refreshX, Page::TOP + 1.0f,
-                           covered || loading)) {
-                JavaDownloads::refresh();
-            }
-            SelectWidget major("settings#java#major", majorChoice(list.packages));
-            major.bounds(refreshX - 8.0f - SELECT_W, Page::TOP + 4.0f, SELECT_W, FIELD_H).block(covered || loading);
-            major.paint();
-
-            float top = Page::TOP + 40.0f;
-            float bottom = MainWindow::height() - 14.0f;
-            std::vector<const JavaDownloads::Package*> shown;
-            for (const JavaDownloads::Package& package : list.packages) {
-                if (javaMajor == 0 || package.major == javaMajor) {
-                    shown.push_back(&package);
-                }
-            }
-            if (shown.empty()) {
-                std::string text = loading                             ? "正在获取 Java 列表…"
-                        : list.status == JavaDownloads::Status::Failed ? "获取 Java 列表失败：" + list.error
-                        : list.packages.empty()                        ? "列表是空的"
-                                                                       : "没有这个版本的 Java";
-                text = UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, mainW() - 40.0f);
-                float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                float lead = loading ? 24.0f : 0.0f;
-                float x = mainX() + (mainW() - w - lead) * 0.5f;
-                if (loading) {
-                    Page::spinner(x + 8.0f, top + 82.0f, 8.0f, UiTheme::accent());
-                }
-                UiRender::textY(text, x + lead, top + 70.0f, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                return;
-            }
-            int rows = (int) shown.size();
-            Page::Scroll body("settings#java#downloads", top, bottom, rows * Page::ROW_H);
-            bool outside = body.begin();
-            bool blocked = outside || covered;
-            float y0 = body.top - body.offset;
-            Page::card(y0, rows);
-            for (int i = 0; i < rows; i++) {
-                float rowY = y0 + i * Page::ROW_H;
-                if (!Page::shown(rowY)) {
-                    continue;
-                }
-                const JavaDownloads::Package& package = *shown[i];
-                std::string id = "settings#java#get#" + package.folder;
-                bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, Page::rowCorners(i, rows));
-                float cy = rowY + Page::ROW_H * 0.5f;
-                UiWidgets::icon(Ui::glyph(0xf0f4), mainX() + 24.0f, cy, UiTheme::textMuted(), 12.0f);
-
-                JavaDownloads::State state = JavaDownloads::state(package.folder);
-                bool done = state == JavaDownloads::State::Done || JavaDownloads::installed(package);
-                float right = Page::controlRight();
-                float actionX = right;
-                if (state == JavaDownloads::State::Running) {
-                    Page::progressRing(right - 10.0f, cy, JavaDownloads::progress(package.folder));
-                    actionX = right - 24.0f;
-                } else if (done) {
-                    std::string text = "已安装";
-                    float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    UiRender::textY(text, right - w, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                    UiWidgets::TEXT_CONTROL);
-                    UiWidgets::check(right - w - 12.0f, cy, UiTheme::accent(), 9.0f);
-                    actionX = right - w - 22.0f;
-                } else {
-                    std::string text = "安装";
-                    float w = Page::buttonWidth(text, 0xf019);
-                    if (Page::button(id + "#install", text, right - w, rowY + Page::FIELD_Y, w, false, blocked,
-                                     0xf019)) {
-                        JavaDownloads::install(package);
-                    }
-                    actionX = right - w;
-                }
-                std::string size = package.archiveSize > 0
-                        ? std::to_string((package.archiveSize + 500000) / 1000000) + " MB"
-                        : std::string();
-                float sizeW = size.empty() ? 0.0f : UiFont::width(size, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-                if (!size.empty()) {
-                    UiRender::textY(size, actionX - 12.0f - sizeW, rowY, Page::ROW_H, UiTheme::textMuted(),
-                                    UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-                }
-                float x = mainX() + 44.0f;
-                float tags = UiFont::width(package.version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 16.0f +
-                        (package.preview ? UiFont::width("预览", UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 16.0f : 0.0f);
-                float room = std::max(40.0f, actionX - 24.0f - sizeW - x - tags);
-                std::string name =
-                        UiFont::fitEnd(JavaDownloads::name(package), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, room);
-                UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                x += UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 8.0f;
-                x += Page::tag(package.version, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary()) + 4.0f;
-                if (package.preview) {
-                    Page::tag("预览", x, rowY, UiTheme::accentSoft(40), UiTheme::accentText());
-                }
-            }
-            body.end();
-        }
-
         void javaTab(bool covered) {
-            javaViews.begin();
-            if (javaViews.page == 1) {
-                javaDownloads(covered);
-            } else {
-                javaList(covered);
-            }
-            javaViews.end();
+            javaList(covered);
         }
 
         using About::Link;
@@ -2066,7 +1958,7 @@ namespace SettingsScreen {
                 case SECTION_JAVA: javaTab(covered); break;
                 case SECTION_TOOLS: ToolboxTab::draw(covered); break;
                 case SECTION_ABOUT: aboutTab(covered); break;
-                default: cardPage("settings#launch", 6, covered, launchRows); break;
+                default: cardPage("settings#launch", 7, covered, launchRows); break;
             }
         }
 
@@ -2098,6 +1990,15 @@ namespace SettingsScreen {
             NewUi::mouseY = savedMouseY;
             NewUi::mouseDown = savedDown;
         }
+    }
+
+    void reset() {
+        if (NewUi::textEditing == SEARCH_OWNER) {
+            NewUi::cancelTextEdit();
+        }
+        searchText.clear();
+        sections.page = SECTION_LAUNCH;
+        sections.mix = 1.0f;
     }
 
     void draw() {

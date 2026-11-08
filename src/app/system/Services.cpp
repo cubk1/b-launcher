@@ -6,6 +6,7 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/DownloadSources.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/instances/Covers.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Exports.h"
 #include "app/instances/Installer.h"
@@ -13,6 +14,7 @@
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "app/instances/Screenshots.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/KeyBinds.h"
@@ -25,6 +27,7 @@
 #include "app/system/Network.h"
 #include "app/system/Platform.h"
 #include "app/system/ServerStatus.h"
+#include "app/system/Transfers.h"
 #include "app/system/Updates.h"
 
 namespace Services {
@@ -47,6 +50,7 @@ namespace Services {
         Avatars::poll();
         LittleSkin::poll();
         Game::poll();
+        Crashes::poll();
         Catalog::poll();
         Addons::poll();
         ProjectInstaller::poll();
@@ -58,6 +62,7 @@ namespace Services {
         Screenshots::poll();
         Exports::poll();
         Drops::poll();
+        Covers::poll();
         Updates::poll();
         JavaDownloads::poll();
         ShortcutLaunch::poll();
@@ -65,14 +70,17 @@ namespace Services {
         Multiplayer::poll();
         CustomDownload::poll();
         DiskScan::poll();
+        Transfers::poll();
     }
 
     void stop() {
         Multiplayer::shutdown();
         CustomDownload::shutdown();
+        Crashes::shutdown();
         DiskScan::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
+        Covers::shutdown();
         Drops::shutdown();
         JavaDownloads::shutdown();
         Exports::shutdown();

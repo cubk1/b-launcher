@@ -5,6 +5,7 @@
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
+#include "app/system/Transfers.h"
 
 #include <core/base/json.hpp>
 
@@ -56,6 +57,8 @@ namespace ProjectInstaller {
         struct Task {
             std::atomic<int> state{(int) State::Idle};
             std::atomic<float> fraction{-1.0f};
+            uint64_t transfer = 0;
+            std::shared_ptr<blb::cancellation_source> cancelling;
         };
 
         AsyncTasks background;
@@ -128,31 +131,60 @@ namespace ProjectInstaller {
         }
 
         void run(const std::shared_ptr<Task>& task, std::function<Continuation(blb::cancellation_token)> work) {
-            background.run([work = std::move(work), task](blb::cancellation_token token) -> Continuation {
-                Continuation next;
-                try {
-                    next = work(token);
-                } catch (const std::exception& error) {
-                    task->state = (int) State::Failed;
-                    std::string message = error.what();
-                    next = [message] { Notices::add(Notices::Kind::Failed, "下载失败：" + message, 5000); };
-                } catch (...) {
-                    task->state = (int) State::Failed;
-                    next = [] { Notices::add(Notices::Kind::Failed, "下载失败，请重试", 5000); };
-                }
-                if (!next) task->state = (int) State::Failed;
-                return next;
-            }, {});
+            background.run(
+                    [work = std::move(work), task](blb::cancellation_token token) -> Continuation {
+                        std::shared_ptr<blb::cancellation_source> cancelling = task->cancelling;
+                        uint64_t transfer = task->transfer;
+                        blb::cancellation_registration link = token.on_cancel([cancelling] { cancelling->cancel(); });
+                        token = cancelling->token();
+                        Continuation next;
+                        try {
+                            next = work(token);
+                        } catch (const std::exception& error) {
+                            std::string message = error.what();
+                            Transfers::finish(transfer, Transfers::State::Failed, message);
+                            task->state = (int) State::Failed;
+                            next = [message] { Notices::add(Notices::Kind::Failed, "下载失败：" + message, 5000); };
+                        } catch (...) {
+                            Transfers::finish(transfer, Transfers::State::Failed);
+                            task->state = (int) State::Failed;
+                            next = [] { Notices::add(Notices::Kind::Failed, "下载失败，请重试", 5000); };
+                        }
+                        if (!next) {
+                            Transfers::finish(transfer,
+                                              cancelling->is_cancelled() ? Transfers::State::Cancelled
+                                                                         : Transfers::State::Failed);
+                            task->state = (int) State::Failed;
+                        }
+                        return next;
+                    },
+                    {});
         }
 
-        std::shared_ptr<Task> begin(const std::string& versionId, const std::filesystem::path& directory = {}) {
+        std::shared_ptr<Task> begin(const std::string& versionId, Transfers::Spec spec,
+                                    const std::filesystem::path& directory = {}) {
             std::shared_ptr<Task>& task = tasks[{versionId, directory}];
             if (!task) {
                 task = std::make_shared<Task>();
             }
             task->state = (int) State::Running;
             task->fraction = -1.0f;
+            auto cancelling = std::make_shared<blb::cancellation_source>();
+            task->cancelling = cancelling;
+            spec.kind = Transfers::Kind::Project;
+            spec.cancel = [cancelling] { cancelling->cancel(); };
+            task->transfer = Transfers::begin(std::move(spec));
             return task;
+        }
+
+        Transfers::Spec specOf(const std::string& title, const std::string& icon, const std::filesystem::path& folder,
+                               const std::string& instance = {}) {
+            Transfers::Spec spec;
+            spec.title = title;
+            spec.icon = icon;
+            spec.folder = folder;
+            spec.instance = instance;
+            return spec;
         }
 
         class Progress final : public blb::progress_sink {
@@ -172,6 +204,7 @@ namespace ProjectInstaller {
                     total += size.second.second;
                 }
                 task->fraction = total > 0 ? (float) ((double) std::min(done, total) / (double) total) : -1.0f;
+                Transfers::report(task->transfer, event);
             }
 
         private:
@@ -414,7 +447,9 @@ namespace ProjectInstaller {
             return names;
         }
 
-        void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text) {
+        void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text, const std::string& problem) {
+            Transfers::finish(task->transfer, ok ? Transfers::State::Done : Transfers::State::Failed,
+                              ok ? std::string() : problem);
             task->state = (int) (ok ? State::Done : State::Failed);
             Notices::add(ok ? Notices::Kind::Done : Notices::Kind::Failed, text, ok ? 3000 : 5000);
         }
@@ -644,15 +679,16 @@ namespace ProjectInstaller {
     }
 
     void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
-                 const std::string& instanceKey, std::optional<std::vector<Addons::Version>> picked) {
+                 const std::string& instanceKey, std::optional<std::vector<Addons::Version>> picked,
+                 const std::string& icon) {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
         std::string sub = folder(kind);
         if (entry == nullptr || file == nullptr || sub.empty() || state(version.id) == State::Running) {
             return;
         }
-        std::shared_ptr<Task> task = begin(version.id);
         std::filesystem::path target = entry->gameDirectory / sub;
+        std::shared_ptr<Task> task = begin(version.id, specOf(title, icon, target, instanceKey));
         std::string gameVersion = entry->info.minecraft_version;
         std::string loader = loaderOf(instanceKey);
         std::string instanceName = entry->info.id;
@@ -721,17 +757,17 @@ namespace ProjectInstaller {
                 }
                 return [task, problem, title, instanceName, dependencies] {
                     if (!problem.empty()) {
-                        finish(task, false, "无法安装 " + title + "：" + problem);
+                        finish(task, false, "无法安装 " + title + "：" + problem, problem);
                         return;
                     }
                     std::string extra =
                             dependencies > 0 ? "（含 " + std::to_string(dependencies) + " 个前置）" : std::string();
-                    finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra);
+                    finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra, {});
                 };
             });
     }
 
-    void saveAs(const Addons::Version& version, const std::string& title) {
+    void saveAs(const Addons::Version& version, const std::string& title, const std::string& icon) {
         const Addons::File* file = version.file();
         if (file == nullptr || state(version.id) == State::Running) {
             return;
@@ -743,9 +779,9 @@ namespace ProjectInstaller {
         }
         Config::data()["saveAsFolder"] = blb::path_to_utf8(picked->parent_path());
         Config::save();
-        std::shared_ptr<Task> task = begin(version.id);
         Addons::File chosen = *file;
         std::filesystem::path target = *picked;
+        std::shared_ptr<Task> task = begin(version.id, specOf(title, icon, target.parent_path()));
         std::string name = blb::path_to_utf8(target.filename());
         run(task, [task, chosen, target, title, name](blb::cancellation_token token) -> Continuation {
             std::vector<blb::net::download_task> files = {taskAt(chosen, target)};
@@ -754,18 +790,19 @@ namespace ProjectInstaller {
                 return nullptr;
             }
             return [task, problem, title, name] {
-                finish(task, problem.empty(),
-                       problem.empty() ? "已下载 " + name : "无法下载 " + title + "：" + problem);
+                finish(task, problem.empty(), problem.empty() ? "已下载 " + name : "无法下载 " + title + "：" + problem,
+                       problem);
             };
         });
     }
 
-    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title) {
+    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title,
+                const std::string& icon) {
         const Addons::File* file = version.file();
         if (file == nullptr || state(version.id) == State::Running) {
             return;
         }
-        std::shared_ptr<Task> task = begin(version.id);
+        std::shared_ptr<Task> task = begin(version.id, specOf(title, icon, folder));
         Addons::File chosen = *file;
         std::string where = Platform::display(folder);
         run(task, [task, chosen, folder, title, where](blb::cancellation_token token) -> Continuation {
@@ -778,13 +815,14 @@ namespace ProjectInstaller {
             }
             return [task, problem, title, where] {
                 finish(task, problem.empty(),
-                       problem.empty() ? "已将 " + title + " 保存到 " + where : "无法下载 " + title + "：" + problem);
+                       problem.empty() ? "已将 " + title + " 保存到 " + where : "无法下载 " + title + "：" + problem,
+                       problem);
             };
         });
     }
 
     void saveAllAs(const Addons::Version& version, const std::vector<Addons::Version>& dependencies,
-                   const std::string& title) {
+                   const std::string& title, const std::string& icon) {
         if (version.file() == nullptr || state(version.id) == State::Running) {
             return;
         }
@@ -800,8 +838,8 @@ namespace ProjectInstaller {
                 chosen.push_back(*file);
             }
         }
-        std::shared_ptr<Task> task = begin(version.id);
         std::filesystem::path folder = *picked;
+        std::shared_ptr<Task> task = begin(version.id, specOf(title, icon, folder));
         std::string where = Platform::display(folder);
         int extra = (int) chosen.size() - 1;
         run(task, [task, chosen, folder, title, where, extra](blb::cancellation_token token) -> Continuation {
@@ -816,12 +854,14 @@ namespace ProjectInstaller {
             return [task, problem, title, where, extra] {
                 std::string what = extra > 0 ? title + "（含 " + std::to_string(extra) + " 个前置）" : title;
                 finish(task, problem.empty(),
-                       problem.empty() ? "已将 " + what + " 保存到 " + where : "无法下载 " + title + "：" + problem);
+                       problem.empty() ? "已将 " + what + " 保存到 " + where : "无法下载 " + title + "：" + problem,
+                       problem);
             };
         });
     }
 
-    void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey) {
+    void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey,
+                      const std::string& icon) {
         const Instances::Entry* entry = Instances::find(instanceKey);
         const Addons::File* file = version.file();
         if (entry == nullptr || file == nullptr || state(version.id, instanceKey) == State::Running) {
@@ -829,7 +869,7 @@ namespace ProjectInstaller {
         }
         std::filesystem::path saves = worldDirectory(*entry);
         if (saves.empty()) return;
-        std::shared_ptr<Task> task = begin(version.id, saves);
+        std::shared_ptr<Task> task = begin(version.id, specOf(title, icon, saves, instanceKey), saves);
         std::string instanceName = entry->info.id;
         Addons::File chosen = *file;
         run(task, [task, chosen, saves, title, instanceName](blb::cancellation_token token) -> Continuation {
@@ -849,7 +889,7 @@ namespace ProjectInstaller {
                 return nullptr;
             }
             if (!problem.empty()) {
-                return [task, title, problem] { finish(task, false, "无法下载 " + title + "：" + problem); };
+                return [task, title, problem] { finish(task, false, "无法下载 " + title + "：" + problem, problem); };
             }
             std::vector<std::string> names;
             std::string failure;
@@ -879,14 +919,15 @@ namespace ProjectInstaller {
             }
             return [task, title, instanceName, names, failure, kept] {
                 if (!failure.empty()) {
-                    finish(task, false, "无法安装 " + title + "：" + failure);
+                    finish(task, false, "无法安装 " + title + "：" + failure, failure);
                 } else if (!kept.empty()) {
                     finish(task, true,
                            title + " 不是 zip 压缩包，已把 " + kept + " 放进 " + instanceName +
-                                   " 的 saves 文件夹，请手动解压");
+                                   " 的 saves 文件夹，请手动解压",
+                           {});
                 } else {
                     finish(task, true,
-                           "已将 " + title + " 安装到 " + instanceName + "，存档：" + blb::join(names, "、"));
+                           "已将 " + title + " 安装到 " + instanceName + "，存档：" + blb::join(names, "、"), {});
                 }
             };
         });

@@ -64,6 +64,7 @@ namespace Page {
     bool shown(float y, float h = ROW_H);
     float scrollOffset(const std::string& id);
     void scrollTo(const std::string& id, float target);
+    void forgetHidden();
 
     // Separate scroll positions and scrollbar interaction IDs for another rendering of the same pages.
     class ScrollScope {

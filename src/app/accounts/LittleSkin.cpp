@@ -33,6 +33,8 @@ namespace LittleSkin {
         constexpr const char* REDIRECT = "http://localhost:41275/ls/auth";
         constexpr const char* SITE = "https://littleskin.cn";
         constexpr const char* SCOPES = "User.Read Player.ReadWrite Closet.Read";
+        constexpr const char* LOGIN_SCOPES =
+                "User.Read Player.ReadWrite Closet.Read Yggdrasil.PlayerProfiles.Read Yggdrasil.MinecraftToken.Create";
         constexpr const char* STORE = "LittleSkinTokens";
         constexpr const char* EXPIRED = "LittleSkin 授权已失效，请重新授权";
         constexpr int PREVIEW_SIZE = 128;
@@ -95,6 +97,12 @@ namespace LittleSkin {
                     saveTokens();
                 }
             } else if (session.renewed) {
+                std::string previous = tokens.count(key) != 0 ? tokens[key].refresh : std::string();
+                for (auto& [other, token] : tokens) {
+                    if (other != key && !previous.empty() && token.refresh == previous) {
+                        token = session.token;
+                    }
+                }
                 tokens[key] = session.token;
                 saveTokens();
             }
@@ -266,6 +274,12 @@ namespace LittleSkin {
                     closet(session, "cape", state.capes, error, cancel);
         }
 
+        std::string consentUrl(const char* scopes, const std::string& nonce) {
+            return std::string(SITE) + "/oauth/authorize?client_id=" + CLIENT_ID +
+                    "&redirect_uri=" + blb::url_encode(REDIRECT) +
+                    "&response_type=code&scope=" + blb::url_encode(scopes) + "&state=" + nonce;
+        }
+
         std::string resultPage(const Redirect::Query&) {
             return "<!doctype html><html><head><meta charset=\"utf-8\"><title>LittleSkin</title></head>"
                    "<body style=\"font-family:sans-serif;padding:48px\">授权完成，可以回到启动器了。"
@@ -315,6 +329,65 @@ namespace LittleSkin {
         }
     }
 
+    struct Consent {
+        std::shared_ptr<Redirect> redirect;
+        std::string nonce;
+    };
+
+    std::shared_ptr<Consent> askConsent(std::string& error) {
+        if (!authorizingKey.empty()) {
+            error = "正在授权 LittleSkin，请先完成或取消";
+            return nullptr;
+        }
+        auto consent = std::make_shared<Consent>();
+        consent->redirect = std::make_shared<Redirect>();
+        auto opened = consent->redirect->open(PORT);
+        if (!opened) {
+            error = "无法开始授权：" + opened.err().message;
+            return nullptr;
+        }
+        consent->nonce = blb::random_bytes_hex(16);
+        if (!Platform::openUrl(consentUrl(LOGIN_SCOPES, consent->nonce))) {
+            consent->redirect->close();
+            error = "无法打开浏览器";
+            return nullptr;
+        }
+        return consent;
+    }
+
+    std::optional<Grant> awaitConsent(const std::shared_ptr<Consent>& consent, blb::cancellation_token cancel,
+                                      std::string& error) {
+        std::string nonce = consent->nonce;
+        auto query = consent->redirect->wait(PATH, cancel, std::chrono::minutes(10), resultPage,
+                                             [nonce](const Redirect::Query& query) {
+                                                 auto found = query.find("state");
+                                                 return found != query.end() && found->second == nonce;
+                                             });
+        consent->redirect->close();
+        if (!query) {
+            error = query.err().code == blb::errc::cancelled ? std::string() : query.err().message;
+            return std::nullopt;
+        }
+        if (query->count("code") == 0) {
+            auto reason = query->find("error_description");
+            error = reason != query->end() ? reason->second : std::string("授权被拒绝");
+            return std::nullopt;
+        }
+        Token token;
+        if (!exchange({{"grant_type", "authorization_code"}, {"redirect_uri", REDIRECT}, {"code", query->at("code")}},
+                      token, error, cancel)) {
+            return std::nullopt;
+        }
+        return Grant{token.access, token.refresh};
+    }
+
+    void adopt(const std::string& key, const Grant& grant) {
+        loadTokens();
+        tokens[key] = Token{grant.access, grant.refresh};
+        saveTokens();
+        states.erase(key);
+    }
+
     bool supports(const blb::auth::account& account) {
         return account.type == blb::auth::account_type::yggdrasil &&
                 blb::auth::same_yggdrasil_server(account.server, blb::auth::littleskin_api);
@@ -350,10 +423,7 @@ namespace LittleSkin {
             return;
         }
         std::string nonce = blb::random_bytes_hex(16);
-        std::string url = std::string(SITE) + "/oauth/authorize?client_id=" + CLIENT_ID +
-                "&redirect_uri=" + blb::url_encode(REDIRECT) + "&response_type=code&scope=" + blb::url_encode(SCOPES) +
-                "&state=" + nonce;
-        if (!Platform::openUrl(url)) {
+        if (!Platform::openUrl(consentUrl(SCOPES, nonce))) {
             redirect->close();
             state.error = "无法打开浏览器";
             return;

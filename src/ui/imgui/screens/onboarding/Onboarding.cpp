@@ -126,13 +126,6 @@ namespace Onboarding {
             return out;
         }
 
-        uint32_t inkOn(uint32_t argb) {
-            float r = (float) ((argb >> 16) & 0xFF) / 255.0f;
-            float g = (float) ((argb >> 8) & 0xFF) / 255.0f;
-            float b = (float) (argb & 0xFF) / 255.0f;
-            return 0.2126f * r + 0.7152f * g + 0.0722f * b > 0.62f ? 0xFF16181Du : 0xFFFFFFFFu;
-        }
-
         void splash(float w, float h, float elapsed) {
             float rise = easeOut(clamp01(elapsed / 0.34f));
             float leave = 1.0f - easeOut(clamp01((elapsed - (INTRO_HOLD - INTRO_OUT)) / INTRO_OUT));
@@ -309,7 +302,7 @@ namespace Onboarding {
             float lit = 0.0f;
             swatchFace(id, cx, cy, 0xFF000000u | (color & 0x00FFFFFFu), selected, lit);
             if (selected) {
-                UiWidgets::check(cx, cy, inkOn(color), 10.0f);
+                UiWidgets::check(cx, cy, UiTheme::inkOn(color), 10.0f);
             }
             if (lit > 0.5f) {
                 Page::tooltip(hexOf(color), cx - SWATCH_R, cy + SWATCH_R + 4.0f, SWATCH_R * 2.0f, 0.0f);
@@ -327,7 +320,7 @@ namespace Onboarding {
             float lit = 0.0f;
             swatchFace("onboarding#accent#custom", cx, cy, custom ? accent : UiTheme::surfaceRaised(), custom, lit);
             if (custom) {
-                UiWidgets::icon(Ui::glyph(0xf1fb), cx, cy, inkOn(accent), 10.0f);
+                UiWidgets::icon(Ui::glyph(0xf1fb), cx, cy, UiTheme::inkOn(accent), 10.0f);
             } else {
                 UiRender::outline(cx - SWATCH_R, cy - SWATCH_R, SWATCH_R * 2.0f, SWATCH_R * 2.0f, SWATCH_R,
                                   UiTheme::outline());

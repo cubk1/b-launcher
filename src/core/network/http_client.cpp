@@ -4,6 +4,9 @@
 
 #include "core/network/curl_global.hpp"
 
+#include <mutex>
+#include <vector>
+
 namespace b_launcher_base::net
 {
 
@@ -12,27 +15,69 @@ namespace
 
 constexpr log::logger s_log ("http");
 
-struct easy_holder
-{
-  CURL *handle = nullptr;
+constexpr std::size_t max_idle_handles = 16;
 
-  ~easy_holder ()
-  {
-    if (handle)
-      curl_easy_cleanup (handle);
-  }
+struct easy_pool
+{
+  std::mutex lock;
+  std::vector<CURL *> idle;
 };
 
-CURL *
-thread_easy ()
+easy_pool &
+pool ()
 {
-  thread_local easy_holder holder;
-  if (!holder.handle)
-    holder.handle = curl_easy_init ();
-  else
-    curl_easy_reset (holder.handle);
-  return holder.handle;
+  static auto *instance = new easy_pool;
+  return *instance;
 }
+
+class easy_lease
+{
+public:
+  easy_lease ()
+  {
+    auto &shared = pool ();
+    {
+      std::lock_guard<std::mutex> guard (shared.lock);
+      if (!shared.idle.empty ())
+        {
+          m_handle = shared.idle.back ();
+          shared.idle.pop_back ();
+        }
+    }
+    if (m_handle)
+      curl_easy_reset (m_handle);
+    else
+      m_handle = curl_easy_init ();
+  }
+
+  ~easy_lease ()
+  {
+    if (!m_handle)
+      return;
+    auto &shared = pool ();
+    {
+      std::lock_guard<std::mutex> guard (shared.lock);
+      if (shared.idle.size () < max_idle_handles)
+        {
+          shared.idle.push_back (m_handle);
+          return;
+        }
+    }
+    curl_easy_cleanup (m_handle);
+  }
+
+  easy_lease (const easy_lease &) = delete;
+  easy_lease &operator= (const easy_lease &) = delete;
+
+  CURL *
+  get () const noexcept
+  {
+    return m_handle;
+  }
+
+private:
+  CURL *m_handle = nullptr;
+};
 
 struct response_body
 {
@@ -96,7 +141,8 @@ http_send (const http_request &request, cancellation_token token)
   detail::ensure_curl ();
   auto settings = get_network_settings ();
   auto proxy = detail::proxy_for (settings);
-  CURL *easy = thread_easy ();
+  easy_lease lease;
+  CURL *easy = lease.get ();
   if (!easy)
     return make_error (errc::network, "cannot create curl handle");
 

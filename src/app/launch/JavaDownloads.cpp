@@ -4,6 +4,7 @@
 #include "app/system/Platform.h"
 #include "app/system/Server.h"
 #include "app/system/Notices.h"
+#include "app/system/Transfers.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
@@ -24,6 +25,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -62,7 +64,41 @@ namespace JavaDownloads {
         struct Job {
             std::atomic<float> fraction{0.0f};
             State state = State::Running;
+            uint64_t transfer = 0;
+            blb::cancellation_source cancelling;
         };
+
+        std::string coverOf(const Package& package) {
+            static const std::pair<const char*, const char*> COVERS[] = {
+                    {"Alibaba Dragonwell", "alibaba-dragonwell"},
+                    {"Amazon Corretto", "amazon-corretto"},
+                    {"Azul Zulu Community™", "azul-zulu"},
+                    {"BellSoft Liberica JDK", "bellsoft-liberica"},
+                    {"Eclipse Temurin", "eclipse-temurin"},
+                    {"GraalVM Community Edition", "graalvm-ce"},
+                    {"IBM Semeru", "ibm-semeru"},
+                    {"JetBrains Runtime", "jetbrains-runtime"},
+                    {"Microsoft OpenJDK", "microsoft-openjdk"},
+                    {"Oracle GraalVM", "oracle-graalvm"},
+                    {"Oracle OpenJDK", "oracle-openjdk"},
+                    {"Oracle OpenJDK Early-Access", "oracle-openjdk-ea"},
+                    {"Oracle Project Loom Early-Access", "oracle-loom-ea"},
+                    {"Oracle Project Valhalla Early-Access", "oracle-valhalla-ea"},
+                    {"SAP SapMachine", "sap-sapmachine"},
+            };
+            std::string name = package.vendor + " " + package.product;
+            for (const auto& [label, cover] : COVERS) {
+                if (name == label) {
+                    return cover;
+                }
+            }
+            return std::string();
+        }
+
+        void failed(Job& job) {
+            job.state = State::Failed;
+            Transfers::finish(job.transfer, Transfers::State::Failed);
+        }
 
         AsyncTasks tasks;
         List current;
@@ -259,6 +295,7 @@ namespace JavaDownloads {
             std::string longName;
             std::string longLink;
             uint64_t done = 0;
+            z_off_t consumed = 0;
             std::vector<char> buffer(1 << 16);
             unsigned char header[512];
             while (failure.empty()) {
@@ -378,9 +415,13 @@ namespace JavaDownloads {
                 std::filesystem::permissions(out, (std::filesystem::perms)(octal(header + 100, 8) & 0755),
                                              std::filesystem::perm_options::replace, error);
                 done += size;
+                z_off_t offset = gzoffset(file);
+                Transfers::io(job.transfer, offset > consumed ? (uint64_t) (offset - consumed) : 0, size);
+                consumed = std::max(consumed, offset);
                 if (package.unpackedSize > 0) {
                     float share = std::min(1.0f, (float) ((double) done / (double) package.unpackedSize));
                     job.fraction = DOWNLOAD_SHARE + (1.0f - DOWNLOAD_SHARE) * share;
+                    Transfers::fraction(job.transfer, share);
                 }
             }
             gzclose(file);
@@ -446,9 +487,11 @@ namespace JavaDownloads {
                     return false;
                 }
                 done += entry.size;
+                Transfers::io(job.transfer, entry.compressed_size, entry.size);
                 if (package.unpackedSize > 0) {
                     float share = std::min(1.0f, (float) ((double) done / (double) package.unpackedSize));
                     job.fraction = DOWNLOAD_SHARE + (1.0f - DOWNLOAD_SHARE) * share;
+                    Transfers::fraction(job.transfer, share);
                 }
                 return true;
             });
@@ -514,6 +557,16 @@ namespace JavaDownloads {
                 current.status = error.empty() ? Status::Ready : Status::Failed;
             };
         }, [] { current.status = Status::Failed; current.error = "Java 列表读取失败，请重试"; });
+    }
+
+    std::string icon(const Package& package) {
+        std::string out;
+        for (char c : package.vendor) {
+            if (std::isalnum((unsigned char) c)) {
+                out.push_back((char) std::tolower((unsigned char) c));
+            }
+        }
+        return out;
     }
 
     std::string name(const Package& package) {
@@ -587,102 +640,129 @@ namespace JavaDownloads {
         }
         auto job = std::make_shared<Job>();
         jobs[package.folder] = job;
-        run([package, job](blb::cancellation_token token) -> Continuation {
-            std::filesystem::path base = root();
-            std::filesystem::path target = base / blb::path_from_utf8(package.folder);
-            std::filesystem::path temp = blb::fs::temp_sibling(target);
-            std::filesystem::path archive = temp;
-            archive += ".zip";
-            std::error_code ec;
-            std::filesystem::create_directories(base, ec);
-            std::filesystem::remove_all(temp, ec);
-            std::string error;
+        Transfers::Spec spec;
+        spec.kind = Transfers::Kind::Java;
+        spec.title = name(package) + " " + package.version;
+        spec.cover = coverOf(package);
+        spec.folder = root() / blb::path_from_utf8(package.folder);
+        spec.cancel = [job] { job->cancelling.cancel(); };
+        job->transfer = Transfers::begin(std::move(spec));
+        run(
+                [package, job](blb::cancellation_token token) -> Continuation {
+                    blb::cancellation_registration link = token.on_cancel([job] { job->cancelling.cancel(); });
+                    token = job->cancelling.token();
+                    std::filesystem::path base = root();
+                    std::filesystem::path target = base / blb::path_from_utf8(package.folder);
+                    std::filesystem::path temp = blb::fs::temp_sibling(target);
+                    std::filesystem::path archive = temp;
+                    archive += ".zip";
+                    std::error_code ec;
+                    std::filesystem::create_directories(base, ec);
+                    std::filesystem::remove_all(temp, ec);
+                    std::string error;
 
-            blb::net::download_task task;
-            task.urls = {package.url};
-            task.target = archive;
-            task.size = package.archiveSize > 0 ? (std::int64_t) package.archiveSize : -1;
-            uint64_t expected = package.archiveSize;
-            blb::function_progress_sink sink([job, expected](const blb::progress_event& event) {
-                uint64_t total = event.total_bytes > 0 ? event.total_bytes : expected;
-                if (total > 0) {
-                    job->fraction = DOWNLOAD_SHARE * std::min(1.0f, (float) ((double) event.done_bytes / total));
-                }
-            });
-            {
-                blb::progress_tracker tracker(&sink, "java");
-                blb::net::download_client client;
-                blb::net::download_report report = client.run(std::span(&task, 1), &tracker, token);
-                if (!report.ok()) {
-                    error = report.failures.empty() ? std::string("下载失败") : report.failures.front().reason.message;
-                }
-            }
-            if (error.empty() && !verify(archive, package.sha256)) {
-                error = "下载的文件校验不通过";
-            }
-            if (error.empty()) {
-                job->fraction = DOWNLOAD_SHARE;
-#if defined(_WIN32)
-                error = extract(archive, package, temp, *job, token);
-#else
-                error = extractTar(archive, package, temp, *job, token);
-#endif
-            }
-            std::filesystem::remove(archive, ec);
-            std::optional<blb::java::java_installation> installed;
-            std::filesystem::path home = temp;
-            if (error.empty()) {
-                std::string prefix = normalize(package.homePrefix);
-                if (!prefix.empty()) {
-                    home /= blb::path_from_utf8(prefix);
-                }
-#if defined(_WIN32)
-                if (!std::filesystem::exists(home / "bin" / "java.exe", ec)) {
-                    error = "解压后没有找到 java.exe";
-                }
-#else
-                if (!std::filesystem::exists(home / "bin" / "java", ec)) {
-                    error = "解压后没有找到 java";
-                }
-#endif
-                if (error.empty()) {
-                    auto checked = blb::java::probe_java(home, true, token, {}, true);
-                    if (checked) {
-                        installed = *checked;
-                    } else {
-                        error = checked.err().message;
+                    blb::net::download_task task;
+                    task.urls = {package.url};
+                    task.target = archive;
+                    task.size = package.archiveSize > 0 ? (std::int64_t) package.archiveSize : -1;
+                    uint64_t expected = package.archiveSize;
+                    blb::function_progress_sink sink([job, expected](const blb::progress_event& event) {
+                        uint64_t total = event.total_bytes > 0 ? event.total_bytes : expected;
+                        if (total > 0) {
+                            job->fraction =
+                                    DOWNLOAD_SHARE * std::min(1.0f, (float) ((double) event.done_bytes / total));
+                        }
+                        Transfers::report(job->transfer, event);
+                    });
+                    {
+                        blb::progress_tracker tracker(&sink, "java");
+                        blb::net::download_client client;
+                        blb::net::download_report report = client.run(std::span(&task, 1), &tracker, token);
+                        if (!report.ok()) {
+                            error = report.failures.empty() ? std::string("下载失败")
+                                                            : report.failures.front().reason.message;
+                        }
                     }
-                }
-            }
-            if (error.empty()) {
-                std::filesystem::remove_all(target, ec);
-                std::filesystem::rename(temp, target, ec);
-                if (ec) {
-                    error = "无法移动到安装目录";
-                }
-            }
-            if (!error.empty()) {
-                std::filesystem::remove_all(temp, ec);
-            } else {
-                // The probe ran in the temporary folder. Use the paths in the installed folder.
-                std::filesystem::path moved = homeOf(package);
-                installed->executable = moved / installed->executable.lexically_relative(home);
-                installed->gui_executable = moved / installed->gui_executable.lexically_relative(home);
-                installed->home = moved;
-                installed->source = blb::java::java_source::managed;
-            }
-            std::string label = name(package) + " " + package.version;
-            return [job, error, installed, label] {
-                job->state = error.empty() ? State::Done : State::Failed;
-                if (error.empty()) {
-                    job->fraction = 1.0f;
-                    Catalog::addJava(*installed);
-                    Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
-                } else {
-                    Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);
-                }
-            };
-        }, [job] { job->state = State::Failed; });
+                    if (error.empty()) {
+                        Transfers::stage(job->transfer, "正在校验");
+                    }
+                    if (error.empty() && !verify(archive, package.sha256)) {
+                        error = "下载的文件校验不通过";
+                    }
+                    if (error.empty()) {
+                        Transfers::io(job->transfer, package.archiveSize, 0);
+                    }
+                    if (error.empty()) {
+                        job->fraction = DOWNLOAD_SHARE;
+                        Transfers::stage(job->transfer, "正在解压");
+                        Transfers::fraction(job->transfer, 0.0f);
+#if defined(_WIN32)
+                        error = extract(archive, package, temp, *job, token);
+#else
+                        error = extractTar(archive, package, temp, *job, token);
+#endif
+                    }
+                    std::filesystem::remove(archive, ec);
+                    std::optional<blb::java::java_installation> installed;
+                    std::filesystem::path home = temp;
+                    if (error.empty()) {
+                        std::string prefix = normalize(package.homePrefix);
+                        if (!prefix.empty()) {
+                            home /= blb::path_from_utf8(prefix);
+                        }
+#if defined(_WIN32)
+                        if (!std::filesystem::exists(home / "bin" / "java.exe", ec)) {
+                            error = "解压后没有找到 java.exe";
+                        }
+#else
+                        if (!std::filesystem::exists(home / "bin" / "java", ec)) {
+                            error = "解压后没有找到 java";
+                        }
+#endif
+                        if (error.empty()) {
+                            auto checked = blb::java::probe_java(home, true, token, {}, true);
+                            if (checked) {
+                                installed = *checked;
+                            } else {
+                                error = checked.err().message;
+                            }
+                        }
+                    }
+                    if (error.empty()) {
+                        std::filesystem::remove_all(target, ec);
+                        std::filesystem::rename(temp, target, ec);
+                        if (ec) {
+                            error = "无法移动到安装目录";
+                        }
+                    }
+                    if (!error.empty()) {
+                        std::filesystem::remove_all(temp, ec);
+                    } else {
+                        // The probe ran in the temporary folder. Use the paths in the installed folder.
+                        std::filesystem::path moved = homeOf(package);
+                        installed->executable = moved / installed->executable.lexically_relative(home);
+                        installed->gui_executable = moved / installed->gui_executable.lexically_relative(home);
+                        installed->home = moved;
+                        installed->source = blb::java::java_source::managed;
+                    }
+                    std::string label = name(package) + " " + package.version;
+                    bool cancelled = job->cancelling.is_cancelled();
+                    return [job, error, installed, label, cancelled] {
+                        job->state = error.empty() ? State::Done : State::Failed;
+                        if (error.empty()) {
+                            job->fraction = 1.0f;
+                            Transfers::finish(job->transfer, Transfers::State::Done);
+                            Catalog::addJava(*installed);
+                            Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
+                        } else if (cancelled) {
+                            Transfers::finish(job->transfer, Transfers::State::Cancelled);
+                        } else {
+                            Transfers::finish(job->transfer, Transfers::State::Failed, error);
+                            Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);
+                        }
+                    };
+                },
+                [job] { failed(*job); });
     }
 
     void poll() {

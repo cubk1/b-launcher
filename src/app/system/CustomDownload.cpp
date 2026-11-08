@@ -1,6 +1,7 @@
 #include "app/system/CustomDownload.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Notices.h"
+#include "app/system/Transfers.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
@@ -27,6 +28,7 @@ namespace CustomDownload {
             std::atomic<uint64_t> done{0};
             std::atomic<uint64_t> total{0};
             std::atomic<double> speed{0.0};
+            uint64_t transfer = 0;
         };
 
         class Sink final : public blb::progress_sink {
@@ -39,6 +41,7 @@ namespace CustomDownload {
                     live->total = event.total_bytes;
                 }
                 live->speed = event.bytes_per_second;
+                Transfers::report(live->transfer, event);
             }
 
         private:
@@ -118,6 +121,13 @@ namespace CustomDownload {
         shown.target = target;
         live = std::make_shared<Live>();
         cancelling = std::make_shared<blb::cancellation_source>();
+        Transfers::Spec spec;
+        spec.kind = Transfers::Kind::File;
+        spec.title = blb::path_to_utf8(target.filename());
+        spec.folder = target.parent_path();
+        spec.cancel = [] { cancel(); };
+        live->transfer = Transfers::begin(std::move(spec));
+        Transfers::stage(live->transfer, "正在连接");
         std::shared_ptr<Live> progress = live;
         blb::cancellation_token token = cancelling->token();
         tasks.run(
@@ -133,6 +143,7 @@ namespace CustomDownload {
                     }
                     std::string error;
                     if (!token.is_cancelled()) {
+                        Transfers::stage(progress->transfer, std::string());
                         progress->state = (int) State::Running;
                         if (size > 0) {
                             progress->total = (uint64_t) size;
@@ -157,24 +168,28 @@ namespace CustomDownload {
                     bool cancelled = token.is_cancelled();
                     return [error, cancelled, target, progress] {
                         if (cancelled) {
+                            Transfers::finish(progress->transfer, Transfers::State::Cancelled);
                             shown.state = State::Idle;
                             Notices::add(Notices::Kind::Info, "已取消下载", 2500);
                             return;
                         }
                         if (!error.empty()) {
+                            Transfers::finish(progress->transfer, Transfers::State::Failed, error);
                             shown.state = State::Failed;
                             shown.error = error;
                             Notices::add(Notices::Kind::Failed, "下载失败：" + error, 5000);
                             return;
                         }
+                        Transfers::finish(progress->transfer, Transfers::State::Done);
                         shown.state = State::Done;
                         shown.done = progress->done.load();
                         shown.total = std::max(shown.total, shown.done);
                         Notices::add(Notices::Kind::Done, "已下载 " + blb::path_to_utf8(target.filename()), 3000);
                     };
                 },
-                [](const std::string& error) -> Continuation {
-                    return [error] {
+                [progress](const std::string& error) -> Continuation {
+                    return [error, progress] {
+                        Transfers::finish(progress->transfer, Transfers::State::Failed, error);
                         shown.state = State::Failed;
                         shown.error = error;
                         Notices::add(Notices::Kind::Failed, "下载失败：" + error, 5000);
