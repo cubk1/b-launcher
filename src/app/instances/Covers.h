@@ -15,6 +15,7 @@ namespace Covers {
     bool ready(const std::vector<std::string>& keys, int height);
     std::shared_ptr<const Pixels> thumb(const std::string& key, int height);
     std::shared_ptr<const Pixels> icon(const std::string& name, int side, bool dark);
+    std::shared_ptr<const Pixels> logo(const std::string& name, int side, bool dark);
     std::shared_ptr<const Pixels> get(const std::string& key);
     void poll();
     void shutdown();

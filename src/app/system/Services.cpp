@@ -14,6 +14,7 @@
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "app/instances/Screenshots.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/KeyBinds.h"
@@ -47,6 +48,7 @@ namespace Services {
         Avatars::poll();
         LittleSkin::poll();
         Game::poll();
+        Crashes::poll();
         Catalog::poll();
         Addons::poll();
         ProjectInstaller::poll();
@@ -72,6 +74,7 @@ namespace Services {
     void stop() {
         Multiplayer::shutdown();
         CustomDownload::shutdown();
+        Crashes::shutdown();
         DiskScan::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();

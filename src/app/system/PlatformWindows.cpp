@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <cwchar>
 #include <cwctype>
 #include <cstdio>
@@ -482,6 +483,34 @@ namespace Platform {
         }
     }
 
+    bool setClipboardText(const std::string& text) {
+        std::wstring wide = utf8_to_wide(text);
+        size_t bytes = (wide.size() + 1) * sizeof(wchar_t);
+        HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, bytes);
+        if (hGlobal == nullptr) {
+            return false;
+        }
+        void* mem = GlobalLock(hGlobal);
+        if (mem == nullptr) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        std::memcpy(mem, wide.c_str(), bytes);
+        GlobalUnlock(hGlobal);
+        if (!OpenClipboard((HWND) window)) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        EmptyClipboard();
+        HANDLE result = SetClipboardData(CF_UNICODETEXT, hGlobal);
+        CloseClipboard();
+        if (result == nullptr) {
+            GlobalFree(hGlobal);
+            return false;
+        }
+        return true;
+    }
+
     bool setClipboardImage(const Pixels& pixels) {
         if (pixels.width <= 0 || pixels.height <= 0 || pixels.rgba.empty()) {
             return false;
@@ -876,6 +905,28 @@ namespace Platform {
         HWND hwnd = (HWND) window;
         ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
         SetForegroundWindow(hwnd);
+    }
+
+    void raiseWindow() {
+        if (window == nullptr) {
+            return;
+        }
+        HWND hwnd = (HWND) window;
+        ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        HWND foreground = GetForegroundWindow();
+        DWORD other = foreground != nullptr ? GetWindowThreadProcessId(foreground, nullptr) : 0;
+        DWORD self = GetCurrentThreadId();
+        bool attached = other != 0 && other != self && AttachThreadInput(other, self, TRUE);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetActiveWindow(hwnd);
+        if (attached) {
+            AttachThreadInput(other, self, FALSE);
+        }
+        FLASHWINFO flash{sizeof(FLASHWINFO), hwnd, FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0};
+        FlashWindowEx(&flash);
     }
 
     void closeWindow() {

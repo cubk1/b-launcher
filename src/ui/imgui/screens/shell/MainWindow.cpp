@@ -12,6 +12,7 @@
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
+#include "ui/imgui/screens/launch/CrashDialog.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/multiplayer/MultiplayerScreen.h"
 #include "app/multiplayer/Multiplayer.h"
@@ -223,6 +224,14 @@ namespace MainWindow {
                 },
                 [](const std::string&, bool) {},
                 [](const std::string&) { showHome(); },
+                [](std::shared_ptr<const Crashes::Report> report) {
+                    if (Compact::active()) {
+                        Compact::reveal();
+                    } else {
+                        Platform::raiseWindow();
+                    }
+                    CrashDialog::open(std::move(report));
+                },
         });
     }
 

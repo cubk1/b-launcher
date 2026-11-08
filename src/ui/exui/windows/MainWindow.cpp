@@ -9,7 +9,10 @@
 #include "app/system/About.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
+#include "app/launch/AskAi.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/Game.h"
+#include "app/launch/GameLog.h"
 #include "app/multiplayer/Multiplayer.h"
 #include "app/system/Platform.h"
 #include "ui/exui/Skins.h"
@@ -77,6 +80,59 @@ namespace ForgottenMelody {
         constexpr UINT OPEN_LOG = WM_APP + 3;
         constexpr UINT OPEN_MODPACK = WM_APP + 4;
         constexpr UINT OPEN_NOTICES = WM_APP + 5;
+        constexpr UINT SHOW_CRASH = WM_APP + 6;
+        constexpr size_t CRASH_LINE = 60;
+
+        std::string shortened(std::string_view text) {
+            size_t at = 0;
+            for (size_t points = 0; at < text.size() && points < CRASH_LINE; points++) {
+                at++;
+                while (at < text.size() && ((unsigned char) text[at] & 0xC0) == 0x80) {
+                    at++;
+                }
+            }
+            return at < text.size() ? std::string(text.substr(0, at)) + "…" : std::string(text);
+        }
+
+        std::string pickAi(HWND owner) {
+            std::span<const AskAi::Service> services = AskAi::services();
+            HMENU menu = CreatePopupMenu();
+            for (size_t i = 0; i < services.size(); i++) {
+                AppendMenuW(menu, MF_STRING, i + 1, Platform::widen(services[i].name).c_str());
+            }
+            POINT at{};
+            GetCursorPos(&at);
+            SetForegroundWindow(owner);
+            UINT picked = (UINT) TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, at.x, at.y, 0,
+                                                owner, nullptr);
+            DestroyMenu(menu);
+            return picked > 0 && picked <= services.size() ? std::string(services[picked - 1].key) : std::string();
+        }
+
+        std::wstring crashText(const Crashes::Report& report) {
+            std::string text = "请不要给别人发送这个窗口，点击“导出日志”，使用导出的文件去求助。\n\n";
+            if (report.causes.empty()) {
+                text += "没有识别出具体原因。";
+            } else {
+                text += "可能的原因：";
+                for (const Crashes::Cause& cause : report.causes) {
+                    text += "\n" + cause.title;
+                    size_t from = 0;
+                    while (from <= cause.detail.size()) {
+                        size_t end = cause.detail.find('\n', from);
+                        text += "\n    " +
+                                shortened(std::string_view(cause.detail)
+                                                  .substr(from,
+                                                          end == std::string::npos ? std::string::npos : end - from));
+                        if (end == std::string::npos) {
+                            break;
+                        }
+                        from = end + 1;
+                    }
+                }
+            }
+            return Platform::widen(text);
+        }
 
         // Keeps the original white line; hovering and Tab reveal that it opens
         // the history. Long messages leave room for the count at the end.
@@ -250,6 +306,10 @@ namespace ForgottenMelody {
             showLog();
             return 0;
         }
+        if (msg == SHOW_CRASH) {
+            presentCrash();
+            return 0;
+        }
         if (msg == OPEN_NOTICES) {
             if (!showingNotices && !showingFailures && modalWindow(nullptr) == nullptr &&
                 !noticeHistory.entries().empty()) {
@@ -288,6 +348,40 @@ namespace ForgottenMelody {
                                  const b_launcher_base::modpack::pack_manifest& manifest) {
         droppedPack = std::make_pair(file, manifest);
         PostMessageW(GetHwnd(), OPEN_MODPACK, 0, 0);
+    }
+
+    void MainWindow::showCrash(std::shared_ptr<const Crashes::Report> report) {
+        if (crash == nullptr) {
+            PostMessageW(GetHwnd(), SHOW_CRASH, 0, 0);
+        }
+        crash = std::move(report);
+    }
+
+    void MainWindow::presentCrash() {
+        std::shared_ptr<const Crashes::Report> report = std::exchange(crash, nullptr);
+        if (report == nullptr) {
+            return;
+        }
+        Platform::raiseWindow();
+        std::string chosen = AskAi::chosen();
+        std::wstring ask = chosen.empty() ? std::wstring(L"问 AI") : Platform::widen("问 " + AskAi::nameOf(chosen));
+        int choice = message(modalWindow(GetHwnd()), crashText(*report), L"游戏崩溃", exui::MsgBoxButtons::YesNoCancel,
+                             {L"关闭", L"查看日志", L"导出日志", ask});
+        if (choice == 6) {
+            GameLog::show(report->launch.log);
+            showLog();
+        } else if (choice == 5) {
+            if (std::optional<std::filesystem::path> target = Platform::pickSaveAs(
+                        Platform::desktopDirectory() / Platform::widen(Crashes::fileName(*report)))) {
+                Crashes::save(report, *target);
+            }
+        } else if (choice == 3) {
+            std::string key = chosen.empty() ? pickAi(GetHwnd()) : chosen;
+            if (!key.empty()) {
+                Notices::add(Notices::Kind::Info, "正在上传崩溃报告…", 3000);
+                Crashes::ask(report, key);
+            }
+        }
     }
 
     void MainWindow::showFailures() {

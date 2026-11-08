@@ -52,6 +52,7 @@ namespace ForgottenMelody {
                     // The main window shows the instance an install or a shortcut made current by itself.
                     nullptr,
                     nullptr,
+                    [&window](std::shared_ptr<const Crashes::Report> report) { window.showCrash(std::move(report)); },
             });
         }
 

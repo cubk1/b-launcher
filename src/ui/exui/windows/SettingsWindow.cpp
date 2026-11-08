@@ -7,6 +7,7 @@
 #include "ui/exui/windows/SettingsWindow.h"
 #include "app/instances/Instances.h"
 #include "app/downloads/DownloadSources.h"
+#include "app/launch/AskAi.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/GameOptions.h"
 #include "app/accounts/Avatars.h"
@@ -75,6 +76,8 @@ namespace ForgottenMelody {
             GAME_ARGS_LABEL,
             GAME_ARGS,
             LOGS,
+            ASK_AI_LABEL,
+            ASK_AI,
             PRE_LAUNCH_LABEL,
             PRE_LAUNCH,
             GAME_OPTIONS_GROUP,
@@ -332,6 +335,8 @@ namespace ForgottenMelody {
                         {GAME_ARGS_LABEL, ControlKind::Label, {}, L"游戏参数"},
                         {GAME_ARGS, ControlKind::Edit, {}},
                         {LOGS, ControlKind::Check, {}, L"显示游戏日志"},
+                        {ASK_AI_LABEL, ControlKind::Label, {}, L"崩溃时问 AI"},
+                        {ASK_AI, ControlKind::Combo, {}},
                         {PRE_LAUNCH_LABEL, ControlKind::Label, {}, L"启动前命令"},
                         {PRE_LAUNCH, ControlKind::Edit, {}},
                         {GAME_OPTIONS_GROUP, ControlKind::Group, {}, L"全局游戏选项"},
@@ -481,7 +486,7 @@ namespace ForgottenMelody {
                 keyEditor->SetBounds(15, 46, keysPage.GetWidth() - 30, keysPage.GetHeight() - 58);
                 MoveInto(pages.at(GAME)->GetContent(),
                          {LAUNCH, LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS,
-                          LOGS, PRE_LAUNCH_LABEL, PRE_LAUNCH});
+                          LOGS, ASK_AI_LABEL, ASK_AI, PRE_LAUNCH_LABEL, PRE_LAUNCH});
                 MoveInto(pages.at(FOLDERS_PAGE)->GetContent(),
                          {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE});
                 MoveInto(pages.at(OPTIONS_PAGE)->GetContent(),
@@ -561,6 +566,11 @@ namespace ForgottenMelody {
                     case ISOLATION: Instances::setIsolation(ISOLATIONS[index].mode); break;
                     case LANGUAGE: LaunchDefaults::setLanguage(LANGUAGES[index].language); break;
                     case GC: LaunchDefaults::setGc(COLLECTORS[index].mode); break;
+                    case ASK_AI:
+                        AskAi::setChosen(index > 0 && index <= (int) AskAi::services().size()
+                                                 ? AskAi::services()[index - 1].key
+                                                 : "");
+                        break;
                     case SKIN_MODE: Patches::setValue("skin.mode", SKIN_MODES[index].value); break;
                     case SKIN_SOURCE: Patches::setValue("skin.source", SKIN_SOURCES[index].value); break;
                     case STYLE: UiStyles::set(UiStyles::all()[index].key); break;
@@ -744,6 +754,7 @@ namespace ForgottenMelody {
                                                                 setting(JVM_LABEL, {field(JVM, 505)}),
                                                                 setting(GAME_ARGS_LABEL, {field(GAME_ARGS, 505)}),
                                                                 toggle(LOGS, 200),
+                                                                setting(ASK_AI_LABEL, {field(ASK_AI, 200, 28)}),
                                                                 setting(PRE_LAUNCH_LABEL, {field(PRE_LAUNCH, 505)}),
                                                         })},
                                              15));
@@ -964,6 +975,14 @@ namespace ForgottenMelody {
                     selected = COLLECTORS[i].mode == LaunchDefaults::gc() ? i : selected;
                 }
                 choose(GC, options, selected);
+
+                options = {L"每次选择"};
+                selected = 0;
+                for (const AskAi::Service& service : AskAi::services()) {
+                    options.push_back(Platform::widen(service.name));
+                    selected = service.key == AskAi::chosen() ? (int) options.size() - 1 : selected;
+                }
+                choose(ASK_AI, options, selected);
 
                 text(JVM, LaunchDefaults::jvmArgs(), LaunchDefaults::setJvmArgs);
                 text(GAME_ARGS, LaunchDefaults::gameArgs(), LaunchDefaults::setGameArgs);

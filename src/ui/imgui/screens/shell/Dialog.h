@@ -12,4 +12,6 @@ namespace Dialog {
     void close();
     void resize(const std::string& id, float width, float height);
     bool isOpen(const std::string& id);
+    bool active();
+    void closeAbove();
 }

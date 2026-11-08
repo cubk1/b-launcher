@@ -3,7 +3,9 @@
 #include "app/accounts/Accounts.h"
 #include "app/accounts/Looks.h"
 #include "app/downloads/DownloadSources.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/GameLog.h"
+#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
 #include "app/launch/LaunchDefaults.h"
@@ -19,6 +21,7 @@
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/platform.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
@@ -26,6 +29,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -70,6 +74,11 @@ namespace Game {
             std::string failure;
             bool cancelled = false;
             std::string javaUsed;
+            std::string javaVersion;
+            int javaMajor = 0;
+            unsigned javaBits = 0;
+            uint32_t memoryMb = 0;
+            std::string token;
             std::optional<blb::auth::account> refreshedAccount;
             bool accountExpired = false;
 
@@ -86,6 +95,8 @@ namespace Game {
             Platform::Environment variables;
             std::filesystem::path commandDirectory;
             std::filesystem::path optionsFile;
+            std::vector<std::string> loaders;
+            int64_t launched = 0;
         };
 
         std::vector<std::unique_ptr<Live>> lives;
@@ -157,6 +168,75 @@ namespace Game {
                 return 3;
             }
             return 1;
+        }
+
+        uint32_t heapOf(const std::vector<std::string>& arguments) {
+            for (const std::string& argument : arguments) {
+                if (argument.rfind("-Xmx", 0) != 0 || argument.size() < 5) {
+                    continue;
+                }
+                std::string digits = argument.substr(4);
+                char unit = (char) std::tolower((unsigned char) digits.back());
+                if (unit == 'k' || unit == 'm' || unit == 'g' || unit == 't') {
+                    digits.pop_back();
+                } else {
+                    unit = 'b';
+                }
+                std::optional<std::int64_t> value = blb::parse_int(digits);
+                if (!value || *value <= 0) {
+                    continue;
+                }
+                std::int64_t mb = unit == 't' ? *value << 20
+                        : unit == 'g'         ? *value << 10
+                        : unit == 'm'         ? *value
+                        : unit == 'k'         ? *value >> 10
+                                              : *value >> 20;
+                return (uint32_t) std::min<std::int64_t>(mb, UINT32_MAX);
+            }
+            return 0;
+        }
+
+        std::vector<std::string> loadersOf(const Instances::Entry& entry) {
+            std::vector<std::string> out;
+            for (const blb::install::loader_info& loader : entry.info.loaders) {
+                out.push_back(Installer::loaderName(loader.type) +
+                              (loader.version.empty() ? "" : " " + loader.version));
+            }
+            return out;
+        }
+
+        void crashed(Live& live, int code, int pid) {
+            Crashes::Launch launch;
+            launch.instance = live.key;
+            launch.name = live.name;
+            launch.minecraft = live.minecraft;
+            launch.loaders = live.loaders;
+            launch.gameDirectory = live.commandDirectory;
+            launch.pid = pid;
+            launch.log = live.log;
+            launch.since = live.launched;
+            launch.uptime = std::chrono::duration<double>(Clock::now() - live.since).count();
+            launch.code = code;
+            {
+                std::lock_guard<std::mutex> guard(live.lock);
+                launch.java = live.javaUsed;
+                launch.javaVersion = live.javaVersion;
+                launch.javaMajor = live.javaMajor;
+                launch.javaBits = live.javaBits;
+                launch.memoryMb = live.memoryMb;
+                launch.token = live.token;
+            }
+            std::shared_ptr<const Crashes::Report> report =
+                    Crashes::examine(std::move(launch), GameLog::text(live.log));
+            if (report == nullptr) {
+                return;
+            }
+            GameLog::show(live.log);
+            if (!Interface::crashed(report)) {
+                Notices::add(Notices::Kind::Failed, live.name + " 崩溃了（退出代码 " + Crashes::exitText(code) + "）",
+                             5000);
+                Interface::showLog();
+            }
         }
 
         std::string megabytes(uint64_t bytes) {
@@ -349,6 +429,7 @@ namespace Game {
             }
             auto exit = live.game.wait(std::chrono::milliseconds(0));
             int code = exit ? *exit : 0;
+            int pid = live.game.pid();
             live.state = State::Idle;
             live.game = blb::process();
             GameLog::finish(live.log);
@@ -359,13 +440,12 @@ namespace Game {
                 }
             }
             GameLog::note(live.log,
-                          live.killed ? std::string("游戏已被结束") : "游戏已退出，退出代码 " + std::to_string(code));
+                          live.killed ? std::string("游戏已被结束")
+                                      : "游戏已退出，退出代码 " + Crashes::exitText(code));
             if (live.killed) {
                 Notices::add(Notices::Kind::Info, "已结束 " + live.name, 2000);
-            } else if (code != 0) {
-                Notices::add(Notices::Kind::Failed, live.name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
-                GameLog::show(live.log);
-                Interface::showLog();
+            } else {
+                crashed(live, code, pid);
             }
         }
 
@@ -590,6 +670,8 @@ namespace Game {
         live.variables = instanceVariables(*entry);
         live.commandDirectory = entry->gameDirectory;
         live.optionsFile = blb::fs::absolute(GameOptions::fileOf(*entry));
+        live.loaders = loadersOf(*entry);
+        live.launched = blb::fs::mtime_now();
         settings.environment.insert(settings.environment.begin(), live.variables.begin(), live.variables.end());
 
         int log = GameLog::begin(live.name + "（" + account->name + "）", logFor(target));
@@ -678,12 +760,18 @@ namespace Game {
                         self->accountExpired = true;
                     }
                 } else {
+                    GameLog::conceal(log, ready->account.access_token);
                     std::string java = blb::path_to_utf8(ready->java.executable);
                     GameLog::note(log, "Java：" + java + "（" + ready->java.version + "）");
                     ready->command.environment.insert(ready->command.environment.begin(), {"INST_JAVA", java});
                     {
                         std::lock_guard<std::mutex> guard(self->lock);
                         self->javaUsed = java;
+                        self->javaVersion = ready->java.version;
+                        self->javaMajor = ready->java.major;
+                        self->javaBits = blb::arch_bits(ready->java.arch);
+                        self->memoryMb = heapOf(ready->command.jvm_args);
+                        self->token = ready->account.access_token;
                     }
                     LaunchDefaults::applyLanguage(language, directory, minecraft, optionsFile);
                     if (!preLaunch.empty()) {

@@ -57,6 +57,7 @@ namespace Platform {
     void reveal(const std::filesystem::path& path);
     bool recycle(const std::filesystem::path& path);
     bool setClipboardImage(const Pixels& pixels);
+    bool setClipboardText(const std::string& text);
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickJava(const std::filesystem::path& initial);
     std::optional<std::filesystem::path> pickImage(const std::filesystem::path& initial);
@@ -85,6 +86,7 @@ namespace Platform {
     void minimizeWindow();
     void hideWindow();
     void showWindow();
+    void raiseWindow();
     void closeWindow();
     std::string display(const std::filesystem::path& path);
 

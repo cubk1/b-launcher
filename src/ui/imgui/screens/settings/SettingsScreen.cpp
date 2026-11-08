@@ -16,7 +16,9 @@
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "app/instances/Covers.h"
 #include "app/instances/Instances.h"
+#include "app/launch/AskAi.h"
 #include "app/launch/GameOptions.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
@@ -206,6 +208,26 @@ namespace SettingsScreen {
             toggle(
                     "settings#showLogs", [] { return LaunchDefaults::showLogs(); },
                     [](bool on) { LaunchDefaults::setShowLogs(on); }, y, blocked);
+            y += Page::ROW_H;
+
+            Page::label("崩溃时问 AI", y);
+            static auto ai = [] {
+                std::vector<std::pair<std::string, std::string>> options = {{std::string(), "每次选择"}};
+                for (const AskAi::Service& service : AskAi::services()) {
+                    options.emplace_back(service.key, service.name);
+                }
+                auto binding = ModeBinding::mapped<std::string>("settings#askAi", AskAi::chosen, AskAi::setChosen,
+                                                                std::move(options));
+                binding->icon("每次选择", 0xf544);
+                return binding;
+            }();
+            int side = (int) std::lround(16.0f * UiRender::stableScale() * UiRender::pixelScale());
+            for (const AskAi::Service& service : AskAi::services()) {
+                if (uint32_t texture = Textures::of(Covers::logo(service.icon, side, !UiTheme::isLight()))) {
+                    ai->image(service.name, texture);
+                }
+            }
+            select("settings#askAi", ai, y, blocked);
             y += Page::ROW_H;
 
             textRow(
@@ -582,6 +604,7 @@ namespace SettingsScreen {
                 {SECTION_LAUNCH, "JVM 参数", "Java 虚拟机"},
                 {SECTION_LAUNCH, "游戏参数", nullptr},
                 {SECTION_LAUNCH, "显示游戏日志", nullptr},
+                {SECTION_LAUNCH, "崩溃时问 AI", "ChatGPT Claude Grok DeepSeek Kimi"},
                 {SECTION_LAUNCH, "启动前命令", "cmd 脚本"},
                 {SECTION_KEYS, nullptr, "快捷键 键位"},
                 {SECTION_PATCH, "应用给默认设置的实例", "启用"},
@@ -1917,7 +1940,7 @@ namespace SettingsScreen {
                 case SECTION_JAVA: javaTab(covered); break;
                 case SECTION_TOOLS: ToolboxTab::draw(covered); break;
                 case SECTION_ABOUT: aboutTab(covered); break;
-                default: cardPage("settings#launch", 6, covered, launchRows); break;
+                default: cardPage("settings#launch", 7, covered, launchRows); break;
             }
         }
 

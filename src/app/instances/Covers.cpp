@@ -271,7 +271,7 @@ namespace Covers {
             return present(dir / name);
         }
 
-        std::shared_ptr<Pixels> rasterize(const std::filesystem::path& file, int side) {
+        std::shared_ptr<Pixels> rasterize(const std::filesystem::path& file, int side, bool square) {
             auto text = blb::fs::read_file(file);
             if (!text || text->empty()) {
                 return nullptr;
@@ -286,12 +286,14 @@ namespace Covers {
             }
             float scale = (float) side / std::max(image->width, image->height);
             auto out = std::make_shared<Pixels>();
-            out->width = std::max(1, (int) std::lround(image->width * scale));
-            out->height = std::max(1, (int) std::lround(image->height * scale));
+            out->width = square ? side : std::max(1, (int) std::lround(image->width * scale));
+            out->height = square ? side : std::max(1, (int) std::lround(image->height * scale));
             out->rgba.assign((size_t) out->width * out->height * 4, 0);
+            float left = std::round((out->width - image->width * scale) * 0.5f);
+            float top = std::round((out->height - image->height * scale) * 0.5f);
             NSVGrasterizer* rasterizer = nsvgCreateRasterizer();
             if (rasterizer != nullptr) {
-                nsvgRasterize(rasterizer, image, 0.0f, 0.0f, scale, out->rgba.data(), out->width, out->height,
+                nsvgRasterize(rasterizer, image, left, top, scale, out->rgba.data(), out->width, out->height,
                               out->width * 4);
                 nsvgDeleteRasterizer(rasterizer);
             }
@@ -299,7 +301,10 @@ namespace Covers {
             return rasterizer != nullptr ? out : nullptr;
         }
 
-        void lighten(Pixels& pixels) {
+        void vendor(Pixels& pixels, bool dark) {
+            if (!dark) {
+                return;
+            }
             for (size_t i = 0; i + 3 < pixels.rgba.size(); i += 4) {
                 unsigned char* pixel = pixels.rgba.data() + i;
                 float luma = 0.2126f * pixel[0] + 0.7152f * pixel[1] + 0.0722f * pixel[2];
@@ -309,6 +314,48 @@ namespace Covers {
                     pixel[2] = 232;
                 }
             }
+        }
+
+        void neutral(Pixels& pixels, bool dark) {
+            for (size_t i = 0; i + 3 < pixels.rgba.size(); i += 4) {
+                unsigned char* pixel = pixels.rgba.data() + i;
+                unsigned char high = std::max({pixel[0], pixel[1], pixel[2]});
+                unsigned char low = std::min({pixel[0], pixel[1], pixel[2]});
+                unsigned char shade = dark ? 232 : 36;
+                if (pixel[3] > 0 && (dark ? high < 60 : low > 200)) {
+                    pixel[0] = shade;
+                    pixel[1] = shade;
+                    pixel[2] = shade;
+                }
+            }
+        }
+
+        std::shared_ptr<const Pixels> draw(const std::string& id, const std::string& name, int side, bool square,
+                                           void (*adjust)(Pixels&, bool), bool dark) {
+            auto found = icons.find(id);
+            bool fresh = found != icons.end() && found->second.first == side;
+            if (!fresh && !name.empty() && side > 0 && drawing.insert(id).second) {
+                std::string file = name + VECTOR;
+                bool remote = asked.insert(file).second;
+                tasks.run(
+                        [id, file, side, square, adjust, dark, remote](blb::cancellation_token token) -> Continuation {
+                            std::shared_ptr<Pixels> pixels;
+                            if (remote ? ensure(file, token) : present(folder() / file)) {
+                                pixels = rasterize(folder() / file, side, square);
+                            }
+                            if (pixels != nullptr) {
+                                adjust(*pixels, dark);
+                            }
+                            return [id, side, pixels] {
+                                drawing.erase(id);
+                                std::shared_ptr<const Pixels> kept =
+                                        pixels != nullptr || icons.count(id) == 0 ? pixels : icons[id].second;
+                                icons[id] = {side, kept};
+                            };
+                        },
+                        [id](const std::string&) -> Continuation { return [id] { drawing.erase(id); }; });
+            }
+            return found == icons.end() ? nullptr : found->second.second;
         }
 
         Found locate(const std::vector<std::string>& keys, bool remote, blb::cancellation_token token) {
@@ -607,31 +654,12 @@ namespace Covers {
 
     std::shared_ptr<const Pixels> icon(const std::string& name, int side, bool dark) {
         revalidate();
-        std::string id = dark ? name + "#dark" : name;
-        auto found = icons.find(id);
-        bool fresh = found != icons.end() && found->second.first == side;
-        if (!fresh && !name.empty() && side > 0 && drawing.insert(id).second) {
-            std::string file = name + VECTOR;
-            bool remote = asked.insert(file).second;
-            tasks.run(
-                    [id, file, side, dark, remote](blb::cancellation_token token) -> Continuation {
-                        std::shared_ptr<Pixels> pixels;
-                        if (remote ? ensure(file, token) : present(folder() / file)) {
-                            pixels = rasterize(folder() / file, side);
-                        }
-                        if (pixels != nullptr && dark) {
-                            lighten(*pixels);
-                        }
-                        return [id, side, pixels] {
-                            drawing.erase(id);
-                            std::shared_ptr<const Pixels> kept =
-                                    pixels != nullptr || icons.count(id) == 0 ? pixels : icons[id].second;
-                            icons[id] = {side, kept};
-                        };
-                    },
-                    [id](const std::string&) -> Continuation { return [id] { drawing.erase(id); }; });
-        }
-        return found == icons.end() ? nullptr : found->second.second;
+        return draw(dark ? name + "#dark" : name, name, side, false, vendor, dark);
+    }
+
+    std::shared_ptr<const Pixels> logo(const std::string& name, int side, bool dark) {
+        revalidate();
+        return draw("logo:" + name + (dark ? "#dark" : ""), name, side, true, neutral, dark);
     }
 
     bool ready(const std::vector<std::string>& keys, int height) {

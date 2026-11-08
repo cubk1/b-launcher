@@ -317,6 +317,9 @@ namespace ImGuiApp {
             if (Compact::takeDismiss()) {
                 panel.hide();
             }
+            if (Compact::takeReveal()) {
+                panel.show();
+            }
         };
 
         IMGUI_CHECKVERSION();
