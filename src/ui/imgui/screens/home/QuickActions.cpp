@@ -4,7 +4,6 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "app/instances/Drops.h"
-#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -46,9 +45,7 @@ namespace QuickActions {
 
         void perform(const std::string& id) {
             if (id == "newInstance") {
-                if (!Installer::running()) {
-                    NewInstanceScreen::leaveModpack();
-                }
+                NewInstanceScreen::leaveModpack();
                 MainWindow::showNewInstance();
             } else if (id == "switchVersion") {
                 MainWindow::showVersions();

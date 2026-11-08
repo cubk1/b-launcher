@@ -30,12 +30,14 @@ namespace ProjectInstaller {
 
     void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
                  const std::string& instanceKey,
-                 std::optional<std::vector<Addons::Version>> dependencies = std::nullopt);
-    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title);
-    void saveAs(const Addons::Version& version, const std::string& title);
+                 std::optional<std::vector<Addons::Version>> dependencies = std::nullopt, const std::string& icon = {});
+    void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title,
+                const std::string& icon = {});
+    void saveAs(const Addons::Version& version, const std::string& title, const std::string& icon = {});
     void saveAllAs(const Addons::Version& version, const std::vector<Addons::Version>& dependencies,
-                   const std::string& title);
-    void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey);
+                   const std::string& title, const std::string& icon = {});
+    void installWorld(const Addons::Version& version, const std::string& title, const std::string& instanceKey,
+                      const std::string& icon = {});
 
     void poll();
     void shutdown();

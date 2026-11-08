@@ -33,6 +33,7 @@ namespace Prerequisites {
 
         Addons::Version root;
         std::string rootTitle;
+        std::string rootIcon;
         std::string owner;
         bool saving = false;
         std::string gameVersion;
@@ -60,11 +61,11 @@ namespace Prerequisites {
 
         void launch(std::vector<Addons::Version> dependencies) {
             if (!saving) {
-                ProjectInstaller::install(root, Kind::Mod, rootTitle, owner, std::move(dependencies));
+                ProjectInstaller::install(root, Kind::Mod, rootTitle, owner, std::move(dependencies), rootIcon);
             } else if (dependencies.empty()) {
-                ProjectInstaller::saveAs(root, rootTitle);
+                ProjectInstaller::saveAs(root, rootTitle, rootIcon);
             } else {
-                ProjectInstaller::saveAllAs(root, dependencies, rootTitle);
+                ProjectInstaller::saveAllAs(root, dependencies, rootTitle, rootIcon);
             }
         }
 
@@ -213,9 +214,11 @@ namespace Prerequisites {
                            });
     }
 
-    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey) {
+    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey,
+              const std::string& icon) {
         root = version;
         rootTitle = title;
+        rootIcon = icon;
         owner = instanceKey;
         saving = saveAs;
         toggled.clear();

@@ -13,9 +13,9 @@
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
 
-#include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiPageTransition.h"
@@ -33,8 +33,6 @@
 #include <core/base/strings.hpp>
 #include <core/modpack/mods.hpp>
 
-#include "imgui.h"
-
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -42,6 +40,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <set>
 #include <optional>
 #include <memory>
 #include <string>
@@ -61,8 +60,6 @@ namespace NewInstanceScreen {
         constexpr float BUTTON_W = 96.0f;
         constexpr float BUTTON_H = 36.0f;
         constexpr float BUTTON_MARGIN = 28.0f;
-        constexpr float SQUARE = 52.0f;
-        constexpr float TAU = 6.28318531f;
 
         const char* const RELEASE = "正式版";
         const char* const SNAPSHOT = "快照版";
@@ -87,6 +84,7 @@ namespace NewInstanceScreen {
         bool autoFabricApi = false;
         bool fabricApiRequested = false;
         std::string automaticFabricApi;
+        std::set<loader_type> wanting;
 
         std::string kindOf(const blb::meta::manifest_version& version) {
             switch (Catalog::kindOf(version)) {
@@ -278,54 +276,6 @@ namespace NewInstanceScreen {
 
         std::vector<std::string> familyVersions;
 
-        std::string leadingVersion(const std::string& id) {
-            size_t end = 0;
-            while (end < id.size() && (std::isdigit((unsigned char) id[end]) || id[end] == '.')) {
-                end++;
-            }
-            return id.substr(0, end);
-        }
-
-        std::string familyOf(const std::string& base) {
-            size_t first = base.find('.');
-            if (first == std::string::npos || first == 0) {
-                return std::string();
-            }
-            if (base.compare(0, 2, "1.") == 0) {
-                size_t second = base.find('.', first + 1);
-                return second == std::string::npos ? base : base.substr(0, second);
-            }
-            return base.substr(0, first);
-        }
-
-        bool weekly(const std::string& id) {
-            return id.size() >= 6 && std::isdigit((unsigned char) id[0]) && std::isdigit((unsigned char) id[1]) &&
-                    id[2] == 'w';
-        }
-
-        std::string stageOf(const std::string& id) {
-            bool numbered = id.size() > 1 && std::isdigit((unsigned char) id[1]);
-            if (id.rfind("rd-", 0) == 0) {
-                return "Pre-Classic";
-            }
-            if (id.rfind("inf-", 0) == 0) {
-                return "Infdev";
-            }
-            if (id.rfind("in-", 0) == 0) {
-                return "Indev";
-            }
-            if (numbered && id[0] == 'c') {
-                return "Classic";
-            }
-            if (numbered && id[0] == 'a') {
-                return "Alpha";
-            }
-            if (numbered && id[0] == 'b') {
-                return "Beta";
-            }
-            return OLD;
-        }
-
         std::string majorLabel(const std::string& key) {
             for (const char* prefix : {APRIL_PREFIX, STAGE_PREFIX}) {
                 if (key.rfind(prefix, 0) == 0) {
@@ -336,25 +286,6 @@ namespace NewInstanceScreen {
                 return SNAPSHOT;
             }
             return key.find('.') == std::string::npos ? key + ".x" : key;
-        }
-
-        std::string majorKey(const blb::meta::manifest_version& version, std::string& upcoming) {
-            Catalog::Kind kind = Catalog::kindOf(version);
-            std::string key;
-            if (kind == Catalog::Kind::Release) {
-                key = familyOf(version.id);
-                upcoming = key;
-            } else if (kind == Catalog::Kind::AprilFools) {
-                key = APRIL_PREFIX + version.id;
-            } else if (kind == Catalog::Kind::Old) {
-                key = STAGE_PREFIX + stageOf(version.id);
-            } else {
-                key = weekly(version.id) ? upcoming : familyOf(leadingVersion(version.id));
-            }
-            if (key.empty()) {
-                key = kind == Catalog::Kind::Release ? version.id : SNAPSHOT_GROUP;
-            }
-            return key;
         }
 
         const std::vector<std::string>& coverKeys(const Catalog::Versions& all) {
@@ -368,7 +299,7 @@ namespace NewInstanceScreen {
             cached.clear();
             std::string upcoming;
             for (const blb::meta::manifest_version& version : all.list) {
-                std::string key = majorKey(version, upcoming);
+                std::string key = Covers::keyOf(version, upcoming);
                 if (std::find(cached.begin(), cached.end(), key) == cached.end()) {
                     cached.push_back(key);
                 }
@@ -392,7 +323,7 @@ namespace NewInstanceScreen {
             std::map<std::string, size_t> index;
             std::string upcoming;
             for (const blb::meta::manifest_version& version : all.list) {
-                std::string key = majorKey(version, upcoming);
+                std::string key = Covers::keyOf(version, upcoming);
                 if (std::find(kinds.begin(), kinds.end(), kindOf(version)) == kinds.end() ||
                     !blb::icontains(version.id, query)) {
                     continue;
@@ -511,6 +442,7 @@ namespace NewInstanceScreen {
             loaderSelection.reset(id);
             autoFabricApi = false;
             automaticFabricApi.clear();
+            wanting.clear();
         }
 
         void versionsStep() {
@@ -593,250 +525,203 @@ namespace NewInstanceScreen {
             }
         }
 
-        float easeOut(float t) {
-            float inv = 1.0f - t;
-            return 1.0f - inv * inv * inv;
-        }
-
-        void ring(float cx, float cy, float radius, float value, uint32_t color) {
-            float x = UiRender::transformX(cx);
-            float y = UiRender::transformY(cy);
-            float r = UiRender::transformW(radius);
-            float stroke = UiRender::transformW(2.6f);
-            float known = UiState::motion("new#ring#known", value >= 0.0f ? 1.0f : 0.0f, 8.0f);
-            float shown = UiState::motion("new#ring#fraction", std::max(0.0f, value), 10.0f);
-            ShaderUtil::arc(x, y, r, stroke, 0.0f, TAU, UiRender::applyAlpha((color & 0x00FFFFFFu) | 0x47000000u));
-            float spinFrom = 0.0f;
-            float spinTo = 0.0f;
-            Page::spinnerArc(spinFrom, spinTo);
-            float from = UiRender::lerp(spinFrom - TAU * 0.25f, -TAU * 0.25f, known);
-            float to = UiRender::lerp(spinTo - TAU * 0.25f, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
-            ShaderUtil::arc(x, y, r, stroke, from, to, UiRender::applyAlpha(color));
-        }
-
-        bool cancelArmed = false;
-        double armedAt = 0.0;
-
         void installButton(float right, float bottom, const std::string& problem, bool waiting) {
             const char* action = editing.empty() ? "安装" : "应用";
-            bool installing = Installer::running();
-            bool usable = installing || (problem.empty() && !waiting);
-            float morph = easeOut(UiState::motion("new#install#morph", installing ? 1.0f : 0.0f, 10.0f));
-            float w = UiRender::lerp(BUTTON_W, SQUARE, morph);
-            float h = UiRender::lerp(BUTTON_H, SQUARE, morph);
-            float radius = UiRender::lerp(10.0f, 14.0f, morph);
-            float x = right - w;
-            float y = bottom - h;
-            bool hovered = !NewUi::overlayCoversMouse() && NewUi::hit(x, y, w, h);
-            if (!installing || (cancelArmed && (!hovered || ImGui::GetTime() - armedAt > 3.0))) {
-                cancelArmed = false;
-            }
-            float armed = UiState::motion("new#install#armed", cancelArmed ? 1.0f : 0.0f, 16.0f);
+            bool usable = problem.empty() && !waiting;
+            float x = right - BUTTON_W;
+            float y = bottom - BUTTON_H;
+            bool hovered = !NewUi::overlayCoversMouse() && NewUi::hit(x, y, BUTTON_W, BUTTON_H);
             float hover = UiState::motion("new#install#hover", usable && hovered ? 1.0f : 0.0f, 18.0f);
             float enabled = UiState::motion("new#install#enabled", usable ? 1.0f : 0.0f, 14.0f);
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * UiRender::lerp(0.45f, 1.0f, enabled);
-            UiRender::shadow(x, y, w, h, radius, 12.0f, 4.0f, UiTheme::shadow());
-            UiRender::roundRect(x, y, w, h, radius, UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
-            uint32_t ink = UiTheme::onAccent();
-            float cx = x + w * 0.5f;
-            float cy = y + h * 0.5f;
-            if (morph < 0.99f) {
-                float alpha = UiRender::alphaMul;
-                UiRender::alphaMul = alpha * (1.0f - morph);
-                float labelW = UiFont::width(action, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-                UiRender::textY(action, cx - labelW * 0.5f, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-                UiRender::alphaMul = alpha;
-            }
-            if (morph > 0.01f) {
-                float alpha = UiRender::alphaMul;
-                UiRender::alphaMul = alpha * morph * (1.0f - armed);
-                ring(cx, cy, 11.0f * UiRender::lerp(0.4f, 1.0f, morph), Installer::progress(), ink);
-                if (armed > 0.01f) {
-                    UiRender::alphaMul = alpha * morph * armed;
-                    UiWidgets::icon(Ui::glyph(0xf00d), cx, cy, ink, UiRender::lerp(10.0f, 18.0f, armed));
-                }
-                UiRender::alphaMul = alpha;
-            }
+            UiRender::shadow(x, y, BUTTON_W, BUTTON_H, 10.0f, 12.0f, 4.0f, UiTheme::shadow());
+            UiRender::roundRect(x, y, BUTTON_W, BUTTON_H, 10.0f,
+                                UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
+            float labelW = UiFont::width(action, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+            UiRender::textY(action, x + (BUTTON_W - labelW) * 0.5f, y, BUTTON_H, UiTheme::onAccent(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_BODY);
             UiRender::alphaMul = savedAlpha;
 
-            if (!problem.empty() && !installing && morph < 0.01f) {
+            if (!problem.empty()) {
                 float problemW = UiFont::width(problem, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(problem, x - 14.0f - problemW, y, h, UiTheme::danger(), UiFont::MEDIUM,
+                UiRender::textY(problem, x - 14.0f - problemW, y, BUTTON_H, UiTheme::danger(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
-            } else if (waiting && !installing && morph < 0.01f) {
+            } else if (waiting) {
                 std::string text = fabricApiRequested ? "正在检查 Fabric API 兼容性…" : "正在获取 Fabric API 版本…";
                 float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(text, x - 14.0f - textW, y, h, UiTheme::textMuted(), UiFont::MEDIUM,
+                UiRender::textY(text, x - 14.0f - textW, y, BUTTON_H, UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
             }
-            if (installing && hovered) {
-                std::string verb = editing.empty() ? "取消安装" : "取消修改";
-                std::string hint = cancelArmed ? "再次点击" + verb : verb;
-                float tipW = UiFont::width(hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 22.0f;
-                NewUi::tooltipNow(hint, x + w - tipW, y - 34.0f);
-            }
-            if (usable && NewUi::click(x, y, w, h)) {
-                if (installing && !cancelArmed) {
-                    UiSound::request(UiSound::TICK);
-                    cancelArmed = true;
-                    armedAt = ImGui::GetTime();
-                    return;
-                }
-                UiSound::request(installing ? UiSound::RELEASE : UiSound::PULSE);
-                if (installing) {
-                    cancelArmed = false;
-                    Installer::cancel();
-                } else if (!editing.empty()) {
-                    Installer::startModify(editing, loaderSelection.requests());
-                } else if (const Instances::Source* source = targetSource()) {
-                    if (modpack) {
-                        Installer::startModpack(source->key, modpack->pack, instanceName());
-                    } else {
-                        Installer::start(source->key, minecraft, loaderSelection.requests(), typedName);
-                    }
-                }
-            }
-        }
-
-        std::vector<Installer::Part> last;
-        std::string lastActivity;
-        double lastElapsed = 0.0;
-
-        std::string clock(double seconds) {
-            int whole = (int) seconds;
-            char text[16];
-            std::snprintf(text, sizeof(text), "%d:%02d", whole / 60, whole % 60);
-            return text;
-        }
-
-        void progressBars(float top, float shown) {
-            std::vector<Installer::Part> parts = Installer::parts();
-            if (!parts.empty()) {
-                last = parts;
-                lastActivity = Installer::activity();
-                lastElapsed = Installer::elapsed();
-            }
-            if (last.empty()) {
+            if (!usable || !NewUi::click(x, y, BUTTON_W, BUTTON_H)) {
                 return;
             }
-            float savedAlpha = UiRender::alphaMul;
-            float savedOffsetY = UiRender::offsetY;
-            UiRender::alphaMul = savedAlpha * shown;
-            UiRender::offsetY = savedOffsetY + (1.0f - shown) * 16.0f * UiRender::uiScale;
-            const float rowH = 36.0f;
-            const float barH = 4.0f;
-            const float detailW = 150.0f;
-            float barX = Page::left() + 110.0f;
-            float detailRight = Page::right();
-            float barW = detailRight - detailW - 12.0f - barX;
-            double time = ImGui::GetTime();
-
-            const float statusH = 30.0f;
-            bool complete = std::all_of(last.begin(), last.end(), [](const Installer::Part& part) {
-                return part.status == Installer::Part::Status::Done;
-            });
-            if (complete) {
-                UiWidgets::check(Page::left() + 8.0f, top + statusH * 0.5f, UiTheme::accent(), 10.0f);
-            } else {
-                Page::spinner(Page::left() + 8.0f, top + statusH * 0.5f, 7.0f, UiTheme::accent());
-            }
-            UiRender::textY(lastActivity, Page::left() + 24.0f, top, statusH, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_BODY);
-            std::string taken = "已用 " + clock(lastElapsed);
-            float takenW = UiFont::width(taken, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(taken, Page::right() - takenW, top, statusH, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
-            top += statusH + 10.0f;
-
-            for (size_t i = 0; i < last.size(); i++) {
-                const Installer::Part& part = last[i];
-                float rowY = top + i * rowH;
-                uint32_t detailColor = part.status == Installer::Part::Status::Failed ? UiTheme::danger()
-                        : part.status == Installer::Part::Status::Running             ? UiTheme::textSecondary()
-                                                                                      : UiTheme::textMuted();
-                std::string detail =
-                        UiFont::fitEnd(part.detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, detailW - 16.0f);
-                float shownW = UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-                UiRender::textY(detail, detailRight - shownW, rowY, rowH, detailColor, UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
-                float markX = detailRight - shownW - 9.0f;
-                UiRender::textY(part.label, Page::left(), rowY, rowH, UiTheme::textPrimary(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                float barY = rowY + (rowH - barH) * 0.5f;
-                UiRender::roundRect(barX, barY, barW, barH, barH * 0.5f, UiTheme::outline());
-                bool finished = part.status == Installer::Part::Status::Done;
-                bool failed = part.status == Installer::Part::Status::Failed;
-                uint32_t fill = failed ? UiTheme::danger() : UiTheme::accent();
-                std::string id = "new#part#" + std::to_string(i);
-                float target = finished ? 1.0f : std::max(0.0f, part.fraction);
-                float amount = UiState::motion(id + "#fill", target, 8.0f);
-                bool measured = finished || failed || part.fraction >= 0.0f;
-                if (measured) {
-                    if (amount > 0.002f) {
-                        UiRender::roundRect(barX, barY, std::max(barH, barW * amount), barH, barH * 0.5f, fill);
-                    }
-                } else if (part.status == Installer::Part::Status::Running) {
-                    float segment = barW * 0.25f;
-                    float phase = (float) std::fmod(time / 1.3 + i * 0.17, 1.0);
-                    float segX = barX - segment + (barW + segment) * phase;
-                    UiRender::scissor(barX, barY, barW, barH);
-                    UiRender::roundRect(segX, barY, segment, barH, barH * 0.5f, fill);
-                    UiRender::unscissor();
-                }
-                if (finished) {
-                    UiWidgets::check(markX, rowY + rowH * 0.5f, UiTheme::accent(), 9.0f);
-                } else if (failed) {
-                    UiWidgets::icon(Ui::glyph(0xf00d), markX, rowY + rowH * 0.5f, UiTheme::danger(), 9.0f);
+            UiSound::request(UiSound::PULSE);
+            if (!editing.empty()) {
+                Installer::startModify(editing, loaderSelection.requests());
+            } else if (const Instances::Source* source = targetSource()) {
+                if (modpack) {
+                    Installer::startModpack(source->key, modpack->pack, instanceName());
+                } else {
+                    Installer::start(source->key, minecraft, loaderSelection.requests(), typedName);
                 }
             }
-            UiRender::alphaMul = savedAlpha;
-            UiRender::offsetY = savedOffsetY;
+            if (Installer::running()) {
+                reset();
+                MainWindow::showTransfers();
+            }
         }
 
-        enum class RowAction { None, Open, Clear };
+        enum class RowAction { None, Open, Toggle };
 
-        RowAction loaderRow(const std::string& id, uint32_t image, int glyph, const std::string& label,
-                            const std::string& status, uint32_t statusColor, bool enabled, bool clearable, float rowY,
-                            bool blocked, int corners) {
-            bool hovered = enabled && !blocked && NewUi::hit(Page::left(), rowY, Page::width(), Page::ROW_H);
-            rowHover(id, Page::left(), rowY, Page::width(), Page::ROW_H, hovered, corners);
+        struct RowView {
+            bool checked = false;
+            bool busy = false;
+            bool checkable = false;
+            bool openable = false;
+            bool dim = false;
+            std::string status;
+            uint32_t color = 0;
+        };
+
+        void checkbox(float x, float cy, bool on, bool busy, float hover) {
+            float y = cy - 9.0f;
+            if (busy) {
+                UiRender::outline(x, y, 18.0f, 18.0f, 5.0f, UiTheme::outline(), 0xF, 1.4f);
+                Page::spinner(x + 9.0f, cy, 5.0f, UiTheme::accent());
+            } else if (on) {
+                UiRender::roundRect(x, y, 18.0f, 18.0f, 5.0f,
+                                    UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.12f * hover));
+                UiWidgets::icon(Ui::glyph(0xf00c), x + 9.0f, cy, UiTheme::onAccent(), 10.0f);
+            } else {
+                UiRender::outline(x, y, 18.0f, 18.0f, 5.0f,
+                                  UiRender::mix(UiTheme::outline(), UiTheme::textMuted(), hover), 0xF, 1.4f);
+            }
+        }
+
+        RowAction loaderRow(const std::string& id, uint32_t image, const std::string& label, const RowView& view,
+                            float rowY, bool blocked, int corners) {
+            constexpr float BOX_AREA = 44.0f;
+            float left = Page::left();
+            float cy = rowY + Page::ROW_H * 0.5f;
+            bool overBox = view.checkable && !blocked && NewUi::hit(left, rowY, BOX_AREA, Page::ROW_H);
+            bool overRow = view.openable && !blocked && !overBox && NewUi::hit(left, rowY, Page::width(), Page::ROW_H);
+            rowHover(id, left, rowY, Page::width(), Page::ROW_H, overBox || overRow, corners);
+            float hover = UiState::motion(id + "#box", overBox ? 1.0f : 0.0f, 18.0f);
             float savedAlpha = UiRender::alphaMul;
-            if (!enabled) {
+            if (view.dim) {
                 UiRender::alphaMul = savedAlpha * 0.5f;
             }
+            checkbox(left + 16.0f, cy, view.checked, view.busy, hover);
             if (image != 0) {
-                UiRender::texture(image, Page::left() + 16.0f, rowY + (Page::ROW_H - 16.0f) * 0.5f, 16.0f, 16.0f);
+                UiRender::texture(image, left + 46.0f, cy - 8.0f, 16.0f, 16.0f);
             } else {
-                UiWidgets::iconBeside(Ui::glyph(glyph), Page::left() + 24.0f, label, UiFont::MEDIUM,
-                                      UiWidgets::TEXT_CONTROL, rowY, Page::ROW_H, UiTheme::textMuted(), 12.0f);
+                UiWidgets::icon(Ui::glyph(0xf1b2), left + 54.0f, cy, UiTheme::textMuted(), 12.0f);
             }
-            UiRender::textY(label, Page::left() + 44.0f, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+            UiRender::textY(label, left + 72.0f, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             float markX = Page::controlRight() - 10.0f;
-            float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(status, markX - 18.0f - statusW, rowY, Page::ROW_H, statusColor, UiFont::MEDIUM,
+            float statusRight = view.openable ? markX - 18.0f : markX + 6.0f;
+            float statusW = UiFont::width(view.status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(view.status, statusRight - statusW, rowY, Page::ROW_H, view.color, UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
-            bool cleared = false;
-            if (clearable) {
-                bool over = !blocked && NewUi::hit(markX - 12.0f, rowY + 8.0f, 24.0f, Page::ROW_H - 16.0f);
-                UiWidgets::iconBeside(Ui::glyph(0xf00d), markX, status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, rowY,
-                                      Page::ROW_H, over ? UiTheme::textPrimary() : UiTheme::textFaint(), 9.0f);
-                cleared = !blocked && NewUi::click(markX - 12.0f, rowY + 8.0f, 24.0f, Page::ROW_H - 16.0f);
-            } else if (enabled) {
-                UiWidgets::iconBeside(Ui::glyph(0xf054), markX, status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, rowY,
-                                      Page::ROW_H, UiTheme::textFaint(), 9.0f);
+            if (view.openable) {
+                UiWidgets::iconBeside(Ui::glyph(0xf054), markX, view.status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                      rowY, Page::ROW_H, UiTheme::textFaint(), 9.0f);
             }
             UiRender::alphaMul = savedAlpha;
-            if (cleared) {
-                UiSound::request(UiSound::RELEASE);
-                return RowAction::Clear;
+            if (overBox) {
+                UiCursor::hand();
+                if (NewUi::click(left, rowY, BOX_AREA, Page::ROW_H)) {
+                    UiSound::request(UiSound::TICK);
+                    return RowAction::Toggle;
+                }
             }
-            if (enabled && !blocked && NewUi::click(Page::left(), rowY, Page::width(), Page::ROW_H)) {
+            if (overRow && NewUi::click(left, rowY, Page::width(), Page::ROW_H)) {
                 UiSound::request(UiSound::PAGE);
                 return RowAction::Open;
             }
             return RowAction::None;
+        }
+
+        const blb::install::loader_version* newest(const Catalog::LoaderVersions& versions) {
+            for (const blb::install::loader_version& version : versions.list) {
+                if (version.stable) {
+                    return &version;
+                }
+            }
+            return versions.list.empty() ? nullptr : &versions.list.front();
+        }
+
+        void choose(loader_type type, const std::string& version) {
+            loaderSelection.select(type, version);
+            autoFabricApi = editing.empty() && type == loader_type::fabric;
+            fabricApiRequested = false;
+            if (type == loader_type::fabric_api) {
+                automaticFabricApi.clear();
+            }
+        }
+
+        void drop(loader_type type) {
+            loaderSelection.remove(type);
+            if (type == loader_type::fabric_api || chosen.count(loader_type::fabric) == 0) {
+                autoFabricApi = false;
+                automaticFabricApi.clear();
+            }
+        }
+
+        void settleWanted() {
+            for (auto it = wanting.begin(); it != wanting.end();) {
+                const Catalog::LoaderVersions& versions = Catalog::loader(*it, minecraft);
+                if (versions.status == Catalog::Status::Loading) {
+                    ++it;
+                    continue;
+                }
+                loader_type type = *it;
+                it = wanting.erase(it);
+                std::string label = Installer::loaderName(type);
+                if (const blb::install::loader_version* latest = newest(versions)) {
+                    choose(type, latest->version);
+                } else if (versions.status == Catalog::Status::Failed) {
+                    Notices::add(Notices::Kind::Failed, "获取 " + label + " 版本失败：" + versions.error, 5000);
+                } else {
+                    Notices::add(Notices::Kind::Info, label + " 没有适用于 " + minecraft + " 的版本", 4000);
+                }
+            }
+        }
+
+        void toggle(const blb::instance::loader_choice& choice) {
+            loader_type type = choice.type;
+            if (chosen.count(type) != 0) {
+                drop(type);
+                return;
+            }
+            if (wanting.erase(type) != 0) {
+                return;
+            }
+            for (int guard = 0; guard < 8; guard++) {
+                std::vector<blb::instance::loader_choice> now = loaderSelection.choices();
+                auto found =
+                        std::find_if(now.begin(), now.end(), [type](const auto& item) { return item.type == type; });
+                if (found == now.end() || found->state != blb::instance::choice_state::incompatible) {
+                    break;
+                }
+                auto other = blb::install::parse_loader_type(found->related);
+                if (!other || chosen.count(*other) == 0) {
+                    break;
+                }
+                drop(*other);
+            }
+            const Catalog::LoaderVersions& versions = Catalog::loader(type, minecraft);
+            if (versions.status == Catalog::Status::Failed) {
+                Catalog::refreshLoader(type, minecraft);
+            }
+            const blb::install::loader_version* latest = newest(versions);
+            if (versions.status == Catalog::Status::Ready && latest != nullptr) {
+                choose(type, latest->version);
+            } else {
+                wanting.insert(type);
+            }
         }
 
         void settings(float top, float bottom, float gone, bool blocked);
@@ -915,19 +800,13 @@ namespace NewInstanceScreen {
 
         void setupStep() {
             attachFabricApi();
-            bool installing = Installer::running();
-            float phase = easeOut(UiState::motion("new#install#phase", installing ? 1.0f : 0.0f, 8.0f));
             bool blocked = NewUi::overlayCoversMouse();
-            float savedAlpha = UiRender::alphaMul;
-            UiRender::alphaMul = savedAlpha * (1.0f - phase);
             bool localPack = modpack && !modpack->pack.file.empty();
             const char* backHint = !editing.empty() ? "返回实例设置"
                     : localPack                     ? "返回"
                     : modpack                       ? "返回下载附加件"
                                                     : "重新选择版本";
-            if (phase < 0.99f &&
-                Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::TOP - 2.0f,
-                           blocked || installing)) {
+            if (Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
                 if (!editing.empty()) {
                     std::string key = editing;
                     reset();
@@ -942,15 +821,14 @@ namespace NewInstanceScreen {
                     steps.go(STEP_VERSIONS);
                 }
             }
-            UiRender::alphaMul = savedAlpha;
             Page::title(!editing.empty()  ? std::string("修改加载器")
                                 : modpack ? std::string("安装整合包")
                                           : "新建 " + minecraft + " 实例",
-                        Page::left() + 30.0f * (1.0f - phase), Page::TOP);
+                        Page::left() + 30.0f, Page::TOP);
             if (!editing.empty()) {
                 if (const Instances::Entry* entry = Instances::find(editing)) {
-                    float nameX = Page::left() + 30.0f * (1.0f - phase) +
-                            UiFont::width("修改加载器", UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
+                    float nameX = Page::left() + 30.0f + UiFont::width("修改加载器", UiFont::MEDIUM, Page::TITLE_SIZE) +
+                            10.0f;
                     UiRender::textY(UiFont::fitEnd(entry->info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                                    Page::right() - nameX),
                                     nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
@@ -961,23 +839,19 @@ namespace NewInstanceScreen {
             float buttonBottom = MainWindow::height() - BUTTON_MARGIN;
             float bodyTop = Page::TOP + 54.0f;
             float bodyBottom = buttonBottom - BUTTON_H - 12.0f;
-            if (phase < 0.99f) {
-                settings(bodyTop, bodyBottom, phase,
-                         blocked || installing || readingLoaders || !loaderReadError.empty());
-            }
-            if (phase > 0.01f) {
-                progressBars(bodyTop, phase);
-            }
+            settings(bodyTop, bodyBottom, 0.0f, blocked || readingLoaders || !loaderReadError.empty());
 
             std::string problem;
-            if (!installing && !editing.empty()) {
+            if (Installer::running()) {
+                problem = "请等待当前安装完成";
+            } else if (!editing.empty()) {
                 const Instances::Entry* entry = Instances::find(editing);
                 problem = readingLoaders                          ? std::string("正在读取已安装的加载器…")
                         : !loaderReadError.empty()                ? loaderReadError
                         : entry == nullptr                        ? std::string("实例已不存在")
                         : chosen == original && entry->info.valid ? std::string("没有改动")
                                                                   : std::string();
-            } else if (!installing) {
+            } else {
                 const Instances::Source* source = targetSource();
                 problem = source == nullptr ? std::string("没有可用的游戏目录")
                                             : Instances::checkInstallId(source->key, instanceName());
@@ -1010,15 +884,17 @@ namespace NewInstanceScreen {
         }
 
         void settings(float top, float bottom, float gone, bool blocked) {
+            settleWanted();
             std::vector<blb::instance::loader_choice> choices = modpack
                     ? std::vector<blb::instance::loader_choice>()
                     : loaderSelection.choices();
-            int loaderRows = modpack ? 4 : 1 + (int) choices.size();
+            int loaderRows = modpack ? 4 : (int) choices.size();
             bool edit = !editing.empty();
-            bool choosePlace = Instances::soleSource() == nullptr;
-            int instanceRows = choosePlace ? 2 : 1;
-            float contentH = edit ? Page::CAPTION_H + loaderRows * Page::ROW_H
-                                  : 2 * Page::CAPTION_H + (instanceRows + loaderRows) * Page::ROW_H + Page::GAP;
+            bool choosePlace = !edit && Instances::soleSource() == nullptr;
+            bool versionRow = !modpack;
+            int instanceRows = (edit ? 0 : 1) + (choosePlace ? 1 : 0) + (versionRow ? 1 : 0);
+            float contentH = Page::CAPTION_H + instanceRows * Page::ROW_H + Page::GAP +
+                    (loaderRows > 0 ? Page::CAPTION_H + loaderRows * Page::ROW_H : 0.0f);
             float savedAlpha = UiRender::alphaMul;
             float savedOffsetY = UiRender::offsetY;
             UiRender::alphaMul = savedAlpha * (1.0f - gone);
@@ -1028,10 +904,10 @@ namespace NewInstanceScreen {
             bool rowsBlocked = outside || blocked;
             float y = body.top - body.offset;
 
+            Page::caption("实例", y);
+            y += Page::CAPTION_H;
+            Page::card(y, instanceRows);
             if (!edit) {
-                Page::caption("实例", y);
-                y += Page::CAPTION_H;
-                Page::card(y, instanceRows);
                 Page::label("名称", y);
                 std::string generated = generatedName();
                 auto nameValue = std::make_shared<TextBinding>(
@@ -1077,8 +953,24 @@ namespace NewInstanceScreen {
                     select.paint();
                     y += Page::ROW_H;
                 }
-                y += Page::GAP;
             }
+            if (versionRow) {
+                Page::label("游戏版本", y);
+                if (!edit && familyVersions.size() > 1) {
+                    auto version = std::make_shared<ModeBinding>(
+                            "new#minecraft", [] { return minecraft; },
+                            [](const std::string& id) { switchMinecraft(id); }, [] { return familyVersions; });
+                    SelectWidget select("new#minecraft", version);
+                    select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
+                    select.paint();
+                } else {
+                    float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                    UiRender::textY(minecraft, Page::controlRight() - versionW, y, Page::ROW_H,
+                                    UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                }
+                y += Page::ROW_H;
+            }
+            y += Page::GAP;
 
             if (modpack) {
                 Page::caption("整合包", y);
@@ -1091,60 +983,54 @@ namespace NewInstanceScreen {
                 return;
             }
 
-            Page::caption("加载器", y);
-            y += Page::CAPTION_H;
-            Page::card(y, loaderRows);
-            if (Page::shown(y)) {
-                UiRender::texture(Icons::vanilla(), Page::left() + 16.0f, y + (Page::ROW_H - 16.0f) * 0.5f, 16.0f,
-                                  16.0f);
-                UiRender::textY("Minecraft", Page::left() + 44.0f, y, Page::ROW_H, UiTheme::textPrimary(),
-                                UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                if (!edit && familyVersions.size() > 1) {
-                    auto version = std::make_shared<ModeBinding>(
-                            "new#minecraft", [] { return minecraft; },
-                            [](const std::string& id) { switchMinecraft(id); }, [] { return familyVersions; });
-                    SelectWidget select("new#minecraft", version);
-                    select.bounds(Page::controlRight() - 180.0f, y + Page::FIELD_Y, 180.0f, FIELD_H).block(rowsBlocked);
-                    select.paint();
-                } else {
-                    float versionW = UiFont::width(minecraft, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                    UiRender::textY(minecraft, Page::controlRight() - 28.0f - versionW, y, Page::ROW_H,
-                                    UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                }
+            if (loaderRows > 0) {
+                Page::caption("加载器", y);
+                y += Page::CAPTION_H;
+                Page::card(y, loaderRows);
             }
-            y += Page::ROW_H;
-            int rowIndex = 1;
+            int rowIndex = 0;
             for (const blb::instance::loader_choice& choice : choices) {
                 loader_type type = choice.type;
-                bool picked = chosen.count(type) != 0;
-                std::string status;
-                uint32_t color = UiTheme::textMuted();
-                bool enabled = picked || choice.state == blb::instance::choice_state::available;
-                if (picked) {
-                    status = chosen.at(type);
-                    color = UiTheme::textSecondary();
+                RowView view;
+                view.checked = chosen.count(type) != 0;
+                view.busy = wanting.count(type) != 0;
+                view.color = UiTheme::textMuted();
+                bool needs = choice.state == blb::instance::choice_state::requires_loader;
+                const Catalog::LoaderVersions* versions = needs ? nullptr : &Catalog::loader(type, minecraft);
+                const blb::install::loader_version* latest = versions != nullptr ? newest(*versions) : nullptr;
+                if (view.checked) {
+                    view.status = chosen.at(type);
+                    view.color = UiTheme::textSecondary();
+                    view.checkable = true;
+                    view.openable = true;
+                } else if (needs) {
+                    view.status = "需要先选择 " + loaderLabelOf(choice.related);
+                    view.dim = true;
+                } else if (versions->status == Catalog::Status::Ready && latest == nullptr) {
+                    view.status = "不支持该版本";
+                    view.dim = true;
                 } else if (choice.state == blb::instance::choice_state::incompatible) {
-                    status = "与 " + loaderLabelOf(choice.related) + " 不兼容";
-                } else if (choice.state == blb::instance::choice_state::requires_loader) {
-                    status = "需要先选择 " + loaderLabelOf(choice.related);
+                    view.status = "与 " + loaderLabelOf(choice.related) + " 不兼容";
+                    view.checkable = true;
                 } else {
-                    status = "未选择";
+                    view.status = view.busy                               ? std::string("正在获取版本…")
+                            : versions->status == Catalog::Status::Failed ? std::string("获取版本失败")
+                            : latest != nullptr                           ? "最新 " + latest->version
+                                                                          : std::string();
+                    view.color = UiTheme::textFaint();
+                    view.checkable = true;
+                    view.openable = true;
                 }
                 int index = rowIndex++;
-                RowAction action = Page::shown(y)
-                        ? loaderRow("new#row#" + std::to_string((int) type), Icons::loader(type), 0xf1b2,
-                                    Installer::loaderName(type), status, color, enabled, picked, y, rowsBlocked,
-                                    Page::rowCorners(index, loaderRows))
-                        : RowAction::None;
+                RowAction action = Page::shown(y) ? loaderRow("new#row#" + std::to_string((int) type),
+                                                              Icons::loader(type), Installer::loaderName(type), view, y,
+                                                              rowsBlocked, Page::rowCorners(index, loaderRows))
+                                                  : RowAction::None;
                 if (action == RowAction::Open) {
                     picking = type;
                     steps.go(STEP_LOADER);
-                } else if (action == RowAction::Clear) {
-                    loaderSelection.remove(type);
-                    if (type == loader_type::fabric_api) {
-                        autoFabricApi = false;
-                        automaticFabricApi.clear();
-                    }
+                } else if (action == RowAction::Toggle) {
+                    toggle(choice);
                 }
                 y += Page::ROW_H;
             }
@@ -1213,12 +1099,8 @@ namespace NewInstanceScreen {
                         }
                     });
             if (clicked >= 0) {
-                loaderSelection.select(picking, versions.list[clicked].version);
-                autoFabricApi = editing.empty() && picking == loader_type::fabric;
-                fabricApiRequested = false;
-                if (picking == loader_type::fabric_api) {
-                    automaticFabricApi.clear();
-                }
+                wanting.erase(picking);
+                choose(picking, versions.list[clicked].version);
                 steps.go(STEP_SETUP);
             }
         }
@@ -1274,6 +1156,7 @@ namespace NewInstanceScreen {
     void reset() {
         loaderSelection.reset();
         familyVersions.clear();
+        wanting.clear();
         autoFabricApi = false;
         fabricApiRequested = false;
         automaticFabricApi.clear();
@@ -1286,10 +1169,9 @@ namespace NewInstanceScreen {
         loaderReadError.clear();
         steps.go(STEP_VERSIONS);
         steps.mix = 1.0f;
-        last.clear();
         for (auto it = UiState::motionMap.begin(); it != UiState::motionMap.end();) {
             const std::string& id = it->first;
-            if (id.rfind("new#install#", 0) == 0 || id.rfind("new#ring#", 0) == 0 || id.rfind("new#part#", 0) == 0) {
+            if (id.rfind("new#install#", 0) == 0) {
                 it = UiState::motionMap.erase(it);
             } else {
                 ++it;

@@ -10,6 +10,7 @@
 #include "app/system/AsyncTasks.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
+#include "app/system/Transfers.h"
 
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
@@ -52,6 +53,7 @@ namespace ModManager {
             std::mutex lock;
             Phase phase = Phase::Downloading;
             float fraction = -1.0f;
+            uint64_t transfer = 0;
         };
 
         struct Identification {
@@ -741,6 +743,7 @@ namespace ModManager {
             explicit Sink(std::shared_ptr<Shared> shared) : shared(std::move(shared)) {}
 
             void on_progress(const blb::progress_event& event) override {
+                Transfers::report(shared->transfer, event);
                 if (event.total_bytes == 0) {
                     return;
                 }
@@ -753,6 +756,7 @@ namespace ModManager {
         };
 
         void enter(const std::shared_ptr<Shared>& shared, Phase phase) {
+            Transfers::stage(shared->transfer, phase == Phase::Verifying ? "正在校验" : "正在替换文件");
             std::lock_guard<std::mutex> guard(shared->lock);
             shared->phase = phase;
             shared->fraction = -1.0f;
@@ -1484,13 +1488,30 @@ namespace ModManager {
         state.shared = shared;
         state.cancel = source;
         size_t count = steps.size();
+        Transfers::Spec spec;
+        spec.kind = Transfers::Kind::Mods;
+        spec.title = entry->info.id;
+        spec.minecraft = entry->info.minecraft_version;
+        spec.instance = key;
+        spec.folder = folder;
+        spec.cancel = [key] { ModManager::cancel(key); };
+        shared->transfer = Transfers::begin(std::move(spec));
+        Transfers::stage(shared->transfer, "正在下载模组更新");
         applying.run(
                 [key, steps, before, folder, shared, source, count](blb::cancellation_token) -> Continuation {
                     Outcome outcome = transact(steps, before, folder, shared, source->token());
-                    return [key, outcome, count] { finished(key, outcome, count); };
+                    return [key, outcome, count, shared] {
+                        Transfers::finish(shared->transfer,
+                                          outcome.cancelled    ? Transfers::State::Cancelled
+                                                  : outcome.ok ? Transfers::State::Done
+                                                               : Transfers::State::Failed,
+                                          outcome.error);
+                        finished(key, outcome, count);
+                    };
                 },
-                [key](const std::string& error) -> Continuation {
-                    return [key, error] {
+                [key, shared](const std::string& error) -> Continuation {
+                    return [key, error, shared] {
+                        Transfers::finish(shared->transfer, Transfers::State::Failed, error);
                         Outcome outcome;
                         outcome.error = error;
                         finished(key, outcome, 0);

@@ -14,6 +14,7 @@
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Catalog.h"
+#include "app/system/Transfers.h"
 
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
@@ -60,6 +61,8 @@ namespace Game {
             std::thread preparer;
             std::shared_ptr<blb::cancellation_source> cancelling;
             std::atomic<float> fraction{-1.0f};
+            std::string minecraft;
+            std::atomic<uint64_t> transfer{0};
 
             std::mutex lock;
             bool prepared = false;
@@ -205,9 +208,29 @@ namespace Game {
                     }
                 }
                 if (!download) {
+                    if (live.transfer != 0) {
+                        Transfers::report(live.transfer, event);
+                    }
                     return;
                 }
                 std::lock_guard<std::mutex> guard(tasks);
+                if (live.transfer == 0 && event.total_items > event.done_items && !event.finished) {
+                    Transfers::Spec spec;
+                    spec.kind = Transfers::Kind::Launch;
+                    spec.title = live.name;
+                    spec.minecraft = live.minecraft;
+                    spec.instance = live.key;
+                    spec.cancel = [key = live.key] { Game::cancel(key); };
+                    live.transfer = Transfers::begin(std::move(spec));
+                }
+                if (live.transfer != 0) {
+                    int index = stepOfTask(task);
+                    Transfers::stage(live.transfer,
+                                     index == 2           ? "正在下载 Java"
+                                             : index == 3 ? "正在下载本地库"
+                                                          : "正在补全游戏文件");
+                    Transfers::report(live.transfer, event);
+                }
                 if (event.total_bytes > 0 && !event.finished) {
                     sizes[task] = {event.done_bytes, event.total_bytes};
                 } else {
@@ -274,6 +297,13 @@ namespace Game {
                 Catalog::seenJava(blb::path_from_utf8(javaUsed));
             }
             takeAccount(live);
+            if (uint64_t transfer = live.transfer.exchange(0); transfer != 0) {
+                Transfers::finish(transfer,
+                                  game && game->valid()  ? Transfers::State::Done
+                                          : wasCancelled ? Transfers::State::Cancelled
+                                                         : Transfers::State::Failed,
+                                  error);
+            }
             if (game && game->valid()) {
                 live.game = std::move(*game);
                 live.killed = false;
@@ -552,6 +582,7 @@ namespace Game {
         live.id = nextId++;
         live.key = target;
         live.name = entry->info.id;
+        live.minecraft = entry->info.minecraft_version;
         live.accountKey = Accounts::keyOf(*account);
         live.accountName = account->name;
         live.visibility = options.launcher_visibility;

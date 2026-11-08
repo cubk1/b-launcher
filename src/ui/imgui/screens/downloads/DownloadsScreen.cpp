@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/downloads/AuthorPage.h"
 #include "ui/imgui/screens/downloads/DownloadsParts.h"
+#include "ui/imgui/screens/downloads/JavaPage.h"
 #include "ui/imgui/screens/downloads/Prerequisites.h"
 #include "ui/imgui/screens/downloads/ProjectPage.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
@@ -137,8 +138,10 @@ namespace DownloadsScreen {
         bool allLoaders = false;
         Source source = Source::Modrinth;
         constexpr int AGGREGATE_PAGE = 2;
+        constexpr int JAVA_PAGE = 3;
         PageTransition sourceViews(AGGREGATE_PAGE);
         bool aggregate = true;
+        bool java = false;
         Source browsing = Source::Modrinth;
         Source aggregateSource = Source::Modrinth;
         std::string asking;
@@ -943,6 +946,13 @@ namespace DownloadsScreen {
         }
 
         void enterAggregate() {
+            if (java) {
+                java = false;
+                if (aggregate) {
+                    sourceViews.go(AGGREGATE_PAGE);
+                    return;
+                }
+            }
             if (aggregate) {
                 routes.clear();
                 views.go(VIEW_RESULTS);
@@ -963,6 +973,13 @@ namespace DownloadsScreen {
         }
 
         void switchSource(Source next) {
+            if (java) {
+                java = false;
+                if (!aggregate && next == source) {
+                    sourceViews.go((int) source);
+                    return;
+                }
+            }
             if (!aggregate && next == source) {
                 routes.clear();
                 views.go(VIEW_RESULTS);
@@ -998,10 +1015,16 @@ namespace DownloadsScreen {
             sourceViews.go((int) next);
         }
 
+        void enterJava() {
+            stopEditing();
+            java = true;
+            sourceViews.go(JAVA_PAGE);
+        }
+
         bool sourceRow(Source each, float y, bool blocked) {
             std::string id = std::string("downloads#source#") + Addons::sourceName(each);
             float x = Page::left();
-            bool active = !aggregate && source == each;
+            bool active = !java && !aggregate && source == each;
             bool hovered = !blocked && NewUi::hit(x, y, SIDE_W, NAV_ITEM_H);
             float r = UiState::motion(id, active ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
             if (r > 0.001f) {
@@ -1024,9 +1047,9 @@ namespace DownloadsScreen {
         void side(bool covered) {
             float y = Page::TOP;
             NavItemWidget search("downloads#aggregate", Ui::glyph(0xf002), "搜索");
-            search.selected(aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            search.selected(aggregate && !java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             search.paint();
-            if (search.pressed && (!aggregate || views.page != VIEW_RESULTS)) {
+            if (search.pressed && (java || !aggregate || views.page != VIEW_RESULTS)) {
                 enterAggregate();
             }
             y += NAV_STEP;
@@ -1036,7 +1059,14 @@ namespace DownloadsScreen {
                 }
                 y += NAV_STEP;
             }
-            if (aggregate) {
+            NavItemWidget runtime("downloads#java", Ui::glyph(0xf0f4), "Java");
+            runtime.selected(java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            runtime.paint();
+            if (runtime.pressed && !java) {
+                enterJava();
+            }
+            y += NAV_STEP;
+            if (aggregate || java) {
                 return;
             }
             y += 4.0f;
@@ -1948,7 +1978,9 @@ namespace DownloadsScreen {
         side(covered);
         sourceViews.begin();
         views.begin();
-        if (!routes.empty()) {
+        if (java) {
+            JavaPage::draw(mainX(), covered);
+        } else if (!routes.empty()) {
             drawRoute(covered);
         } else if (aggregate) {
             aggregateView(covered);
@@ -1966,6 +1998,13 @@ namespace DownloadsScreen {
         enterWith(key);
         started = true;
         followed = true;
+    }
+
+    void openJava() {
+        if (!java) {
+            enterJava();
+        }
+        MainWindow::showDownloads();
     }
 
     void open(Addons::Kind kind) {
@@ -2129,12 +2168,13 @@ namespace DownloadsParts {
             return;
         }
         const std::string& title = route.hit.title;
+        const std::string& icon = route.hit.iconUrl;
         if (kind == Kind::Mod && Prerequisites::needed(version)) {
-            Prerequisites::open(version, title, saveAs, owner);
+            Prerequisites::open(version, title, saveAs, owner, icon);
             return;
         }
         if (saveAs) {
-            ProjectInstaller::saveAs(version, title);
+            ProjectInstaller::saveAs(version, title, icon);
             return;
         }
         switch (kind) {
@@ -2151,12 +2191,12 @@ namespace DownloadsParts {
                 std::filesystem::path start =
                         entry != nullptr ? entry->gameDirectory / "saves" : Platform::exeDirectory();
                 if (std::optional<std::filesystem::path> folder = Platform::pickFolder(start)) {
-                    ProjectInstaller::saveTo(version, *folder, title);
+                    ProjectInstaller::saveTo(version, *folder, title, icon);
                 }
                 break;
             }
-            case Kind::World: ProjectInstaller::installWorld(version, title, owner); break;
-            default: ProjectInstaller::install(version, kind, title, owner); break;
+            case Kind::World: ProjectInstaller::installWorld(version, title, owner, icon); break;
+            default: ProjectInstaller::install(version, kind, title, owner, std::nullopt, icon); break;
         }
     }
 

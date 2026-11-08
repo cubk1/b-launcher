@@ -7,6 +7,7 @@
 #include "ui/imgui/screens/shell/Background.h"
 #include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
+#include "ui/imgui/screens/downloads/TransfersScreen.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
@@ -20,7 +21,6 @@
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/instances/InstancePage.h"
-#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/launch/LaunchButton.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
@@ -28,6 +28,7 @@
 #include "ui/imgui/screens/settings/SettingsScreen.h"
 #include "ui/imgui/screens/versions/VersionsScreen.h"
 #include "app/system/Platform.h"
+#include "app/system/Transfers.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
@@ -85,7 +86,7 @@ namespace MainWindow {
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
-    static const float FOOTER_H = 10.0f + 5 * ITEM_STEP + 10.0f;
+    static const float FOOTER_H = 10.0f + 6 * ITEM_STEP + 10.0f;
     static const float GROUP_H = 26.0f;
     static const float GROUP_GAP = 6.0f;
 
@@ -97,6 +98,7 @@ namespace MainWindow {
     static const int PAGE_EDIT_LOADERS = 1004;
     static const int PAGE_MULTIPLAYER = 1005;
     static const int PAGE_VERSIONS = 1006;
+    static const int PAGE_TRANSFERS = 1007;
     static const int INSTANCE_PAGES = 10000;
 
     static const float SHELL_RADIUS = 14.0f;
@@ -219,14 +221,7 @@ namespace MainWindow {
                                                         std::string());
                     }
                 },
-                [](const std::string& key, bool loadersChanged) {
-                    NewInstanceScreen::reset();
-                    if (loadersChanged) {
-                        openVersionSettings(key);
-                    } else {
-                        showHome();
-                    }
-                },
+                [](const std::string&, bool) {},
                 [](const std::string&) { showHome(); },
         });
     }
@@ -287,6 +282,11 @@ namespace MainWindow {
     void showDownloads() {
         Compact::request(false);
         pages.go(PAGE_DOWNLOADS);
+    }
+
+    void showTransfers() {
+        Compact::request(false);
+        pages.go(PAGE_TRANSFERS);
     }
 
     void showVersions() {
@@ -1056,18 +1056,21 @@ namespace MainWindow {
         float footerY = height() - FOOTER_H;
         UiRender::hLine(12.0f, sideW - 12.0f, footerY, UiTheme::divider());
         float rowY = footerY + 10.0f;
-        if (navItem("nav#new", 0xf067, "新建实例", ITEM_X, rowY, itemW, PAGE_NEW_INSTANCE) && !Installer::running()) {
+        if (navItem("nav#new", 0xf067, "新建实例", ITEM_X, rowY, itemW, PAGE_NEW_INSTANCE)) {
             NewInstanceScreen::leaveModpack();
         }
-        const b_launcher_base::auth::account* account = Accounts::current();
-        navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
-                account != nullptr ? account->name : std::string());
-        if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
+        if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
             DownloadsScreen::openFor(Instances::selected());
         }
-        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
+        int transferring = Transfers::running();
+        navItem("nav#transfers", 0xf0ae, "下载列表", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_TRANSFERS, false, 0,
+                transferring > 0 ? std::to_string(transferring) : std::string());
+        const b_launcher_base::auth::account* account = Accounts::current();
+        navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
+                account != nullptr ? account->name : std::string());
+        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
-        navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS);
+        navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 5 * ITEM_STEP, itemW, PAGE_SETTINGS);
         UiRender::unscissor();
     }
 
@@ -1153,6 +1156,8 @@ namespace MainWindow {
             AccountsScreen::draw();
         } else if (pages.page == PAGE_DOWNLOADS) {
             DownloadsScreen::draw();
+        } else if (pages.page == PAGE_TRANSFERS) {
+            TransfersScreen::draw();
         } else if (pages.page == PAGE_MULTIPLAYER) {
             MultiplayerScreen::draw();
         } else if (pages.page == PAGE_VERSIONS) {

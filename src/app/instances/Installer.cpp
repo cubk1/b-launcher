@@ -5,6 +5,7 @@
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
 #include "app/system/Catalog.h"
+#include "app/system/Transfers.h"
 
 #include <core/base/cancellation.hpp>
 #include <core/base/hash.hpp>
@@ -45,6 +46,7 @@ namespace Installer {
         Clock::time_point startedAt;
         std::string finishedKey;
         bool modifying = false;
+        uint64_t transfer = 0;
 
         std::mutex lock;
         bool done = false;
@@ -280,9 +282,13 @@ namespace Installer {
                         }
                     }
                 }
+                if (kind == "verify") {
+                    Transfers::report(transfer, event);
+                }
                 if (kind != "download") {
                     return;
                 }
+                Transfers::report(transfer, event);
                 std::lock_guard<std::mutex> guard(totals);
                 if (event.total_bytes > 0) {
                     sizes[task] = {event.finished ? event.total_bytes : event.done_bytes, event.total_bytes};
@@ -416,6 +422,18 @@ namespace Installer {
             }
         }
 
+        void track(Transfers::Kind kind, const std::filesystem::path& root, const std::string& source,
+                   const std::string& id, const std::string& minecraft) {
+            Transfers::Spec spec;
+            spec.kind = kind;
+            spec.title = kind == Transfers::Kind::Instance ? "Minecraft " + minecraft : id;
+            spec.minecraft = minecraft;
+            spec.instance = Instances::keyOf(source, id);
+            spec.folder = blb::meta::game_layout(root).version_dir(id);
+            spec.cancel = [] { Installer::cancel(); };
+            transfer = Transfers::begin(std::move(spec));
+        }
+
         void finished(const std::string& result, const std::string& error, bool wasCancelled) {
             std::lock_guard<std::mutex> guard(lock);
             installedId = result;
@@ -452,6 +470,7 @@ namespace Installer {
                 ? pack.file
                 : blb::fs::temp_sibling(std::filesystem::temp_directory_path() / "b-launcher-pack.mrpack");
         std::vector<std::filesystem::path> made = newFolders(root, {id});
+        track(Transfers::Kind::Modpack, root, source, id, pack.minecraft);
         blb::net::download_task download;
         download.urls = pack.urls;
         download.target = archive;
@@ -548,6 +567,7 @@ namespace Installer {
             expected = loaders.empty() ? minecraft : blb::install::default_version_id(request, infos);
         }
         std::vector<std::filesystem::path> made = newFolders(root, {expected});
+        track(Transfers::Kind::Instance, root, source, expected, minecraft);
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
         worker = std::thread([root, request, token, made, javaOptions, javaKnown] {
@@ -611,6 +631,7 @@ namespace Installer {
         blb::cancellation_token token = cancelling->token();
         std::filesystem::path root = target->root;
         std::string id = entry->info.id;
+        track(Transfers::Kind::Instance, root, entry->source, id, entry->info.minecraft_version);
         blb::instance::isolation_mode mode = Instances::isolation();
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
@@ -663,6 +684,7 @@ namespace Installer {
             }
             return;
         }
+        Transfers::stage(transfer, activity());
         std::string id;
         std::string error;
         bool wasCancelled;
@@ -682,12 +704,14 @@ namespace Installer {
                                  duration(Clock::now() - startedAt),
                          4000);
             finishAll(Part::Status::Done);
+            Transfers::finish(transfer, Transfers::State::Done);
             finishedKey = Instances::keyOf(sourceKey, id);
             lingering = true;
             lingerUntil = Clock::now() + LINGER;
             return;
         }
         busy = false;
+        Transfers::finish(transfer, wasCancelled ? Transfers::State::Cancelled : Transfers::State::Failed, error);
         if (!wasCancelled) {
             Notices::add(Notices::Kind::Failed, (modifying ? "修改加载器失败：" : "安装失败：") + error, 5000);
         }

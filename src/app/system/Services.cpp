@@ -25,6 +25,7 @@
 #include "app/system/DiskScan.h"
 #include "app/system/Network.h"
 #include "app/system/ServerStatus.h"
+#include "app/system/Transfers.h"
 #include "app/system/Updates.h"
 
 namespace Services {
@@ -65,6 +66,7 @@ namespace Services {
         Multiplayer::poll();
         CustomDownload::poll();
         DiskScan::poll();
+        Transfers::poll();
     }
 
     void stop() {

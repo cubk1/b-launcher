@@ -29,6 +29,7 @@ namespace MainWindow {
     void showAccounts();
     void showNewInstance();
     void showDownloads();
+    void showTransfers();
     void showVersions();
     void showLoaderEdit();
     void openVersionSettings(const std::string& key);

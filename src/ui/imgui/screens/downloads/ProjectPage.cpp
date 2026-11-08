@@ -934,7 +934,7 @@ namespace ProjectPage {
                             if (NewUi::click(x - 6.0f, y + cy, w + 6.0f, h)) {
                                 UiSound::request(UiSound::TICK);
                                 if (file.primary || version.files.size() == 1) {
-                                    ProjectInstaller::saveAs(version, route.hit.title);
+                                    ProjectInstaller::saveAs(version, route.hit.title, route.hit.iconUrl);
                                 } else {
                                     Platform::openUrl(file.url);
                                 }
