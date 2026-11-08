@@ -1,7 +1,6 @@
 {
   lib,
   stdenv,
-  fetchurl,
   fetchFromGitHub,
   cmake,
   ninja,
@@ -12,6 +11,7 @@
   minizip-ng,
   reproc,
   nlohmann_json,
+  simdjson,
   sdl3,
   freetype,
   fontconfig,
@@ -20,19 +20,10 @@
 }:
 
 let
-  # nixpkgs has no simdjson 5 and no libzt, so cmake/dependencies.cmake downloads them
-  # with FetchContent. The Nix build has no network, so we fetch them here and point
-  # FETCHCONTENT_SOURCE_DIR_<NAME> at the copies.
-  # Keep URLs and hashes in sync with cmake/dependencies.cmake.
-  simdjsonHeader = fetchurl {
-    url = "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader/simdjson.h";
-    sha256 = "869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae";
-  };
-  simdjsonSource = fetchurl {
-    url = "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader/simdjson.cpp";
-    sha256 = "97d622441079fae86c7c342508880168bd7bf9e3342b1f4c565077da0155ca79";
-  };
-
+  # nixpkgs has no libzt, so cmake/dependencies.cmake downloads it with FetchContent.
+  # The Nix build has no network, so we fetch it here and point
+  # FETCHCONTENT_SOURCE_DIR_LIBZT at the copy.
+  # Keep the commit in sync with cmake/dependencies.cmake.
   libzt = fetchFromGitHub {
     owner = "zerotier";
     repo = "libzt";
@@ -46,11 +37,7 @@ let
   # FetchContent skips URL_HASH and GIT_TAG once FETCHCONTENT_SOURCE_DIR_<NAME> is set,
   # so stop here when cmake/dependencies.cmake pins other versions.
   pins = builtins.readFile ../cmake/dependencies.cmake;
-  stale = lib.filter (pin: !lib.hasInfix pin pins) [
-    simdjsonHeader.outputHash
-    simdjsonSource.outputHash
-    libzt.rev
-  ];
+  stale = lib.filter (pin: !lib.hasInfix pin pins) [ libzt.rev ];
   staleMessage = "nix/unwrapped.nix: update the sources to match cmake/dependencies.cmake (${toString stale})";
 
   version = lib.head (
@@ -89,6 +76,7 @@ stdenv.mkDerivation {
     minizip-ng
     reproc
     nlohmann_json
+    simdjson
     sdl3
     freetype
     fontconfig
@@ -96,9 +84,7 @@ stdenv.mkDerivation {
 
   postUnpack = ''
     deps=$NIX_BUILD_TOP/deps
-    mkdir -p $deps/simdjson_header $deps/simdjson_source
-    cp ${simdjsonHeader} $deps/simdjson_header/simdjson.h
-    cp ${simdjsonSource} $deps/simdjson_source/simdjson.cpp
+    mkdir -p $deps
     cp -r ${libzt} $deps/libzt
     chmod -R u+w $deps
   '';

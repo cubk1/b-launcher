@@ -32,7 +32,7 @@
           b-launcher = self.packages.${pkgs.stdenv.hostPlatform.system}.b-launcher;
         in
         {
-          # The dev build uses the libraries of the shell. FetchContent downloads simdjson and libzt:
+          # The dev build uses the libraries of the shell. FetchContent downloads libzt:
           #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
