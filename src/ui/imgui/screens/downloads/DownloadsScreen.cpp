@@ -161,6 +161,7 @@ namespace DownloadsScreen {
         };
         Tab tabs[2];
         Tab aggregateTab;
+        std::map<std::pair<int, int>, Tab> kindTabs;
 
         std::string fitEnd(const std::string& text, float available, float size) {
             return UiFont::fitEnd(text, UiFont::MEDIUM, size, available);
@@ -892,19 +893,33 @@ namespace DownloadsScreen {
             return h;
         }
 
+        void keep(Tab& out);
+        void resume(const Tab& in);
+        void stopEditing();
+
         void switchKind(Kind kind) {
             if (query.kind != kind) {
-                query.kind = kind;
-                query.page = 0;
-                query.categories.clear();
-                query.loaders.clear();
-                query.gameVersion.clear();
-                query.client = false;
-                query.server = false;
-                shown = Addons::Results();
-                allLoaders = false;
-                retarget();
-                followInstance();
+                stopEditing();
+                keep(kindTabs[{(int) source, (int) query.kind}]);
+                auto saved = kindTabs.find({(int) source, (int) kind});
+                if (saved != kindTabs.end() && saved->second.ready) {
+                    resume(saved->second);
+                } else {
+                    query.kind = kind;
+                    query.text.clear();
+                    query.page = 0;
+                    query.categories.clear();
+                    query.loaders.clear();
+                    query.gameVersion.clear();
+                    query.client = false;
+                    query.server = false;
+                    typed.clear();
+                    shown = Addons::Results();
+                    folded.clear();
+                    allLoaders = false;
+                    retarget();
+                    followInstance();
+                }
             }
             routes.clear();
             views.go(VIEW_RESULTS);
