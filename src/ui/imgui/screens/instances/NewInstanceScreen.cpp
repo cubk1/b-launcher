@@ -3,6 +3,7 @@
 #include "app/system/Catalog.h"
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "app/instances/Covers.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Installer.h"
 #include "app/instances/LoaderSelection.h"
@@ -10,6 +11,7 @@
 #include "app/instances/InstanceSettings.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
+#include "ui/imgui/screens/shell/Textures.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/panel/NewUi.h"
@@ -336,6 +338,44 @@ namespace NewInstanceScreen {
             return key.find('.') == std::string::npos ? key + ".x" : key;
         }
 
+        std::string majorKey(const blb::meta::manifest_version& version, std::string& upcoming) {
+            Catalog::Kind kind = Catalog::kindOf(version);
+            std::string key;
+            if (kind == Catalog::Kind::Release) {
+                key = familyOf(version.id);
+                upcoming = key;
+            } else if (kind == Catalog::Kind::AprilFools) {
+                key = APRIL_PREFIX + version.id;
+            } else if (kind == Catalog::Kind::Old) {
+                key = STAGE_PREFIX + stageOf(version.id);
+            } else {
+                key = weekly(version.id) ? upcoming : familyOf(leadingVersion(version.id));
+            }
+            if (key.empty()) {
+                key = kind == Catalog::Kind::Release ? version.id : SNAPSHOT_GROUP;
+            }
+            return key;
+        }
+
+        const std::vector<std::string>& coverKeys(const Catalog::Versions& all) {
+            static std::vector<std::string> cached;
+            static std::string signature;
+            std::string now = std::to_string((uintptr_t) all.list.data()) + "#" + std::to_string(all.list.size());
+            if (now == signature) {
+                return cached;
+            }
+            signature = now;
+            cached.clear();
+            std::string upcoming;
+            for (const blb::meta::manifest_version& version : all.list) {
+                std::string key = majorKey(version, upcoming);
+                if (std::find(cached.begin(), cached.end(), key) == cached.end()) {
+                    cached.push_back(key);
+                }
+            }
+            return cached;
+        }
+
         const std::vector<Major>& majors(const Catalog::Versions& all, const std::string& query) {
             static std::vector<Major> cached;
             static std::string signature;
@@ -352,21 +392,7 @@ namespace NewInstanceScreen {
             std::map<std::string, size_t> index;
             std::string upcoming;
             for (const blb::meta::manifest_version& version : all.list) {
-                Catalog::Kind kind = Catalog::kindOf(version);
-                std::string key;
-                if (kind == Catalog::Kind::Release) {
-                    key = familyOf(version.id);
-                    upcoming = key;
-                } else if (kind == Catalog::Kind::AprilFools) {
-                    key = APRIL_PREFIX + version.id;
-                } else if (kind == Catalog::Kind::Old) {
-                    key = STAGE_PREFIX + stageOf(version.id);
-                } else {
-                    key = weekly(version.id) ? upcoming : familyOf(leadingVersion(version.id));
-                }
-                if (key.empty()) {
-                    key = kind == Catalog::Kind::Release ? version.id : SNAPSHOT_GROUP;
-                }
+                std::string key = majorKey(version, upcoming);
                 if (std::find(kinds.begin(), kinds.end(), kindOf(version)) == kinds.end() ||
                     !blb::icontains(version.id, query)) {
                     continue;
@@ -390,7 +416,7 @@ namespace NewInstanceScreen {
         }
 
         float tileHeight(float tileW) {
-            return std::clamp(tileW * TILE_RATIO, 150.0f, 200.0f);
+            return tileW * TILE_RATIO;
         }
 
         uint32_t placeholderTint(const std::string& key, int alpha) {
@@ -405,25 +431,46 @@ namespace NewInstanceScreen {
             std::string id = "new#major#" + major.key;
             bool hovered = !blocked && NewUi::hit(x, y, w, h);
             float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            float left = x;
             float top = y;
-            bool captioned = major.key.rfind(APRIL_PREFIX, 0) != 0;
-            UiRender::roundRectGradientV(x, top, w, h, CARD_RADIUS, placeholderTint(major.key, 255),
-                                         UiRender::mix(placeholderTint(major.key, 255), 0xFF000000u, 0.45f));
+            float width = w;
+            float height = h;
+            std::shared_ptr<const Pixels> cover = Covers::get(major.key);
+            bool captioned = cover == nullptr || major.key.rfind(APRIL_PREFIX, 0) != 0;
+            if (cover != nullptr) {
+                float pixel = UiRender::pixelScale();
+                float per = UiRender::transformW(1.0f) * pixel;
+                float screenX = UiRender::transformX(x) * pixel;
+                float screenY = UiRender::transformY(y) * pixel;
+                left = x + (std::round(screenX) - screenX) / per;
+                top = y + (std::round(screenY) - screenY) / per;
+                if (std::fabs((float) cover->height - h * per) < 1.5f) {
+                    width = (float) cover->width / per;
+                    height = (float) cover->height / per;
+                }
+                UiRender::roundTexture(Textures::of(cover), left, top, width, height, CARD_RADIUS, 0.0f, 0u,
+                                       (float) cover->width, (float) cover->height);
+            } else {
+                UiRender::roundRectGradientV(x, y, w, h, CARD_RADIUS, placeholderTint(major.key, 255),
+                                             UiRender::mix(placeholderTint(major.key, 255), 0xFF000000u, 0.45f));
+            }
             if (captioned) {
-                UiRender::roundRectGradientV(x, top + h * 0.45f, w, h * 0.55f, CARD_RADIUS, 0x00000000u, 0xB3000000u);
+                UiRender::roundRectGradientV(left, top + height * 0.45f, width, height * 0.55f, CARD_RADIUS,
+                                             0x00000000u, 0xB3000000u);
             }
             if (hover > 0.001f) {
-                UiRender::roundRect(x, top, w, h, CARD_RADIUS, UiRender::color(255, 255, 255, Ui::round(24 * hover)));
+                UiRender::roundRect(left, top, width, height, CARD_RADIUS,
+                                    UiRender::color(255, 255, 255, Ui::round(24 * hover)));
             }
             if (captioned) {
                 std::string count = std::to_string(major.versions.size()) + " 个版本";
-                float countY = top + h - 10.0f - 16.0f;
+                float countY = top + height - 10.0f - 16.0f;
                 float labelY = countY - 22.0f;
-                std::string label = UiFont::fitEnd(major.label, UiFont::MEDIUM, 17.0f, w - 21.0f);
+                std::string label = UiFont::fitEnd(major.label, UiFont::MEDIUM, 17.0f, width - 21.0f);
                 for (float shift : {0.0f, 0.7f}) {
-                    UiRender::textY(label, x + 10.0f + shift, labelY, 22.0f, 0xFFFFFFFFu, UiFont::MEDIUM, 17.0f);
+                    UiRender::textY(label, left + 10.0f + shift, labelY, 22.0f, 0xFFFFFFFFu, UiFont::MEDIUM, 17.0f);
                 }
-                UiRender::textY(count, x + 10.0f, countY, 16.0f, 0xB3FFFFFFu, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                UiRender::textY(count, left + 10.0f, countY, 16.0f, 0xB3FFFFFFu, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             }
             if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::PAGE);
@@ -507,17 +554,22 @@ namespace NewInstanceScreen {
                 }
                 return;
             }
+            float x = Page::left();
+            float w = Page::width();
+            int columns = tileColumns(w);
+            float tileW = tileWidth(w, columns);
+            float tileH = tileHeight(tileW);
+            if (!Covers::ready(coverKeys(all),
+                               (int) std::lround(tileH * UiRender::stableScale() * UiRender::pixelScale()))) {
+                message("正在加载版本封面…", UiTheme::textMuted(), true);
+                return;
+            }
             const std::vector<Major>& groups = majors(all, query);
             if (groups.empty()) {
                 message(query.empty() ? std::string("没有符合筛选的版本") : "没有找到“" + query + "”",
                         UiTheme::textMuted());
                 return;
             }
-            float x = Page::left();
-            float w = Page::width();
-            int columns = tileColumns(w);
-            float tileW = tileWidth(w, columns);
-            float tileH = tileHeight(tileW);
             int rows = ((int) groups.size() + columns - 1) / columns;
             float contentH = 6.0f + rows * tileH + (rows - 1) * TILE_GAP + 8.0f;
             Page::Scroll body("new#versions", Page::TOP + 40.0f, MainWindow::height() - 14.0f, contentH);

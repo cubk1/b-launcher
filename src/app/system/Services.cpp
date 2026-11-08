@@ -6,6 +6,7 @@
 #include "app/downloads/Addons.h"
 #include "app/downloads/DownloadSources.h"
 #include "app/downloads/ProjectInstaller.h"
+#include "app/instances/Covers.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Exports.h"
 #include "app/instances/Installer.h"
@@ -56,6 +57,7 @@ namespace Services {
         Screenshots::poll();
         Exports::poll();
         Drops::poll();
+        Covers::poll();
         Updates::poll();
         JavaDownloads::poll();
         ShortcutLaunch::poll();
@@ -71,6 +73,7 @@ namespace Services {
         DiskScan::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
+        Covers::shutdown();
         Drops::shutdown();
         JavaDownloads::shutdown();
         Exports::shutdown();
