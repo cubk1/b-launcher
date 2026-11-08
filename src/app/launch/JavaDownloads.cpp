@@ -629,8 +629,9 @@ namespace JavaDownloads {
 #endif
             }
             std::filesystem::remove(archive, ec);
+            std::optional<blb::java::java_installation> installed;
+            std::filesystem::path home = temp;
             if (error.empty()) {
-                std::filesystem::path home = temp;
                 std::string prefix = normalize(package.homePrefix);
                 if (!prefix.empty()) {
                     home /= blb::path_from_utf8(prefix);
@@ -646,7 +647,11 @@ namespace JavaDownloads {
 #endif
                 if (error.empty()) {
                     auto checked = blb::java::probe_java(home, true, token, {}, true);
-                    if (!checked) error = checked.err().message;
+                    if (checked) {
+                        installed = *checked;
+                    } else {
+                        error = checked.err().message;
+                    }
                 }
             }
             if (error.empty()) {
@@ -658,21 +663,13 @@ namespace JavaDownloads {
             }
             if (!error.empty()) {
                 std::filesystem::remove_all(temp, ec);
-            }
-#if defined(_WIN32)
-            std::filesystem::path java = homeOf(package) / "bin" / "java.exe";
-#else
-            std::filesystem::path java = homeOf(package) / "bin" / "java";
-#endif
-            std::optional<blb::java::java_installation> installed;
-            if (error.empty()) {
-                auto checked = blb::java::probe_java(java, true, token, {}, true);
-                if (checked) {
-                    installed = *checked;
-                    installed->source = blb::java::java_source::managed;
-                } else {
-                    error = checked.err().message;
-                }
+            } else {
+                // The probe ran in the temporary folder. Use the paths in the installed folder.
+                std::filesystem::path moved = homeOf(package);
+                installed->executable = moved / installed->executable.lexically_relative(home);
+                installed->gui_executable = moved / installed->gui_executable.lexically_relative(home);
+                installed->home = moved;
+                installed->source = blb::java::java_source::managed;
             }
             std::string label = name(package) + " " + package.version;
             return [job, error, installed, label] {

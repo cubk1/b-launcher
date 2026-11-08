@@ -480,10 +480,12 @@ scan_java (const scan_options &options, cancellation_token token)
 }
 
 void
-prune_missing (std::vector<java_installation> &installs)
+prune_unusable (std::vector<java_installation> &installs, cancellation_token token)
 {
-  std::erase_if (installs, [] (const java_installation &install) {
-    return !fs::exists (install.executable);
+  bool generic = runs_generic_binaries ();
+  std::erase_if (installs, [&] (const java_installation &install) {
+    return !fs::exists (install.executable)
+           || (!generic && !probe_java (install.home, true, token));
   });
 }
 }
