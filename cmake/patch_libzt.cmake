@@ -1,3 +1,10 @@
+set(controls "${SOURCE_DIR}/src/Controls.cpp")
+file(READ "${controls}" content)
+string(REGEX REPLACE "\n[ \t]*pthread_exit\\(0\\);" "" patched "${content}")
+if(NOT patched STREQUAL content)
+  file(WRITE "${controls}" "${patched}")
+endif()
+
 if(NOT COMPILER_ID MATCHES "Clang" OR COMPILER_VERSION VERSION_LESS 18)
   return()
 endif()
