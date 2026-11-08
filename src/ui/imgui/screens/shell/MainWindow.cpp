@@ -198,6 +198,14 @@ namespace MainWindow {
         }
     }
 
+    static void summon() {
+        if (Compact::active()) {
+            Compact::reveal();
+        } else {
+            Platform::raiseWindow();
+        }
+    }
+
     void init() {
         Notices::show({
                 [](Notices::Kind kind, const std::string& text, long long durationMs) {
@@ -225,13 +233,10 @@ namespace MainWindow {
                 [](const std::string&, bool) {},
                 [](const std::string&) { showHome(); },
                 [](std::shared_ptr<const Crashes::Report> report) {
-                    if (Compact::active()) {
-                        Compact::reveal();
-                    } else {
-                        Platform::raiseWindow();
-                    }
+                    summon();
                     CrashDialog::open(std::move(report));
                 },
+                summon,
         });
     }
 

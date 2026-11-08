@@ -16,6 +16,7 @@ namespace Interface {
         std::function<void(const std::string& key, bool loadersChanged)> installed;
         std::function<void(const std::string& key)> showInstance;
         std::function<void(std::shared_ptr<const Crashes::Report> report)> crashed;
+        std::function<void()> summon;
     };
 
     void connect(Handlers handlers);
@@ -24,4 +25,6 @@ namespace Interface {
     void installed(const std::string& key, bool loadersChanged);
     void showInstance(const std::string& key);
     bool crashed(std::shared_ptr<const Crashes::Report> report);
+    void summon();
+    void poll();
 }
