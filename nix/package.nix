@@ -1,7 +1,7 @@
 {
   lib,
   symlinkJoin,
-  makeWrapper,
+  makeBinaryWrapper,
   b-launcher-unwrapped,
   addDriverRunpath,
   libx11,
@@ -34,6 +34,9 @@
   # The launcher finds Java in JAVA_HOME and PATH. Java homes listed here (e.g. [ jdk8 jdk21 ])
   # are found too. For the same Java version, the launcher uses them before JAVA_HOME and PATH.
   jdks ? [ ],
+  # More libraries for LD_LIBRARY_PATH of the game, and more programs for its PATH.
+  additionalLibs ? [ ],
+  additionalPrograms ? [ ],
 }:
 
 let
@@ -67,23 +70,27 @@ let
     (lib.getLib stdenv.cc.cc)
     vulkan-loader
     flite
-  ];
+  ]
+  ++ additionalLibs;
 
   nixosJavaHomes = lib.concatMapStringsSep ":" (jdk: jdk.home) jdks;
   nixosLibraryPath = "${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath gameLibs}";
   # LWJGL 2 (Minecraft 1.12.2 and older) runs xrandr. OSHI runs lspci.
-  nixosPath = lib.makeBinPath [
-    xrandr
-    pciutils
-  ];
+  nixosPath = lib.makeBinPath (
+    [
+      xrandr
+      pciutils
+    ]
+    ++ additionalPrograms
+  );
 in
 symlinkJoin {
-  name = "b-launcher-${b-launcher-unwrapped.version}";
+  pname = "b-launcher";
   inherit (b-launcher-unwrapped) version;
 
   paths = [ b-launcher-unwrapped ];
 
-  nativeBuildInputs = [ makeWrapper ];
+  nativeBuildInputs = [ makeBinaryWrapper ];
 
   # The launcher reads BLB_NIXOS_* on NixOS only. Desktop shortcuts run BLB_EXECUTABLE (this
   # wrapper), because /proc/self/exe is the program in b-launcher-unwrapped.
@@ -106,5 +113,13 @@ symlinkJoin {
       ;
   };
 
-  meta = b-launcher-unwrapped.meta;
+  meta = {
+    inherit (b-launcher-unwrapped.meta)
+      description
+      homepage
+      license
+      mainProgram
+      platforms
+      ;
+  };
 }
