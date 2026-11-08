@@ -200,30 +200,37 @@ else()
   endif()
 endif()
 
-set(BLB_SIMDJSON_RAW
-  "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader")
-FetchContent_Declare(simdjson_header
-  URL ${BLB_SIMDJSON_RAW}/simdjson.h
-  URL_HASH SHA256=869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae
-  DOWNLOAD_NO_EXTRACT TRUE)
-FetchContent_Declare(simdjson_source
-  URL ${BLB_SIMDJSON_RAW}/simdjson.cpp
-  URL_HASH SHA256=97d622441079fae86c7c342508880168bd7bf9e3342b1f4c565077da0155ca79
-  DOWNLOAD_NO_EXTRACT TRUE)
-FetchContent_MakeAvailable(simdjson_header simdjson_source)
+if(BLB_SYSTEM_LIBS)
+  find_package(simdjson REQUIRED)
+  add_library(blb_simdjson INTERFACE)
+  target_link_libraries(blb_simdjson INTERFACE simdjson::simdjson)
+  target_compile_definitions(blb_simdjson INTERFACE SIMDJSON_DISABLE_DEPRECATED_API=1)
+else()
+  set(BLB_SIMDJSON_RAW
+    "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader")
+  FetchContent_Declare(simdjson_header
+    URL ${BLB_SIMDJSON_RAW}/simdjson.h
+    URL_HASH SHA256=869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae
+    DOWNLOAD_NO_EXTRACT TRUE)
+  FetchContent_Declare(simdjson_source
+    URL ${BLB_SIMDJSON_RAW}/simdjson.cpp
+    URL_HASH SHA256=97d622441079fae86c7c342508880168bd7bf9e3342b1f4c565077da0155ca79
+    DOWNLOAD_NO_EXTRACT TRUE)
+  FetchContent_MakeAvailable(simdjson_header simdjson_source)
 
-set(BLB_SIMDJSON_DIR "${CMAKE_BINARY_DIR}/simdjson")
-configure_file("${simdjson_header_SOURCE_DIR}/simdjson.h"
-  "${BLB_SIMDJSON_DIR}/simdjson.h" COPYONLY)
-configure_file("${simdjson_source_SOURCE_DIR}/simdjson.cpp"
-  "${BLB_SIMDJSON_DIR}/simdjson.cpp" COPYONLY)
-add_library(blb_simdjson STATIC "${BLB_SIMDJSON_DIR}/simdjson.cpp")
-target_include_directories(blb_simdjson SYSTEM PUBLIC "${BLB_SIMDJSON_DIR}")
-target_compile_features(blb_simdjson PUBLIC cxx_std_20)
-target_compile_definitions(blb_simdjson PUBLIC
-  SIMDJSON_IMPLEMENTATION_ICELAKE=0
-  SIMDJSON_IMPLEMENTATION_WESTMERE=0
-  SIMDJSON_DISABLE_DEPRECATED_API=1)
+  set(BLB_SIMDJSON_DIR "${CMAKE_BINARY_DIR}/simdjson")
+  configure_file("${simdjson_header_SOURCE_DIR}/simdjson.h"
+    "${BLB_SIMDJSON_DIR}/simdjson.h" COPYONLY)
+  configure_file("${simdjson_source_SOURCE_DIR}/simdjson.cpp"
+    "${BLB_SIMDJSON_DIR}/simdjson.cpp" COPYONLY)
+  add_library(blb_simdjson STATIC "${BLB_SIMDJSON_DIR}/simdjson.cpp")
+  target_include_directories(blb_simdjson SYSTEM PUBLIC "${BLB_SIMDJSON_DIR}")
+  target_compile_features(blb_simdjson PUBLIC cxx_std_20)
+  target_compile_definitions(blb_simdjson PUBLIC
+    SIMDJSON_IMPLEMENTATION_ICELAKE=0
+    SIMDJSON_IMPLEMENTATION_WESTMERE=0
+    SIMDJSON_DISABLE_DEPRECATED_API=1)
+endif()
 
 if(NOT WIN32)
   blb_force(BUILD_STATIC_LIB ON)

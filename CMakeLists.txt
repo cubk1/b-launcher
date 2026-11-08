@@ -57,7 +57,7 @@ if (DEFINED ENV{BLB_SYSTEM_LIBS})
 else ()
     set(BLB_SYSTEM_LIBS_DEFAULT OFF)
 endif ()
-option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, SDL3, FreeType and fontconfig"
+option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, simdjson, SDL3, FreeType and fontconfig"
         ${BLB_SYSTEM_LIBS_DEFAULT})
 # Package managers update the launcher themselves, so they turn this off.
 option(BLB_UPDATE_CHECK "Check for new launcher versions" ON)
