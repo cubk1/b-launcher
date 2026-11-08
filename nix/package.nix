@@ -32,7 +32,7 @@
   xrandr,
   pciutils,
   # The launcher finds Java in JAVA_HOME and PATH. Java homes listed here (e.g. [ jdk8 jdk21 ])
-  # are found too.
+  # are found too. For the same Java version, the launcher uses them before JAVA_HOME and PATH.
   jdks ? [ ],
 }:
 
@@ -85,9 +85,11 @@ symlinkJoin {
 
   nativeBuildInputs = [ makeWrapper ];
 
-  # The launcher reads these on NixOS only.
+  # The launcher reads BLB_NIXOS_* on NixOS only. Desktop shortcuts run BLB_EXECUTABLE (this
+  # wrapper), because /proc/self/exe is the program in b-launcher-unwrapped.
   postBuild = ''
     wrapProgram $out/bin/b-launcher \
+      --set BLB_EXECUTABLE "$out/bin/b-launcher" \
       --set BLB_NIXOS_JAVA ${lib.escapeShellArg nixosJavaHomes} \
       --set BLB_NIXOS_LIBRARY_PATH ${lib.escapeShellArg nixosLibraryPath} \
       --set BLB_NIXOS_PATH ${lib.escapeShellArg nixosPath}

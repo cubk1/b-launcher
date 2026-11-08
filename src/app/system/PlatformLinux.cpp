@@ -94,11 +94,20 @@ namespace Platform {
             return S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_uid == getuid();
         }
 
+        // The Nix package runs this program through a wrapper that sets BLB_NIXOS_*, and the wrapper
+        // puts its own path in BLB_EXECUTABLE. A shortcut must run the wrapper, not this program.
         // A /nix/store path breaks after an update and garbage collection, so a shortcut uses
         // the profile link on PATH (e.g. /run/current-system/sw/bin) that points to the same file.
-        std::filesystem::path stableExecutable(const std::filesystem::path& exe) {
+        std::filesystem::path shortcutExecutable() {
+            std::filesystem::path exe = executablePath();
             if (!blb::path_to_utf8(exe).starts_with("/nix/store/")) {
                 return exe;
+            }
+            if (auto wrapper = blb::environment("BLB_EXECUTABLE"); wrapper && wrapper->starts_with('/')) {
+                std::error_code error;
+                if (std::filesystem::is_regular_file(blb::path_from_utf8(*wrapper), error)) {
+                    exe = blb::path_from_utf8(*wrapper);
+                }
             }
             std::string path = blb::environment("PATH").value_or("");
             for (std::string_view entry : blb::split(path, ':')) {
@@ -184,7 +193,7 @@ namespace Platform {
         if (file.extension() != ".desktop") {
             file += ".desktop";
         }
-        std::filesystem::path exe = stableExecutable(executablePath());
+        std::filesystem::path exe = shortcutExecutable();
         std::filesystem::path icon = shortcut.icon;
         if (icon.empty()) {
             icon = configDirectory() / "b-launcher.svg";

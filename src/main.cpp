@@ -26,7 +26,10 @@ int main() {
     Platform::waitForPrevious();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
-    if (!Config::data().value("allowMultipleInstances", true) && Platform::forwardLaunch(pendingLaunch, headless)) {
+    // A shortcut launch always goes to the running launcher. A plain start goes there only when
+    // multiple launchers are not allowed.
+    bool forward = !pendingLaunch.empty() || !Config::data().value("allowMultipleInstances", true);
+    if (forward && Platform::forwardLaunch(pendingLaunch, headless)) {
         return 0;
     }
     if (!pendingLaunch.empty()) {

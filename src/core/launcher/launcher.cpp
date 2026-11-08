@@ -173,11 +173,7 @@ game_launcher::java_candidates (bool rescan, cancellation_token token,
   if (!m_impl->java_cache && !rescan && known && wrapper.empty ())
     {
       m_impl->java_cache = *known;
-      java::prune_missing (*m_impl->java_cache);
-      if (!runs_generic_binaries ())
-        std::erase_if (*m_impl->java_cache, [&] (const auto &install) {
-          return !java::probe_java (install.home, true, token);
-        });
+      java::prune_unusable (*m_impl->java_cache, token);
     }
   if (!m_impl->java_cache || rescan)
     {
@@ -213,11 +209,13 @@ game_launcher::resolve_java (const meta::version &resolved,
       return install;
     }
   auto requirement = java::requirement_for (resolved);
+  // True when java_candidates gives a cached list. With a new wrapper, it scans again.
   bool cached;
   {
     std::lock_guard lock (m_impl->java_mutex);
-    cached = m_impl->java_cache.has_value ()
-             || m_impl->installer->options ().java_candidates.has_value ();
+    cached = (m_impl->java_cache && m_impl->java_wrapper == settings.wrapper)
+             || (settings.wrapper.empty ()
+                 && m_impl->installer->options ().java_candidates);
   }
   auto candidates = java_candidates (false, token, settings.wrapper);
   BLB_TRY (token.check ());

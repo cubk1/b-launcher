@@ -118,16 +118,23 @@ int main(int argc, char **argv)
 
         auto local = *java;
         local.major = 21;
+        local.version = "21.0.9";
         local.source = blb::java::java_source::system;
         auto path = local;
         path.major = 25;
+        path.version = "25.0.1";
         path.source = blb::java::java_source::path;
         blb::java::java_requirement requirement;
         requirement.min_major = requirement.preferred_major = 21;
         std::vector<blb::java::java_installation> choices{local, path};
         auto chosen = blb::java::select_java(choices, requirement);
-        require(chosen && chosen->major == (blb::is_nixos() ? 25 : 21),
-                "NixOS must prefer suitable Java from the environment");
+        require(chosen && chosen->major == 21, "the exact Java version must win over Java from PATH");
+        choices[1].major = 21;
+        choices[1].version = "21.0.1";
+        chosen = blb::java::select_java(choices, requirement);
+        require(chosen && chosen->source == (blb::is_nixos() ? blb::java::java_source::path
+                                                             : blb::java::java_source::system),
+                "NixOS must prefer Java from PATH for the same version");
         choices[1].major = 8;
         chosen = blb::java::select_java(choices, requirement);
         require(chosen && chosen->major == 21, "environment priority must respect the game requirement");

@@ -1,6 +1,5 @@
 #include "app/system/Platform.h"
 #include "app/system/PlatformPosix.h"
-#include "app/system/Config.h"
 #include "app/launch/ShortcutLaunch.h"
 
 #include <core/base/fs.hpp>
@@ -410,20 +409,16 @@ namespace Platform {
 
     void claimTaskbar() {}
 
+    // Listen also when multiple launchers are allowed, so that shortcuts go to this launcher.
     void claimLaunches() {
-        if (Config::data().value("allowMultipleInstances", true)) {
-            launches.reset();
-        } else if (!launches.listening()) {
+        if (!launches.listening()) {
             launches.forward_or_listen(launchDirectory(), {});
         }
     }
 
     void pollLaunches() {
         if (auto message = launches.receive(); message && !message->empty()) {
-            bool quiet = message->front() == '1';
-            std::string key = message->substr(1);
-            if (!key.empty()) ShortcutLaunch::request(key, quiet);
-            if (!quiet) showWindow();
+            ShortcutLaunch::forwarded(message->substr(1), message->front() == '1');
         }
     }
 

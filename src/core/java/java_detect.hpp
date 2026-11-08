@@ -63,5 +63,7 @@ probe_java (const std::filesystem::path &home_or_executable,
             bool verify_execution = false);
 std::vector<java_installation> scan_java (const scan_options &options = {},
                                           cancellation_token token = {});
-void prune_missing (std::vector<java_installation> &installs);
+// Drops a Java that is gone, and on NixOS without nix-ld a Java that starts only through a wrapper.
+void prune_unusable (std::vector<java_installation> &installs,
+                     cancellation_token token = {});
 }

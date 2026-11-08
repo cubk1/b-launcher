@@ -247,9 +247,21 @@ endif()
 
 set(BUILD_SHARED_LIBS ${BLB_SAVED_BUILD_SHARED_LIBS})
 
-set(BLB_CURL_TARGET CURL::libcurl_static)
+# A system package can export static targets too, but BLB_SYSTEM_LIBS links the shared ones.
+if(BLB_SYSTEM_LIBS)
+  set(BLB_LINK_KIND shared)
+else()
+  set(BLB_LINK_KIND static)
+endif()
+
+set(BLB_CURL_TARGET CURL::libcurl_${BLB_LINK_KIND})
 if(NOT TARGET ${BLB_CURL_TARGET})
   set(BLB_CURL_TARGET CURL::libcurl)
+endif()
+
+set(BLB_SDL3_TARGET SDL3::SDL3-${BLB_LINK_KIND})
+if(NOT TARGET ${BLB_SDL3_TARGET})
+  set(BLB_SDL3_TARGET SDL3::SDL3)
 endif()
 
 set(BLB_MINIZIP_TARGET minizip)
@@ -260,7 +272,3 @@ if(NOT TARGET ${BLB_MINIZIP_TARGET})
   set(BLB_MINIZIP_TARGET MINIZIP::minizip-ng)
 endif()
 
-set(BLB_SDL3_TARGET SDL3::SDL3-static)
-if(NOT TARGET ${BLB_SDL3_TARGET})
-  set(BLB_SDL3_TARGET SDL3::SDL3)
-endif()

@@ -37,6 +37,8 @@ nix run github:cubk1/b-launcher
 # or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
 # The launcher finds Java in JAVA_HOME and PATH, for example environment.systemPackages = [ pkgs.jdk21 ].
 # To give more JDKs to the launcher, use .override { jdks = [ pkgs.jdk8 pkgs.jdk21 ]; } on the package.
+# The launcher uses the Java version that the game needs. For the same version, it uses jdks first,
+# then JAVA_HOME, then PATH.
 # With programs.nix-ld.enable = true, the launcher can also download Java.
 ```
 

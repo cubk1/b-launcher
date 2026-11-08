@@ -18,9 +18,11 @@
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/platform.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
+#include <core/java/java_detect.hpp>
 #include <core/launcher/launcher.hpp>
 
 #include <algorithm>
@@ -651,10 +653,15 @@ namespace Game {
                     std::string java = blb::path_to_utf8(ready->java.executable);
                     GameLog::note(log, "Java：" + java + "（" + ready->java.version + "）");
                     ready->command.environment.insert(ready->command.environment.begin(), {"INST_JAVA", java});
+                    // The Java list is also for loader installs, which do not use the instance wrapper.
+                    bool standalone = settings.wrapper.empty() || blb::runs_generic_binaries() ||
+                            blb::java::probe_java(ready->java.home, true, token);
                     {
                         std::lock_guard<std::mutex> guard(self->lock);
                         self->javaUsed = java;
-                        self->javaInstall = ready->java;
+                        if (standalone) {
+                            self->javaInstall = ready->java;
+                        }
                     }
                     LaunchDefaults::applyLanguage(language, directory, minecraft, optionsFile);
                     if (!preLaunch.empty()) {

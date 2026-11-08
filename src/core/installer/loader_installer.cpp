@@ -123,7 +123,8 @@ struct loader_installer::impl
     if (!java_cache && installer->options ().java_candidates)
       {
         java_cache = *installer->options ().java_candidates;
-        java::prune_missing (*java_cache);
+        // The installer runs Java without the instance wrapper.
+        java::prune_unusable (*java_cache, token);
       }
     if (java_cache)
       {
