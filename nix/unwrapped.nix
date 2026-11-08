@@ -2,6 +2,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
+  applyPatches,
   cmake,
   ninja,
   pkg-config,
@@ -20,34 +21,33 @@
 }:
 
 let
-  # nixpkgs has no libzt, so cmake/dependencies.cmake downloads it with FetchContent.
-  # The Nix build has no network, so we fetch it here and point
-  # FETCHCONTENT_SOURCE_DIR_LIBZT at the copy.
-  # Keep the commit in sync with cmake/dependencies.cmake.
-  libzt = fetchFromGitHub {
-    owner = "zerotier";
-    repo = "libzt";
-    rev = "a707ea6ae0910efdc1125d04758c411e2e9ea4f9";
-    fetchSubmodules = true;
-    hash = "sha256-7XlMdyyo49fS1mXFll6SM0u5GH+HzxuDYbIpjjRJyvs=";
+  # nixpkgs has no libzt, so cmake/dependencies.cmake downloads it with FetchContent. The Nix
+  # build has no network, so FETCHCONTENT_SOURCE_DIR_LIBZT points at this copy. FetchContent
+  # does not run PATCH_COMMAND for a local source dir, so patch it here.
+  libzt = applyPatches {
+    src = fetchFromGitHub {
+      owner = "zerotier";
+      repo = "libzt";
+      rev = "a707ea6ae0910efdc1125d04758c411e2e9ea4f9";
+      fetchSubmodules = true;
+      hash = "sha256-7XlMdyyo49fS1mXFll6SM0u5GH+HzxuDYbIpjjRJyvs=";
+    };
+    nativeBuildInputs = [ cmake ];
+    postPatch = ''
+      cmake -DSOURCE_DIR=. -DCOMPILER_ID=${if stdenv.cc.isClang then "Clang" else "GNU"} \
+        -DCOMPILER_VERSION=${stdenv.cc.version} -P ${../cmake/patch_libzt.cmake}
+    '';
   };
-
-  compilerId = if stdenv.cc.isClang then "Clang" else "GNU";
-
-  # FetchContent skips URL_HASH and GIT_TAG once FETCHCONTENT_SOURCE_DIR_<NAME> is set,
-  # so stop here when cmake/dependencies.cmake pins other versions.
-  pins = builtins.readFile ../cmake/dependencies.cmake;
-  stale = lib.filter (pin: !lib.hasInfix pin pins) [ libzt.rev ];
-  staleMessage = "nix/unwrapped.nix: update the sources to match cmake/dependencies.cmake (${toString stale})";
-
+in
+# FetchContent skips GIT_TAG once FETCHCONTENT_SOURCE_DIR_LIBZT is set.
+assert lib.assertMsg (lib.hasInfix libzt.rev (
+  builtins.readFile ../cmake/dependencies.cmake
+)) "nix/unwrapped.nix: update libzt to the GIT_TAG in cmake/dependencies.cmake";
+stdenv.mkDerivation (finalAttrs: {
+  pname = "b-launcher-unwrapped";
   version = lib.head (
     builtins.match ".*project\\(b-launcher VERSION ([0-9.]+).*" (builtins.readFile ../CMakeLists.txt)
   );
-in
-assert lib.assertMsg (stale == [ ]) staleMessage;
-stdenv.mkDerivation {
-  pname = "b-launcher-unwrapped";
-  inherit version;
 
   src = lib.fileset.toSource {
     root = ../.;
@@ -61,6 +61,7 @@ stdenv.mkDerivation {
     ];
   };
 
+  __structuredAttrs = true;
   strictDeps = true;
 
   nativeBuildInputs = [
@@ -82,61 +83,17 @@ stdenv.mkDerivation {
     fontconfig
   ];
 
-  postUnpack = ''
-    deps=$NIX_BUILD_TOP/deps
-    mkdir -p $deps
-    cp -r ${libzt} $deps/libzt
-    chmod -R u+w $deps
-  '';
-
-  # FetchContent does not run PATCH_COMMAND for a local source dir,
-  # so run the same patch script by hand.
-  preConfigure = ''
-    deps=$NIX_BUILD_TOP/deps
-    cmake -DSOURCE_DIR=$deps/libzt -DCOMPILER_ID=${compilerId} \
-      -DCOMPILER_VERSION=${stdenv.cc.version} -P cmake/patch_libzt.cmake
-    for name in $(ls $deps); do
-      appendToVar cmakeFlags "-DFETCHCONTENT_SOURCE_DIR_''${name^^}=$deps/$name"
-    done
-  '';
-
   cmakeFlags = [
     (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
+    (lib.cmakeFeature "FETCHCONTENT_SOURCE_DIR_LIBZT" "${libzt}")
     (lib.cmakeBool "BLB_SYSTEM_LIBS" true)
     # Nix updates the package.
     (lib.cmakeBool "BLB_UPDATE_CHECK" false)
     (lib.cmakeFeature "BLB_GIT_COMMIT" gitCommit)
-    (lib.cmakeBool "BLB_TESTS" true)
-  ];
-
-  ninjaFlags = [
-    "b-launcher"
-    "b-launcher-tests"
+    (lib.cmakeBool "BLB_TESTS" finalAttrs.doCheck)
   ];
 
   doCheck = true;
-  checkPhase = ''
-    runHook preCheck
-    ctest --output-on-failure
-    runHook postCheck
-  '';
-
-  installPhase = ''
-    runHook preInstall
-    install -Dm755 b-launcher $out/bin/b-launcher
-    install -Dm644 $src/assets/images/logo.svg $out/share/icons/hicolor/scalable/apps/b-launcher.svg
-    install -Dm644 /dev/stdin $out/share/applications/b-launcher.desktop <<EOF
-    [Desktop Entry]
-    Type=Application
-    Name=B Launcher
-    Comment=Minecraft launcher
-    Exec=b-launcher
-    Icon=b-launcher
-    Categories=Game;
-    Terminal=false
-    EOF
-    runHook postInstall
-  '';
 
   meta = {
     description = "Lightweight Minecraft launcher written in C++";
@@ -145,4 +102,4 @@ stdenv.mkDerivation {
     mainProgram = "b-launcher";
     platforms = lib.platforms.linux;
   };
-}
+})
