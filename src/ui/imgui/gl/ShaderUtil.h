@@ -20,8 +20,7 @@ namespace ShaderUtil {
         CHECK = 9,
         ARC = 10,
         ICON = 11,
-        SHELL = 12,
-        CORNER_MASK = 13
+        SHELL = 12
     };
 
     struct Prim {
@@ -89,8 +88,7 @@ namespace ShaderUtil {
                uint32_t mainRgba);
     void shell(float x, float y, float width, float height, float split, float radius, uint32_t plateRgba,
                uint32_t mainRgba, float outerRadius);
-    // Multiplies everything drawn so far by the coverage of a rounded rectangle.
-    void maskCorners(float x, float y, float width, float height, float radius);
+    bool cutCorners(int width, int height, float radius);
 
     void queueBlur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,
                    int cornerMask, float gamma);
