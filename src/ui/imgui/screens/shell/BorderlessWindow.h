@@ -13,6 +13,7 @@
 #include <string>
 
 class ResizeSurface;
+class WindowShadow;
 
 class BorderlessWindow {
 public:
@@ -77,8 +78,10 @@ private:
     void applyRegion();
     bool composeAlpha(bool on);
     bool alphaPixels() const;
+    int dpi() const;
     int cornerRadius() const;
     void cutCorners();
+    void syncShadow(const RECT* bounds, bool hiding = false);
     bool createGlContext(HGLRC share);
 
     int minWidth = 0;
@@ -95,6 +98,7 @@ private:
     void releaseResize();
 
     std::unique_ptr<ResizeSurface> resizeSurface;
+    std::unique_ptr<WindowShadow> shadow;
 
     bool regionCorners = false;
     bool regionSuspended = false;
