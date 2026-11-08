@@ -60,6 +60,8 @@ namespace Catalog {
     void seenJava(const blb::java::java_installation& java);
     void refreshJava();
     void addJava(const std::filesystem::path& path);
+    // A Java that the caller already probed, e.g. a download. It is also shown again after a remove.
+    void addJava(const blb::java::java_installation& java);
     bool addedByHand(const std::filesystem::path& executable);
     void removeJava(const std::filesystem::path& executable);
 

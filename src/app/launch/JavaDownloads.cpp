@@ -676,7 +676,7 @@ namespace JavaDownloads {
                 job->state = error.empty() ? State::Done : State::Failed;
                 if (error.empty()) {
                     job->fraction = 1.0f;
-                    Catalog::seenJava(*installed);
+                    Catalog::addJava(*installed);
                     Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
                 } else {
                     Notices::add(Notices::Kind::Failed, "安装 " + label + " 失败：" + error, 5000);

@@ -201,10 +201,14 @@ game_launcher::resolve_java (const meta::version &resolved,
                              progress_sink *progress, cancellation_token token)
 {
   BLB_TRY (token.check ());
+  // Only NixOS without nix-ld needs the instance wrapper (e.g. steam-run) to start Java.
+  // Other systems do not run each Java through a wrapper such as gamemoderun.
+  static const std::vector<std::string> no_wrapper;
+  const auto &wrapper = runs_generic_binaries () ? no_wrapper : settings.wrapper;
   if (settings.java)
     {
       BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true,
-                                                      token, settings.wrapper));
+                                                      token, wrapper));
       install.source = java::java_source::user;
       return install;
     }
@@ -213,22 +217,22 @@ game_launcher::resolve_java (const meta::version &resolved,
   bool cached;
   {
     std::lock_guard lock (m_impl->java_mutex);
-    cached = (m_impl->java_cache && m_impl->java_wrapper == settings.wrapper)
-             || (settings.wrapper.empty ()
+    cached = (m_impl->java_cache && m_impl->java_wrapper == wrapper)
+             || (wrapper.empty ()
                  && m_impl->installer->options ().java_candidates);
   }
-  auto candidates = java_candidates (false, token, settings.wrapper);
+  auto candidates = java_candidates (false, token, wrapper);
   BLB_TRY (token.check ());
   if (auto chosen = java::select_java (candidates, requirement))
     return *chosen;
   if (cached)
     {
-      candidates = java_candidates (true, token, settings.wrapper);
+      candidates = java_candidates (true, token, wrapper);
       BLB_TRY (token.check ());
       if (auto chosen = java::select_java (candidates, requirement))
         return *chosen;
     }
-  if (auto blocked = java::runtime_blocked (settings.wrapper))
+  if (auto blocked = java::runtime_blocked (wrapper))
     return *blocked;
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,
@@ -238,8 +242,7 @@ game_launcher::resolve_java (const meta::version &resolved,
   BLB_TRY_ASSIGN (auto installed,
                   java::install_runtime (*m_impl->installer,
                                          requirement.component, progress,
-                                         token, std::nullopt,
-                                         settings.wrapper));
+                                         token, std::nullopt, wrapper));
   {
     std::lock_guard lock (m_impl->java_mutex);
     if (m_impl->java_cache)

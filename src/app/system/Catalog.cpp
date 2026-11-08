@@ -394,6 +394,24 @@ namespace Catalog {
         }
     }
 
+    void addJava(const blb::java::java_installation& java) {
+        std::vector<std::string> added = pathList("javaPaths");
+        if (!listed(added, java.executable)) {
+            added.push_back(blb::path_to_utf8(java.executable));
+            savePathList("javaPaths", added);
+        }
+        std::vector<std::string> hiddenList = pathList("javaHidden");
+        if (listed(hiddenList, java.executable)) {
+            unlist(hiddenList, java.executable);
+            savePathList("javaHidden", hiddenList);
+        }
+        if (std::none_of(javaList.list.begin(), javaList.list.end(),
+                         [&](const blb::java::java_installation& listed) { return sameJava(listed, java); })) {
+            javaList.list.push_back(java);
+            sortJava(javaList.list);
+        }
+    }
+
     void addJava(const std::filesystem::path& path) {
         tasks.run(
                 [path](blb::cancellation_token token) -> Continuation {
@@ -404,23 +422,7 @@ namespace Catalog {
                     }
                     blb::java::java_installation java = *probed;
                     return [java] {
-                        std::vector<std::string> added = pathList("javaPaths");
-                        if (!listed(added, java.executable)) {
-                            added.push_back(blb::path_to_utf8(java.executable));
-                            savePathList("javaPaths", added);
-                        }
-                        std::vector<std::string> hiddenList = pathList("javaHidden");
-                        if (listed(hiddenList, java.executable)) {
-                            unlist(hiddenList, java.executable);
-                            savePathList("javaHidden", hiddenList);
-                        }
-                        if (std::none_of(javaList.list.begin(), javaList.list.end(),
-                                         [&](const blb::java::java_installation& listed) {
-                                             return sameJava(listed, java);
-                                         })) {
-                            javaList.list.push_back(java);
-                            sortJava(javaList.list);
-                        }
+                        addJava(java);
                         Notices::add(Notices::Kind::Done, "已添加Java " + java.version, 3000);
                     };
                 },
