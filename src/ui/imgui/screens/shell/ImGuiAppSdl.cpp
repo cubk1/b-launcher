@@ -355,6 +355,7 @@ namespace ImGuiApp {
         bool launchFailed = false;
         SDL_SetHint(SDL_HINT_APP_ID, "b-launcher");
         SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+        SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0");
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
             return 1;
         }
