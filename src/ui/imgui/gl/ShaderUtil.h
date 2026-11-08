@@ -88,6 +88,7 @@ namespace ShaderUtil {
                uint32_t mainRgba);
     void shell(float x, float y, float width, float height, float split, float radius, uint32_t plateRgba,
                uint32_t mainRgba, float outerRadius);
+    bool cutCorners(int width, int height, float radius);
 
     void queueBlur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,
                    int cornerMask, float gamma);

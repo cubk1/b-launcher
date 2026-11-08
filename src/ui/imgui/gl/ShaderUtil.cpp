@@ -60,6 +60,8 @@ namespace ShaderUtil {
     static bool iconFailed;
     static Shader shellShader;
     static bool shellFailed;
+    static Shader cornerMaskShader;
+    static bool cornerMaskFailed;
 
     static GLuint captureTextureId;
     static int captureWidth;
@@ -410,6 +412,39 @@ void main() {
                     roundRectShader, RECT_VERT, frag,
                     {"u_proj", "u_rect", "u_rectSize", "u_color", "u_colorB", "u_gradient", "u_radius", "u_corner"})) {
             roundRectFailed = true;
+            return false;
+        }
+        return true;
+    }
+
+    static bool ensureCornerMaskShader() {
+        if (cornerMaskShader.program != 0) {
+            return true;
+        }
+        if (cornerMaskFailed) {
+            return false;
+        }
+        // Circular corners like the DWM corners of Windows 11. The superellipse of sdRoundBox has a
+        // visibly sharper tip at a window's small radius.
+        const char* frag = R"GLSL(#version 150 core
+
+uniform vec2  u_rectSize;
+uniform float u_radius;
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+void main() {
+    vec2 halfSize = u_rectSize * 0.5;
+    float r = min(u_radius, min(halfSize.x, halfSize.y));
+    vec2 q = abs(v_uv * u_rectSize - halfSize) - halfSize + r;
+    float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 1e-5);
+    fragColor = vec4(1.0, 1.0, 1.0, clamp(0.5 - dist / aa, 0.0, 1.0));
+}
+)GLSL";
+        if (!compileShader(cornerMaskShader, RECT_VERT, frag, {"u_proj", "u_rect", "u_rectSize", "u_radius"})) {
+            cornerMaskFailed = true;
             return false;
         }
         return true;
@@ -1849,6 +1884,45 @@ void main() {
         p.c[0] = plateRgba;
         p.c[1] = mainRgba;
         submit(p);
+    }
+
+    bool cutCorners(int width, int height, float radius) {
+        if (width <= 0 || height <= 0 || radius <= 0.0f) {
+            return true;
+        }
+        if ((!UiGL::loaded() && !UiGL::load()) || !ensureCornerMaskShader()) {
+            return false;
+        }
+        float w = (float) width;
+        float h = (float) height;
+        float ortho[16] = {
+                2.0f / w, 0.0f, 0.0f,  0.0f, 0.0f,  -2.0f / h, 0.0f, 0.0f,
+                0.0f,     0.0f, -1.0f, 0.0f, -1.0f, 1.0f,      0.0f, 1.0f,
+        };
+        std::memcpy(mvpFloats, ortho, sizeof(ortho));
+        Viewport(0, 0, width, height);
+        Disable(UGL_CULL_FACE);
+        Disable(UGL_DEPTH_TEST);
+        Disable(UGL_STENCIL_TEST);
+        Enable(UGL_SCISSOR_TEST);
+        Enable(UGL_BLEND);
+        BlendEquation(UGL_FUNC_ADD);
+        BlendFunc(UGL_ZERO, UGL_SRC_ALPHA);
+        use(cornerMaskShader);
+        const Shader& s = cornerMaskShader;
+        Uniform4f(s["u_rect"], 0.0f, 0.0f, w, h);
+        Uniform2f(s["u_rectSize"], w, h);
+        Uniform1f(s["u_radius"], radius);
+        int side = std::min({(int) std::ceil(radius) + 1, width, height});
+        for (int corner = 0; corner < 4; corner++) {
+            Scissor((corner & 1) != 0 ? width - side : 0, (corner & 2) != 0 ? height - side : 0, side, side);
+            DrawArrays(UGL_TRIANGLES, 0, 6);
+        }
+        Disable(UGL_SCISSOR_TEST);
+        UseProgram(0);
+        BindVertexArray(0);
+        defaultBlend();
+        return true;
     }
 
     void queueBlur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,

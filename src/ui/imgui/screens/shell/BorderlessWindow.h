@@ -75,6 +75,10 @@ private:
     DWORD style() const;
     void applyFrame();
     void applyRegion();
+    bool composeAlpha(bool on);
+    bool alphaPixels() const;
+    int cornerRadius() const;
+    void cutCorners();
     bool createGlContext(HGLRC share);
 
     int minWidth = 0;
@@ -94,4 +98,5 @@ private:
 
     bool regionCorners = false;
     bool regionSuspended = false;
+    bool alphaCorners = false;
 };

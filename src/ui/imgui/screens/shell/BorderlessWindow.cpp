@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "ui/imgui/screens/shell/ResizeSurface.h"
+#include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/UiIme.h"
 
@@ -20,7 +21,7 @@ namespace {
     constexpr DWORD DWMWA_CAPTION_COLOR_ = 35;
     constexpr int DWMWCP_ROUND_ = 2;
     constexpr COLORREF DWMWA_COLOR_NONE_ = 0xFFFFFFFE;
-    constexpr int FALLBACK_RADIUS = 8;
+    constexpr int CORNER_RADIUS = 8;
     const wchar_t* const CLASS_NAME = L"b-launcher.window";
 
     struct WindowClass {
@@ -113,7 +114,6 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
         return false;
     }
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
-    applyFrame();
     if (bigIcon != nullptr || smallIcon != nullptr) {
         setIcons(bigIcon, smallIcon);
     }
@@ -128,6 +128,8 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
         }
         return false;
     }
+    // The corner fallback depends on whether the pixel format has an alpha channel.
+    applyFrame();
     return true;
 }
 
@@ -181,6 +183,10 @@ void BorderlessWindow::setFramed(bool on) {
             regionCorners = false;
             SetWindowRgn(hwnd, nullptr, TRUE);
         }
+        if (alphaCorners) {
+            alphaCorners = false;
+            composeAlpha(false);
+        }
     }
     if (changed) {
         applyFrame();
@@ -221,7 +227,8 @@ void BorderlessWindow::applyRegion() {
         SetWindowRgn(hwnd, nullptr, TRUE);
         return;
     }
-    SetWindowRgn(hwnd, CreateRoundRectRgn(0, 0, width + 1, height + 1, FALLBACK_RADIUS * 2, FALLBACK_RADIUS * 2), TRUE);
+    int radius = cornerRadius();
+    SetWindowRgn(hwnd, CreateRoundRectRgn(0, 0, width + 1, height + 1, radius * 2, radius * 2), TRUE);
 }
 
 void BorderlessWindow::setMinimumSize(int clientWidth, int clientHeight) {
@@ -260,11 +267,71 @@ void BorderlessWindow::applyFrame() {
     DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR_, &none, sizeof(none));
     int corner = DWMWCP_ROUND_;
     if (FAILED(DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_, &corner, sizeof(corner)))) {
-        // Before Windows 11 the corners are rounded by a region, which follows the size of the window.
-        regionCorners = true;
-        applyRegion();
+        // Before Windows 11 DWM cannot round the corners. A region can, but its edge is aliased, so
+        // prefer corners cut with alpha. The frame then must not extend into the client area, or DWM
+        // shows a square shadow and border through the transparent corners.
+        if (alphaPixels() && composeAlpha(true)) {
+            MARGINS flat = {0, 0, 0, 0};
+            DwmExtendFrameIntoClientArea(hwnd, &flat);
+            alphaCorners = true;
+        } else {
+            regionCorners = true;
+            applyRegion();
+        }
     }
     setDarkMode(true);
+}
+
+bool BorderlessWindow::composeAlpha(bool on) {
+    BOOL composition = FALSE;
+    if (on && (FAILED(DwmIsCompositionEnabled(&composition)) || !composition)) {
+        return false;
+    }
+    DWM_BLURBEHIND blur = {};
+    blur.dwFlags = DWM_BB_ENABLE;
+    blur.fEnable = on ? TRUE : FALSE;
+    HRGN region = nullptr;
+    if (on) {
+        // An empty blur region blurs nothing, but DWM still composes the surface with its alpha channel.
+        region = CreateRectRgn(0, 0, -1, -1);
+        if (region == nullptr) {
+            return false;
+        }
+        blur.dwFlags |= DWM_BB_BLURREGION;
+        blur.hRgnBlur = region;
+    }
+    bool done = SUCCEEDED(DwmEnableBlurBehindWindow(hwnd, &blur));
+    if (region != nullptr) {
+        DeleteObject(region);
+    }
+    return done;
+}
+
+bool BorderlessWindow::alphaPixels() const {
+    int index = deviceContext != nullptr ? GetPixelFormat(deviceContext) : 0;
+    PIXELFORMATDESCRIPTOR format = {};
+    return index != 0 && DescribePixelFormat(deviceContext, index, sizeof(format), &format) != 0 &&
+            format.cAlphaBits >= 8 && (format.dwFlags & PFD_SUPPORT_COMPOSITION) != 0;
+}
+
+int BorderlessWindow::cornerRadius() const {
+    int dpi = deviceContext != nullptr ? GetDeviceCaps(deviceContext, LOGPIXELSX) : 96;
+    return MulDiv(CORNER_RADIUS, dpi > 0 ? dpi : 96, 96);
+}
+
+void BorderlessWindow::cutCorners() {
+    if (!alphaCorners || framed || IsZoomed(hwnd) || (inSizeMove && resizeSurface)) {
+        return;
+    }
+    if (ShaderUtil::cutCorners(width, height, (float) cornerRadius())) {
+        return;
+    }
+    alphaCorners = false;
+    composeAlpha(false);
+    MARGINS margins = {1, 1, 1, 1};
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    regionCorners = true;
+    applyRegion();
 }
 
 void BorderlessWindow::setTitle(const std::wstring& title) {
@@ -342,6 +409,9 @@ void BorderlessWindow::destroy() {
         DestroyWindow(gone);
     }
     deviceContext = nullptr;
+    regionCorners = false;
+    regionSuspended = false;
+    alphaCorners = false;
 }
 
 void BorderlessWindow::show(bool maximized) {
@@ -536,7 +606,7 @@ void BorderlessWindow::modalFrame() {
     }
     {
         ModalFrameGuard guard(inModalFrame);
-        if (!resizeSurface || !resizeSurface->present(width, height, inSizeMove)) {
+        if (!resizeSurface || !resizeSurface->present(width, height, inSizeMove, [this] { cutCorners(); })) {
             onModalFrame();
         }
     }
@@ -570,6 +640,7 @@ void BorderlessWindow::swap() {
     if (resizeSurface && resizeSurface->captureFrame()) {
         return;
     }
+    cutCorners();
     SwapBuffers(deviceContext);
 }
 
