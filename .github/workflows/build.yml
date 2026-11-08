@@ -9,8 +9,8 @@ env:
   ZIG_SHA256: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
   MACOS_SDK_VERSION: 14.5
   MACOS_SDK_SHA256: 6e146275d19f027faa2e8354da5e0267513abf013b8f16ad65a231653a2b1c5d
-  RCODESIGN_VERSION: 0.29.0
-  RCODESIGN_SHA256: dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002
+  APPLE_CODESIGN_VERSION: 0.29.0
+  APPLE_CODESIGN_SHA256: dbe85cedd8ee4217b64e9a0e4c2aef92ab8bcaaa41f20bde99781ff02e600002
 
 jobs:
   windows:
@@ -106,9 +106,9 @@ jobs:
         with:
           path: |
             ${{ runner.temp }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}
-            ${{ runner.temp }}/apple-codesign-${{ env.RCODESIGN_VERSION }}-x86_64-unknown-linux-musl
+            ${{ runner.temp }}/apple-codesign-${{ env.APPLE_CODESIGN_VERSION }}-x86_64-unknown-linux-musl
             ${{ runner.temp }}/MacOSX${{ env.MACOS_SDK_VERSION }}.sdk
-          key: macos-tools-${{ env.ZIG_SHA256 }}-${{ env.MACOS_SDK_SHA256 }}-${{ env.RCODESIGN_SHA256 }}
+          key: macos-tools-${{ env.ZIG_SHA256 }}-${{ env.MACOS_SDK_SHA256 }}-${{ env.APPLE_CODESIGN_SHA256 }}
           restore-keys: macos-tools-
       - name: Install tools
         run: |
@@ -120,14 +120,14 @@ jobs:
             tar xJf zig.tar.xz -C "$RUNNER_TEMP"
             rm -f zig.tar.xz
           fi
-          if [ ! -x "$RUNNER_TEMP/apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl/rcodesign" ]; then
-            curl -sSfL -o rcodesign.tar.gz "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$RCODESIGN_VERSION/apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
-            echo "$RCODESIGN_SHA256  rcodesign.tar.gz" | sha256sum -c
+          if [ ! -x "$RUNNER_TEMP/apple-codesign-$APPLE_CODESIGN_VERSION-x86_64-unknown-linux-musl/rcodesign" ]; then
+            curl -sSfL -o rcodesign.tar.gz "https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign%2F$APPLE_CODESIGN_VERSION/apple-codesign-$APPLE_CODESIGN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+            echo "$APPLE_CODESIGN_SHA256  rcodesign.tar.gz" | sha256sum -c
             tar xzf rcodesign.tar.gz -C "$RUNNER_TEMP"
             rm -f rcodesign.tar.gz
           fi
           echo "$RUNNER_TEMP/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
-          echo "$RUNNER_TEMP/apple-codesign-$RCODESIGN_VERSION-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/apple-codesign-$APPLE_CODESIGN_VERSION-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
       - name: Prepare SDK
         run: |
           if [ ! -d "$RUNNER_TEMP/MacOSX$MACOS_SDK_VERSION.sdk" ]; then
