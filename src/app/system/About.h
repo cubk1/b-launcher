@@ -32,6 +32,7 @@ namespace About {
     inline constexpr Link THANKS[] = {
             {"BMCLAPI", "提供下载源", "https://www.bangbang93.com/"},
             {"PCL", "提供主页系统", "https://github.com/Meloong-Git/PCL"},
+            {"MC百科", "提供模组中文数据", "https://www.mcmod.cn/"},
     };
     inline constexpr Link CREDITS[] = {
             {"Dear ImGui", "MIT", "https://github.com/ocornut/imgui"},
