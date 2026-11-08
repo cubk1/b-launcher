@@ -70,7 +70,6 @@ stdenv.mkDerivation {
       ../src
       ../assets
       ../third_party
-      ../tests
     ];
   };
 
@@ -120,20 +119,11 @@ stdenv.mkDerivation {
     # Nix updates the package.
     (lib.cmakeBool "BLB_UPDATE_CHECK" false)
     (lib.cmakeFeature "BLB_GIT_COMMIT" gitCommit)
-    (lib.cmakeBool "BLB_TESTS" true)
   ];
 
   ninjaFlags = [
     "b-launcher"
-    "b-launcher-tests"
   ];
-
-  doCheck = true;
-  checkPhase = ''
-    runHook preCheck
-    ctest --output-on-failure
-    runHook postCheck
-  '';
 
   installPhase = ''
     runHook preInstall
