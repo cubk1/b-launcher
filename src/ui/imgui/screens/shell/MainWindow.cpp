@@ -783,6 +783,13 @@ namespace MainWindow {
         item.block(blocked);
         item.paint();
         playing(key, y);
+        if (item.pressStarted) {
+            bool second = pressKey == key && Ui::millis() - pressAt < 400;
+            holdKey = second ? std::string() : key;
+            holdAt = ImGui::GetTime();
+            holdX = NewUi::mouseX;
+            holdY = NewUi::mouseY;
+        }
         if (item.pressed) {
             long long now = Ui::millis();
             bool twice = pressKey == key && now - pressAt < 400;
@@ -790,10 +797,6 @@ namespace MainWindow {
             pressAt = now;
             Instances::select(key);
             pages.go(PAGE_HOME);
-            holdKey = twice ? std::string() : key;
-            holdAt = ImGui::GetTime();
-            holdX = NewUi::mouseX;
-            holdY = NewUi::mouseY;
             if (twice) {
                 LaunchButton::start(key);
             }

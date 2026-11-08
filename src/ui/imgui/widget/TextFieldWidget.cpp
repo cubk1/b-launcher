@@ -78,7 +78,8 @@ void TextFieldWidget::paint() {
     if (hovered()) {
         UiCursor::text();
     }
-    if (clicked()) {
+    // A field takes the caret on press, so that dragging from there selects text.
+    if (!blocked && NewUi::press(hitX, hitY, hitW, hitH)) {
         UiSound::request(UiSound::TICK);
         NewUi::beginTextEditAt(value, boxX + 9 + leading, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
     }
