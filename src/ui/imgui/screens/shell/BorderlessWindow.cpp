@@ -113,7 +113,6 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
         return false;
     }
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
-    applyFrame();
     if (bigIcon != nullptr || smallIcon != nullptr) {
         setIcons(bigIcon, smallIcon);
     }
@@ -128,6 +127,8 @@ bool BorderlessWindow::create(const std::wstring& title, int clientWidth, int cl
         }
         return false;
     }
+    // The corner fallback depends on whether the pixel format has an alpha channel.
+    applyFrame();
     return true;
 }
 
@@ -180,6 +181,10 @@ void BorderlessWindow::setFramed(bool on) {
         if (regionCorners) {
             regionCorners = false;
             SetWindowRgn(hwnd, nullptr, TRUE);
+        }
+        if (alphaCorners) {
+            alphaCorners = false;
+            composeAlpha(false);
         }
     }
     if (changed) {
@@ -260,11 +265,47 @@ void BorderlessWindow::applyFrame() {
     DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR_, &none, sizeof(none));
     int corner = DWMWCP_ROUND_;
     if (FAILED(DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_, &corner, sizeof(corner)))) {
-        // Before Windows 11 the corners are rounded by a region, which follows the size of the window.
-        regionCorners = true;
-        applyRegion();
+        // Before Windows 11 DWM cannot round the corners. A region can, but its edge is aliased, so
+        // prefer corners the owner masks with alpha. The frame then must not extend into the client
+        // area, or DWM shows a square shadow and border through the transparent corners.
+        if (drawsCorners && composeAlpha(true)) {
+            MARGINS flat = {0, 0, 0, 0};
+            DwmExtendFrameIntoClientArea(hwnd, &flat);
+            alphaCorners = true;
+        } else {
+            regionCorners = true;
+            applyRegion();
+        }
     }
     setDarkMode(true);
+}
+
+bool BorderlessWindow::composeAlpha(bool on) {
+    if (on && !alphaFormat) {
+        return false;
+    }
+    DWM_BLURBEHIND blur = {};
+    blur.dwFlags = DWM_BB_ENABLE;
+    blur.fEnable = on ? TRUE : FALSE;
+    HRGN region = nullptr;
+    if (on) {
+        // An empty blur region blurs nothing, but DWM still composes the surface with its alpha channel.
+        region = CreateRectRgn(0, 0, -1, -1);
+        if (region == nullptr) {
+            return false;
+        }
+        blur.dwFlags |= DWM_BB_BLURREGION;
+        blur.hRgnBlur = region;
+    }
+    bool done = SUCCEEDED(DwmEnableBlurBehindWindow(hwnd, &blur));
+    if (region != nullptr) {
+        DeleteObject(region);
+    }
+    return done;
+}
+
+bool BorderlessWindow::transparentCorners() const {
+    return alphaCorners && !framed && hwnd != nullptr && !IsZoomed(hwnd);
 }
 
 void BorderlessWindow::setTitle(const std::wstring& title) {
@@ -316,6 +357,8 @@ bool BorderlessWindow::createGlContext(HGLRC share) {
     if (format == 0 || !SetPixelFormat(deviceContext, format, &pfd)) {
         return false;
     }
+    PIXELFORMATDESCRIPTOR chosen = {};
+    alphaFormat = DescribePixelFormat(deviceContext, format, sizeof(chosen), &chosen) != 0 && chosen.cAlphaBits >= 8;
     glContext = wglCreateContext(deviceContext);
     if (glContext == nullptr) {
         return false;
@@ -342,6 +385,8 @@ void BorderlessWindow::destroy() {
         DestroyWindow(gone);
     }
     deviceContext = nullptr;
+    alphaCorners = false;
+    alphaFormat = false;
 }
 
 void BorderlessWindow::show(bool maximized) {
@@ -512,7 +557,7 @@ void BorderlessWindow::showResizeLayer(const RECT& position) {
     }
     {
         ModalFrameGuard guard(inModalFrame);
-        if (resizeSurface->updateLayer(hwnd, position)) {
+        if (resizeSurface->updateLayer(hwnd, position, alphaCorners)) {
             lastResizeFrame = GetTickCount64();
         }
     }
