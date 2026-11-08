@@ -14,6 +14,8 @@ public:
     float hitW;
     float hitH;
     bool blocked;
+    // Set by clicked(): the press landed on this widget in this frame. The click itself comes on release.
+    bool pressStarted;
 
     explicit Widget(const std::string& id);
     virtual ~Widget() = default;

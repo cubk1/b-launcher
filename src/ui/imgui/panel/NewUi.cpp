@@ -52,7 +52,14 @@ namespace NewUi {
     bool clickConsumed;
     static bool dismissClick = false;
     bool pendingClick;
+    bool pendingRelease;
     bool mouseDown;
+    static bool clickArmed = false;
+    static bool releaseConsumed = false;
+    static float armX = 0.0f;
+    static float armY = 0.0f;
+    static float armW = 0.0f;
+    static float armH = 0.0f;
     long long pressSerial;
     long long pickerOpenedPress;
     long long popupOpenedPress;
@@ -362,6 +369,11 @@ namespace NewUi {
         s.focusFieldW = focusFieldW;
         s.focusFieldH = focusFieldH;
         s.mouseDown = mouseDown;
+        s.clickArmed = clickArmed;
+        s.armX = armX;
+        s.armY = armY;
+        s.armW = armW;
+        s.armH = armH;
         s.draggingSlider = draggingSlider;
         s.scrollDragOwner = scrollDragOwner;
         s.tooltipText = tooltipText;
@@ -399,6 +411,11 @@ namespace NewUi {
         focusFieldW = s.focusFieldW;
         focusFieldH = s.focusFieldH;
         mouseDown = s.mouseDown;
+        clickArmed = s.clickArmed;
+        armX = s.armX;
+        armY = s.armY;
+        armW = s.armW;
+        armH = s.armH;
         draggingSlider = s.draggingSlider;
         scrollDragOwner = s.scrollDragOwner;
         tooltipText = s.tooltipText;
@@ -423,6 +440,11 @@ namespace NewUi {
         }
         dismissClick = false;
         pendingClick = false;
+        if (pendingRelease) {
+            clickArmed = false;
+        }
+        pendingRelease = false;
+        releaseConsumed = false;
         rightClick = false;
         middleClick = false;
         UiRender::flush();
@@ -593,19 +615,48 @@ namespace NewUi {
         nextOverlayH = h;
     }
 
-    bool click(float x, float y, float w, float h) {
+    // There are no widget ids, so the press remembers its point and the size of the area that took it. On release,
+    // only an area of that size that still holds the press point fires: a nested area (a row around its button) and
+    // a neighbour of the same size (the next row) never fire for a press that began on another area.
+    ClickPhase clickPhase(float x, float y, float w, float h) {
         if (overlaysEnabled && !subOwner.empty() && !drawingOverlay && !drawingDialog) {
-            return false;
+            return ClickPhase::None;
         }
-        if (!pendingClick || clickConsumed) {
-            return false;
+        if (!hit(x, y, w, h)) {
+            return ClickPhase::None;
         }
-        if (hit(x, y, w, h)) {
+        if (pendingClick && !clickConsumed) {
             clickConsumed = true;
-            UiSound::requestDefault();
-            return true;
+            clickArmed = true;
+            armX = mouseX;
+            armY = mouseY;
+            armW = w;
+            armH = h;
+            return ClickPhase::Down;
         }
-        return false;
+        if (pendingRelease && !releaseConsumed && std::fabs(w - armW) < 1.0f && std::fabs(h - armH) < 1.0f &&
+            pressedIn(x, y, w, h)) {
+            releaseConsumed = true;
+            UiSound::requestDefault();
+            return ClickPhase::Up;
+        }
+        return ClickPhase::None;
+    }
+
+    bool click(float x, float y, float w, float h) {
+        return clickPhase(x, y, w, h) == ClickPhase::Up;
+    }
+
+    bool press(float x, float y, float w, float h) {
+        if (!pendingClick || clickConsumed || !hit(x, y, w, h)) {
+            return false;
+        }
+        clickConsumed = true;
+        return true;
+    }
+
+    bool pressedIn(float x, float y, float w, float h) {
+        return clickArmed && armX >= x && armX <= x + w && armY >= y && armY <= y + h;
     }
 
     void closeAllOverlays() {
@@ -2378,8 +2429,10 @@ namespace NewUi {
             if (action == 1) {
                 pendingClick = true;
                 mouseDown = true;
+                clickArmed = false;
                 pressSerial++;
             } else if (action == 0) {
+                pendingRelease = true;
                 mouseDown = false;
                 draggingSlider.clear();
                 scrollDragOwner.clear();

@@ -11,7 +11,8 @@ Widget::Widget(const std::string& id)
       hitY(0.0f),
       hitW(0.0f),
       hitH(0.0f),
-      blocked(false) {}
+      blocked(false),
+      pressStarted(false) {}
 
 Widget& Widget::bounds(float x, float y, float w, float h) {
     this->x = x;
@@ -43,7 +44,9 @@ bool Widget::hovered() const {
 }
 
 bool Widget::clicked() {
-    return !blocked && NewUi::click(hitX, hitY, hitW, hitH);
+    NewUi::ClickPhase phase = blocked ? NewUi::ClickPhase::None : NewUi::clickPhase(hitX, hitY, hitW, hitH);
+    pressStarted = phase == NewUi::ClickPhase::Down;
+    return phase == NewUi::ClickPhase::Up;
 }
 
 void Widget::paint() {}
