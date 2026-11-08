@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/shell/BorderlessWindow.h"
 #include "ui/imgui/screens/shell/ResizeSurface.h"
+#include "ui/imgui/screens/shell/WindowShadow.h"
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/gl/UiGL.h"
 #include "ui/imgui/panel/UiIme.h"
@@ -314,9 +315,35 @@ bool BorderlessWindow::alphaPixels() const {
             format.cAlphaBits >= 8 && (format.dwFlags & PFD_SUPPORT_COMPOSITION) != 0;
 }
 
+int BorderlessWindow::dpi() const {
+    int value = deviceContext != nullptr ? GetDeviceCaps(deviceContext, LOGPIXELSX) : 96;
+    return value > 0 ? value : 96;
+}
+
 int BorderlessWindow::cornerRadius() const {
-    int dpi = deviceContext != nullptr ? GetDeviceCaps(deviceContext, LOGPIXELSX) : 96;
-    return MulDiv(CORNER_RADIUS, dpi > 0 ? dpi : 96, 96);
+    return MulDiv(CORNER_RADIUS, dpi(), 96);
+}
+
+void BorderlessWindow::syncShadow(const RECT* bounds, bool hiding) {
+    // Only where DWM neither rounds the window nor shadows it, which the corner fallbacks mark.
+    bool wanted = (alphaCorners || regionCorners) && !framed && !hiding && IsWindowVisible(hwnd) &&
+            !IsIconic(hwnd) && !IsZoomed(hwnd);
+    if (!wanted) {
+        if (shadow) {
+            shadow->hide();
+        }
+        return;
+    }
+    RECT rect;
+    if (bounds != nullptr) {
+        rect = *bounds;
+    } else if (!GetWindowRect(hwnd, &rect)) {
+        return;
+    }
+    if (!shadow) {
+        shadow = std::make_unique<WindowShadow>(hwnd);
+    }
+    shadow->place(rect, cornerRadius(), dpi());
 }
 
 void BorderlessWindow::cutCorners() {
@@ -395,6 +422,7 @@ bool BorderlessWindow::createGlContext(HGLRC share) {
 
 void BorderlessWindow::destroy() {
     releaseResize();
+    shadow.reset();
     if (wglGetCurrentContext() == glContext) {
         wglMakeCurrent(nullptr, nullptr);
     }
@@ -586,6 +614,8 @@ void BorderlessWindow::showResizeLayer(const RECT& position) {
             lastResizeFrame = GetTickCount64();
         }
     }
+    // Follow the temporary layer, which moves before the window itself.
+    syncShadow(&position);
     if (!inSizeMove) {
         releaseResize();
     }
@@ -725,6 +755,7 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
                 // position notifications have completed, before the next resize.
                 UpdateWindow(hwnd);
             }
+            syncShadow(nullptr, (position->flags & SWP_HIDEWINDOW) != 0);
             return result;
         }
         case WM_NCCALCSIZE:
@@ -849,6 +880,9 @@ LRESULT BorderlessWindow::handle(UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             break;
         case WM_NCACTIVATE:
+            if (shadow) {
+                shadow->setActive(wParam != FALSE);
+            }
             if (framed) {
                 break;
             }
