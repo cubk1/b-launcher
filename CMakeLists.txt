@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(b-launcher VERSION 0.4.0 LANGUAGES C CXX)
+project(b-launcher VERSION 0.5.0 LANGUAGES C CXX)
 if (APPLE)
     enable_language(OBJCXX)
     set(CMAKE_OBJCXX_STANDARD 20)
