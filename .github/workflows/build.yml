@@ -51,6 +51,13 @@ jobs:
 
   macos:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            toolchain: zig-macos-aarch64.cmake
+          - arch: x86_64
+            toolchain: zig-macos-x86_64.cmake
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
@@ -73,14 +80,14 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel
-          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/zig-macos-aarch64.cmake -DBLB_SYSROOT="$RUNNER_TEMP/MacOSX14.5.sdk"
+          -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/${{ matrix.toolchain }} -DBLB_SYSROOT="$RUNNER_TEMP/MacOSX14.5.sdk"
       - name: Build
         run: cmake --build build --target b-launcher
       - name: Package
         run: |
           cmake/package/macos-app.sh build/b-launcher build/app "$(sed -n 's/^project(b-launcher VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
-          cd build/app && zip -qry ../B_Launcher-macos-arm64.zip "B Launcher.app"
+          cd build/app && zip -qry ../B_Launcher-macos-${{ matrix.arch }}.zip "B Launcher.app"
       - uses: actions/upload-artifact@v4
         with:
-          name: b-launcher-macos-arm64
-          path: build/B_Launcher-macos-arm64.zip
+          name: b-launcher-macos-${{ matrix.arch }}
+          path: build/B_Launcher-macos-${{ matrix.arch }}.zip
