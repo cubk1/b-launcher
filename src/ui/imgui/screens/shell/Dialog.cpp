@@ -118,9 +118,12 @@ namespace Dialog {
             if (closing) {
                 Body body = layer.fading;
                 bool clicked = NewUi::pendingClick;
+                bool released = NewUi::pendingRelease;
                 NewUi::pendingClick = false;
+                NewUi::pendingRelease = false;
                 body(x, y, w, h);
                 NewUi::pendingClick = clicked;
+                NewUi::pendingRelease = released;
             } else {
                 Body body = layer.body;
                 body(x, y, w, h);
@@ -133,7 +136,7 @@ namespace Dialog {
             if (layer.owner.empty()) {
                 return;
             }
-            bool inside = NewUi::rawHit(x, y, w, h);
+            bool inside = NewUi::rawHit(x, y, w, h) || NewUi::pressedIn(x, y, w, h);
             if (NewUi::click(0.0f, 0.0f, windowW, windowH) && !inside) {
                 close();
             } else if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
