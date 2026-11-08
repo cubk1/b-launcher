@@ -27,6 +27,7 @@ namespace NewUi {
     extern float mouseY;
     extern bool clickConsumed;
     extern bool pendingClick;
+    extern bool pendingRelease;
     extern bool mouseDown;
     extern long long pressSerial;
     extern long long pickerOpenedPress;
@@ -204,6 +205,8 @@ namespace NewUi {
         bool focusFieldLive = false;
         float focusFieldX = 0, focusFieldY = 0, focusFieldW = 0, focusFieldH = 0;
         bool mouseDown = false;
+        bool clickArmed = false;
+        float armX = 0, armY = 0, armW = 0, armH = 0;
         std::string draggingSlider;
         std::string scrollDragOwner;
         std::string tooltipText;
@@ -232,7 +235,12 @@ namespace NewUi {
     bool overlayBlocks(float x, float y);
     void markOverlayUnion(float x, float y, float w, float h);
     void markOverlay(float x, float y, float w, float h);
+    enum class ClickPhase { None, Down, Up };
+    // Down: the press landed here and is taken. Up: the press that began here was released here.
+    ClickPhase clickPhase(float x, float y, float w, float h);
     bool click(float x, float y, float w, float h);
+    bool press(float x, float y, float w, float h);
+    bool pressedIn(float x, float y, float w, float h);
     void closeAllOverlays();
 
     float fieldScroll(const std::string& id, float room, int family, float size, bool focused);
