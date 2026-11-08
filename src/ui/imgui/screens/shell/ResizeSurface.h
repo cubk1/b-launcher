@@ -25,7 +25,7 @@ public:
     bool hasLayer() const;
     // Returns true only when a new image/position was submitted.
     bool updateLayer(HWND owner, const RECT& position);
-    bool present(int clientWidth, int clientHeight, bool keepLayer);
+    bool present(int clientWidth, int clientHeight, bool keepLayer, const std::function<void()>& finish);
 
 private:
     HDC deviceContext;

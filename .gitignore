@@ -2,3 +2,5 @@
 /build-*/
 /result
 /result-*
+/cmake-*
+.idea
