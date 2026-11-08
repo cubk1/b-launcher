@@ -2,7 +2,6 @@
 #include "app/accounts/LittleSkin.h"
 #include "app/accounts/Looks.h"
 #include "app/system/AsyncTasks.h"
-#include "app/system/About.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Redirect.h"
@@ -191,11 +190,6 @@ namespace Accounts {
             if (makeCurrent) {
                 select(key);
             }
-        }
-
-        std::string resultPage(const Redirect::Query&) {
-            return std::string("<!doctype html><html><head><meta charset=\"utf-8\"><title>") + About::NAME +
-                    "</title></head><body><script>window.close()</script></body></html>";
         }
 
         Continuation loginFailed(const blb::error& error) {
@@ -505,12 +499,11 @@ namespace Accounts {
         blb::cancellation_token token = loginCancel->token();
         tasks.run(
                 [redirect, client, state, token](blb::cancellation_token) -> Continuation {
-                    auto query = redirect->wait(
-                            MicrosoftClients::REDIRECT_PATH, token, LOGIN_TIMEOUT, resultPage,
-                            [state](const Redirect::Query& query) {
-                                auto found = query.find("state");
-                                return found != query.end() && found->second == state;
-                            });
+                    auto query = redirect->wait(MicrosoftClients::REDIRECT_PATH, token, LOGIN_TIMEOUT,
+                                                [state](const Redirect::Query& query) {
+                                                    auto found = query.find("state");
+                                                    return found != query.end() && found->second == state;
+                                                });
                     redirect->close();
                     if (!query) {
                         return loginFailed(query.err());

@@ -280,12 +280,6 @@ namespace LittleSkin {
                     "&response_type=code&scope=" + blb::url_encode(scopes) + "&state=" + nonce;
         }
 
-        std::string resultPage(const Redirect::Query&) {
-            return "<!doctype html><html><head><meta charset=\"utf-8\"><title>LittleSkin</title></head>"
-                   "<body style=\"font-family:sans-serif;padding:48px\">授权完成，可以回到启动器了。"
-                   "<script>window.close()</script></body></html>";
-        }
-
         void mutate(const std::string& key, const std::string& working, const std::string& method,
                     const std::string& path, const std::string& body, const std::string& message,
                     std::function<void(State&)> done) {
@@ -358,11 +352,11 @@ namespace LittleSkin {
     std::optional<Grant> awaitConsent(const std::shared_ptr<Consent>& consent, blb::cancellation_token cancel,
                                       std::string& error) {
         std::string nonce = consent->nonce;
-        auto query = consent->redirect->wait(PATH, cancel, std::chrono::minutes(10), resultPage,
-                                             [nonce](const Redirect::Query& query) {
-                                                 auto found = query.find("state");
-                                                 return found != query.end() && found->second == nonce;
-                                             });
+        auto query =
+                consent->redirect->wait(PATH, cancel, std::chrono::minutes(10), [nonce](const Redirect::Query& query) {
+                    auto found = query.find("state");
+                    return found != query.end() && found->second == nonce;
+                });
         consent->redirect->close();
         if (!query) {
             error = query.err().code == blb::errc::cancelled ? std::string() : query.err().message;
@@ -436,7 +430,7 @@ namespace LittleSkin {
         blb::cancellation_token waiting = authorizing->token();
         tasks.run(
                 [key, redirect, nonce, name, waiting](blb::cancellation_token cancel) -> Continuation {
-                    auto query = redirect->wait(PATH, waiting, std::chrono::minutes(10), resultPage,
+                    auto query = redirect->wait(PATH, waiting, std::chrono::minutes(10),
                                                 [nonce](const Redirect::Query& query) {
                                                     auto found = query.find("state");
                                                     return found != query.end() && found->second == nonce;

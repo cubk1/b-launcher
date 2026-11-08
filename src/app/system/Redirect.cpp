@@ -1,4 +1,6 @@
 #include "app/system/Redirect.h"
+#include "app/system/About.h"
+#include "app/system/Interface.h"
 #include "app/system/Sockets.h"
 
 #include <algorithm>
@@ -147,6 +149,11 @@ namespace {
                 std::to_string(body.size()) + "\r\n\r\n" + body;
     }
 
+    std::string closingPage() {
+        return std::string("<!doctype html><html><head><meta charset=\"utf-8\"><title>") + About::NAME +
+                "</title></head><body><script>window.close()</script></body></html>";
+    }
+
     bool requestTarget(const std::string& head, std::string& target) {
         size_t lineEnd = head.find("\r\n");
         std::string line = head.substr(0, lineEnd);
@@ -200,7 +207,6 @@ void Redirect::close() {
 
 blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancellation_token token,
                                             std::chrono::seconds timeout,
-                                            const std::function<std::string(const Query&)>& page,
                                             const std::function<bool(const Query&)>& accept) {
     auto deadline = Clock::now() + timeout;
     for (auto socket : sockets) {
@@ -295,8 +301,9 @@ blb::result<Redirect::Query> Redirect::wait(const std::string& path, blb::cancel
                             if (accept && !accept(query)) {
                                 client->reply = response("400 Bad Request", "");
                             } else {
-                                client->reply = response("200 OK", page ? page(query) : std::string());
+                                client->reply = response("200 OK", closingPage());
                                 client->accepted = std::move(query);
+                                Interface::summon();
                             }
                         }
                     }

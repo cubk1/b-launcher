@@ -1,9 +1,12 @@
 #include "app/system/Interface.h"
 
+#include <atomic>
+
 namespace Interface {
 
     namespace {
         Handlers handlers;
+        std::atomic<bool> summoned = false;
     }
 
     void connect(Handlers next) {
@@ -40,5 +43,15 @@ namespace Interface {
         }
         handlers.crashed(std::move(report));
         return true;
+    }
+
+    void summon() {
+        summoned = true;
+    }
+
+    void poll() {
+        if (summoned.exchange(false) && handlers.summon) {
+            handlers.summon();
+        }
     }
 }

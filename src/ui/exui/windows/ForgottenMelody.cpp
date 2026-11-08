@@ -53,6 +53,7 @@ namespace ForgottenMelody {
                     nullptr,
                     nullptr,
                     [&window](std::shared_ptr<const Crashes::Report> report) { window.showCrash(std::move(report)); },
+                    [] { Platform::raiseWindow(); },
             });
         }
 
