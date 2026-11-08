@@ -35,6 +35,7 @@ namespace JavaDownloads {
     enum class State { None, Running, Done, Failed };
 
     const List& list();
+    bool available();
     void refresh();
     std::string name(const Package& package);
     std::string icon(const Package& package);

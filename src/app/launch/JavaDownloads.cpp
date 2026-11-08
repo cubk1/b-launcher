@@ -13,6 +13,7 @@
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
+#include <core/java/java_runtime.hpp>
 #include <core/network/download_client.hpp>
 #include <core/network/http_client.hpp>
 
@@ -510,6 +511,10 @@ namespace JavaDownloads {
         }
     }
 
+    bool available() {
+        return !blb::java::runtime_blocked();
+    }
+
     const List& list() {
         if (!started) {
             refresh();
@@ -518,6 +523,13 @@ namespace JavaDownloads {
     }
 
     void refresh() {
+        if (!available()) {
+            started = true;
+            current.status = Status::Failed;
+            current.packages.clear();
+            current.error = blb::java::runtime_blocked()->message;
+            return;
+        }
         if (started && current.status == Status::Loading) {
             return;
         }
@@ -570,11 +582,11 @@ namespace JavaDownloads {
 
     bool installed(const Package& package) {
         std::error_code error;
-#if defined(_WIN32)
-        return std::filesystem::exists(homeOf(package) / "bin" / "java.exe", error);
-#else
-        return std::filesystem::exists(homeOf(package) / "bin" / "java", error);
-#endif
+        auto home = homeOf(package);
+        const auto& known = Catalog::java().list;
+        return std::any_of(known.begin(), known.end(), [&](const auto& java) {
+            return std::filesystem::equivalent(home, java.home, error);
+        });
     }
 
     bool busy() {
@@ -602,12 +614,18 @@ namespace JavaDownloads {
         std::filesystem::path base =
                 local != nullptr && *local != 0 ? std::filesystem::path(local) : Platform::exeDirectory();
 #else
-        std::filesystem::path base = blb::app_data_directory();
+        return blb::launcher_data_directory() / "java";
 #endif
+#if defined(_WIN32)
         return base / L"b-launcher" / L"java";
+#endif
     }
 
     void install(const Package& package) {
+        if (!available()) {
+            Notices::add(Notices::Kind::Failed, blb::java::runtime_blocked()->message, 5000);
+            return;
+        }
         if (package.archiveSize > (uint64_t) std::numeric_limits<int64_t>::max()) {
             Notices::add(Notices::Kind::Failed, "Java 下载大小无效", 5000);
             return;
@@ -685,8 +703,9 @@ namespace JavaDownloads {
 #endif
                     }
                     std::filesystem::remove(archive, ec);
+                    std::optional<blb::java::java_installation> installed;
+                    std::filesystem::path home = temp;
                     if (error.empty()) {
-                        std::filesystem::path home = temp;
                         std::string prefix = normalize(package.homePrefix);
                         if (!prefix.empty()) {
                             home /= blb::path_from_utf8(prefix);
@@ -700,6 +719,14 @@ namespace JavaDownloads {
                             error = "解压后没有找到 java";
                         }
 #endif
+                        if (error.empty()) {
+                            auto checked = blb::java::probe_java(home, true, token, {}, true);
+                            if (checked) {
+                                installed = *checked;
+                            } else {
+                                error = checked.err().message;
+                            }
+                        }
                     }
                     if (error.empty()) {
                         std::filesystem::remove_all(target, ec);
@@ -710,20 +737,22 @@ namespace JavaDownloads {
                     }
                     if (!error.empty()) {
                         std::filesystem::remove_all(temp, ec);
+                    } else {
+                        // The probe ran in the temporary folder. Use the paths in the installed folder.
+                        std::filesystem::path moved = homeOf(package);
+                        installed->executable = moved / installed->executable.lexically_relative(home);
+                        installed->gui_executable = moved / installed->gui_executable.lexically_relative(home);
+                        installed->home = moved;
+                        installed->source = blb::java::java_source::managed;
                     }
-#if defined(_WIN32)
-                    std::filesystem::path java = homeOf(package) / "bin" / "java.exe";
-#else
-                    std::filesystem::path java = homeOf(package) / "bin" / "java";
-#endif
                     std::string label = name(package) + " " + package.version;
                     bool cancelled = job->cancelling.is_cancelled();
-                    return [job, error, java, label, cancelled] {
+                    return [job, error, installed, label, cancelled] {
                         job->state = error.empty() ? State::Done : State::Failed;
                         if (error.empty()) {
                             job->fraction = 1.0f;
                             Transfers::finish(job->transfer, Transfers::State::Done);
-                            Catalog::addJava(java);
+                            Catalog::addJava(*installed);
                             Notices::add(Notices::Kind::Done, label + " 已安装", 3000);
                         } else if (cancelled) {
                             Transfers::finish(job->transfer, Transfers::State::Cancelled);

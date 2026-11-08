@@ -96,8 +96,16 @@ namespace Updates {
         }
     }
 
+    bool enabled() {
+#if defined(BLB_NO_UPDATE_CHECK)
+        return false;
+#else
+        return true;
+#endif
+    }
+
     void check(bool found, bool failure) {
-        if (current == State::Checking) {
+        if (!enabled() || current == State::Checking) {
             return;
         }
         current = State::Checking;

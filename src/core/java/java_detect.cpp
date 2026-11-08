@@ -176,6 +176,26 @@ std::vector<candidate>
 collect_candidates (const scan_options &options)
 {
   std::vector<candidate> out;
+  if (options.system_locations)
+    {
+      if (auto home = environment ("JAVA_HOME"))
+        add_home (out, path_from_utf8 (*home), java_source::java_home);
+      if (auto path = environment ("PATH"))
+        for (auto entry : split (*path, path_list_separator ()))
+          {
+            auto dir = trim (entry);
+            if (dir.empty ())
+              continue;
+            auto executable = path_from_utf8 (dir)
+#if defined(_WIN32)
+                              / "java.exe";
+#else
+                              / "java";
+#endif
+            if (fs::exists (executable))
+              add_home (out, java_home_from_executable (executable), java_source::path);
+          }
+    }
   for (const auto &home : options.extra_homes)
     {
       auto st = fs::stat (home);
@@ -190,25 +210,6 @@ collect_candidates (const scan_options &options)
     scan_tree (out, root, java_source::managed, 4);
   if (!options.system_locations)
     return out;
-
-  if (auto home = environment ("JAVA_HOME"))
-    add_home (out, path_from_utf8 (*home), java_source::java_home);
-  if (auto path = environment ("PATH"))
-    for (auto entry : split (*path, path_list_separator ()))
-      {
-        auto dir = trim (entry);
-        if (dir.empty ())
-          continue;
-        auto executable = path_from_utf8 (dir)
-#if defined(_WIN32)
-                          / "java.exe";
-#else
-                          / "java";
-#endif
-        if (fs::exists (executable))
-          add_home (out, java_home_from_executable (executable),
-                    java_source::path);
-      }
 
   auto home = home_directory ();
   scan_tree (out, default_minecraft_directory () / "runtime",
@@ -244,6 +245,9 @@ collect_candidates (const scan_options &options)
   scan_tree (out, home / "Library/Java/JavaVirtualMachines",
              java_source::system, 2);
 #else
+  for (auto java : split (packaged_nixos_paths ().java_homes, ':'))
+    if (!java.empty ())
+      add_home (out, path_from_utf8 (java), java_source::system);
   for (auto dir : { "/usr/lib/jvm", "/usr/lib64/jvm", "/usr/lib32/jvm",
                     "/usr/java", "/opt/java", "/opt/jdk", "/opt/jdks" })
     scan_tree (out, dir, java_source::system, 2);
@@ -254,15 +258,30 @@ collect_candidates (const scan_options &options)
   return out;
 }
 
+error
+needs_nix_ld (const std::filesystem::path &executable)
+{
+  return make_error (errc::java_not_found,
+                     sformat ("NixOS 需要 nix-ld 才能运行 {}",
+                              path_to_utf8 (executable)));
+}
+
 result<java_installation>
-probe_with_process (java_installation install, cancellation_token token)
+probe_with_process (java_installation install, cancellation_token token,
+                    const std::vector<std::string> &wrapper = {})
 {
   process_options options;
-  options.args = { path_to_utf8 (install.executable),
-                   "-XshowSettings:properties", "-version" };
+  options.args = wrapper;
+  options.args.insert (options.args.end (),
+                       { path_to_utf8 (install.executable),
+                         "-XshowSettings:properties", "-version" });
   BLB_TRY_ASSIGN (
       auto output,
       run_process (options, token, std::chrono::milliseconds (15000)));
+  if (output.exit_code != 0)
+    return make_error (errc::java_not_found,
+                       sformat ("Java exited with code {}: {}", output.exit_code,
+                                path_to_utf8 (install.executable)));
   auto text = output.err + output.out;
   for (auto line : split (text, '\n'))
     {
@@ -345,7 +364,8 @@ java_home_from_executable (const std::filesystem::path &executable)
 
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
-            bool allow_process, cancellation_token token)
+            bool allow_process, cancellation_token token,
+            const std::vector<std::string> &wrapper, bool verify_execution)
 {
   BLB_TRY (token.check ());
   auto st = fs::stat (home_or_executable);
@@ -370,6 +390,10 @@ probe_java (const std::filesystem::path &home_or_executable,
 #else
   install.jdk = fs::exists (install.home / "bin" / "javac");
 #endif
+  // On NixOS without nix-ld only a Java from /nix/store starts, so run any other one to make sure.
+  bool unsure = !runs_generic_binaries ()
+                && !path_to_utf8 (fs::real_path (install.executable))
+                        .starts_with ("/nix/store/");
   auto release = read_release (install.home);
   if (auto it = release.find ("JAVA_VERSION"); it != release.end ())
     {
@@ -380,11 +404,14 @@ probe_java (const std::filesystem::path &home_or_executable,
           install.arch = *parsed;
       if (auto vendor = release.find ("IMPLEMENTOR"); vendor != release.end ())
         install.vendor = vendor->second;
-      if (install.major > 0 && install.arch != cpu_arch::unknown)
+      if (install.major > 0 && install.arch != cpu_arch::unknown && !unsure
+          && !verify_execution && wrapper.empty ())
         return install;
     }
   if (!allow_process)
     {
+      if (unsure)
+        return needs_nix_ld (install.executable);
       if (install.major > 0)
         {
           install.arch = current_platform ().arch;
@@ -392,7 +419,14 @@ probe_java (const std::filesystem::path &home_or_executable,
         }
       return make_error (errc::java_not_found, "no release file");
     }
-  return probe_with_process (std::move (install), token);
+  auto executable = install.executable;
+  // The version must come from the process, not from the release file.
+  if (unsure || verify_execution || !wrapper.empty ())
+    install.version.clear ();
+  auto probed = probe_with_process (std::move (install), token, wrapper);
+  if (!probed && unsure && !token.is_cancelled ())
+    return needs_nix_ld (executable);
+  return probed;
 }
 
 std::vector<java_installation>
@@ -425,7 +459,7 @@ scan_java (const scan_options &options, cancellation_token token)
   parallel_for (thread_pool::shared (), unique.size (), [&] (std::size_t i) {
     if (token.is_cancelled ())
       return;
-    auto probed = probe_java (unique[i].home, options.probe_process, token);
+    auto probed = probe_java (unique[i].home, options.probe_process, token, options.wrapper);
     if (options.progress)
       options.progress (++probed_count, unique.size ());
     if (!probed)
@@ -446,10 +480,12 @@ scan_java (const scan_options &options, cancellation_token token)
 }
 
 void
-prune_missing (std::vector<java_installation> &installs)
+prune_unusable (std::vector<java_installation> &installs, cancellation_token token)
 {
-  std::erase_if (installs, [] (const java_installation &install) {
-    return !fs::exists (install.executable);
+  bool generic = runs_generic_binaries ();
+  std::erase_if (installs, [&] (const java_installation &install) {
+    return !fs::exists (install.executable)
+           || (!generic && !probe_java (install.home, true, token));
   });
 }
 }

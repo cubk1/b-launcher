@@ -580,7 +580,7 @@ namespace ProjectInstaller {
                 const Instances::Source* source = Instances::installSource("");
                 folder = source != nullptr && std::filesystem::is_directory(source->root, error)
                         ? source->root
-                        : Platform::exeDirectory();
+                        : Platform::userDirectory();
             }
             return folder;
         }

@@ -7,6 +7,8 @@
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
+#include <SDL3/SDL_misc.h>
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -91,6 +93,35 @@ namespace Platform {
             }
             return S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_uid == getuid();
         }
+
+        // The Nix package runs this program through a wrapper that sets BLB_NIXOS_*, and the wrapper
+        // puts its own path in BLB_EXECUTABLE. A shortcut must run the wrapper, not this program.
+        // A /nix/store path breaks after an update and garbage collection, so a shortcut uses
+        // the profile link on PATH (e.g. /run/current-system/sw/bin) that points to the same file.
+        std::filesystem::path shortcutExecutable() {
+            std::filesystem::path exe = executablePath();
+            if (!blb::path_to_utf8(exe).starts_with("/nix/store/")) {
+                return exe;
+            }
+            if (auto wrapper = blb::environment("BLB_EXECUTABLE"); wrapper && wrapper->starts_with('/')) {
+                std::error_code error;
+                if (std::filesystem::is_regular_file(blb::path_from_utf8(*wrapper), error)) {
+                    exe = blb::path_from_utf8(*wrapper);
+                }
+            }
+            std::string path = blb::environment("PATH").value_or("");
+            for (std::string_view entry : blb::split(path, ':')) {
+                if (!entry.starts_with('/') || entry.starts_with("/nix/store/")) {
+                    continue;
+                }
+                std::filesystem::path link = blb::path_from_utf8(entry) / exe.filename();
+                std::error_code error;
+                if (std::filesystem::equivalent(link, exe, error)) {
+                    return link;
+                }
+            }
+            return exe;
+        }
     }
 
     std::vector<std::string> commandLine() {
@@ -118,15 +149,14 @@ namespace Platform {
     }
 
     std::filesystem::path configDirectory() {
-        if (auto xdg = blb::environment("XDG_CONFIG_HOME"); xdg && xdg->starts_with('/')) {
-            return blb::path_from_utf8(*xdg) / "b-launcher";
-        }
-        std::filesystem::path home = blb::home_directory();
-        return home.empty() ? std::filesystem::path() : home / ".config" / "b-launcher";
+        return blb::launcher_data_directory();
     }
 
     std::filesystem::path desktopDirectory() {
-        std::filesystem::path config = configDirectory().parent_path() / "user-dirs.dirs";
+        auto xdg = blb::environment("XDG_CONFIG_HOME");
+        std::filesystem::path config =
+                (xdg && blb::path_from_utf8(*xdg).is_absolute()
+                         ? blb::path_from_utf8(*xdg) : blb::home_directory() / ".config") / "user-dirs.dirs";
         std::ifstream file(config);
         std::string line;
         while (std::getline(file, line)) {
@@ -140,16 +170,18 @@ namespace Platform {
         return blb::home_directory() / "Desktop";
     }
 
+    // SDL asks the desktop portal first and runs xdg-open only when there is no portal.
     bool open(const std::filesystem::path& path) {
         std::error_code error;
         if (!std::filesystem::exists(path, error)) {
             return false;
         }
-        return spawnDetached({"xdg-open", path.string()});
+        std::filesystem::path target = std::filesystem::absolute(path, error);
+        return !error && SDL_OpenURL(target.c_str());
     }
 
     bool openUrl(const std::string& url) {
-        return webUrl(url) && spawnDetached({"xdg-open", url});
+        return webUrl(url) && SDL_OpenURL(url.c_str());
     }
 
     void reveal(const std::filesystem::path& path) {
@@ -161,7 +193,7 @@ namespace Platform {
         if (file.extension() != ".desktop") {
             file += ".desktop";
         }
-        std::filesystem::path exe = executablePath();
+        std::filesystem::path exe = shortcutExecutable();
         std::filesystem::path icon = shortcut.icon;
         if (icon.empty()) {
             icon = configDirectory() / "b-launcher.svg";

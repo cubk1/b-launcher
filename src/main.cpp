@@ -1,5 +1,6 @@
 #include "app/launch/Game.h"
 #include "app/system/DiskScan.h"
+#include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/UiStyles.h"
 #if defined(_WIN32)
@@ -25,7 +26,10 @@ int main() {
     Platform::waitForPrevious();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
-    if (!pendingLaunch.empty() && Platform::forwardLaunch(pendingLaunch, headless)) {
+    // A shortcut launch always goes to the running launcher. A plain start goes there only when
+    // multiple launchers are not allowed.
+    bool forward = !pendingLaunch.empty() || !Config::data().value("allowMultipleInstances", true);
+    if (forward && Platform::forwardLaunch(pendingLaunch, headless)) {
         return 0;
     }
     if (!pendingLaunch.empty()) {

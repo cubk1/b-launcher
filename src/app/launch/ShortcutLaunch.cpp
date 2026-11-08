@@ -12,6 +12,7 @@ namespace ShortcutLaunch {
         std::string pending;
         bool pendingQuiet = false;
         std::optional<Outcome> done;
+        bool shown = false;
     }
 
     void request(const std::string& key, bool quiet) {
@@ -19,16 +20,24 @@ namespace ShortcutLaunch {
         pendingQuiet = quiet;
     }
 
-    bool receive(unsigned long long kind, const std::wstring& text) {
-        if ((kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) || text.empty()) {
-            return false;
-        }
-        bool quiet = kind == Platform::LAUNCH_QUIET_MESSAGE;
-        request(Platform::narrow(text), quiet);
+    void forwarded(const std::string& key, bool quiet) {
+        if (!key.empty()) request(key, quiet);
         if (!quiet) {
+            shown = true;
             Platform::showWindow();
         }
+    }
+
+    bool receive(unsigned long long kind, const std::wstring& text) {
+        if (kind != Platform::LAUNCH_MESSAGE && kind != Platform::LAUNCH_QUIET_MESSAGE) {
+            return false;
+        }
+        forwarded(Platform::narrow(text), kind == Platform::LAUNCH_QUIET_MESSAGE);
         return true;
+    }
+
+    bool takeShown() {
+        return std::exchange(shown, false);
     }
 
     void poll() {

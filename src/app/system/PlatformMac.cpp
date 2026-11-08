@@ -55,8 +55,7 @@ namespace Platform {
     }
 
     std::filesystem::path configDirectory() {
-        std::filesystem::path home = blb::home_directory();
-        return home.empty() ? std::filesystem::path() : home / "Library" / "Application Support" / "b-launcher";
+        return blb::launcher_data_directory();
     }
 
     std::filesystem::path desktopDirectory() {
