@@ -1951,6 +1951,15 @@ namespace SettingsScreen {
         }
     }
 
+    void reset() {
+        if (NewUi::textEditing == SEARCH_OWNER) {
+            NewUi::cancelTextEdit();
+        }
+        searchText.clear();
+        sections.page = SECTION_LAUNCH;
+        sections.mix = 1.0f;
+    }
+
     void draw() {
         bool covered = NewUi::overlayCoversMouse();
         MainWindow::claimSearch();

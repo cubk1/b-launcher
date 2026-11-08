@@ -7,6 +7,7 @@
 namespace AccountsScreen {
 
     void draw();
+    void reset();
     void openAdd();
     void openServerLogin(b_launcher_base::auth::account_type type, const std::string& server,
                          const std::string& username);

@@ -28,6 +28,7 @@ namespace MainWindow {
     void showHome();
     void showAccounts();
     void showNewInstance();
+    void startNewInstance();
     void showDownloads();
     void showTransfers();
     void showVersions();

@@ -44,6 +44,7 @@ namespace UiTheme {
     uint32_t divider();
     uint32_t overlay(int alpha);
     uint32_t onAccent();
+    uint32_t inkOn(uint32_t argb);
     uint32_t knob();
     uint32_t knobShadow();
     uint32_t knobOff();

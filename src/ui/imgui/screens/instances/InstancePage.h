@@ -8,6 +8,7 @@
 namespace InstancePage {
 
     void draw(const std::string& key);
+    void reset();
     void openMenu(const std::string& key, float x, float y);
     void beginRename(const std::string& key);
     void showScreenshots(const std::string& key);

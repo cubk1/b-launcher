@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace Page {
@@ -30,6 +31,7 @@ namespace Page {
         };
 
         std::unordered_map<std::string, ScrollState> scrolls;
+        std::unordered_set<std::string> touched;
         std::string scrollPrefix;
 
         std::string scrollKey(const std::string& id) {
@@ -347,6 +349,7 @@ namespace Page {
           left(left),
           width(width) {
         ScrollState& state = scrolls[this->id];
+        touched.insert(this->id);
         maxScroll = std::max(0.0f, contentHeight - (bottom - top));
         if (NewUi::hit(left - 16.0f, top, width + 32.0f, bottom - top) && NewUi::wheel() != 0.0f) {
             state.target -= NewUi::wheel() * ROW_H * 1.5f;
@@ -362,7 +365,20 @@ namespace Page {
     }
 
     void scrollTo(const std::string& id, float target) {
-        scrolls[scrollKey(id)].target = target;
+        std::string key = scrollKey(id);
+        scrolls[key].target = target;
+        touched.insert(key);
+    }
+
+    void forgetHidden() {
+        for (auto it = scrolls.begin(); it != scrolls.end();) {
+            if (touched.count(it->first) == 0 && it->first.find("downloads#") == std::string::npos) {
+                it = scrolls.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        touched.clear();
     }
 
     bool Scroll::begin() {

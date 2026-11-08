@@ -7,7 +7,6 @@
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
-#include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "app/system/Platform.h"
 
 #include "ui/imgui/panel/NewUi.h"
@@ -45,8 +44,7 @@ namespace QuickActions {
 
         void perform(const std::string& id) {
             if (id == "newInstance") {
-                NewInstanceScreen::leaveModpack();
-                MainWindow::showNewInstance();
+                MainWindow::startNewInstance();
             } else if (id == "switchVersion") {
                 MainWindow::showVersions();
             } else if (id == "addAccount") {

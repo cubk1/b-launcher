@@ -3,4 +3,5 @@
 namespace SettingsScreen {
 
     void draw();
+    void reset();
 }

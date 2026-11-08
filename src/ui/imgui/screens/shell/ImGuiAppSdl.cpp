@@ -15,6 +15,7 @@
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
 
@@ -484,6 +485,7 @@ namespace ImGuiApp {
             UiRender::uiScale = scale / (float) UiRender::guiScale();
             UiRender::begin(ImGui::GetForegroundDrawList());
             NewUi::render(panel.active() ? Compact::draw : MainWindow::draw);
+            Page::forgetHidden();
             UiRender::end();
 
             ImGui::Render();

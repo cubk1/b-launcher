@@ -271,12 +271,24 @@ namespace MainWindow {
 
     void showAccounts() {
         Compact::request(false);
+        if (pages.page != PAGE_ACCOUNTS) {
+            AccountsScreen::reset();
+        }
         pages.go(PAGE_ACCOUNTS);
     }
 
     void showNewInstance() {
         Compact::request(false);
         pages.go(PAGE_NEW_INSTANCE);
+    }
+
+    void startNewInstance() {
+        if (pages.page != PAGE_NEW_INSTANCE) {
+            NewInstanceScreen::reset();
+        } else {
+            NewInstanceScreen::leaveModpack();
+        }
+        showNewInstance();
     }
 
     void showDownloads() {
@@ -303,6 +315,9 @@ namespace MainWindow {
     void openVersionSettings(const std::string& id) {
         Compact::request(false);
         Instances::select(id);
+        if (pages.page != pageOf(id)) {
+            InstancePage::reset();
+        }
         pages.go(pageOf(id));
     }
 
@@ -1056,8 +1071,13 @@ namespace MainWindow {
         float footerY = height() - FOOTER_H;
         UiRender::hLine(12.0f, sideW - 12.0f, footerY, UiTheme::divider());
         float rowY = footerY + 10.0f;
+        int from = pages.page;
         if (navItem("nav#new", 0xf067, "新建实例", ITEM_X, rowY, itemW, PAGE_NEW_INSTANCE)) {
-            NewInstanceScreen::leaveModpack();
+            if (from != PAGE_NEW_INSTANCE) {
+                NewInstanceScreen::reset();
+            } else {
+                NewInstanceScreen::leaveModpack();
+            }
         }
         if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
             DownloadsScreen::openFor(Instances::selected());
@@ -1066,11 +1086,17 @@ namespace MainWindow {
         navItem("nav#transfers", 0xf0ae, "下载列表", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_TRANSFERS, false, 0,
                 transferring > 0 ? std::to_string(transferring) : std::string());
         const b_launcher_base::auth::account* account = Accounts::current();
-        navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
-                account != nullptr ? account->name : std::string());
+        if (navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
+                    account != nullptr ? account->name : std::string()) &&
+            from != PAGE_ACCOUNTS) {
+            AccountsScreen::reset();
+        }
         navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
-        navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 5 * ITEM_STEP, itemW, PAGE_SETTINGS);
+        if (navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 5 * ITEM_STEP, itemW, PAGE_SETTINGS) &&
+            from != PAGE_SETTINGS) {
+            SettingsScreen::reset();
+        }
         UiRender::unscissor();
     }
 

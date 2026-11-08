@@ -356,7 +356,7 @@ namespace Compact {
             if (Page::button("compact#new", label, x + (w - buttonW) * 0.5f, cy + 2.0f, buttonW, true, blocked,
                              0xf067)) {
                 UiSound::request(UiSound::PAGE);
-                MainWindow::showNewInstance();
+                MainWindow::startNewInstance();
             }
         }
 

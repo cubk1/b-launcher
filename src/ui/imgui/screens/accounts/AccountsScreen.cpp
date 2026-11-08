@@ -1490,6 +1490,11 @@ namespace AccountsScreen {
         }
     }
 
+    void reset() {
+        views.page = VIEW_LIST;
+        views.mix = 1.0f;
+    }
+
     void draw() {
         if (Accounts::serverLogin() == Accounts::ServerLogin::Done) {
             finishLogin();

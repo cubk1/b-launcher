@@ -194,7 +194,7 @@ namespace ProfilePage {
                                     (UiTheme::accent() & 0x00FFFFFFu) | ((uint32_t) Ui::round(150.0f * lit) << 24));
                 float savedAlpha = UiRender::alphaMul;
                 UiRender::alphaMul = savedAlpha * lit;
-                UiWidgets::check(cx, cy, 0xFFFFFFFFu, 14.0f);
+                UiWidgets::check(cx, cy, UiTheme::onAccent(), 14.0f);
                 UiRender::alphaMul = savedAlpha;
             }
             if (working) {
