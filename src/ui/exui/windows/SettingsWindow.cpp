@@ -457,7 +457,7 @@ namespace ForgottenMelody {
                         {.id = PRODUCT_VERSION,
                          .kind = ControlKind::Label,
                          .bounds = {},
-                         .caption = L"v" + Platform::widen(About::VERSION),
+                         .caption = Platform::widen(About::versionLabel()),
                          .textColor = MUTED},
                         {.id = TAGLINE,
                          .kind = ControlKind::Label,
@@ -1355,10 +1355,13 @@ namespace ForgottenMelody {
                     (i < split ? left : right).push_back(addLink(id, About::CREDITS[i], 160, false));
                 }
                 int productWidth = (int) std::ceil(exui::widget_detail::UnboundedTextWidth(*FindControl(PRODUCT)));
+                int versionWidth =
+                        (int) std::ceil(exui::widget_detail::UnboundedTextWidth(*FindControl(PRODUCT_VERSION)));
                 auto heading = Layout::Inset(Layout::Row({
                         Layout::Column({
                                 Layout::Row({field(PRODUCT, productWidth, 36),
-                                             cell(PRODUCT_VERSION, 120, 22, Layout::Align::End)}, 10, 38),
+                                             cell(PRODUCT_VERSION, std::max(120, versionWidth), 22,
+                                                  Layout::Align::End)}, 10, 38),
                                 Layout::Inset(Layout::Row({field(TAGLINE, 300, 20)}, 0, 20), {2, 0, 0, 0}),
                         }, 0, 365),
                         Layout::Inset(Layout::Row({cell(UPDATE_STATUS, 150, 26), cell(UPDATE, 90)}, 10, 30),

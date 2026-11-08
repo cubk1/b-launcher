@@ -61,6 +61,8 @@ option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json
         ${BLB_SYSTEM_LIBS_DEFAULT})
 # Package managers update the launcher themselves, so they turn this off.
 option(BLB_UPDATE_CHECK "Check for new launcher versions" ON)
+# The 关于 page shows the short git hash. A build without .git (e.g. Nix) gives it here.
+set(BLB_GIT_COMMIT "" CACHE STRING "Short git hash for the 关于 page, when the source has no .git")
 include(cmake/dependencies.cmake)
 include(cmake/embed.cmake)
 
@@ -299,6 +301,16 @@ add_executable(b-launcher WIN32 src/main.cpp ${APP_SOURCES} ${APP_RESOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanosvg)
 target_compile_definitions(b-launcher PRIVATE B_LAUNCHER_VERSION="${PROJECT_VERSION}")
+# Every build writes generated/GitCommit.h again, but only when the hash changes.
+find_package(Git QUIET)
+add_custom_target(git_commit
+        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -DGIT=${GIT_EXECUTABLE}
+                -DCOMMIT=${BLB_GIT_COMMIT} -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/generated/GitCommit.h
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/git_commit.cmake
+        BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/generated/GitCommit.h
+        VERBATIM)
+add_dependencies(b-launcher git_commit)
+target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if (NOT BLB_UPDATE_CHECK)
     target_compile_definitions(b-launcher PRIVATE BLB_NO_UPDATE_CHECK)
 endif ()

@@ -1823,7 +1823,7 @@ namespace SettingsScreen {
             float x = textX;
             UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += Page::tag(std::string("v") + About::VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
+            x += Page::tag(About::versionLabel(), x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
                      UiTheme::accentText());
             tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);

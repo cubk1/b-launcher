@@ -15,6 +15,8 @@
   sdl3,
   freetype,
   fontconfig,
+  # The short git hash for the 关于 page. The Nix build has no .git, so flake.nix gives it.
+  gitCommit ? "",
 }:
 
 let
@@ -117,6 +119,7 @@ stdenv.mkDerivation {
     (lib.cmakeBool "BLB_SYSTEM_LIBS" true)
     # Nix updates the package.
     (lib.cmakeBool "BLB_UPDATE_CHECK" false)
+    (lib.cmakeFeature "BLB_GIT_COMMIT" gitCommit)
     (lib.cmakeBool "BLB_TESTS" true)
   ];
 
