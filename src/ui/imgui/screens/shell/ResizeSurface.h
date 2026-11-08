@@ -23,8 +23,9 @@ public:
     bool preparing() const;
     bool captureFrame();
     bool hasLayer() const;
-    // Returns true only when a new image/position was submitted.
-    bool updateLayer(HWND owner, const RECT& position);
+    // Returns true only when a new image/position was submitted. With alpha the frame is
+    // composed as premultiplied, for transparent corners.
+    bool updateLayer(HWND owner, const RECT& position, bool alpha);
     bool present(int clientWidth, int clientHeight, bool keepLayer);
 
 private:

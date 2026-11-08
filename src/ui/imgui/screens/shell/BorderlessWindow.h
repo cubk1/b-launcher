@@ -36,6 +36,11 @@ public:
     bool resizable = false;
     bool framed = false;
     bool quitOnDestroy = true;
+    // Set before create() when the owner masks its corners while transparentCorners() is true.
+    // Otherwise Windows 10 rounds the window with a region, which cannot be anti-aliased.
+    bool drawsCorners = false;
+    // Layout units, matching the rounded DWM corners of Windows 11.
+    static constexpr float CORNER_RADIUS = 8.0f;
     std::function<void()> onClose;
     // During preparingResize(), width/height are the proposed client size and
     // swap() captures the frame without presenting or changing the native window.
@@ -57,6 +62,8 @@ public:
     void clearTextArea();
     void toggleMaximize();
     bool maximized() const;
+    // DWM composes this frame with its alpha channel and expects the owner to leave the corners transparent.
+    bool transparentCorners() const;
     bool sizing() const;
     bool preparingResize() const;
     void close();
@@ -75,6 +82,7 @@ private:
     DWORD style() const;
     void applyFrame();
     void applyRegion();
+    bool composeAlpha(bool on);
     bool createGlContext(HGLRC share);
 
     int minWidth = 0;
@@ -94,4 +102,6 @@ private:
 
     bool regionCorners = false;
     bool regionSuspended = false;
+    bool alphaCorners = false;
+    bool alphaFormat = false;
 };

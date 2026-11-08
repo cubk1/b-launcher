@@ -211,6 +211,12 @@ namespace UiRender {
                           transformW(radius), applyAlpha(plateRgba), applyAlpha(mainRgba), transformW(outerRadius));
     }
 
+    void maskWindowCorners(float radius) {
+        ImGuiIO& io = ImGui::GetIO();
+        float size = unit();
+        ShaderUtil::maskCorners(0.0f, 0.0f, io.DisplaySize.x / size, io.DisplaySize.y / size, radius * uiScale);
+    }
+
     void cliIcon(float cx, float cy, float size, int kind, uint32_t rgba) {
         uint32_t color = applyAlpha(rgba);
         if (((color >> 24) & 0xFF) == 0) {

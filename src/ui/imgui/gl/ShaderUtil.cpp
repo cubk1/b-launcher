@@ -60,6 +60,8 @@ namespace ShaderUtil {
     static bool iconFailed;
     static Shader shellShader;
     static bool shellFailed;
+    static Shader cornerMaskShader;
+    static bool cornerMaskFailed;
 
     static GLuint captureTextureId;
     static int captureWidth;
@@ -410,6 +412,39 @@ void main() {
                     roundRectShader, RECT_VERT, frag,
                     {"u_proj", "u_rect", "u_rectSize", "u_color", "u_colorB", "u_gradient", "u_radius", "u_corner"})) {
             roundRectFailed = true;
+            return false;
+        }
+        return true;
+    }
+
+    static bool ensureCornerMaskShader() {
+        if (cornerMaskShader.program != 0) {
+            return true;
+        }
+        if (cornerMaskFailed) {
+            return false;
+        }
+        // Circular corners like the DWM corners of Windows 11. The superellipse of sdRoundBox has a
+        // visibly sharper tip at a window's small radius.
+        const char* frag = R"GLSL(#version 150 core
+
+uniform vec2  u_rectSize;
+uniform float u_radius;
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+void main() {
+    vec2 halfSize = u_rectSize * 0.5;
+    float r = min(u_radius, min(halfSize.x, halfSize.y));
+    vec2 q = abs(v_uv * u_rectSize - halfSize) - halfSize + r;
+    float dist = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 1e-5);
+    fragColor = vec4(1.0, 1.0, 1.0, clamp(0.5 - dist / aa, 0.0, 1.0));
+}
+)GLSL";
+        if (!compileShader(cornerMaskShader, RECT_VERT, frag, {"u_proj", "u_rect", "u_rectSize", "u_radius"})) {
+            cornerMaskFailed = true;
             return false;
         }
         return true;
@@ -1231,6 +1266,25 @@ void main() {
         DrawArrays(UGL_TRIANGLES, 0, 6);
     }
 
+    static void drawCornerMask(const Prim& p) {
+        if (!ensureCornerMaskShader()) {
+            return;
+        }
+        // The shader outputs its coverage as alpha. Scaling both the color and the alpha by it keeps
+        // the result premultiplied, as DWM composes a per-pixel alpha window. Straight edges get
+        // exactly 1.0, so only the corners change.
+        Enable(UGL_BLEND);
+        BlendEquation(UGL_FUNC_ADD);
+        BlendFunc(UGL_ZERO, UGL_SRC_ALPHA);
+        use(cornerMaskShader);
+        const Shader& s = cornerMaskShader;
+        Uniform4f(s["u_rect"], p.f[0], p.f[1], p.f[2], p.f[3]);
+        Uniform2f(s["u_rectSize"], p.f[2], p.f[3]);
+        Uniform1f(s["u_radius"], p.f[4]);
+        DrawArrays(UGL_TRIANGLES, 0, 6);
+        defaultBlend();
+    }
+
     static void drawRing(const Prim& p) {
         if (!ensureRoundRingShader()) {
             return;
@@ -1582,6 +1636,7 @@ void main() {
                 case ARC: drawArc(p); break;
                 case ICON: drawIcon(p); break;
                 case SHELL: drawShell(p); break;
+                case CORNER_MASK: drawCornerMask(p); break;
                 default: break;
             }
         }
@@ -1848,6 +1903,15 @@ void main() {
         p.f[6] = outerRadius;
         p.c[0] = plateRgba;
         p.c[1] = mainRgba;
+        submit(p);
+    }
+
+    void maskCorners(float x, float y, float width, float height, float radius) {
+        if (width <= 0.0f || height <= 0.0f || radius <= 0.0f) {
+            return;
+        }
+        Prim p = makeRect(CORNER_MASK, x, y, width, height);
+        p.f[4] = radius;
         submit(p);
     }
 

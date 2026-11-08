@@ -268,6 +268,7 @@ namespace ImGuiApp {
         BorderlessWindow window;
         window.resizable = true;
         window.framed = Appearance::systemFrameRunning();
+        window.drawsCorners = true;
         window.isDragArea = [&scale](int x, int y) { return MainWindow::isDragArea(x / scale, y / scale); };
         bool remember = Appearance::rememberWindow();
         float startW = std::min(remember ? storedSize("windowWidth", MainWindow::MIN_WIDTH) : MainWindow::MIN_WIDTH,
@@ -390,6 +391,9 @@ namespace ImGuiApp {
             UiRender::begin(ImGui::GetForegroundDrawList());
             NewUi::render(panel.active() ? Compact::draw : MainWindow::draw);
             Page::forgetHidden();
+            if (window.transparentCorners()) {
+                UiRender::maskWindowCorners(BorderlessWindow::CORNER_RADIUS);
+            }
             UiRender::end();
             if (NewUi::caretFrame == NewUi::frameCounter) {
                 window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH, UiIme::wanted());
