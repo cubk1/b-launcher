@@ -11,15 +11,17 @@
         "aarch64-linux"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # The 关于 page shows the short git hash. A dirty tree shows the hash of HEAD, as a CMake build does.
+      gitCommit = self.shortRev or (nixpkgs.lib.removeSuffix "-dirty" (self.dirtyShortRev or ""));
     in
     {
       overlays.default = final: prev: {
-        b-launcher-unwrapped = final.callPackage ./nix/unwrapped.nix { };
+        b-launcher-unwrapped = final.callPackage ./nix/unwrapped.nix { inherit gitCommit; };
         b-launcher = final.callPackage ./nix/package.nix { };
       };
 
       packages = forAllSystems (pkgs: rec {
-        b-launcher-unwrapped = pkgs.callPackage ./nix/unwrapped.nix { };
+        b-launcher-unwrapped = pkgs.callPackage ./nix/unwrapped.nix { inherit gitCommit; };
         b-launcher = pkgs.callPackage ./nix/package.nix { inherit b-launcher-unwrapped; };
         default = b-launcher;
       });
