@@ -45,10 +45,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The zig toolchain, appimagetool and the sysroot are pinned, so they are fetched only once.
+      # ~/.cache/zig/h (manifests) and /z (compiler_rt) let the configure probes skip rebuilding
+      # zig's runtime for every -m flag combination; /o holds compile objects (~2 GB) and is left out.
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: |
+            ~/.cache/zig/h
+            ~/.cache/zig/z
             ${{ runner.temp }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}
             ${{ runner.temp }}/appimagetool
             ${{ runner.temp }}/sysroot
@@ -101,10 +105,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # The zig toolchain, rcodesign and the macOS SDK are pinned, so they are fetched only once.
+      # ~/.cache/zig/h (manifests) and /z (compiler_rt) let the configure probes skip rebuilding
+      # zig's runtime for every -m flag combination; /o holds compile objects (~2 GB) and is left out.
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: |
+            ~/.cache/zig/h
+            ~/.cache/zig/z
             ${{ runner.temp }}/zig-x86_64-linux-${{ env.ZIG_VERSION }}
             ${{ runner.temp }}/apple-codesign-${{ env.APPLE_CODESIGN_VERSION }}-x86_64-unknown-linux-musl
             ${{ runner.temp }}/MacOSX${{ env.MACOS_SDK_VERSION }}.sdk
