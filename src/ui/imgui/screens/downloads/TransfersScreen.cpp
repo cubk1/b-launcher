@@ -453,12 +453,26 @@ namespace TransfersScreen {
             return h;
         }
 
-        void finishedRow(const Task& task, float x, float y, float w, bool blocked) {
-            thumb(task, x + PAD, y + (ROW_H - SMALL_H) * 0.5f, SMALL_W, SMALL_H);
+        void finishedRow(const Task& task, float x, float y, float w, bool blocked, int corners) {
             std::string id = "transfers#" + std::to_string(task.id);
             float moreX = x + w - PAD - 28.0f;
-            if (Page::iconButton(id + "#more", 0xf141, "更多", moreX, y + (ROW_H - 28.0f) * 0.5f, blocked)) {
+            float moreY = y + (ROW_H - 28.0f) * 0.5f;
+            bool visit = visitable(task);
+            bool hovered = visit && !blocked && NewUi::hit(x, y, w, ROW_H) && !NewUi::hit(moreX, moreY, 28.0f, 28.0f);
+            float lift = UiState::motion(id + "#row", hovered ? 1.0f : 0.0f, 20.0f);
+            if (lift > 0.001f) {
+                UiRender::roundRect(x, y, w, ROW_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * lift)), corners);
+            }
+            if (hovered) {
+                UiCursor::hand();
+            }
+            thumb(task, x + PAD, y + (ROW_H - SMALL_H) * 0.5f, SMALL_W, SMALL_H);
+            if (Page::iconButton(id + "#more", 0xf141, "更多", moreX, moreY, blocked)) {
                 menu(task, moreX, y + (ROW_H + 28.0f) * 0.5f + 4.0f);
+            }
+            if (visit && !blocked && NewUi::click(x, y, w, ROW_H)) {
+                Instances::select(task.instance);
+                MainWindow::showHome();
             }
             float left = x + PAD + SMALL_W + PAD;
             float room = std::max(40.0f, moreX - 12.0f - left);
@@ -549,9 +563,10 @@ namespace TransfersScreen {
             Page::caption("已完成", y);
             y += captionH;
             Page::listCard(x, y, w, ROW_H, (int) finished.size());
-            for (const Task* task : finished) {
+            int count = (int) finished.size();
+            for (int i = 0; i < count; i++) {
                 if (y + ROW_H >= body.top - 8.0f && y <= body.bottom + 8.0f) {
-                    finishedRow(*task, x, y, w, listBlocked);
+                    finishedRow(*finished[i], x, y, w, listBlocked, Page::rowCorners(i, count));
                 }
                 y += ROW_H;
             }

@@ -26,6 +26,7 @@ namespace
 constexpr log::logger s_log ("download");
 constexpr std::size_t staging_limit = 1u << 20;
 constexpr std::uint64_t io_backlog_limit = 32u << 20;
+constexpr std::uint64_t mix_overhead = 64u << 10;
 
 constexpr std::int64_t split_threshold = 5 << 20;
 constexpr unsigned split_connections = 8;
@@ -34,6 +35,10 @@ constexpr std::uint64_t help_piece = 256u << 10;
 constexpr double help_warmup = 1.0;
 constexpr double help_seconds = 1.5;
 constexpr unsigned help_connections = 16;
+constexpr double stall_after = 2.0;
+constexpr double stall_rate = 24u << 10;
+constexpr unsigned stall_races = 16;
+constexpr unsigned stall_restarts = 3;
 
 struct byte_range
 {
@@ -164,6 +169,9 @@ struct download_client::impl
     bool range_ignored = false;
     bool reached_end = false;
     bool unsplittable = false;
+    std::uint64_t sampled = 0;
+    std::chrono::steady_clock::time_point sampled_at;
+    double recent = -1;
   };
 
   struct segment
@@ -173,6 +181,7 @@ struct download_client::impl
     std::uint64_t end = 0;
     unsigned attempt = 0;
     transfer *active = nullptr;
+    unsigned restarts = 0;
   };
 
   struct split_job
@@ -204,6 +213,11 @@ struct download_client::impl
   std::unordered_map<CURL *, std::unique_ptr<transfer>> active;
   std::vector<std::unique_ptr<split_job>> jobs;
   std::unordered_set<std::string> rangeless;
+  std::uint64_t pulled = 0;
+  std::uint64_t pulled_mark = 0;
+  std::chrono::steady_clock::time_point pulled_at;
+  double flow = 0;
+  double peak = 0;
 
   struct source_stats
   {
@@ -293,9 +307,9 @@ struct download_client::impl
       options.http2 = false;
     multi = curl_multi_init ();
     curl_multi_setopt (multi, CURLMOPT_MAX_TOTAL_CONNECTIONS,
-                       static_cast<long> (options.concurrency));
+                       static_cast<long> (options.concurrency * 2));
     curl_multi_setopt (multi, CURLMOPT_MAXCONNECTS,
-                       static_cast<long> (options.concurrency));
+                       static_cast<long> (options.concurrency * 4));
     if (options.per_host)
       curl_multi_setopt (multi, CURLMOPT_MAX_HOST_CONNECTIONS,
                          static_cast<long> (options.per_host));
@@ -351,6 +365,7 @@ struct download_client::impl
         return 0;
       }
     t->received += n;
+    t->owner->pulled += n;
     if (t->owner->progress)
       t->owner->progress->add_done (n);
     if (t->buffered)
@@ -409,7 +424,8 @@ struct download_client::impl
   std::unique_ptr<transfer>
   start (const download_task &task, std::size_t index, unsigned attempt,
          const network_settings &settings, const std::string &proxy,
-         std::optional<std::size_t> url_index = std::nullopt)
+         std::optional<std::size_t> url_index = std::nullopt,
+         bool fresh = false)
   {
     auto t = std::make_unique<transfer> ();
     t->owner = this;
@@ -419,6 +435,7 @@ struct download_client::impl
     t->url = task.urls[url_index ? *url_index : choose_url (task, attempt)];
     t->source = detail::host_of (t->url);
     t->started = std::chrono::steady_clock::now ();
+    t->sampled_at = t->started;
     t->buffered
         = task.size >= 0
           && static_cast<std::size_t> (task.size) <= options.memory_threshold;
@@ -443,7 +460,7 @@ struct download_client::impl
         t->file = std::move (*file);
         t->staging.reserve (staging_limit + options.receive_buffer);
       }
-    configure (*t, settings, proxy, options.http2);
+    configure (*t, settings, proxy, options.http2 && !fresh);
     if (t->easy)
       curl_multi_add_handle (multi, t->easy);
     return t;
@@ -744,6 +761,7 @@ struct download_client::impl
         t.staging.append (data, take);
         seg.pos += take;
         t.received += take;
+        pulled += take;
         if (progress)
           progress->add_done (take);
         if (t.staging.size () >= staging_limit)
@@ -774,6 +792,7 @@ struct download_client::impl
     t->url = job.task->urls[choose_url (*job.task, t->attempt)];
     t->source = detail::host_of (t->url);
     t->started = std::chrono::steady_clock::now ();
+    t->sampled_at = t->started;
     t->job = &job;
     t->segment_index = which;
     t->requested_begin = seg.pos;
@@ -1184,9 +1203,136 @@ struct download_client::impl
   }
 
   void
+  gauge (std::chrono::steady_clock::time_point now)
+  {
+    auto span = std::chrono::duration<double> (now - pulled_at).count ();
+    if (span < 1.0)
+      return;
+    flow = (pulled - pulled_mark) / span;
+    peak = std::max (peak, flow);
+    pulled_mark = pulled;
+    pulled_at = now;
+  }
+
+  static void
+  sample (transfer &t, std::chrono::steady_clock::time_point now)
+  {
+    auto span = std::chrono::duration<double> (now - t.sampled_at).count ();
+    if (span < 1.0)
+      return;
+    t.recent = (t.received - t.sampled) / span;
+    t.sampled = t.received;
+    t.sampled_at = now;
+  }
+
+  bool
+  stuck (const transfer &t, std::chrono::steady_clock::time_point now) const
+  {
+    if (t.hedge || t.hedged || t.write_error || !t.easy || left_of (t) == 0)
+      return false;
+    if (t.job)
+      {
+        const auto &seg = t.job->segments[t.segment_index];
+        if (t.job->no_ranges || seg.restarts >= stall_restarts
+            || (!t.job->ranges && seg.pos > seg.begin))
+          return false;
+      }
+    if (std::chrono::duration<double> (now - t.started).count () < stall_after
+        || (peak > 0 && flow * 2 >= peak))
+      return false;
+    double rate = t.received == 0 ? 0.0 : t.recent;
+    return rate >= 0 && rate < stall_rate;
+  }
+
+  void
+  restart (transfer &t, const network_settings &settings,
+           const std::string &proxy)
+  {
+    auto &job = *t.job;
+    auto which = t.segment_index;
+    auto *easy = t.easy;
+    curl_multi_remove_handle (multi, easy);
+    release_easy (easy);
+    t.easy = nullptr;
+    auto &seg = job.segments[which];
+    seg.active = nullptr;
+    ++seg.restarts;
+    --job.connections;
+    if (auto r = flush (t); !r)
+      {
+        active.erase (easy);
+        return fail_job (job, std::move (r).err (), false);
+      }
+    s_log.debug ("restarting {} from byte {}", path_to_utf8 (job.task->target),
+                 seg.pos);
+    active.erase (easy);
+    launch (job, which, settings, proxy);
+  }
+
+  bool
+  race (transfer &slow, const network_settings &settings,
+        const std::string &proxy)
+  {
+    const auto &urls = slow.task->urls;
+    std::optional<std::size_t> other;
+    for (std::size_t i = 0; i < urls.size () && !other; ++i)
+      if (detail::host_of (urls[i]) != slow.source
+          && !detail::host_penalized (urls[i]))
+        other = i;
+    for (std::size_t i = 0; i < urls.size () && !other; ++i)
+      if (urls[i] == slow.url)
+        other = i;
+    slow.hedged = true;
+    auto copy = start (*slow.task, slow.index, slow.attempt, settings, proxy,
+                       other, true);
+    if (!copy->easy)
+      {
+        discard (*copy);
+        return false;
+      }
+    copy->hedge = true;
+    s_log.debug ("racing {} on {}", path_to_utf8 (slow.task->target),
+                 copy->source);
+    auto *easy = copy->easy;
+    active.emplace (easy, std::move (copy));
+    return true;
+  }
+
+  void
+  rescue (const network_settings &settings, const std::string &proxy,
+          std::chrono::steady_clock::time_point now)
+  {
+    unsigned racing = 0;
+    std::vector<CURL *> slow;
+    for (auto &[easy, t] : active)
+      {
+        if (t->hedge)
+          ++racing;
+        else if (stuck (*t, now))
+          slow.push_back (easy);
+      }
+    for (auto *easy : slow)
+      {
+        if (active.size () >= options.concurrency)
+          return;
+        auto it = active.find (easy);
+        if (it == active.end ())
+          continue;
+        auto &t = *it->second;
+        if (t.job)
+          restart (t, settings, proxy);
+        else if (racing < stall_races && race (t, settings, proxy))
+          ++racing;
+      }
+  }
+
+  void
   help (const network_settings &settings, const std::string &proxy)
   {
     auto now = std::chrono::steady_clock::now ();
+    for (auto &[easy, t] : active)
+      sample (*t, now);
+    rescue (settings, proxy, now);
     while (active.size () < options.concurrency)
       {
         transfer *best = nullptr;
@@ -1202,7 +1348,9 @@ struct download_client::impl
             if (elapsed < help_warmup || t->received == 0)
               continue;
             double rate = t->received / elapsed;
-            if (left / rate < help_seconds)
+            if (t->recent >= 0)
+              rate = std::min (rate, t->recent);
+            if (rate > 0 && left / rate < help_seconds)
               continue;
             best = t.get ();
             most = left;
@@ -1241,6 +1389,7 @@ struct download_client::impl
     auto proxy = detail::proxy_for (settings);
 
     std::deque<std::pair<std::size_t, unsigned>> pending;
+    std::vector<std::size_t> order;
     for (std::size_t i = 0; i < tasks.size (); ++i)
       {
         if (tasks[i].urls.empty ())
@@ -1249,17 +1398,45 @@ struct download_client::impl
                 { i, {}, make_error (errc::invalid_argument, "no url") });
             continue;
           }
-        pending.emplace_back (i, 0);
+        order.push_back (i);
         if (progress)
           progress->add_total (tasks[i].size > 0
                                    ? static_cast<std::uint64_t> (tasks[i].size)
                                    : 0,
                                1);
       }
+    std::stable_sort (order.begin (), order.end (), [&] (auto a, auto b) {
+      return tasks[a].size > tasks[b].size;
+    });
+    auto cost = [&] (std::size_t i) {
+      return static_cast<std::uint64_t> (
+                 std::max<std::int64_t> (tasks[i].size, 0))
+             + mix_overhead;
+    };
+    std::uint64_t front = 0;
+    std::uint64_t back = 0;
+    for (std::size_t lo = 0, hi = order.size (); lo < hi;)
+      {
+        if (front <= back)
+          {
+            front += cost (order[lo]);
+            pending.emplace_back (order[lo++], 0);
+          }
+        else
+          {
+            back += cost (order[hi - 1]);
+            pending.emplace_back (order[--hi], 0);
+          }
+      }
 
     auto wake = token.on_cancel ([this] { curl_multi_wakeup (multi); });
     active.clear ();
     jobs.clear ();
+    pulled = 0;
+    pulled_mark = 0;
+    pulled_at = started;
+    flow = 0;
+    peak = 0;
     bool cancelled = false;
     std::vector<std::string> keys (tasks.size ());
     std::vector<bool> owned (tasks.size (), false);
@@ -1319,6 +1496,7 @@ struct download_client::impl
         if (!cancelled && token.is_cancelled ())
           {
             cancelled = true;
+            std::unordered_set<std::size_t> reported;
             for (auto &[easy, t] : active)
               {
                 curl_multi_remove_handle (multi, easy);
@@ -1326,9 +1504,10 @@ struct download_client::impl
                 if (t->job)
                   continue;
                 discard (*t);
-                report.failures.push_back (
-                    { t->index, t->url,
-                      make_error (errc::cancelled, "cancelled") });
+                if (reported.insert (t->index).second)
+                  report.failures.push_back (
+                      { t->index, t->url,
+                        make_error (errc::cancelled, "cancelled") });
               }
             active.clear ();
             for (auto &job : jobs)
@@ -1376,6 +1555,7 @@ struct download_client::impl
           }
 
         bool backlogged = io_backlog.load () >= io_backlog_limit;
+        gauge (std::chrono::steady_clock::now ());
 
         if (!cancelled && !backlogged)
           schedule_segments (settings, proxy);
