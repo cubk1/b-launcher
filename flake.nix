@@ -20,10 +20,19 @@
         b-launcher = final.callPackage ./nix/package.nix { };
       };
 
-      packages = forAllSystems (pkgs: rec {
-        b-launcher-unwrapped = pkgs.callPackage ./nix/unwrapped.nix { inherit gitCommit; };
-        b-launcher = pkgs.callPackage ./nix/package.nix { inherit b-launcher-unwrapped; };
-        default = b-launcher;
+      packages = forAllSystems (
+        pkgs:
+        let
+          pkgs' = pkgs.extend self.overlays.default;
+        in
+        {
+          inherit (pkgs') b-launcher b-launcher-unwrapped;
+          default = pkgs'.b-launcher;
+        }
+      );
+
+      checks = forAllSystems (pkgs: {
+        inherit (self.packages.${pkgs.stdenv.hostPlatform.system}) b-launcher b-launcher-unwrapped;
       });
 
       devShells = forAllSystems (
@@ -32,7 +41,7 @@
           b-launcher = self.packages.${pkgs.stdenv.hostPlatform.system}.b-launcher;
         in
         {
-          # The dev build uses the libraries of the shell. FetchContent downloads simdjson and libzt:
+          # The dev build uses the libraries of the shell. FetchContent downloads libzt:
           #   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
@@ -41,12 +50,14 @@
               pkgs.git
               pkgs.gdb
             ];
-            # The default value of the CMake option BLB_SYSTEM_LIBS.
-            BLB_SYSTEM_LIBS = "ON";
-            # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
-            BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
-            BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
-            BLB_NIXOS_PATH = b-launcher.nixosPath;
+            env = {
+              # The default value of the CMake option BLB_SYSTEM_LIBS.
+              BLB_SYSTEM_LIBS = "ON";
+              # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
+              BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
+              BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
+              BLB_NIXOS_PATH = b-launcher.nixosPath;
+            };
           };
         }
       );

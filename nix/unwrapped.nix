@@ -1,8 +1,8 @@
 {
   lib,
   stdenv,
-  fetchurl,
   fetchFromGitHub,
+  applyPatches,
   cmake,
   ninja,
   pkg-config,
@@ -12,7 +12,10 @@
   minizip-ng,
   reproc,
   nlohmann_json,
+  simdjson,
   sdl3,
+  libdecor,
+  writeShellScriptBin,
   freetype,
   fontconfig,
   # The short git hash for the 关于 page. The Nix build has no .git, so flake.nix gives it.
@@ -20,47 +23,33 @@
 }:
 
 let
-  # nixpkgs has no simdjson 5 and no libzt, so cmake/dependencies.cmake downloads them
-  # with FetchContent. The Nix build has no network, so we fetch them here and point
-  # FETCHCONTENT_SOURCE_DIR_<NAME> at the copies.
-  # Keep URLs and hashes in sync with cmake/dependencies.cmake.
-  simdjsonHeader = fetchurl {
-    url = "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader/simdjson.h";
-    sha256 = "869e8a4ff285cec36bc79d4a671a433158391a4f1898bb1c3b1f6e654b9547ae";
+  # nixpkgs has no libzt, so cmake/dependencies.cmake downloads it with FetchContent. The Nix
+  # build has no network, so FETCHCONTENT_SOURCE_DIR_LIBZT points at this copy. FetchContent
+  # does not run PATCH_COMMAND for a local source dir, so patch it here.
+  libzt = applyPatches {
+    src = fetchFromGitHub {
+      owner = "zerotier";
+      repo = "libzt";
+      rev = "a707ea6ae0910efdc1125d04758c411e2e9ea4f9";
+      fetchSubmodules = true;
+      hash = "sha256-7XlMdyyo49fS1mXFll6SM0u5GH+HzxuDYbIpjjRJyvs=";
+    };
+    nativeBuildInputs = [ cmake ];
+    postPatch = ''
+      cmake -DSOURCE_DIR=. -DCOMPILER_ID=${if stdenv.cc.isClang then "Clang" else "GNU"} \
+        -DCOMPILER_VERSION=${stdenv.cc.version} -P ${../cmake/patch_libzt.cmake}
+    '';
   };
-  simdjsonSource = fetchurl {
-    url = "https://raw.githubusercontent.com/simdjson/simdjson/v5.0.5/singleheader/simdjson.cpp";
-    sha256 = "97d622441079fae86c7c342508880168bd7bf9e3342b1f4c565077da0155ca79";
-  };
-
-  libzt = fetchFromGitHub {
-    owner = "zerotier";
-    repo = "libzt";
-    rev = "a707ea6ae0910efdc1125d04758c411e2e9ea4f9";
-    fetchSubmodules = true;
-    hash = "sha256-7XlMdyyo49fS1mXFll6SM0u5GH+HzxuDYbIpjjRJyvs=";
-  };
-
-  compilerId = if stdenv.cc.isClang then "Clang" else "GNU";
-
-  # FetchContent skips URL_HASH and GIT_TAG once FETCHCONTENT_SOURCE_DIR_<NAME> is set,
-  # so stop here when cmake/dependencies.cmake pins other versions.
-  pins = builtins.readFile ../cmake/dependencies.cmake;
-  stale = lib.filter (pin: !lib.hasInfix pin pins) [
-    simdjsonHeader.outputHash
-    simdjsonSource.outputHash
-    libzt.rev
-  ];
-  staleMessage = "nix/unwrapped.nix: update the sources to match cmake/dependencies.cmake (${toString stale})";
-
+in
+# FetchContent skips GIT_TAG once FETCHCONTENT_SOURCE_DIR_LIBZT is set.
+assert lib.assertMsg (lib.hasInfix libzt.rev (
+  builtins.readFile ../cmake/dependencies.cmake
+)) "nix/unwrapped.nix: update libzt to the GIT_TAG in cmake/dependencies.cmake";
+stdenv.mkDerivation (finalAttrs: {
+  pname = "b-launcher-unwrapped";
   version = lib.head (
     builtins.match ".*project\\(b-launcher VERSION ([0-9.]+).*" (builtins.readFile ../CMakeLists.txt)
   );
-in
-assert lib.assertMsg (stale == [ ]) staleMessage;
-stdenv.mkDerivation {
-  pname = "b-launcher-unwrapped";
-  inherit version;
 
   src = lib.fileset.toSource {
     root = ../.;
@@ -73,6 +62,7 @@ stdenv.mkDerivation {
     ];
   };
 
+  __structuredAttrs = true;
   strictDeps = true;
 
   nativeBuildInputs = [
@@ -88,59 +78,39 @@ stdenv.mkDerivation {
     minizip-ng
     reproc
     nlohmann_json
-    sdl3
+    simdjson
+    finalAttrs.passthru.sdl3'
     freetype
     fontconfig
   ];
 
-  postUnpack = ''
-    deps=$NIX_BUILD_TOP/deps
-    mkdir -p $deps/simdjson_header $deps/simdjson_source
-    cp ${simdjsonHeader} $deps/simdjson_header/simdjson.h
-    cp ${simdjsonSource} $deps/simdjson_source/simdjson.cpp
-    cp -r ${libzt} $deps/libzt
-    chmod -R u+w $deps
-  '';
-
-  # FetchContent does not run PATCH_COMMAND for a local source dir,
-  # so run the same patch script by hand.
-  preConfigure = ''
-    deps=$NIX_BUILD_TOP/deps
-    cmake -DSOURCE_DIR=$deps/libzt -DCOMPILER_ID=${compilerId} \
-      -DCOMPILER_VERSION=${stdenv.cc.version} -P cmake/patch_libzt.cmake
-    for name in $(ls $deps); do
-      appendToVar cmakeFlags "-DFETCHCONTENT_SOURCE_DIR_''${name^^}=$deps/$name"
-    done
-  '';
-
   cmakeFlags = [
     (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
+    (lib.cmakeFeature "FETCHCONTENT_SOURCE_DIR_LIBZT" "${libzt}")
     (lib.cmakeBool "BLB_SYSTEM_LIBS" true)
     # Nix updates the package.
     (lib.cmakeBool "BLB_UPDATE_CHECK" false)
     (lib.cmakeFeature "BLB_GIT_COMMIT" gitCommit)
   ];
 
-  ninjaFlags = [
-    "b-launcher"
-  ];
-
-  installPhase = ''
-    runHook preInstall
-    install -Dm755 b-launcher $out/bin/b-launcher
-    install -Dm644 $src/assets/images/logo.svg $out/share/icons/hicolor/scalable/apps/b-launcher.svg
-    install -Dm644 /dev/stdin $out/share/applications/b-launcher.desktop <<EOF
-    [Desktop Entry]
-    Type=Application
-    Name=B Launcher
-    Comment=Minecraft launcher
-    Exec=b-launcher
-    Icon=b-launcher
-    Categories=Game;
-    Terminal=false
-    EOF
-    runHook postInstall
-  '';
+  passthru = {
+    # The default sdl3 links every backend (SDL_DEPS_SHARED is off) and hardcodes zenity, which
+    # pulls in gtk4, libadwaita and GStreamer (about 900 MiB). The launcher opens one window,
+    # plays sounds and shows a tray icon and file dialogs:
+    # - File dialogs go through xdg-desktop-portal; zenity is a fallback found in PATH.
+    # - Audio goes through PulseAudio (pipewire-pulse) or ALSA, not native PipeWire or JACK.
+    # The GTK plugin of libdecor pulls in gtk3 (about 200 MiB). The cairo plugin draws the same
+    # title bar. package.nix gives this libdecor to the game too.
+    libdecor' = libdecor.overrideAttrs (old: {
+      mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gtk" false) ];
+    });
+    sdl3' = sdl3.override {
+      libdecor = finalAttrs.passthru.libdecor';
+      zenity = writeShellScriptBin "zenity" ''exec zenity "$@"'';
+      pipewireSupport = false;
+      jackSupport = false;
+    };
+  };
 
   meta = {
     description = "Lightweight Minecraft launcher written in C++";
@@ -149,4 +119,4 @@ stdenv.mkDerivation {
     mainProgram = "b-launcher";
     platforms = lib.platforms.linux;
   };
-}
+})
