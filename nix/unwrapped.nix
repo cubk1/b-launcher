@@ -14,6 +14,8 @@
   nlohmann_json,
   simdjson,
   sdl3,
+  libdecor,
+  writeShellScriptBin,
   freetype,
   fontconfig,
   # The short git hash for the 关于 page. The Nix build has no .git, so flake.nix gives it.
@@ -78,7 +80,7 @@ stdenv.mkDerivation (finalAttrs: {
     reproc
     nlohmann_json
     simdjson
-    sdl3
+    finalAttrs.passthru.sdl3'
     freetype
     fontconfig
   ];
@@ -94,6 +96,25 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   doCheck = true;
+
+  passthru = {
+    # The default sdl3 links every backend (SDL_DEPS_SHARED is off) and hardcodes zenity, which
+    # pulls in gtk4, libadwaita and GStreamer (about 900 MiB). The launcher opens one window,
+    # plays sounds and shows a tray icon and file dialogs:
+    # - File dialogs go through xdg-desktop-portal; zenity is a fallback found in PATH.
+    # - Audio goes through PulseAudio (pipewire-pulse) or ALSA, not native PipeWire or JACK.
+    # The GTK plugin of libdecor pulls in gtk3 (about 200 MiB). The cairo plugin draws the same
+    # title bar. package.nix gives this libdecor to the game too.
+    libdecor' = libdecor.overrideAttrs (old: {
+      mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gtk" false) ];
+    });
+    sdl3' = sdl3.override {
+      libdecor = finalAttrs.passthru.libdecor';
+      zenity = writeShellScriptBin "zenity" ''exec zenity "$@"'';
+      pipewireSupport = false;
+      jackSupport = false;
+    };
+  };
 
   meta = {
     description = "Lightweight Minecraft launcher written in C++";
