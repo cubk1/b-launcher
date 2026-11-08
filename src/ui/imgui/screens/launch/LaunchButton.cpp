@@ -356,7 +356,9 @@ namespace LaunchButton {
         UiRender::alphaMul = savedAlpha * UiRender::lerp(0.45f, 1.0f, enabled);
 
         uint32_t fill = UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover);
-        UiRender::shadow(x, y, size, size, RADIUS, 12.0f, 4.0f, UiTheme::shadow());
+        float glow = UiRender::lerp(0.3f, 0.45f, hover) * enabled;
+        UiRender::bloom(x, y, size, size, RADIUS, 10.0f, 1.0f,
+                        (UiTheme::accent() & 0x00FFFFFFu) | ((uint32_t) Ui::round(255.0f * glow) << 24));
         UiRender::roundRect(x, y, size, size, RADIUS, fill);
         uint32_t ink = UiTheme::onAccent();
         float fraction = Game::progress(key);
