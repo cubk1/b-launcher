@@ -8,11 +8,14 @@
 #include <algorithm>
 #include <condition_variable>
 #include <mutex>
+#include <map>
 #include <thread>
 #include <vector>
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+extern char **environ;
 #endif
 
 namespace b_launcher_base
@@ -314,8 +317,27 @@ process::start (const process_options &options, output_callback on_output)
 
   std::vector<std::string> env_storage;
   std::vector<const char *> env;
+#if !defined(_WIN32)
+  // A child gets one value per key. The last explicit value takes precedence.
+  std::map<std::string, std::string> merged;
+  if (!options.environment.empty ())
+    {
+      for (char **entry = environ; entry && *entry; ++entry)
+        {
+          std::string_view text (*entry);
+          auto equals = text.find ('=');
+          if (equals != std::string_view::npos)
+            merged[std::string (text.substr (0, equals))] = text.substr (equals + 1);
+        }
+      for (const auto &[key, value] : options.environment)
+        merged[key] = value;
+      for (const auto &[key, value] : merged)
+        env_storage.push_back (key + "=" + value);
+    }
+#else
   for (const auto &[key, value] : options.environment)
     env_storage.push_back (key + "=" + value);
+#endif
   for (const auto &entry : env_storage)
     env.push_back (entry.c_str ());
   env.push_back (nullptr);
@@ -325,7 +347,12 @@ process::start (const process_options &options, output_callback on_output)
   reproc_options opts {};
   opts.working_directory
       = options.working_directory.empty () ? nullptr : working.c_str ();
+#if defined(_WIN32)
   opts.env.behavior = REPROC_ENV_EXTEND;
+#else
+  opts.env.behavior = options.environment.empty () ? REPROC_ENV_EXTEND
+                                                   : REPROC_ENV_EMPTY;
+#endif
   opts.env.extra = env_storage.empty () ? nullptr : env.data ();
   opts.redirect.in.type = REPROC_REDIRECT_DISCARD;
   opts.redirect.out.type = options.capture_output ? REPROC_REDIRECT_PIPE

@@ -83,6 +83,30 @@ forget_argument_files (const std::filesystem::path &directory)
       (void)fs::remove_file (directory / path_from_utf8 (name));
 }
 
+// Keep instance entries first, then package entries and the inherited value.
+void
+prepend_list (std::vector<std::pair<std::string, std::string>> &variables,
+              std::string_view name, std::string_view entries)
+{
+  if (entries.empty ())
+    return;
+  auto set = std::find_if (variables.rbegin (), variables.rend (),
+                           [&] (const auto &v) { return v.first == name; });
+  if (set != variables.rend ())
+    {
+      if (!set->second.empty ())
+        set->second += ":";
+      set->second += entries;
+      if (auto current = environment (name); current && !current->empty ())
+        set->second += ":" + *current;
+      return;
+    }
+  std::string value (entries);
+  if (auto current = environment (name); current && !current->empty ())
+    value += ":" + *current;
+  variables.emplace_back (std::string (name), std::move (value));
+}
+
 std::vector<install::planned_file>
 split_natives (std::vector<install::planned_file> &files)
 {
@@ -104,6 +128,7 @@ struct game_launcher::impl
   std::shared_ptr<auth::microsoft_authenticator> authenticator;
   std::mutex java_mutex;
   std::optional<std::vector<java::java_installation>> java_cache;
+  std::vector<std::string> java_wrapper;
 };
 
 game_launcher::game_launcher (
@@ -131,22 +156,29 @@ game_launcher::set_java_candidates (
 }
 
 std::vector<java::java_installation>
-game_launcher::java_candidates (bool rescan, cancellation_token token)
+game_launcher::java_candidates (bool rescan, cancellation_token token,
+                                const std::vector<std::string> &wrapper)
 {
   if (token.is_cancelled ())
     return {};
   std::lock_guard lock (m_impl->java_mutex);
   if (token.is_cancelled ())
     return {};
+  if (m_impl->java_wrapper != wrapper)
+    {
+      m_impl->java_wrapper = wrapper;
+      m_impl->java_cache.reset ();
+    }
   const auto &known = m_impl->installer->options ().java_candidates;
-  if (!m_impl->java_cache && !rescan && known)
+  if (!m_impl->java_cache && !rescan && known && wrapper.empty ())
     {
       m_impl->java_cache = *known;
-      java::prune_missing (*m_impl->java_cache);
+      java::prune_unusable (*m_impl->java_cache, token);
     }
   if (!m_impl->java_cache || rescan)
     {
       auto options = m_impl->installer->options ().java_scan;
+      options.wrapper = wrapper;
       options.runtime_roots.push_back (
           m_impl->installer->layout ().runtime ());
       auto found = java::scan_java (options, token);
@@ -169,38 +201,48 @@ game_launcher::resolve_java (const meta::version &resolved,
                              progress_sink *progress, cancellation_token token)
 {
   BLB_TRY (token.check ());
+  // Only NixOS without nix-ld needs the instance wrapper (e.g. steam-run) to start Java.
+  // Other systems do not run each Java through a wrapper such as gamemoderun.
+  static const std::vector<std::string> no_wrapper;
+  const auto &wrapper = runs_generic_binaries () ? no_wrapper : settings.wrapper;
   if (settings.java)
     {
-      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true, token));
+      BLB_TRY_ASSIGN (auto install, java::probe_java (*settings.java, true,
+                                                      token, wrapper));
       install.source = java::java_source::user;
       return install;
     }
   auto requirement = java::requirement_for (resolved);
+  // True when java_candidates gives a cached list. With a new wrapper, it scans again.
   bool cached;
   {
     std::lock_guard lock (m_impl->java_mutex);
-    cached = m_impl->java_cache.has_value ()
-             || m_impl->installer->options ().java_candidates.has_value ();
+    cached = (m_impl->java_cache && m_impl->java_wrapper == wrapper)
+             || (wrapper.empty ()
+                 && m_impl->installer->options ().java_candidates);
   }
-  auto candidates = java_candidates (false, token);
+  auto candidates = java_candidates (false, token, wrapper);
   BLB_TRY (token.check ());
   if (auto chosen = java::select_java (candidates, requirement))
     return *chosen;
   if (cached)
     {
-      candidates = java_candidates (true, token);
+      candidates = java_candidates (true, token, wrapper);
       BLB_TRY (token.check ());
       if (auto chosen = java::select_java (candidates, requirement))
         return *chosen;
     }
+  if (auto blocked = java::runtime_blocked (wrapper))
+    return *blocked;
   if (!settings.auto_download_java)
     return make_error (errc::java_not_found,
                        sformat ("no java {}+ found", requirement.min_major));
   s_log.info ("no suitable java, installing runtime {}",
               requirement.component);
-  BLB_TRY_ASSIGN (auto installed, java::install_runtime (*m_impl->installer,
-                                                         requirement.component,
-                                                         progress, token));
+  BLB_TRY_ASSIGN (auto installed,
+                  java::install_runtime (*m_impl->installer,
+                                         requirement.component, progress,
+                                         token, std::nullopt, wrapper));
   {
     std::lock_guard lock (m_impl->java_mutex);
     if (m_impl->java_cache)
@@ -365,6 +407,10 @@ game_launcher::prepare (const launch_settings &settings,
               }
         }
     }
+  const auto &nixos = packaged_nixos_paths ();
+  prepend_list (out.command.environment, "LD_LIBRARY_PATH",
+                nixos.library_path);
+  prepend_list (out.command.environment, "PATH", nixos.program_path);
   out.timings.total = since (started);
   s_log.info ("prepared {} in {} ms (resolve {}, auth {}, integrity {}, "
               "java {}, natives {})",

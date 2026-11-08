@@ -90,7 +90,9 @@ namespace JavaPage {
                 }
             }
             if (shown.empty()) {
+                // Without nix-ld on NixOS the list is blocked, not failed, so show only the reason.
                 std::string text = loading                             ? "正在获取 Java 列表…"
+                        : !JavaDownloads::available()                  ? list.error
                         : list.status == JavaDownloads::Status::Failed ? "获取 Java 列表失败：" + list.error
                         : list.packages.empty()                        ? "列表是空的"
                                                                        : "没有这个版本的 Java";

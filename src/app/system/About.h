@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 // CMake gives the version; a build without it says 0.0.0.
 #ifndef B_LAUNCHER_VERSION
 #define B_LAUNCHER_VERSION "0.0.0"
@@ -12,6 +14,8 @@ namespace About {
     // The name with the trademark sign, as the launcher shows it as a title.
     inline constexpr const char* BRAND = "B Launcher\xE2\x84\xA2";
     inline constexpr const char* VERSION = B_LAUNCHER_VERSION;
+    // For the 关于 page only: "v0.4.0 (abc1234)", or "v0.4.0" when the build has no git hash.
+    std::string versionLabel();
     inline constexpr const char* AUTHOR = "cubk";
     inline constexpr const char* AUTHOR_URL = "https://cubk.cn/";
     inline constexpr const char* REPOSITORY = "cubk1/b-launcher";

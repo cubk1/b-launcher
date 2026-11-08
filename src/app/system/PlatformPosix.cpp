@@ -1,7 +1,10 @@
 #include "app/system/Platform.h"
 #include "app/system/PlatformPosix.h"
+#include "app/launch/ShortcutLaunch.h"
 
 #include <core/base/fs.hpp>
+#include <core/base/hash.hpp>
+#include <core/base/instance_channel.hpp>
 #include <core/base/platform.hpp>
 #include <core/base/strings.hpp>
 
@@ -26,6 +29,7 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <thread>
 
 extern char** environ;
@@ -34,6 +38,16 @@ namespace Platform {
 
     namespace {
         namespace blb = b_launcher_base;
+
+        blb::instance_channel launches;
+
+        std::filesystem::path launchDirectory() {
+            auto runtime = blb::environment("XDG_RUNTIME_DIR");
+            auto parent = runtime && runtime->starts_with('/') && runtime->size() < 60
+                    ? blb::path_from_utf8(*runtime) : std::filesystem::path("/tmp");
+            auto identity = blb::to_hex(blb::sha1::digest(blb::path_to_utf8(configDirectory().lexically_normal())));
+            return parent / ("b-launcher-" + std::to_string(getuid()) + "-" + identity.substr(0, 16));
+        }
 
         std::vector<std::string> environmentList(const Environment& extra) {
             std::map<std::string, std::string> variables;
@@ -389,13 +403,24 @@ namespace Platform {
         }
     }
 
-    bool forwardLaunch(const std::string&, bool) {
-        return false;
+    bool forwardLaunch(const std::string& key, bool quiet) {
+        return launches.forward_or_listen(launchDirectory(), std::string(quiet ? "1" : "0") + key);
     }
 
     void claimTaskbar() {}
 
-    void claimLaunches() {}
+    // Listen also when multiple launchers are allowed, so that shortcuts go to this launcher.
+    void claimLaunches() {
+        if (!launches.listening()) {
+            launches.forward_or_listen(launchDirectory(), {});
+        }
+    }
+
+    void pollLaunches() {
+        if (auto message = launches.receive(); message && !message->empty()) {
+            ShortcutLaunch::forwarded(message->substr(1), message->front() == '1');
+        }
+    }
 
     bool setClipboardText(const std::string& text) {
         return SDL_SetClipboardText(text.c_str());
@@ -478,8 +503,22 @@ namespace Platform {
 
     std::optional<std::string> loadValue(const std::string& name) {
         std::filesystem::path file = storeFile(name);
-        if (file.empty() || !blb::fs::exists(file)) {
+        if (file.empty()) {
             return std::nullopt;
+        }
+        if (!blb::fs::exists(file)) {
+#if defined(__APPLE__)
+            std::filesystem::path legacy = blb::home_directory() / "Library" / "Application Support";
+#else
+            auto xdg = blb::environment("XDG_CONFIG_HOME");
+            std::filesystem::path legacy = xdg && blb::path_from_utf8(*xdg).is_absolute()
+                    ? blb::path_from_utf8(*xdg) : blb::home_directory() / ".config";
+#endif
+            auto data = blb::fs::read_file(legacy / "b-launcher" / name);
+            if (!data || !storeValue(name, *data, false)) {
+                return std::nullopt;
+            }
+            return std::move(*data);
         }
         blb::result<std::string> data = blb::fs::read_file(file);
         if (!data) {

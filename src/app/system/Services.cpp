@@ -25,6 +25,7 @@
 #include "app/system/CustomDownload.h"
 #include "app/system/DiskScan.h"
 #include "app/system/Network.h"
+#include "app/system/Platform.h"
 #include "app/system/ServerStatus.h"
 #include "app/system/Transfers.h"
 #include "app/system/Updates.h"
@@ -42,6 +43,7 @@ namespace Services {
     }
 
     void poll() {
+        Platform::pollLaunches();
         Instances::poll();
         Accounts::poll();
         Profiles::poll();

@@ -25,6 +25,7 @@
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
 #include <core/installer/game_installer.hpp>
+#include <core/java/java_detect.hpp>
 #include <core/launcher/launcher.hpp>
 
 #include <algorithm>
@@ -74,6 +75,7 @@ namespace Game {
             std::string failure;
             bool cancelled = false;
             std::string javaUsed;
+            std::optional<blb::java::java_installation> javaInstall;
             std::string javaVersion;
             int javaMajor = 0;
             unsigned javaBits = 0;
@@ -360,7 +362,7 @@ namespace Game {
             std::optional<blb::process> game;
             std::string error;
             bool wasCancelled;
-            std::string javaUsed;
+            std::optional<blb::java::java_installation> javaInstall;
             {
                 std::lock_guard<std::mutex> guard(live.lock);
                 game = std::move(live.started);
@@ -368,13 +370,13 @@ namespace Game {
                 error = live.failure;
                 wasCancelled = live.cancelled;
                 live.prepared = false;
-                javaUsed = live.javaUsed;
+                javaInstall = live.javaInstall;
                 if (!live.javaUsed.empty()) {
                     live.variables.emplace_back("INST_JAVA", live.javaUsed);
                 }
             }
-            if (!javaUsed.empty()) {
-                Catalog::seenJava(blb::path_from_utf8(javaUsed));
+            if (javaInstall) {
+                Catalog::seenJava(*javaInstall);
             }
             takeAccount(live);
             if (uint64_t transfer = live.transfer.exchange(0); transfer != 0) {
@@ -764,9 +766,15 @@ namespace Game {
                     std::string java = blb::path_to_utf8(ready->java.executable);
                     GameLog::note(log, "Java：" + java + "（" + ready->java.version + "）");
                     ready->command.environment.insert(ready->command.environment.begin(), {"INST_JAVA", java});
+                    // The Java list is also for loader installs, which do not use the instance wrapper.
+                    bool standalone = settings.wrapper.empty() || blb::runs_generic_binaries() ||
+                            blb::java::probe_java(ready->java.home, true, token);
                     {
                         std::lock_guard<std::mutex> guard(self->lock);
                         self->javaUsed = java;
+                        if (standalone) {
+                            self->javaInstall = ready->java;
+                        }
                         self->javaVersion = ready->java.version;
                         self->javaMajor = ready->java.major;
                         self->javaBits = blb::arch_bits(ready->java.arch);

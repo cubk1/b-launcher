@@ -123,6 +123,11 @@ namespace ForgottenMelody {
                         Platform::showWindow();
                     }
                 }
+                // Another launcher process showed the window during a headless launch, so keep it open.
+                if (ShortcutLaunch::takeShown() && headless) {
+                    headless = false;
+                    Game::setQuiet(false);
+                }
                 if (headless) {
                     if (launchSent && Game::running()) {
                         headless = false;

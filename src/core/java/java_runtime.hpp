@@ -61,10 +61,14 @@ fetch_runtime_index (const net::mirror_provider &mirror,
 std::filesystem::path runtime_home (const meta::game_layout &layout,
                                     std::string_view component,
                                     std::string_view platform);
+// NixOS without nix-ld runs only a Java from /nix/store, unless a wrapper such as
+// steam-run starts it. Other systems can download a runtime.
+std::optional<error> runtime_blocked (const std::vector<std::string> &wrapper = {});
 result<java_installation>
 install_runtime (install::game_installer &installer,
                  std::string_view component, progress_sink *sink = nullptr,
                  cancellation_token token = {},
-                 std::optional<cpu_arch> arch = std::nullopt);
+                 std::optional<cpu_arch> arch = std::nullopt,
+                 const std::vector<std::string> &wrapper = {});
 
 }

@@ -261,7 +261,7 @@ namespace SettingsScreen {
             }
             if (Page::iconButton(id + "Pick", 0xf07c, "选择图片", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start =
-                        file.path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(file.path);
+                        file.path.empty() ? Platform::userDirectory() : blb::path_from_utf8(file.path);
                 if (std::optional<std::filesystem::path> picked = file.pick(start)) {
                     file.apply(blb::path_to_utf8(*picked));
                 }
@@ -300,7 +300,7 @@ namespace SettingsScreen {
         }
 
         int windowCount() {
-            return Appearance::systemFrameRunning() ? 5 : 6;
+            return Appearance::systemFrameRunning() ? 6 : 7;
         }
 
         float restartControls(const std::string& id, float right, float labelEnd, float y, bool blocked,
@@ -483,6 +483,18 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setRememberWindow(on); }, y, blocked);
             y += Page::ROW_H;
 
+            Page::label("允许多个启动器同时开启", y);
+            toggle(
+                    "settings#allowMultipleInstances",
+                    [] { return Config::data().value("allowMultipleInstances", true); },
+                    [](bool on) {
+                        Config::data()["allowMultipleInstances"] = on;
+                        Config::save();
+                        Platform::claimLaunches();
+                    },
+                    y, blocked);
+            y += Page::ROW_H;
+
             systemFrameRow(y, blocked);
             y += Page::ROW_H;
 
@@ -638,6 +650,7 @@ namespace SettingsScreen {
                 {SECTION_LOOK, "界面音效", "声音"},
                 {SECTION_WINDOW, "紧凑模式", "托盘 迷你 小窗 Ctrl+M"},
                 {SECTION_WINDOW, "记住窗口大小", nullptr},
+                {SECTION_WINDOW, "允许多个启动器同时开启", "多开 单实例"},
                 {SECTION_WINDOW, "使用系统窗口边框", "标题栏 边框"},
                 {SECTION_WINDOW, "窗口标题", "任务栏"},
                 {SECTION_WINDOW, "启动器标志", "图标 logo"},
@@ -1270,7 +1283,7 @@ namespace SettingsScreen {
             float pickX = Page::controlRight() - 27.0f;
             if (Page::iconButton("settings#homepagePick", 0xf07c, "选择 XAML 文件", pickX, y + 6.0f, blocked)) {
                 std::filesystem::path start =
-                        path.empty() ? Platform::exeDirectory() : blb::path_from_utf8(path).parent_path();
+                        path.empty() ? Platform::userDirectory() : blb::path_from_utf8(path).parent_path();
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(start, L"选择主页文件", L"XAML 文件", L"*.xaml;*.xml;*.txt");
                 if (!picked.empty()) {
@@ -1510,9 +1523,10 @@ namespace SettingsScreen {
                 }
             }
             std::string download = "下载";
-            float downloadW = Page::buttonWidth(download, 0xf019);
-            float downloadX = addX - 8.0f - downloadW;
-            if (Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
+            bool canDownload = JavaDownloads::available();
+            float downloadW = canDownload ? Page::buttonWidth(download, 0xf019) : 0.0f;
+            float downloadX = canDownload ? addX - 8.0f - downloadW : addX;
+            if (canDownload && Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
                              0xf019)) {
                 DownloadsScreen::openJava();
             }
@@ -1629,6 +1643,9 @@ namespace SettingsScreen {
         }
 
         void updateControl(float y, float leftEnd, bool blocked) {
+            if (!Updates::enabled()) {
+                return;
+            }
             Updates::State state = Updates::state();
             float by = y + (HERO_H - Page::FIELD_H) * 0.5f;
             float right = mainX() + mainW() - 20.0f;
@@ -1698,7 +1715,7 @@ namespace SettingsScreen {
             float x = textX;
             UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += Page::tag(std::string("v") + About::VERSION, x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
+            x += Page::tag(About::versionLabel(), x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
                      UiTheme::accentText());
             tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);
@@ -1786,7 +1803,8 @@ namespace SettingsScreen {
             std::string current = Patches::value(key);
             bool local = !current.empty() && current.find(',') == std::string::npos &&
                     current.find("://") == std::string::npos;
-            std::filesystem::path start = local ? blb::path_from_utf8(current).parent_path() : Platform::exeDirectory();
+            std::filesystem::path start =
+                    local ? blb::path_from_utf8(current).parent_path() : Platform::userDirectory();
             std::optional<std::filesystem::path> picked;
             if (png) {
                 std::vector<std::filesystem::path> files =

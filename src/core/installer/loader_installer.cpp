@@ -123,7 +123,8 @@ struct loader_installer::impl
     if (!java_cache && installer->options ().java_candidates)
       {
         java_cache = *installer->options ().java_candidates;
-        java::prune_missing (*java_cache);
+        // The installer runs Java without the instance wrapper.
+        java::prune_unusable (*java_cache, token);
       }
     if (java_cache)
       {
@@ -137,6 +138,8 @@ struct loader_installer::impl
     java_cache = std::move (found);
     if (auto chosen = java::select_java (*java_cache, requirement))
       return *chosen;
+    if (auto blocked = java::runtime_blocked ())
+      return *blocked;
     BLB_TRY_ASSIGN (auto installed,
                     java::install_runtime (*installer, requirement.component, sink, token));
     java_cache->push_back (installed);

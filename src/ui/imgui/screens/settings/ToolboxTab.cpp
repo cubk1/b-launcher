@@ -91,7 +91,7 @@ namespace ToolboxTab {
         void ensureFolderDefault() {
             if (!folderInit) {
                 folderInit = true;
-                folderText = Platform::display(Platform::exeDirectory());
+                folderText = Platform::display(Platform::userDirectory());
             }
         }
 
@@ -158,7 +158,7 @@ namespace ToolboxTab {
 
         void pickFolder() {
             std::string folder = liveFolder();
-            std::filesystem::path initial = folder.empty() ? Platform::exeDirectory() : blb::path_from_utf8(folder);
+            std::filesystem::path initial = folder.empty() ? Platform::userDirectory() : blb::path_from_utf8(folder);
             std::optional<std::filesystem::path> picked = Platform::pickFolder(initial);
             if (picked) {
                 if (NewUi::textEditing == FOLDER_OWNER) {

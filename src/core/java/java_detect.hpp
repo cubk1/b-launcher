@@ -44,6 +44,7 @@ struct scan_options
   std::vector<std::filesystem::path> extra_roots;
   std::vector<std::filesystem::path> runtime_roots;
   std::vector<std::filesystem::path> excluded;
+  std::vector<std::string> wrapper;
   std::function<void (std::size_t done, std::size_t total)> progress;
   bool probe_process = true;
   bool system_locations = true;
@@ -53,10 +54,16 @@ int parse_java_major (std::string_view version) noexcept;
 std::string_view java_source_name (java_source source) noexcept;
 std::filesystem::path
 java_home_from_executable (const std::filesystem::path &executable);
+// On NixOS without nix-ld, a Java from outside /nix/store must start to pass.
+// It starts through wrapper (the instance wrapper command, e.g. steam-run).
 result<java_installation>
 probe_java (const std::filesystem::path &home_or_executable,
-            bool allow_process = true, cancellation_token token = {});
+            bool allow_process = true, cancellation_token token = {},
+            const std::vector<std::string> &wrapper = {},
+            bool verify_execution = false);
 std::vector<java_installation> scan_java (const scan_options &options = {},
                                           cancellation_token token = {});
-void prune_missing (std::vector<java_installation> &installs);
+// Drops a Java that is gone, and on NixOS without nix-ld a Java that starts only through a wrapper.
+void prune_unusable (std::vector<java_installation> &installs,
+                     cancellation_token token = {});
 }

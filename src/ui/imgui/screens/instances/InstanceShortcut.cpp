@@ -99,7 +99,7 @@ namespace InstanceShortcut {
             Shortcuts::Draft& draft = Shortcuts::draft(key);
             float pickX = Page::controlRight() - 27.0f;
             if (Page::iconButton("shortcut#pick#" + key, 0xf07c, "选择图标", pickX, rowY + 6.0f, blocked)) {
-                std::filesystem::path start = draft.custom.empty() ? Platform::exeDirectory() : draft.custom;
+                std::filesystem::path start = draft.custom.empty() ? Platform::userDirectory() : draft.custom;
                 if (std::optional<std::filesystem::path> picked = Platform::pickIcon(start)) {
                     draft.custom = *picked;
                 }

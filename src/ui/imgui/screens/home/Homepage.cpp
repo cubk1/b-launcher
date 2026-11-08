@@ -505,7 +505,7 @@ namespace Homepage {
                 name = "download";
             }
             std::optional<std::filesystem::path> target =
-                    Platform::pickSaveFile(Platform::exeDirectory() / blb::path_from_utf8(name), L"保存文件");
+                    Platform::pickSaveFile(Platform::userDirectory() / blb::path_from_utf8(name), L"保存文件");
             if (!target) {
                 return;
             }
