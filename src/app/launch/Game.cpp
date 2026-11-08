@@ -3,7 +3,9 @@
 #include "app/accounts/Accounts.h"
 #include "app/accounts/Looks.h"
 #include "app/downloads/DownloadSources.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/GameLog.h"
+#include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
 #include "app/launch/LaunchDefaults.h"
@@ -14,6 +16,7 @@
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Catalog.h"
+#include "app/system/Transfers.h"
 
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
@@ -27,6 +30,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -62,6 +66,8 @@ namespace Game {
             std::thread preparer;
             std::shared_ptr<blb::cancellation_source> cancelling;
             std::atomic<float> fraction{-1.0f};
+            std::string minecraft;
+            std::atomic<uint64_t> transfer{0};
 
             std::mutex lock;
             bool prepared = false;
@@ -70,6 +76,11 @@ namespace Game {
             bool cancelled = false;
             std::string javaUsed;
             std::optional<blb::java::java_installation> javaInstall;
+            std::string javaVersion;
+            int javaMajor = 0;
+            unsigned javaBits = 0;
+            uint32_t memoryMb = 0;
+            std::string token;
             std::optional<blb::auth::account> refreshedAccount;
             bool accountExpired = false;
 
@@ -86,6 +97,8 @@ namespace Game {
             Platform::Environment variables;
             std::filesystem::path commandDirectory;
             std::filesystem::path optionsFile;
+            std::vector<std::string> loaders;
+            int64_t launched = 0;
         };
 
         std::vector<std::unique_ptr<Live>> lives;
@@ -159,6 +172,75 @@ namespace Game {
             return 1;
         }
 
+        uint32_t heapOf(const std::vector<std::string>& arguments) {
+            for (const std::string& argument : arguments) {
+                if (argument.rfind("-Xmx", 0) != 0 || argument.size() < 5) {
+                    continue;
+                }
+                std::string digits = argument.substr(4);
+                char unit = (char) std::tolower((unsigned char) digits.back());
+                if (unit == 'k' || unit == 'm' || unit == 'g' || unit == 't') {
+                    digits.pop_back();
+                } else {
+                    unit = 'b';
+                }
+                std::optional<std::int64_t> value = blb::parse_int(digits);
+                if (!value || *value <= 0) {
+                    continue;
+                }
+                std::int64_t mb = unit == 't' ? *value << 20
+                        : unit == 'g'         ? *value << 10
+                        : unit == 'm'         ? *value
+                        : unit == 'k'         ? *value >> 10
+                                              : *value >> 20;
+                return (uint32_t) std::min<std::int64_t>(mb, UINT32_MAX);
+            }
+            return 0;
+        }
+
+        std::vector<std::string> loadersOf(const Instances::Entry& entry) {
+            std::vector<std::string> out;
+            for (const blb::install::loader_info& loader : entry.info.loaders) {
+                out.push_back(Installer::loaderName(loader.type) +
+                              (loader.version.empty() ? "" : " " + loader.version));
+            }
+            return out;
+        }
+
+        void crashed(Live& live, int code, int pid) {
+            Crashes::Launch launch;
+            launch.instance = live.key;
+            launch.name = live.name;
+            launch.minecraft = live.minecraft;
+            launch.loaders = live.loaders;
+            launch.gameDirectory = live.commandDirectory;
+            launch.pid = pid;
+            launch.log = live.log;
+            launch.since = live.launched;
+            launch.uptime = std::chrono::duration<double>(Clock::now() - live.since).count();
+            launch.code = code;
+            {
+                std::lock_guard<std::mutex> guard(live.lock);
+                launch.java = live.javaUsed;
+                launch.javaVersion = live.javaVersion;
+                launch.javaMajor = live.javaMajor;
+                launch.javaBits = live.javaBits;
+                launch.memoryMb = live.memoryMb;
+                launch.token = live.token;
+            }
+            std::shared_ptr<const Crashes::Report> report =
+                    Crashes::examine(std::move(launch), GameLog::text(live.log));
+            if (report == nullptr) {
+                return;
+            }
+            GameLog::show(live.log);
+            if (!Interface::crashed(report)) {
+                Notices::add(Notices::Kind::Failed, live.name + " 崩溃了（退出代码 " + Crashes::exitText(code) + "）",
+                             5000);
+                Interface::showLog();
+            }
+        }
+
         std::string megabytes(uint64_t bytes) {
             char text[32];
             std::snprintf(text, sizeof(text), "%.1f", bytes / (1024.0 * 1024.0));
@@ -208,9 +290,29 @@ namespace Game {
                     }
                 }
                 if (!download) {
+                    if (live.transfer != 0) {
+                        Transfers::report(live.transfer, event);
+                    }
                     return;
                 }
                 std::lock_guard<std::mutex> guard(tasks);
+                if (live.transfer == 0 && event.total_items > event.done_items && !event.finished) {
+                    Transfers::Spec spec;
+                    spec.kind = Transfers::Kind::Launch;
+                    spec.title = live.name;
+                    spec.minecraft = live.minecraft;
+                    spec.instance = live.key;
+                    spec.cancel = [key = live.key] { Game::cancel(key); };
+                    live.transfer = Transfers::begin(std::move(spec));
+                }
+                if (live.transfer != 0) {
+                    int index = stepOfTask(task);
+                    Transfers::stage(live.transfer,
+                                     index == 2           ? "正在下载 Java"
+                                             : index == 3 ? "正在下载本地库"
+                                                          : "正在补全游戏文件");
+                    Transfers::report(live.transfer, event);
+                }
                 if (event.total_bytes > 0 && !event.finished) {
                     sizes[task] = {event.done_bytes, event.total_bytes};
                 } else {
@@ -277,6 +379,13 @@ namespace Game {
                 Catalog::seenJava(*javaInstall);
             }
             takeAccount(live);
+            if (uint64_t transfer = live.transfer.exchange(0); transfer != 0) {
+                Transfers::finish(transfer,
+                                  game && game->valid()  ? Transfers::State::Done
+                                          : wasCancelled ? Transfers::State::Cancelled
+                                                         : Transfers::State::Failed,
+                                  error);
+            }
             if (game && game->valid()) {
                 live.game = std::move(*game);
                 live.killed = false;
@@ -322,6 +431,7 @@ namespace Game {
             }
             auto exit = live.game.wait(std::chrono::milliseconds(0));
             int code = exit ? *exit : 0;
+            int pid = live.game.pid();
             live.state = State::Idle;
             live.game = blb::process();
             GameLog::finish(live.log);
@@ -332,13 +442,12 @@ namespace Game {
                 }
             }
             GameLog::note(live.log,
-                          live.killed ? std::string("游戏已被结束") : "游戏已退出，退出代码 " + std::to_string(code));
+                          live.killed ? std::string("游戏已被结束")
+                                      : "游戏已退出，退出代码 " + Crashes::exitText(code));
             if (live.killed) {
                 Notices::add(Notices::Kind::Info, "已结束 " + live.name, 2000);
-            } else if (code != 0) {
-                Notices::add(Notices::Kind::Failed, live.name + " 异常退出（代码 " + std::to_string(code) + "）", 5000);
-                GameLog::show(live.log);
-                Interface::showLog();
+            } else {
+                crashed(live, code, pid);
             }
         }
 
@@ -555,6 +664,7 @@ namespace Game {
         live.id = nextId++;
         live.key = target;
         live.name = entry->info.id;
+        live.minecraft = entry->info.minecraft_version;
         live.accountKey = Accounts::keyOf(*account);
         live.accountName = account->name;
         live.visibility = options.launcher_visibility;
@@ -562,6 +672,8 @@ namespace Game {
         live.variables = instanceVariables(*entry);
         live.commandDirectory = entry->gameDirectory;
         live.optionsFile = blb::fs::absolute(GameOptions::fileOf(*entry));
+        live.loaders = loadersOf(*entry);
+        live.launched = blb::fs::mtime_now();
         settings.environment.insert(settings.environment.begin(), live.variables.begin(), live.variables.end());
 
         int log = GameLog::begin(live.name + "（" + account->name + "）", logFor(target));
@@ -650,6 +762,7 @@ namespace Game {
                         self->accountExpired = true;
                     }
                 } else {
+                    GameLog::conceal(log, ready->account.access_token);
                     std::string java = blb::path_to_utf8(ready->java.executable);
                     GameLog::note(log, "Java：" + java + "（" + ready->java.version + "）");
                     ready->command.environment.insert(ready->command.environment.begin(), {"INST_JAVA", java});
@@ -662,6 +775,11 @@ namespace Game {
                         if (standalone) {
                             self->javaInstall = ready->java;
                         }
+                        self->javaVersion = ready->java.version;
+                        self->javaMajor = ready->java.major;
+                        self->javaBits = blb::arch_bits(ready->java.arch);
+                        self->memoryMb = heapOf(ready->command.jvm_args);
+                        self->token = ready->account.access_token;
                     }
                     LaunchDefaults::applyLanguage(language, directory, minecraft, optionsFile);
                     if (!preLaunch.empty()) {

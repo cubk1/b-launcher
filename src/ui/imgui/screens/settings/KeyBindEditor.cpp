@@ -1051,7 +1051,7 @@ namespace KeyBindEditor {
                     float boxY = rowY + (ROW - 18.0f) * 0.5f;
                     if (row.chosen) {
                         UiRender::roundRect(boxX, boxY, 18.0f, 18.0f, 5.0f, UiTheme::accent());
-                        UiWidgets::icon(Ui::glyph(0xf00c), boxX + 9.0f, boxY + 9.0f, 0xFFFFFFFFu, 10.0f);
+                        UiWidgets::icon(Ui::glyph(0xf00c), boxX + 9.0f, boxY + 9.0f, UiTheme::onAccent(), 10.0f);
                     } else {
                         UiRender::outline(boxX, boxY, 18.0f, 18.0f, 5.0f, UiTheme::outline(), 0xF, 1.4f);
                     }

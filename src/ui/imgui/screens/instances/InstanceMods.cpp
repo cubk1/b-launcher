@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/instances/InstanceMods.h"
+#include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/instances/ModManager.h"
@@ -127,21 +128,60 @@ namespace InstanceMods {
             }
         }
 
+        Addons::Hit hitOf(const Mods::Mod& mod, const ModManager::Remote& remote) {
+            Addons::Hit hit;
+            hit.id = remote.projectId;
+            hit.title = mod.info.name;
+            if (const ModManager::Project* project = ModManager::project(remote.projectId)) {
+                hit.slug = project->slug;
+                hit.iconUrl = project->iconUrl;
+                if (!project->title.empty()) {
+                    hit.title = project->title;
+                }
+            }
+            return hit;
+        }
+
         void rowMenu(const std::string& key, const Mods::Mod& mod, float x, float y) {
             std::filesystem::path file = mod.info.file;
             std::string homepage = mod.info.homepage;
             const ModManager::Change* staged = ModManager::changeFor(key, file);
             bool hasChange = staged != nullptr;
             ModManager::Change change = hasChange ? *staged : ModManager::Change();
+            const ModManager::Remote* modrinth = ModManager::remote(mod, Addons::Source::Modrinth);
+            const ModManager::Remote* curseforge = ModManager::remote(mod, Addons::Source::CurseForge);
+            bool known = modrinth != nullptr || curseforge != nullptr;
+            Addons::Source from = modrinth != nullptr ? Addons::Source::Modrinth : Addons::Source::CurseForge;
+            Addons::Hit hit = known ? hitOf(mod, modrinth != nullptr ? *modrinth : *curseforge) : Addons::Hit();
+            std::string modrinthUrl;
+            if (modrinth != nullptr) {
+                Addons::Hit page = hitOf(mod, *modrinth);
+                modrinthUrl = "https://modrinth.com/mod/" + (page.slug.empty() ? page.id : page.slug);
+            }
+            long long wiki = ModManager::wikiId(mod);
             NewUi::openMenu(
                     "mods#menu",
-                    [key, file, homepage, hasChange, change] {
+                    [key, file, homepage, hasChange, change, known, from, hit, modrinthUrl, wiki] {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make("切换版本", 0xf021,
                                                              [key, file] { ModVersionPicker::open(key, file); }));
                         if (hasChange) {
                             items.push_back(ActionMenuItem::make("撤销更改", 0xf0e2,
                                                                  [key, change] { ModManager::unstage(key, change); }));
+                        }
+                        if (known) {
+                            items.push_back(ActionMenuItem::make("在下载中心查看", 0xf019, [key, from, hit] {
+                                DownloadsScreen::showProject(key, from, Addons::Kind::Mod, hit);
+                            }));
+                        }
+                        if (!modrinthUrl.empty()) {
+                            items.push_back(ActionMenuItem::make("在 Modrinth 上查看", 0xf35d,
+                                                                 [modrinthUrl] { Platform::openUrl(modrinthUrl); }));
+                        }
+                        if (wiki > 0) {
+                            items.push_back(ActionMenuItem::make("在 MC 百科上查看", 0xf02d, [wiki] {
+                                Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
+                            }));
                         }
                         items.push_back(
                                 ActionMenuItem::make("在文件夹中显示", 0xf07c, [file] { Platform::reveal(file); }));
@@ -154,7 +194,7 @@ namespace InstanceMods {
                                                 ->confirmFirst());
                         return items;
                     },
-                    x, y, 160.0f);
+                    x, y, 180.0f);
         }
 
         void row(const std::string& key, const Mods::Mod& mod, int index, int count, float rowY, bool blocked) {

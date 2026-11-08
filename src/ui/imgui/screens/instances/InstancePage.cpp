@@ -1200,6 +1200,12 @@ namespace InstancePage {
         return Icons::vanilla();
     }
 
+    void reset() {
+        sections.page = SECTION_MAIN;
+        sections.mix = 1.0f;
+        screenshotsFromHome = false;
+    }
+
     void draw(const std::string& id) {
         const Instances::Entry* found = Instances::find(id);
         if (found == nullptr) {

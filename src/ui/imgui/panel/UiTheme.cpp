@@ -3,6 +3,7 @@
 #include "UiCommon.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace UiTheme {
 
@@ -161,8 +162,18 @@ namespace UiTheme {
         return isLight() ? color(0, 0, 0, std::min(255, Ui::round(alpha * 1.15f))) : color(255, 255, 255, alpha);
     }
 
+    uint32_t inkOn(uint32_t argb) {
+        auto linear = [](uint32_t channel) {
+            float value = (float) channel / 255.0f;
+            return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
+        };
+        float luminance = 0.2126f * linear((argb >> 16) & 0xFF) + 0.7152f * linear((argb >> 8) & 0xFF) +
+                0.0722f * linear(argb & 0xFF);
+        return luminance > 0.34f ? color(22, 24, 29) : color(255, 255, 255);
+    }
+
     uint32_t onAccent() {
-        return color(255, 255, 255);
+        return inkOn(accent_);
     }
 
     uint32_t knob() {

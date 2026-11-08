@@ -33,4 +33,12 @@ namespace Interface {
             handlers.showInstance(key);
         }
     }
+
+    bool crashed(std::shared_ptr<const Crashes::Report> report) {
+        if (!handlers.crashed) {
+            return false;
+        }
+        handlers.crashed(std::move(report));
+        return true;
+    }
 }

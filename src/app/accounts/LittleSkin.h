@@ -3,8 +3,10 @@
 #include "app/system/Pixels.h"
 
 #include <core/auth/account.hpp>
+#include <core/base/cancellation.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -30,6 +32,18 @@ namespace LittleSkin {
         std::vector<Texture> capes;
         std::string working;
     };
+
+    struct Grant {
+        std::string access;
+        std::string refresh;
+    };
+
+    struct Consent;
+
+    std::shared_ptr<Consent> askConsent(std::string& error);
+    std::optional<Grant> awaitConsent(const std::shared_ptr<Consent>& consent,
+                                      b_launcher_base::cancellation_token cancel, std::string& error);
+    void adopt(const std::string& key, const Grant& grant);
 
     bool supports(const b_launcher_base::auth::account& account);
     const State& of(const std::string& key);

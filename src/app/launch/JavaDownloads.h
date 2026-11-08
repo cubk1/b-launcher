@@ -38,6 +38,7 @@ namespace JavaDownloads {
     bool available();
     void refresh();
     std::string name(const Package& package);
+    std::string icon(const Package& package);
     bool installed(const Package& package);
     State state(const std::string& folder);
     bool busy();

@@ -33,6 +33,7 @@ namespace Prerequisites {
 
         Addons::Version root;
         std::string rootTitle;
+        std::string rootIcon;
         std::string owner;
         bool saving = false;
         std::string gameVersion;
@@ -60,18 +61,18 @@ namespace Prerequisites {
 
         void launch(std::vector<Addons::Version> dependencies) {
             if (!saving) {
-                ProjectInstaller::install(root, Kind::Mod, rootTitle, owner, std::move(dependencies));
+                ProjectInstaller::install(root, Kind::Mod, rootTitle, owner, std::move(dependencies), rootIcon);
             } else if (dependencies.empty()) {
-                ProjectInstaller::saveAs(root, rootTitle);
+                ProjectInstaller::saveAs(root, rootTitle, rootIcon);
             } else {
-                ProjectInstaller::saveAllAs(root, dependencies, rootTitle);
+                ProjectInstaller::saveAllAs(root, dependencies, rootTitle, rootIcon);
             }
         }
 
         void checkbox(float x, float y, bool on) {
             if (on) {
                 UiRender::roundRect(x, y, 18.0f, 18.0f, 5.0f, UiTheme::accent());
-                UiWidgets::icon(Ui::glyph(0xf00c), x + 9.0f, y + 9.0f, 0xFFFFFFFFu, 10.0f);
+                UiWidgets::icon(Ui::glyph(0xf00c), x + 9.0f, y + 9.0f, UiTheme::onAccent(), 10.0f);
             } else {
                 UiRender::outline(x, y, 18.0f, 18.0f, 5.0f, UiTheme::outline(), 0xF, 1.4f);
             }
@@ -213,9 +214,11 @@ namespace Prerequisites {
                            });
     }
 
-    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey) {
+    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey,
+              const std::string& icon) {
         root = version;
         rootTitle = title;
+        rootIcon = icon;
         owner = instanceKey;
         saving = saveAs;
         toggled.clear();

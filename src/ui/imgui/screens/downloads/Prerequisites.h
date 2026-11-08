@@ -11,5 +11,6 @@ namespace Prerequisites {
     bool installed(const std::string& instanceKey, Addons::Source source, const std::string& projectId,
                    const Addons::Version* version);
     bool needed(const Addons::Version& version);
-    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey);
+    void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey,
+              const std::string& icon);
 }

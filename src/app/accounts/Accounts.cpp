@@ -1,4 +1,5 @@
 #include "app/accounts/Accounts.h"
+#include "app/accounts/LittleSkin.h"
 #include "app/accounts/Looks.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/About.h"
@@ -60,6 +61,7 @@ namespace Accounts {
         int serverRun = 0;
         std::shared_ptr<blb::cancellation_source> serverCancel;
         blb::auth::account pendingBase;
+        std::optional<LittleSkin::Grant> pendingGrant;
         std::vector<blb::auth::yggdrasil_profile> profiles;
 
         std::vector<Found> foundList;
@@ -235,6 +237,7 @@ namespace Accounts {
                 serverState = ServerLogin::Done;
                 profiles.clear();
                 pendingBase = blb::auth::account();
+                pendingGrant.reset();
                 put(account, true);
                 notify("已登录 " + account.name, false);
             };
@@ -249,6 +252,7 @@ namespace Accounts {
                 serverState = ServerLogin::Done;
                 profiles.clear();
                 pendingBase = blb::auth::account();
+                pendingGrant.reset();
                 for (size_t i = 0; i < made.size(); i++) {
                     put(made[i], i == 0);
                 }
@@ -587,6 +591,7 @@ namespace Accounts {
                           const std::string& password) {
         profiles.clear();
         pendingBase = blb::auth::account();
+        pendingGrant.reset();
         blb::cancellation_token token = beginServerRun();
         int current = serverRun;
         tasks.run(
@@ -605,6 +610,79 @@ namespace Accounts {
                         }
                         pendingBase = waiting.base;
                         profiles = waiting.profiles;
+                        serverState = ServerLogin::Choosing;
+                    };
+                },
+                [current](const std::string& message) -> Continuation {
+                    return serverFailed(current, blb::make_error(blb::errc::auth, message));
+                });
+    }
+
+    void startBrowserLogin() {
+        if (login() != Login::Idle) {
+            notify("正在进行微软登录，请稍后再试", true);
+            return;
+        }
+        std::string problem;
+        std::shared_ptr<LittleSkin::Consent> consent = LittleSkin::askConsent(problem);
+        if (consent == nullptr) {
+            notify(problem, true);
+            return;
+        }
+        profiles.clear();
+        pendingBase = blb::auth::account();
+        pendingGrant.reset();
+        blb::cancellation_token token = beginServerRun();
+        int current = serverRun;
+        tasks.run(
+                [consent, token, current](blb::cancellation_token) -> Continuation {
+                    std::string problem;
+                    std::optional<LittleSkin::Grant> grant = LittleSkin::awaitConsent(consent, token, problem);
+                    if (!grant) {
+                        return serverFailed(
+                                current,
+                                blb::make_error(problem.empty() ? blb::errc::cancelled : blb::errc::auth, problem));
+                    }
+                    auto resolved = blb::auth::resolve_yggdrasil(blb::auth::littleskin_api, token);
+                    if (!resolved) {
+                        return serverFailed(current, resolved.err());
+                    }
+                    blb::auth::account base;
+                    base.type = blb::auth::account_type::yggdrasil;
+                    base.server = resolved->api;
+                    base.server_name = resolved->name;
+                    auto found = blb::auth::yggdrasil_oauth_profiles(base, grant->access, token);
+                    if (!found) {
+                        return serverFailed(current, found.err());
+                    }
+                    if (found->empty()) {
+                        return serverFailed(
+                                current,
+                                blb::make_error(blb::errc::auth, "这个账号还没有角色，先到皮肤站创建一个角色"));
+                    }
+                    LittleSkin::Grant kept = *grant;
+                    if (found->size() == 1) {
+                        auto made = blb::auth::yggdrasil_oauth_select(base, kept.access, found->front(), token);
+                        if (!made) {
+                            return serverFailed(current, made.err());
+                        }
+                        blb::auth::account account = *made;
+                        return [current, account, kept] {
+                            if (current != serverRun || serverState != ServerLogin::Working) {
+                                return;
+                            }
+                            LittleSkin::adopt(keyOf(account), kept);
+                            serverSucceeded(current, account)();
+                        };
+                    }
+                    std::vector<blb::auth::yggdrasil_profile> list = *found;
+                    return [current, base, list, kept] {
+                        if (current != serverRun || serverState != ServerLogin::Working) {
+                            return;
+                        }
+                        pendingBase = base;
+                        pendingGrant = kept;
+                        profiles = list;
                         serverState = ServerLogin::Choosing;
                     };
                 },
@@ -666,6 +744,39 @@ namespace Accounts {
         blb::auth::account base = pendingBase;
         blb::cancellation_token token = beginServerRun();
         int current = serverRun;
+        if (pendingGrant) {
+            LittleSkin::Grant grant = *pendingGrant;
+            tasks.run(
+                    [base, picked, grant, token, current](blb::cancellation_token) -> Continuation {
+                        std::vector<blb::auth::account> made;
+                        std::optional<blb::error> failure;
+                        for (const blb::auth::yggdrasil_profile& profile : picked) {
+                            auto chosen = blb::auth::yggdrasil_oauth_select(base, grant.access, profile, token);
+                            if (!chosen) {
+                                failure = chosen.err();
+                                break;
+                            }
+                            made.push_back(*chosen);
+                        }
+                        if (made.empty()) {
+                            return serverFailed(current,
+                                                failure ? *failure : blb::make_error(blb::errc::auth, "无法选择角色"));
+                        }
+                        Continuation added = serverAdded(current, made, failure);
+                        return [current, made, grant, added] {
+                            if (current == serverRun && serverState == ServerLogin::Working) {
+                                for (const blb::auth::account& account : made) {
+                                    LittleSkin::adopt(keyOf(account), grant);
+                                }
+                            }
+                            added();
+                        };
+                    },
+                    [current](const std::string& message) -> Continuation {
+                        return serverFailed(current, blb::make_error(blb::errc::auth, message));
+                    });
+            return;
+        }
         tasks.run(
                 [base, picked, username, password, token, current](blb::cancellation_token) -> Continuation {
                     std::vector<blb::auth::account> made;
@@ -711,6 +822,7 @@ namespace Accounts {
         serverState = ServerLogin::Idle;
         profiles.clear();
         pendingBase = blb::auth::account();
+        pendingGrant.reset();
     }
 
     void finishServerLogin() {

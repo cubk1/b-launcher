@@ -422,6 +422,10 @@ namespace Platform {
         }
     }
 
+    bool setClipboardText(const std::string& text) {
+        return SDL_SetClipboardText(text.c_str());
+    }
+
     bool setClipboardImage(const Pixels& pixels) {
         static std::string png;
         std::string encoded = Pixels::encodePng(pixels);
@@ -635,6 +639,14 @@ namespace Platform {
         }
         SDL_ShowWindow(shown);
         SDL_RaiseWindow(shown);
+    }
+
+    void raiseWindow() {
+        showWindow();
+        if (window != nullptr) {
+            SDL_SetWindowAlwaysOnTop((SDL_Window*) window, true);
+            SDL_SetWindowAlwaysOnTop((SDL_Window*) window, false);
+        }
     }
 
     void closeWindow() {

@@ -8,6 +8,7 @@
 #include "ui/imgui/screens/instances/InstancePage.h"
 #include "ui/imgui/screens/launch/LaunchButton.h"
 #include "ui/imgui/screens/shell/Appearance.h"
+#include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/Drop.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -61,6 +62,7 @@ namespace Compact {
         bool pending = false;
         bool pendingOn = false;
         bool dismiss = false;
+        bool revealing = false;
         bool closeOverlays = false;
         bool searching = false;
         std::string pressKey;
@@ -356,7 +358,7 @@ namespace Compact {
             if (Page::button("compact#new", label, x + (w - buttonW) * 0.5f, cy + 2.0f, buttonW, true, blocked,
                              0xf067)) {
                 UiSound::request(UiSound::PAGE);
-                MainWindow::showNewInstance();
+                MainWindow::startNewInstance();
             }
         }
 
@@ -509,10 +511,22 @@ namespace Compact {
         closeOverlays = true;
     }
 
+    void reveal() {
+        revealing = true;
+    }
+
+    bool takeReveal() {
+        return std::exchange(revealing, false);
+    }
+
     void draw() {
         UiRender::reset();
         if (std::exchange(closeOverlays, false)) {
-            NewUi::closeAllOverlays();
+            if (Dialog::active()) {
+                Dialog::closeAbove();
+            } else {
+                NewUi::closeAllOverlays();
+            }
         }
         shortcut();
         keys();

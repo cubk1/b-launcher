@@ -483,6 +483,84 @@ yggdrasil_select (const account &base, const yggdrasil_profile &profile,
   return refresh_with (base, &profile, token);
 }
 
+namespace
+{
+
+net::http_request
+oauth_request (const account &base, std::string_view bearer,
+               std::string_view method, std::string_view path)
+{
+  net::http_request request;
+  request.method = std::string (method);
+  request.url = yggdrasil_api (base) + std::string (path);
+  request.timeout = std::chrono::milliseconds (20000);
+  request.headers.push_back (
+      { "Authorization", "Bearer " + std::string (bearer) });
+  request.headers.push_back ({ "Accept", "application/json" });
+  return request;
+}
+
+}
+
+result<std::vector<yggdrasil_profile>>
+yggdrasil_oauth_profiles (const account &base, std::string_view bearer,
+                          cancellation_token token)
+{
+  BLB_TRY_ASSIGN (auto response,
+                  net::http_send (oauth_request (base, bearer, "GET",
+                                                 "/sessionserver/session/"
+                                                 "minecraft/profile"),
+                                  token));
+  if (!response.ok ())
+    return server_error (response, "无法读取角色列表");
+  auto doc = json::parse (response.body, nullptr, false);
+  if (doc.is_discarded () || !doc.is_array ())
+    return make_error (errc::auth, "认证服务器没有返回角色列表，请重新授权");
+  std::vector<yggdrasil_profile> out;
+  for (const auto &entry : doc)
+    if (entry.is_object ())
+      {
+        auto profile = profile_of (entry);
+        if (!profile.id.empty ())
+          out.push_back (std::move (profile));
+      }
+  return out;
+}
+
+result<account>
+yggdrasil_oauth_select (const account &base, std::string_view bearer,
+                        const yggdrasil_profile &profile,
+                        cancellation_token token)
+{
+  auto request = oauth_request (base, bearer, "POST", "/authserver/oauth");
+  request.headers.push_back ({ "Content-Type", "application/json" });
+  request.body = json ({ { "uuid", profile.id } }).dump ();
+  BLB_TRY_ASSIGN (auto response, net::http_send (request, token));
+  if (!response.ok ())
+    {
+      auto e = server_error (response, "无法获取登录令牌");
+      if (response.status == 401)
+        e.code = errc::auth_expired;
+      return e;
+    }
+  BLB_TRY_ASSIGN (auto doc, object_of (response));
+  account out = base;
+  out.access_token = json_text (doc, "accessToken");
+  out.client_token = json_text (doc, "clientToken");
+  if (out.access_token.empty ())
+    {
+      auto message = json_text (doc, "message");
+      return make_error (errc::auth, message.empty ()
+                                         ? "认证服务器没有返回登录令牌"
+                                         : message);
+    }
+  auto selected = doc.find ("selectedProfile");
+  if (selected != doc.end () && selected->is_object ()
+      && !json_text (*selected, "id").empty ())
+    return with_profile (std::move (out), profile_of (*selected), token);
+  return with_profile (std::move (out), profile, token);
+}
+
 result<account>
 yggdrasil_refresh (const account &current, cancellation_token token)
 {

@@ -7,10 +7,15 @@
 #include <core/modpack/modpack.hpp>
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace Crashes {
+    struct Report;
+}
 
 namespace ForgottenMelody {
 
@@ -34,6 +39,7 @@ namespace ForgottenMelody {
         // Opens 下载中心 on 新建实例 for a dropped modpack once the current message is done, as drops are acted on
         // from a poll.
         void openModpack(const std::filesystem::path& file, const b_launcher_base::modpack::pack_manifest& manifest);
+        void showCrash(std::shared_ptr<const Crashes::Report> report);
 
     protected:
         LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp) override;
@@ -57,7 +63,10 @@ namespace ForgottenMelody {
         // A dropped modpack while 下载中心 is due to open for it.
         std::optional<std::pair<std::filesystem::path, b_launcher_base::modpack::pack_manifest>> droppedPack;
 
+        std::shared_ptr<const Crashes::Report> crash;
+
         void showFailures();
+        void presentCrash();
         void refreshNotice();
         void clearReadNotices();
     };
