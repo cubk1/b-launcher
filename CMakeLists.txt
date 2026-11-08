@@ -57,7 +57,7 @@ if (DEFINED ENV{BLB_SYSTEM_LIBS})
 else ()
     set(BLB_SYSTEM_LIBS_DEFAULT OFF)
 endif ()
-option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, SDL3, FreeType and fontconfig"
+option(BLB_SYSTEM_LIBS "Use system zlib, curl, minizip-ng, reproc, nlohmann_json, simdjson, SDL3, FreeType and fontconfig"
         ${BLB_SYSTEM_LIBS_DEFAULT})
 # Package managers update the launcher themselves, so they turn this off.
 option(BLB_UPDATE_CHECK "Check for new launcher versions" ON)
@@ -339,6 +339,13 @@ elseif (TARGET zt-static)
 endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+endif ()
+if (UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS b-launcher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES assets/b-launcher.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES assets/images/logo.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+            RENAME b-launcher.svg)
 endif ()
 if (WIN32)
     find_program(UPX_EXECUTABLE upx)

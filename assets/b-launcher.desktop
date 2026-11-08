@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=B Launcher
+Comment=Minecraft launcher
+Exec=b-launcher
+Icon=b-launcher
+Categories=Game;
+Terminal=false
