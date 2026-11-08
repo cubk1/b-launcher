@@ -17,7 +17,6 @@
   libxxf86vm,
   wayland,
   libxkbcommon,
-  libdecor,
   libGL,
   dbus,
   udev,
@@ -29,8 +28,15 @@
   stdenv,
   vulkan-loader,
   flite,
+  libusb1,
+  gamemode,
   xrandr,
   pciutils,
+  # The narrator of the game (com.mojang:text2speech) opens libflite. flite adds about 130 MiB.
+  textToSpeechSupport ? true,
+  # gamemoderun for the wrapper setting of an instance, and the library that it preloads. Off by
+  # default: it needs programs.gamemode.enable, and gamemode adds about 90 MiB.
+  gamemodeSupport ? false,
   # The launcher finds Java in JAVA_HOME and PATH. Java homes listed here (e.g. [ jdk8 jdk21 ])
   # are found too. For the same Java version, the launcher uses them before JAVA_HOME and PATH.
   jdks ? [ ],
@@ -41,8 +47,9 @@
 
 let
   # Libraries that the game opens with dlopen. SDL3 (Minecraft 26.3 and later) and GLFW
-  # open the windowing and audio libraries. Then LWJGL 2 (libxxf86vm), OpenAL (libstdc++),
-  # Vulkan, the narrator (flite), and the AWT fonts of Java 8 (freetype). On NixOS the
+  # open the windowing and audio libraries, and libusb for some controllers (the sdl3 of the
+  # launcher links libusb, so it adds nothing to the closure). Then LWJGL 2 (libxxf86vm), OpenAL (libstdc++),
+  # Vulkan, and the AWT fonts of Java 8 (freetype). On NixOS the
   # launcher puts them in LD_LIBRARY_PATH of the game, after the GPU driver.
   gameLibs = [
     libx11
@@ -58,7 +65,7 @@ let
     libxxf86vm
     wayland
     libxkbcommon
-    libdecor
+    b-launcher-unwrapped.libdecor'
     libGL
     dbus
     udev
@@ -69,8 +76,10 @@ let
     zlib
     (lib.getLib stdenv.cc.cc)
     vulkan-loader
-    flite
+    libusb1
   ]
+  ++ lib.optional textToSpeechSupport flite
+  ++ lib.optional gamemodeSupport gamemode.lib
   ++ additionalLibs;
 
   nixosJavaHomes = lib.concatMapStringsSep ":" (jdk: jdk.home) jdks;
@@ -81,6 +90,7 @@ let
       xrandr
       pciutils
     ]
+    ++ lib.optional gamemodeSupport gamemode
     ++ additionalPrograms
   );
 in

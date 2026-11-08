@@ -41,6 +41,10 @@ nix run github:cubk1/b-launcher
 # The launcher uses the Java version that the game needs. For the same version, it uses jdks first,
 # then JAVA_HOME, then PATH.
 # With programs.nix-ld.enable = true, the launcher can also download Java.
+# Feature switches in .override:
+#   textToSpeechSupport (default true): flite for the narrator of the game.
+#   gamemodeSupport (default false): gamemoderun for the wrapper setting of an instance. It also
+#     needs programs.gamemode.enable = true. For example .override { gamemodeSupport = true; }.
 ```
 
 ## Unix数据目录
