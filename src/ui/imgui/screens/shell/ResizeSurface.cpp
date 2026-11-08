@@ -140,7 +140,7 @@ void ResizeSurface::prepare(int clientWidth, int clientHeight, const std::functi
     restore();
 }
 
-bool ResizeSurface::updateLayer(HWND owner, const RECT& position, bool alpha) {
+bool ResizeSurface::updateLayer(HWND owner, const RECT& position) {
     if (drawing || !ready || !IsWindowVisible(owner) ||
         width != position.right - position.left || height != position.bottom - position.top) {
         return false;
@@ -225,9 +225,7 @@ bool ResizeSurface::updateLayer(HWND owner, const RECT& position, bool alpha) {
     POINT destination = {position.left, position.top};
     POINT source = {0, bitmapHeight - height};
     SIZE size = {width, height};
-    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
-    if (!UpdateLayeredWindow(layer, nullptr, &destination, &size, layerDc, &source,
-            0, alpha ? &blend : nullptr, alpha ? ULW_ALPHA : ULW_OPAQUE)) {
+    if (!UpdateLayeredWindow(layer, nullptr, &destination, &size, layerDc, &source, 0, nullptr, ULW_OPAQUE)) {
         ShowWindow(layer, SW_HIDE);
         layerCurrent = false;
         return false;
@@ -238,7 +236,7 @@ bool ResizeSurface::updateLayer(HWND owner, const RECT& position, bool alpha) {
     return true;
 }
 
-bool ResizeSurface::present(int clientWidth, int clientHeight, bool keepLayer) {
+bool ResizeSurface::present(int clientWidth, int clientHeight, bool keepLayer, const std::function<void()>& finish) {
     if (!ready || width != clientWidth || height != clientHeight) {
         if (layer) {
             ShowWindow(layer, SW_HIDE);
@@ -279,6 +277,9 @@ bool ResizeSurface::present(int clientWidth, int clientHeight, bool keepLayer) {
     int interval = hadLayer && getInterval ? getInterval() : 0;
     if (setInterval && interval != 0) {
         setInterval(0);
+    }
+    if (finish) {
+        finish();
     }
     SwapBuffers(deviceContext);
     if (hadLayer) {

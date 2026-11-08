@@ -1402,9 +1402,6 @@ namespace LogWindow {
             window.resizable = true;
             window.framed = Appearance::systemFrameRunning();
             window.quitOnDestroy = false;
-#if defined(_WIN32)
-            window.drawsCorners = true;
-#endif
             window.onClose = [] { close(); };
             window.isDragArea = [](int x, int y) {
                 float lx = x / layoutScale;
@@ -1594,11 +1591,6 @@ namespace LogWindow {
         UiRender::uiScale = scale / (float) UiRender::guiScale();
         UiRender::begin(ImGui::GetForegroundDrawList());
         NewUi::render(draw);
-#if defined(_WIN32)
-        if (window.transparentCorners()) {
-            UiRender::maskWindowCorners(BorderlessWindow::CORNER_RADIUS);
-        }
-#endif
         UiRender::end();
         if (NewUi::caretFrame == NewUi::frameCounter) {
             window.setTextArea(NewUi::caretScreenX, NewUi::caretScreenY, NewUi::caretScreenH, UiIme::wanted());

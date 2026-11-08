@@ -1266,25 +1266,6 @@ void main() {
         DrawArrays(UGL_TRIANGLES, 0, 6);
     }
 
-    static void drawCornerMask(const Prim& p) {
-        if (!ensureCornerMaskShader()) {
-            return;
-        }
-        // The shader outputs its coverage as alpha. Scaling both the color and the alpha by it keeps
-        // the result premultiplied, as DWM composes a per-pixel alpha window. Straight edges get
-        // exactly 1.0, so only the corners change.
-        Enable(UGL_BLEND);
-        BlendEquation(UGL_FUNC_ADD);
-        BlendFunc(UGL_ZERO, UGL_SRC_ALPHA);
-        use(cornerMaskShader);
-        const Shader& s = cornerMaskShader;
-        Uniform4f(s["u_rect"], p.f[0], p.f[1], p.f[2], p.f[3]);
-        Uniform2f(s["u_rectSize"], p.f[2], p.f[3]);
-        Uniform1f(s["u_radius"], p.f[4]);
-        DrawArrays(UGL_TRIANGLES, 0, 6);
-        defaultBlend();
-    }
-
     static void drawRing(const Prim& p) {
         if (!ensureRoundRingShader()) {
             return;
@@ -1636,7 +1617,6 @@ void main() {
                 case ARC: drawArc(p); break;
                 case ICON: drawIcon(p); break;
                 case SHELL: drawShell(p); break;
-                case CORNER_MASK: drawCornerMask(p); break;
                 default: break;
             }
         }
@@ -1906,13 +1886,43 @@ void main() {
         submit(p);
     }
 
-    void maskCorners(float x, float y, float width, float height, float radius) {
-        if (width <= 0.0f || height <= 0.0f || radius <= 0.0f) {
-            return;
+    bool cutCorners(int width, int height, float radius) {
+        if (width <= 0 || height <= 0 || radius <= 0.0f) {
+            return true;
         }
-        Prim p = makeRect(CORNER_MASK, x, y, width, height);
-        p.f[4] = radius;
-        submit(p);
+        if ((!UiGL::loaded() && !UiGL::load()) || !ensureCornerMaskShader()) {
+            return false;
+        }
+        float w = (float) width;
+        float h = (float) height;
+        float ortho[16] = {
+                2.0f / w, 0.0f, 0.0f,  0.0f, 0.0f,  -2.0f / h, 0.0f, 0.0f,
+                0.0f,     0.0f, -1.0f, 0.0f, -1.0f, 1.0f,      0.0f, 1.0f,
+        };
+        std::memcpy(mvpFloats, ortho, sizeof(ortho));
+        Viewport(0, 0, width, height);
+        Disable(UGL_CULL_FACE);
+        Disable(UGL_DEPTH_TEST);
+        Disable(UGL_STENCIL_TEST);
+        Enable(UGL_SCISSOR_TEST);
+        Enable(UGL_BLEND);
+        BlendEquation(UGL_FUNC_ADD);
+        BlendFunc(UGL_ZERO, UGL_SRC_ALPHA);
+        use(cornerMaskShader);
+        const Shader& s = cornerMaskShader;
+        Uniform4f(s["u_rect"], 0.0f, 0.0f, w, h);
+        Uniform2f(s["u_rectSize"], w, h);
+        Uniform1f(s["u_radius"], radius);
+        int side = std::min({(int) std::ceil(radius) + 1, width, height});
+        for (int corner = 0; corner < 4; corner++) {
+            Scissor((corner & 1) != 0 ? width - side : 0, (corner & 2) != 0 ? height - side : 0, side, side);
+            DrawArrays(UGL_TRIANGLES, 0, 6);
+        }
+        Disable(UGL_SCISSOR_TEST);
+        UseProgram(0);
+        BindVertexArray(0);
+        defaultBlend();
+        return true;
     }
 
     void queueBlur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,

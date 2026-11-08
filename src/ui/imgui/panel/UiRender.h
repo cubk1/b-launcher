@@ -51,8 +51,6 @@ namespace UiRender {
     void checkMark(float cx, float cy, float size, float thickness, uint32_t rgba);
     void outlineFade(float x, float y, float w, float h, float radius, uint32_t rgba, float thickness, float fadeEnd);
     void shadow(float x, float y, float w, float h, float radius, float spread, float offsetY, uint32_t rgba);
-    // Must be the last thing drawn in the frame: it cuts the whole display to a rounded shape.
-    void maskWindowCorners(float radius);
     void circle(float cx, float cy, float radius, uint32_t rgba);
     void hLine(float x0, float x1, float y, uint32_t rgba);
     void vLine(float x, float y0, float y1, uint32_t rgba);
