@@ -9,6 +9,7 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       # The 关于 page shows the short git hash. A dirty tree shows the hash of HEAD, as a CMake build does.
@@ -49,8 +50,8 @@
             # The jdks and programs that the package wrapper adds to PATH, for ./build/b-launcher.
             packages = [
               pkgs.git
-              pkgs.gdb
             ]
+            ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.gdb
             ++ b-launcher.jdks
             ++ b-launcher.runtimePrograms;
             env = {
