@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/downloads/AuthorPage.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/DownloadsParts.h"
 #include "ui/imgui/screens/downloads/JavaPage.h"
 #include "ui/imgui/screens/downloads/ThemeCatalogPage.h"
@@ -1345,7 +1346,7 @@ namespace DownloadsScreen {
             float y = Page::top();
             float listTop = y + FILTER_H + 10.0f;
             const float pagesH = 28.0f;
-            float pagesY = MainWindow::height() - 12.0f - pagesH;
+            float pagesY = MainWindow::height() - 12.0f - pagesH - DownloadButton::inset();
             float listBottom = pagesY - 8.0f;
             static const Addons::Results waiting;
             const Addons::Results& results = translating ? waiting : Addons::search(source, effective);
@@ -1826,7 +1827,7 @@ namespace DownloadsScreen {
         void aggregateView(bool covered) {
             float barX = mainX();
             float barW = mainW();
-            float bottom = MainWindow::height() - 14.0f;
+            float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
             searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
                 return;
