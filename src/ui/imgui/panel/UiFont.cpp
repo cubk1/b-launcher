@@ -279,6 +279,16 @@ namespace UiFont {
             return fontConfig().find("monospace");
         }
 #endif
+
+        std::string textFont() {
+            for (const std::string& spec : fallbackFonts) {
+                if (covers(spec, 'A') && covers(spec, 0x4E2D)) {
+                    return spec;
+                }
+            }
+            std::string sans = systemFontSpec("sans-serif");
+            return !sans.empty() && covers(sans, 'A') ? sans : std::string();
+        }
     }
 #endif
 
@@ -433,7 +443,7 @@ namespace UiFont {
 #endif
     }
 
-    static ImFont* fromSystem(const std::string& spec) {
+    static ImFont* fromSystem(const std::string& spec, unsigned int flags) {
         std::string file = spec;
         int face = 0;
         size_t hash = spec.find('#');
@@ -444,7 +454,7 @@ namespace UiFont {
         bool absolute = file.size() > 1 && (file[1] == ':' || file[0] == '\\' || file[0] == '/');
         std::string path = absolute ? file : windowsFontsDir() + file;
         ImFontConfig config;
-        crisp(config, fallbackLoaderFlags);
+        crisp(config, flags);
         config.Flags |= ImFontFlags_NoLoadError;
         config.FontNo = face;
         snprintf(config.Name, sizeof(config.Name), "%s", spec.c_str());
@@ -487,16 +497,26 @@ namespace UiFont {
         activeSubpixel = resolveSubpixel();
         ImGuiFreeType::SetCoverageGamma(resolveGamma());
 #endif
-        ImFont* text = fromMemory(EmbeddedFonts::textFont, EmbeddedFonts::textFontSize, "SSTRg.TTF");
+        std::string textSpec;
+        // Windows still draws Latin text with SST and falls back to YaHei for CJK. It can switch to the system
+        // font like the other platforms; once i18n lands, SST is only needed for the English locale.
+#if !defined(_WIN32)
+        textSpec = textFont();
+#endif
+        ImFont* text = textSpec.empty() ? nullptr : fromSystem(textSpec, loaderFlags);
+        if (text == nullptr) {
+            textSpec.clear();
+            text = fromMemory(EmbeddedFonts::textFont, EmbeddedFonts::textFontSize, "SSTRg.TTF");
+        }
         baseFonts[MEDIUM] = text;
         baseFonts[BOLD] = text;
         baseFonts[DISPLAY] = text;
         baseFonts[MONO] = text;
 #if defined(_WIN32)
-        ImFont* code = fromSystem("consola.ttf");
+        ImFont* code = fromSystem("consola.ttf", fallbackLoaderFlags);
 #else
         std::string codeSpec = codeFont();
-        ImFont* code = codeSpec.empty() ? nullptr : fromSystem(codeSpec);
+        ImFont* code = codeSpec.empty() ? nullptr : fromSystem(codeSpec, fallbackLoaderFlags);
 #endif
         baseFonts[CODE] = code != nullptr ? code : text;
         baseFonts[ICON] = fromMemory(EmbeddedFonts::iconFont, EmbeddedFonts::iconFontSize, "fa-solid-900.ttf");
@@ -505,7 +525,10 @@ namespace UiFont {
             if (fallbackCount >= MAX_FALLBACKS) {
                 break;
             }
-            ImFont* font = fromSystem(spec);
+            if (spec == textSpec) {
+                continue;
+            }
+            ImFont* font = fromSystem(spec, fallbackLoaderFlags);
             if (font != nullptr) {
                 baseFonts[FALLBACK + fallbackCount++] = font;
             }
