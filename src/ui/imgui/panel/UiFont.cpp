@@ -505,7 +505,6 @@ namespace UiFont {
 #endif
         ImFont* text = textSpec.empty() ? nullptr : fromSystem(textSpec, loaderFlags);
         if (text == nullptr) {
-            textSpec.clear();
             text = fromMemory(EmbeddedFonts::textFont, EmbeddedFonts::textFontSize, "SSTRg.TTF");
         }
         baseFonts[MEDIUM] = text;
@@ -524,9 +523,6 @@ namespace UiFont {
         for (const std::string& spec : fallbackFonts) {
             if (fallbackCount >= MAX_FALLBACKS) {
                 break;
-            }
-            if (spec == textSpec) {
-                continue;
             }
             ImFont* font = fromSystem(spec, fallbackLoaderFlags);
             if (font != nullptr) {
