@@ -37,8 +37,8 @@
   # gamemoderun for the wrapper setting of an instance, and the library that it preloads. Off by
   # default: it needs programs.gamemode.enable, and gamemode adds about 90 MiB.
   gamemodeSupport ? false,
-  # The launcher finds Java in JAVA_HOME and PATH. Java homes listed here (e.g. [ jdk8 jdk21 ])
-  # are found too. For the same Java version, the launcher uses them before JAVA_HOME and PATH.
+  # The launcher finds Java in JAVA_HOME and PATH. The wrapper adds the jdks listed here
+  # (e.g. [ jdk8 jdk21 ]) to PATH of the launcher.
   jdks ? [ ],
   # More libraries for LD_LIBRARY_PATH of the game, and more programs for its PATH.
   additionalLibs ? [ ],
@@ -82,17 +82,14 @@ let
   ++ lib.optional gamemodeSupport gamemode.lib
   ++ additionalLibs;
 
-  nixosJavaHomes = lib.concatMapStringsSep ":" (jdk: jdk.home) jdks;
   nixosLibraryPath = "${addDriverRunpath.driverLink}/lib:${lib.makeLibraryPath gameLibs}";
-  # LWJGL 2 (Minecraft 1.12.2 and older) runs xrandr. OSHI runs lspci.
-  nixosPath = lib.makeBinPath (
-    [
-      xrandr
-      pciutils
-    ]
-    ++ lib.optional gamemodeSupport gamemode
-    ++ additionalPrograms
-  );
+  # LWJGL 2 (Minecraft 1.12.2 and older) runs xrandr. OSHI runs lspci. The game inherits PATH.
+  runtimePrograms = [
+    xrandr
+    pciutils
+  ]
+  ++ lib.optional gamemodeSupport gamemode
+  ++ additionalPrograms;
 in
 symlinkJoin {
   pname = "b-launcher";
@@ -102,14 +99,13 @@ symlinkJoin {
 
   nativeBuildInputs = [ makeBinaryWrapper ];
 
-  # The launcher reads BLB_NIXOS_* on NixOS only. Desktop shortcuts run BLB_EXECUTABLE (this
-  # wrapper), because /proc/self/exe is the program in b-launcher-unwrapped.
+  # The launcher reads BLB_NIX_LIBRARY_PATH on NixOS only. Desktop shortcuts run BLB_EXECUTABLE
+  # (this wrapper), because /proc/self/exe is the program in b-launcher-unwrapped.
   postBuild = ''
     wrapProgram $out/bin/b-launcher \
       --set BLB_EXECUTABLE "$out/bin/b-launcher" \
-      --set BLB_NIXOS_JAVA ${lib.escapeShellArg nixosJavaHomes} \
-      --set BLB_NIXOS_LIBRARY_PATH ${lib.escapeShellArg nixosLibraryPath} \
-      --set BLB_NIXOS_PATH ${lib.escapeShellArg nixosPath}
+      --set BLB_NIX_LIBRARY_PATH ${lib.escapeShellArg nixosLibraryPath} \
+      --prefix PATH : ${lib.escapeShellArg (lib.makeBinPath (jdks ++ runtimePrograms))}
   '';
 
   passthru = {
@@ -117,9 +113,8 @@ symlinkJoin {
     inherit
       gameLibs
       jdks
-      nixosJavaHomes
       nixosLibraryPath
-      nixosPath
+      runtimePrograms
       ;
   };
 

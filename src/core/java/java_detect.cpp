@@ -245,9 +245,6 @@ collect_candidates (const scan_options &options)
   scan_tree (out, home / "Library/Java/JavaVirtualMachines",
              java_source::system, 2);
 #else
-  for (auto java : split (packaged_nixos_paths ().java_homes, ':'))
-    if (!java.empty ())
-      add_home (out, path_from_utf8 (java), java_source::system);
   for (auto dir : { "/usr/lib/jvm", "/usr/lib64/jvm", "/usr/lib32/jvm",
                     "/usr/java", "/opt/java", "/opt/jdk", "/opt/jdks" })
     scan_tree (out, dir, java_source::system, 2);
