@@ -35,6 +35,7 @@
 #include "ui/imgui/screens/settings/SettingsScreen.h"
 #include "ui/imgui/screens/versions/VersionsScreen.h"
 #include "app/system/Platform.h"
+#include "app/system/Transfers.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
@@ -101,7 +102,6 @@ namespace MainWindow {
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
-    static const float FOOTER_H = 10.0f + 5 * ITEM_STEP + 10.0f;
     static const float GROUP_H = 26.0f;
     static const float GROUP_GAP = 6.0f;
 
@@ -970,7 +970,6 @@ namespace MainWindow {
     static const Destination DESTINATIONS[] = {
             {"nav#new", 0xf067, "新建实例", PAGE_NEW_INSTANCE},
             {"nav#downloads", 0xf019, "下载附加件", PAGE_DOWNLOADS},
-            {"nav#transfers", 0xf0ae, "下载列表", PAGE_TRANSFERS},
             {"nav#accounts", 0xf007, "账户", PAGE_ACCOUNTS},
             {"nav#multiplayer", 0xf6ff, "联机", PAGE_MULTIPLAYER},
             {"nav#settings", 0xf013, "选项", PAGE_SETTINGS},
@@ -1313,17 +1312,6 @@ namespace MainWindow {
             NewUi::tooltipX = x;
             NewUi::tooltipY = y + PILL_H + 4.0f;
         }
-        const b_launcher_base::auth::account* account = Accounts::current();
-        if (navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
-                    account != nullptr ? account->name : std::string()) &&
-            from != PAGE_ACCOUNTS) {
-            AccountsScreen::reset();
-        }
-        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
-                Multiplayer::active() ? Multiplayer::state().code : std::string());
-        if (navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS) &&
-            from != PAGE_SETTINGS) {
-            SettingsScreen::reset();
         if (!blocked && NewUi::click(x, y, w, PILL_H)) {
             UiSound::request(UiSound::TICK);
             pages.go(to.page);
@@ -1491,12 +1479,9 @@ namespace MainWindow {
     }
 
     static void home() {
-        bool floating = !Homepage::launchShown();
-        float reserve = floating ? LaunchButton::SIZE + 22.0f : 0.0f;
-        if (!floating) {
-            reserve = std::max(reserve, DownloadButton::inset());
-        }
-        float top = TITLE_HEIGHT + setupBanner(TITLE_HEIGHT);
+        bool floating = !Homepage::launchShown() && !launchColumn;
+        float reserve = floating ? LaunchButton::SIZE + 22.0f : DownloadButton::inset();
+        float top = contentTop() + setupBanner(contentTop());
         Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, reserve, NewUi::overlayCoversMouse());
         if (floating) {
             float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
@@ -1504,7 +1489,6 @@ namespace MainWindow {
             float downloadX = LaunchButton::besideX(buttonX);
             LaunchButton::draw(buttonX, buttonY);
             DownloadButton::draw(downloadX, buttonY);
-            // The steps card sits over the button row, so it keeps clear of the download button as that fades in.
             float statusRight = UiRender::lerp(buttonX - 14.0f, downloadX - 14.0f, DownloadButton::shown());
             LaunchButton::drawStatus(statusRight, height() - LAUNCH_MARGIN);
         } else {
@@ -1617,8 +1601,7 @@ namespace MainWindow {
         bool underTitle = Onboarding::drawing() || (pages.page == PAGE_HOME && HomeWidgets::alignBottom());
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown() && !launchColumn;
         float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
-        if (!floating && DownloadButton::shown() > 0.5f &&
-            (pages.page == PAGE_HOME || pages.page == PAGE_DOWNLOADS)) {
+        if (!floating && DownloadButton::shown() > 0.5f && (pages.page == PAGE_HOME || pages.page == PAGE_DOWNLOADS)) {
             inset = DownloadButton::MARGIN + DownloadButton::SIZE;
         }
         float columnTop = 0.0f;
