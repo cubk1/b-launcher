@@ -594,7 +594,7 @@ namespace XamlView {
 
         void layoutRich(Rich& r, float maxWidth) {
             float scale = UiRender::uiScale;
-            long long generation = WebImages::generation();
+            long long generation = WebImages::generation() + ((long long) UiFont::generation() << 40);
             if (r.cachedWidth == maxWidth && r.cachedScale == scale && r.cachedGeneration == generation) {
                 return;
             }
@@ -826,7 +826,7 @@ namespace XamlView {
 
         uint32_t hintColor(int theme) {
             if (theme == 1) {
-                return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+                return UiTheme::warningInk();
             }
             if (theme == 2) {
                 return UiTheme::danger();
@@ -1528,7 +1528,7 @@ namespace XamlView {
             int mask = cornerMask(e);
             fillArea(e.x, e.y, e.w, e.h, r, mask, e.background);
             if (e.groupBox) {
-                UiRender::outline(e.x, e.y, e.w, e.h, r, UiTheme::outlineSoft());
+                UiRender::outline(e.x, e.y, e.w, e.h, r, UiTheme::border(UiTheme::outlineSoft()));
             }
             if (!e.borderBrush.set()) {
                 return;
@@ -1565,12 +1565,12 @@ namespace XamlView {
             if (ctx.glass) {
                 UiRender::blur(e.x, e.y, e.w, e.h, CARD_RADIUS, 8, !ctx.captured);
                 ctx.captured = true;
-                uint32_t veil = UiTheme::isLight() ? 0xA6000000u : 0x8C000000u;
+                uint32_t veil = (uint32_t) Ui::round(UiTheme::scalar(UiTheme::VEIL)) << 24;
                 UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, (UiTheme::surface() & 0x00FFFFFFu) | veil);
             } else {
                 UiRender::roundRect(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::surface());
             }
-            UiRender::outline(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::outlineSoft());
+            UiRender::outline(e.x, e.y, e.w, e.h, CARD_RADIUS, UiTheme::border(UiTheme::outlineSoft()));
             if (header) {
                 bool hovered = e.canSwap && !ctx.blocked && NewUi::hit(e.x, e.y, e.w, CARD_HEADER);
                 float lit = hover(e, hovered);
@@ -1704,7 +1704,7 @@ namespace XamlView {
                         if (lit > 0.001f) {
                             UiRender::roundRect(e.x, e.y, e.w, e.h, radius, UiTheme::overlay(Ui::round(14 * lit)));
                         }
-                        UiRender::outline(e.x, e.y, e.w, e.h, radius, UiTheme::outlineSoft());
+                        UiRender::outline(e.x, e.y, e.w, e.h, radius, UiTheme::border(UiTheme::outlineSoft()));
                     }
                     std::string text = UiFont::fitEnd(e.text, UiFont::MEDIUM, e.fontSize, std::max(0.0f, e.w - 12.0f));
                     float textW = UiFont::width(text, UiFont::MEDIUM, e.fontSize);

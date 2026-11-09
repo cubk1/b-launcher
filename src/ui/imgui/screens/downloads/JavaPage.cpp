@@ -70,18 +70,18 @@ namespace JavaPage {
         void list(bool covered) {
             const JavaDownloads::List& list = JavaDownloads::list();
             bool loading = list.status == JavaDownloads::Status::Loading;
-            UiRender::textY("下载 Java", mainX() + 2.0f, Page::TOP, NAV_ITEM_H, UiTheme::textPrimary(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_BODY);
+            UiRender::textY("下载 Java", mainX() + 2.0f, Page::top(), NAV_ITEM_H, UiTheme::textPrimary(),
+                            UiFont::MEDIUM, UiWidgets::TEXT_BODY);
             float refreshX = Page::right() - 28.0f;
-            if (Page::iconButton("downloads#java#reload", 0xf2f1, "刷新列表", refreshX, Page::TOP + 1.0f,
+            if (Page::iconButton("downloads#java#reload", 0xf2f1, "刷新列表", refreshX, Page::top() + 1.0f,
                                  covered || loading)) {
                 JavaDownloads::refresh();
             }
             SelectWidget major("downloads#java#major", majorChoice(list.packages));
-            major.bounds(refreshX - 8.0f - SELECT_W, Page::TOP + 4.0f, SELECT_W, FIELD_H).block(covered || loading);
+            major.bounds(refreshX - 8.0f - SELECT_W, Page::top() + 4.0f, SELECT_W, FIELD_H).block(covered || loading);
             major.paint();
 
-            float top = Page::TOP + 40.0f;
+            float top = Page::top() + 40.0f;
             float bottom = MainWindow::height() - 14.0f;
             std::vector<const JavaDownloads::Package*> shown;
             for (const JavaDownloads::Package& package : list.packages) {

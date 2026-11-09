@@ -3,6 +3,7 @@
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
+#include "app/system/Features.h"
 #include "app/instances/Drops.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -46,7 +47,9 @@ namespace QuickActions {
             if (id == "newInstance") {
                 MainWindow::startNewInstance();
             } else if (id == "switchVersion") {
-                MainWindow::showVersions();
+                if (Features::enabled(Features::VERSIONS)) {
+                    MainWindow::showVersions();
+                }
             } else if (id == "addAccount") {
                 MainWindow::showAccounts();
                 AccountsScreen::openAdd();
@@ -105,7 +108,7 @@ namespace QuickActions {
         }
         HomeWidgets::panel(x, y, w, list.size() * ROW_H);
         for (size_t i = 1; i < list.size(); i++) {
-            UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * ROW_H, UiTheme::outlineSoft());
+            UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * ROW_H, UiTheme::rowDivider(UiTheme::outlineSoft()));
         }
         for (size_t i = 0; i < list.size(); i++) {
             row(*list[i], x, y + i * ROW_H, w, (int) i, (int) list.size(), blocked);

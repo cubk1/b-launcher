@@ -284,7 +284,8 @@ namespace PackTree {
         float sx = switchX - 8.0f - searchW;
         bool focused = UiInput::isFocused(SEARCH);
         UiRender::roundRect(sx, top, searchW, Page::FIELD_H, 7.0f, UiTheme::overlay(10));
-        UiRender::outline(sx, top, searchW, Page::FIELD_H, 7.0f, focused ? UiTheme::accent() : UiTheme::outlineSoft());
+        UiRender::outline(sx, top, searchW, Page::FIELD_H, 7.0f,
+                          focused ? UiTheme::accent() : UiTheme::border(UiTheme::outlineSoft()));
         UiWidgets::icon(Ui::glyph(0xf002), sx + 12.0f, top + Page::FIELD_H * 0.5f, UiTheme::textFaint(), 9.0f);
         InputWidget input(SEARCH);
         input.area(sx + 24.0f, searchW - 30.0f, UiWidgets::TEXT_CONTROL, 13.0f)

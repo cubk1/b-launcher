@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -40,6 +41,30 @@ namespace UiFont {
         ImFont* font;
         float size;
     };
+
+    constexpr int ROLE_COUNT = 5;
+
+    struct FontChoice {
+        std::string key;
+        std::string spec;
+        std::shared_ptr<const std::string> data;
+        int face = 0;
+        int weight = 0;
+    };
+
+    struct FontSet {
+        FontChoice roles[ROLE_COUNT];
+        float scale = 1.0f;
+
+        bool same(const FontSet& other) const;
+    };
+
+    int roleFamily(int role);
+    void request(const FontSet& set);
+    bool applyPending();
+    unsigned generation();
+    std::string systemFontSpec(const std::string& family);
+    const std::vector<std::string>& problems();
 
     void init();
     void ensureBaseFonts();

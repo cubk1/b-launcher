@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/instances/InstancePage.h"
+#include "app/system/Features.h"
 #include "app/accounts/Accounts.h"
 #include "app/system/Catalog.h"
 #include "app/launch/Game.h"
@@ -137,7 +138,7 @@ namespace InstancePage {
         }
 
         uint32_t warning() {
-            return UiTheme::isLight() ? 0xFFC27803u : 0xFFE8A33Du;
+            return UiTheme::warning();
         }
 
         std::string followLabel(const Instances::Entry& entry) {
@@ -577,7 +578,7 @@ namespace InstancePage {
             const std::string& id = entry.key;
             const std::string& name = entry.info.id;
             float x = Page::left();
-            float y = Page::TOP;
+            float y = Page::top();
             uint32_t image = icon(entry);
             if (image != 0) {
                 UiRender::texture(image, x, y + 4.0f, 32.0f, 32.0f);
@@ -965,7 +966,8 @@ namespace InstancePage {
                 loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
             }
             if (Page::navRow("instance#loaders", "修改加载器", loaders.empty() ? std::string("未安装") : loaders, y,
-                             blocked || entry.info.minecraft_version.empty() || Installer::running(),
+                             blocked || entry.info.minecraft_version.empty() || Installer::running() ||
+                                     !Features::enabled(Features::INSTANCE_EDIT),
                              Page::rowCorners(index, count), 0xf0ad)) {
                 NewInstanceScreen::openLoaderEdit(entry.key);
                 MainWindow::showLoaderEdit();
@@ -994,7 +996,7 @@ namespace InstancePage {
             if (optionCount > 0) {
                 contentH += Page::CAPTION_H + optionCount * Page::ROW_H + Page::GAP;
             }
-            Page::Scroll body("instance#body", Page::TOP + 54.0f, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("instance#body", Page::top() + 54.0f, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || NewUi::overlayCoversMouse();
             float y = body.top - body.offset;
@@ -1138,13 +1140,13 @@ namespace InstancePage {
 
         void advancedSection(const Instances::Entry& entry) {
             bool covered = NewUi::overlayCoversMouse();
-            if (Page::iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered)) {
+            if (Page::iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered)) {
                 sections.go(SECTION_MAIN);
             }
             const char* title = "高级";
-            Page::title(title, Page::left() + 30.0f, Page::TOP);
+            Page::title(title, Page::left() + 30.0f, Page::top());
             float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            UiRender::textY(fitEnd(entry.info.id, Page::right() - nameX, UiWidgets::TEXT_CONTROL), nameX, Page::TOP,
+            UiRender::textY(fitEnd(entry.info.id, Page::right() - nameX, UiWidgets::TEXT_CONTROL), nameX, Page::top(),
                             24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
 
             const int commandCount = 4;
@@ -1152,7 +1154,7 @@ namespace InstancePage {
             const int compatibilityCount = 2;
             float contentH =
                     3 * Page::CAPTION_H + (commandCount + jvmCount + compatibilityCount) * Page::ROW_H + 2 * Page::GAP;
-            Page::Scroll body("instance#advanced", Page::TOP + 40.0f, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("instance#advanced", Page::top() + 40.0f, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1283,10 +1285,15 @@ namespace InstancePage {
                             }
                         }));
                     }
-                    items.push_back(ActionMenuItem::make("重命名", 0xf044, [id] { beginRename(id); }));
-                    items.push_back(ActionMenuItem::make("复制", 0xf0c5, [id] { copy(id); }));
-                    items.push_back(
-                            ActionMenuItem::make("删除", 0xf2ed, [id] { remove(id); })->dangerous()->confirmFirst());
+                    if (Features::enabled(Features::INSTANCE_EDIT)) {
+                        items.push_back(ActionMenuItem::make("重命名", 0xf044, [id] { beginRename(id); }));
+                        items.push_back(ActionMenuItem::make("复制", 0xf0c5, [id] { copy(id); }));
+                    }
+                    if (Features::enabled(Features::INSTANCE_DELETE)) {
+                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [id] { remove(id); })
+                                                ->dangerous()
+                                                ->confirmFirst());
+                    }
                     return items;
                 },
                 x, y, 170.0f);

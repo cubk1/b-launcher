@@ -16,6 +16,7 @@ namespace HomeWidgets {
 
     std::shared_ptr<Choice> choice();
     bool enabled(const std::string& id);
+    bool launchWidget();
 
     struct WidgetKind {
         const char* id;

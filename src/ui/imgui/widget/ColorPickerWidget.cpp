@@ -45,16 +45,30 @@ void ColorPickerWidget::paint() {
     float menuY = y + h - 13 - 24 - menuH - 6;
     bool menuShown = modeMenuShown();
     uint32_t argb = color->get();
-    int alpha = (argb >> 24) & 0xFF;
+    int alpha = color->opaque ? 0xFF : (argb >> 24) & 0xFF;
     float hsb[3];
     Ui::rgbToHsb((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, hsb);
 
     float fieldX = x + 13;
     float fieldY = y + 13;
     float fieldW = w - 26;
+    float barH = 9;
+    if (color->hueOnly) {
+        UiRender::hueField(fieldX, fieldY, fieldW, barH, barH * 0.5f);
+        if (accepts && NewUi::hit(fieldX, fieldY - 3, fieldW, barH + 6) && NewUi::mouseDown) {
+            float hue = UiRender::saturate((NewUi::mouseX - fieldX) / fieldW);
+            color->set(((uint32_t) alpha << 24) |
+                       (Ui::hsbToRgb(hue, std::max(0.35f, hsb[1]), std::max(0.35f, hsb[2])) & 0xFFFFFFu));
+            NewUi::clickConsumed = true;
+        }
+        wheel(fieldX, fieldY - 3, fieldW, barH + 6, "hue");
+        NewUi::pickerHandle(fieldX + fieldW * hsb[0], fieldY + barH * 0.5f,
+                            0xFF000000u | (Ui::hsbToRgb(hsb[0], 1.0f, 1.0f) & 0xFFFFFFu));
+        return;
+    }
     float fieldH = square ? fieldW : 176;
     UiRender::svField(fieldX, fieldY, fieldW, fieldH, 7.0f, hsb[0]);
-    UiRender::outline(fieldX, fieldY, fieldW, fieldH, 7.0f, UiTheme::outlineSoft());
+    UiRender::outline(fieldX, fieldY, fieldW, fieldH, 7.0f, UiTheme::border(UiTheme::outlineSoft()));
     if (dragging(fieldX, fieldY, fieldW, fieldH, menuX, menuY, menuW, menuH)) {
         float sat = UiRender::saturate((NewUi::mouseX - fieldX) / fieldW);
         float bri = 1.0f - UiRender::saturate((NewUi::mouseY - fieldY) / fieldH);
@@ -64,7 +78,6 @@ void ColorPickerWidget::paint() {
     wheel(fieldX, fieldY, fieldW, fieldH, "bri");
     NewUi::pickerCursor(fieldX + fieldW * hsb[1], fieldY + fieldH * (1.0f - hsb[2]), argb);
 
-    float barH = 9;
     float hueY = fieldY + fieldH + 12;
     UiRender::hueField(fieldX, hueY, fieldW, barH, barH * 0.5f);
     if (dragging(fieldX, hueY, fieldW, barH + 6, menuX, menuY, menuW, menuH)) {
@@ -77,17 +90,19 @@ void ColorPickerWidget::paint() {
     NewUi::pickerHandle(fieldX + fieldW * hsb[0], hueY + barH * 0.5f,
                         0xFF000000u | (Ui::hsbToRgb(hsb[0], 1.0f, 1.0f) & 0xFFFFFFu));
 
-    float alphaY = hueY + barH + 12;
-    UiRender::alphaField(fieldX, alphaY, fieldW, barH, barH * 0.5f, hsb[0], hsb[1], hsb[2]);
-    if (dragging(fieldX, alphaY, fieldW, barH + 6, menuX, menuY, menuW, menuH)) {
-        int picked = Ui::round(UiRender::saturate((NewUi::mouseX - fieldX) / fieldW) * 255);
-        color->set(((uint32_t) picked << 24) | (argb & 0xFFFFFFu));
-        NewUi::clickConsumed = true;
+    float footY = hueY + barH + 14;
+    if (!color->opaque) {
+        float alphaY = hueY + barH + 12;
+        UiRender::alphaField(fieldX, alphaY, fieldW, barH, barH * 0.5f, hsb[0], hsb[1], hsb[2]);
+        if (dragging(fieldX, alphaY, fieldW, barH + 6, menuX, menuY, menuW, menuH)) {
+            int picked = Ui::round(UiRender::saturate((NewUi::mouseX - fieldX) / fieldW) * 255);
+            color->set(((uint32_t) picked << 24) | (argb & 0xFFFFFFu));
+            NewUi::clickConsumed = true;
+        }
+        wheel(fieldX, alphaY, fieldW, barH + 6, "alpha");
+        NewUi::pickerHandle(fieldX + fieldW * (alpha / 255.0f), alphaY + barH * 0.5f, argb | 0xFF000000u);
+        footY = alphaY + barH + 14;
     }
-    wheel(fieldX, alphaY, fieldW, barH + 6, "alpha");
-    NewUi::pickerHandle(fieldX + fieldW * (alpha / 255.0f), alphaY + barH * 0.5f, argb | 0xFF000000u);
-
-    float footY = alphaY + barH + 14;
     UiRender::textY(Ui::glyph(0xF078), fieldX + 2, footY, 24, UiTheme::textMuted(), UiFont::ICON,
                     UiWidgets::TEXT_SMALL);
     UiRender::textY(NewUi::pickerModeName(), fieldX + 16, footY, 24, UiTheme::textSecondary(), UiFont::MEDIUM,
@@ -140,7 +155,7 @@ void ColorPickerWidget::paintHex(uint32_t argb, float boxX, float footY, float b
     if (hexEditing) {
         InputWidget(NewUi::INPUT_COLOR)
                 .area(boxX + 25, hexRoom, UiWidgets::TEXT_CONTROL, 14)
-                .limit(8)
+                .limit(color->opaque ? 6 : 8)
                 .center()
                 .bounds(boxX, footY, boxW, 24)
                 .block(!accepts || menuShown)
@@ -148,7 +163,11 @@ void ColorPickerWidget::paintHex(uint32_t argb, float boxX, float footY, float b
         return;
     }
     char formatted[10];
-    std::snprintf(formatted, sizeof(formatted), "#%08X", argb);
+    if (color->opaque) {
+        std::snprintf(formatted, sizeof(formatted), "#%06X", argb & 0xFFFFFFu);
+    } else {
+        std::snprintf(formatted, sizeof(formatted), "#%08X", argb);
+    }
     std::string hexText(formatted);
     float hexW = UiFont::width(hexText, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
     UiRender::textClipped(hexText, boxX + 25 + std::max(0.0f, (hexRoom - hexW) * 0.5f), footY, 24, hexRoom,
@@ -178,8 +197,9 @@ void ColorPickerWidget::paintChannels(uint32_t argb, int alpha, const float* hsb
         parts[2] = Ui::round(hsb[2] * 100);
         parts[3] = alpha;
     }
-    float cellW = (fieldW - 52 - 26) / 4.0f - 3;
-    for (int i = 0; i < 4; i++) {
+    int cells = color->opaque ? 3 : 4;
+    float cellW = (fieldW - 52 - 26) / (float) cells - 3;
+    for (int i = 0; i < cells; i++) {
         float cx = fieldX + 52 + i * (cellW + 3);
         bool cellEditing = id == NewUi::colorEditing && NewUi::colorEditingCell == i + 1;
         if (!cellEditing) {

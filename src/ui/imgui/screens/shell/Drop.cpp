@@ -5,6 +5,7 @@
 #include "ui/imgui/screens/instances/InstanceMods.h"
 #include "ui/imgui/screens/instances/ModGraph.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
+#include "ui/imgui/screens/theme/ThemeImport.h"
 
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
@@ -54,7 +55,9 @@ namespace Drop {
     }
 
     void attach(void* window) {
-        Drops::attach(window, {targetInstance, openModpack, nullptr, placed});
+        Drops::attach(window, {targetInstance, openModpack, nullptr, placed, [](const std::filesystem::path& file) {
+                                   ThemeImport::start(file);
+                               }});
     }
 
     void draw(float width, float height) {

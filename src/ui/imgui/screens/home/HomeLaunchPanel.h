@@ -7,4 +7,5 @@ namespace HomeLaunchPanel {
 
     void account(float x, float y, float w, bool blocked);
     void launch(float x, float y, float w, bool blocked);
+    void column(float x, float top, float w, float bottom, bool blocked, float avatar, float avatarRadius);
 }

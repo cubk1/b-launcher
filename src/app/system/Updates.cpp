@@ -1,4 +1,6 @@
 #include "app/system/Updates.h"
+#include "app/system/Customization.h"
+#include "app/system/Features.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/About.h"
 #include "app/system/Platform.h"
@@ -100,7 +102,7 @@ namespace Updates {
 #if defined(BLB_NO_UPDATE_CHECK)
         return false;
 #else
-        return true;
+        return !Customization::updatesDisabled() && Features::enabled(Features::UPDATE_CHECK);
 #endif
     }
 

@@ -238,7 +238,7 @@ namespace DownloadsParts {
         uint32_t ink = UiTheme::textSecondary();
         uint32_t fill = UiTheme::surfaceRaised();
         if (type == "beta" || type == "alpha") {
-            ink = type == "beta" ? (UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu) : UiTheme::danger();
+            ink = type == "beta" ? UiTheme::warningInk() : UiTheme::danger();
             fill = (ink & 0x00FFFFFFu) | 0x2E000000u;
         }
         tag(versionTypeLabel(type), x, centreY, limit, fill, ink);
@@ -320,7 +320,7 @@ namespace DownloadsParts {
         float pillX = UiRender::lerp(starts[(size_t) lower], starts[(size_t) upper], blend);
         float pillW = UiRender::lerp(widths[(size_t) lower], widths[(size_t) upper], blend);
         UiRender::roundRect(pillX, y + 2.0f, pillW, h - 4.0f, 6.0f, UiTheme::surface());
-        UiRender::outline(pillX, y + 2.0f, pillW, h - 4.0f, 6.0f, UiTheme::outlineSoft());
+        UiRender::outline(pillX, y + 2.0f, pillW, h - 4.0f, 6.0f, UiTheme::border(UiTheme::outlineSoft()));
         int next = current;
         for (size_t i = 0; i < items.size(); i++) {
             const Segment& item = items[i];

@@ -16,6 +16,9 @@ namespace UiState {
     void remove(const std::string& id);
     void put(const std::string& id, float value);
 
+    void setFrozen(bool on);
+    bool frozen();
+
     void beginFrame();
     void keepAnimating();
     bool animating();

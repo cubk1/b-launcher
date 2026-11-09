@@ -967,8 +967,11 @@ namespace NewUi {
         static std::vector<std::string> measuredDetails;
         static float measuredScale = 0.0f;
         static float measuredWidest = 0.0f;
+        static unsigned measuredFonts = 0;
         float scaleNow = UiRender::stableScale();
-        if (labels != measuredLabels || details != measuredDetails || scaleNow != measuredScale) {
+        if (labels != measuredLabels || details != measuredDetails || scaleNow != measuredScale ||
+            measuredFonts != UiFont::generation()) {
+            measuredFonts = UiFont::generation();
             measuredLabels = std::move(labels);
             measuredDetails = std::move(details);
             measuredScale = scaleNow;
@@ -1050,7 +1053,7 @@ namespace NewUi {
             bool focused = UiInput::isFocused(INPUT_POPUP);
             UiRender::roundRect(fieldX, fieldY, fieldW, fieldH, 7.0f, UiTheme::overlay(10));
             UiRender::outline(fieldX, fieldY, fieldW, fieldH, 7.0f,
-                              focused ? UiTheme::accent() : UiTheme::outlineSoft());
+                              focused ? UiTheme::accent() : UiTheme::border(UiTheme::outlineSoft()));
             UiWidgets::icon(Ui::glyph(0xf002), fieldX + 13.0f, fieldY + fieldH * 0.5f, UiTheme::textFaint(), 10.0f);
             InputWidget input(INPUT_POPUP);
             input.area(fieldX + 26.0f, fieldW - 34.0f, UiWidgets::TEXT_CONTROL, 14.0f)
@@ -1455,7 +1458,8 @@ namespace NewUi {
 
         float cursor = py + titleH;
         if (inlineColor != nullptr) {
-            float pickerH = sizeX - 26.0f + 94.0f;
+            float pickerH =
+                    inlineColor->color->hueOnly ? 35.0f : sizeX - 26.0f + (inlineColor->color->opaque ? 73.0f : 94.0f);
             ColorPickerWidget(inlineColor->color, true,
                               frameCounter > subOpenedFrame && !overlayCoversMouse() && swatchMenuOwner.empty())
                     .bounds(px, py, sizeX, pickerH)
@@ -1848,7 +1852,7 @@ namespace NewUi {
             return;
         }
         float sizeX = 214;
-        float sizeY = 282;
+        float sizeY = pickerColor->hueOnly ? 35.0f : pickerColor->opaque ? 261.0f : 282.0f;
         float lx = limitX();
         float ly = limitY();
         float px = UiRender::clamp(pickerX, 6.0f, std::max(6.0f, lx - sizeX - 6.0f));

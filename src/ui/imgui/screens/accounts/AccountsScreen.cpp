@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
+#include "app/system/Customization.h"
 #include "app/accounts/Accounts.h"
 #include "app/accounts/Avatars.h"
 #include "ui/imgui/screens/accounts/ProfilePage.h"
@@ -44,7 +45,9 @@ namespace AccountsScreen {
 
     namespace {
         const char* const OFFLINE_OWNER = "accounts#offline";
-        constexpr float ACTION_Y = Page::TOP + 1.0f;
+        float actionY() {
+            return Page::top() + 1.0f;
+        }
         constexpr float CARD_H = 64.0f;
         constexpr float CARD_MIN_W = 236.0f;
         constexpr float CARD_GAP = 10.0f;
@@ -235,7 +238,7 @@ namespace AccountsScreen {
             if (shine > 0.1f) {
                 UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::overlay(Ui::round(shine)));
             }
-            UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::border(UiTheme::outlineSoft()));
             bool heads = Avatars::style() == Avatars::Style::Head;
             if (heads) {
                 headIn(Textures::of(Avatars::head(account)), x + 12.0f, y + (h - HEAD) * 0.5f, HEAD, 8.0f);
@@ -368,9 +371,21 @@ namespace AccountsScreen {
                     x, y, 180.0f);
         }
 
+        std::string packServer() {
+            for (const Customization::Login& rule : Customization::logins()) {
+                if (rule.type == "yggdrasil" && !rule.server.empty()) {
+                    return rule.server;
+                }
+            }
+            return {};
+        }
+
         void addServerItems(MenuItems& items) {
+            if (!Customization::loginAllowed("yggdrasil", "")) {
+                return;
+            }
             items.push_back(ActionMenuItem::make("第三方账户", 0xf0c1, [] {
-                openServerLogin(blb::auth::account_type::yggdrasil, std::string(), std::string());
+                openServerLogin(blb::auth::account_type::yggdrasil, packServer(), std::string());
             }));
         }
 
@@ -379,13 +394,18 @@ namespace AccountsScreen {
                     "accounts#add",
                     [] {
                         MenuItems items;
-                        items.push_back(ActionMenuItem::make("微软账户", 0xf090, [] { Accounts::startLogin(); }));
+                        if (Customization::loginAllowed("microsoft", "")) {
+                            items.push_back(ActionMenuItem::make("微软账户", 0xf090, [] { Accounts::startLogin(); }));
+                        }
                         addServerItems(items);
-                        bool allowed = hasOnline();
-                        items.push_back(
-                                ActionMenuItem::make(allowed ? "离线账户" : "离线账户（先登录微软账户）", 0xf007, [] {
-                                    openOffline();
-                                })->enabledIf([] { return hasOnline(); }));
+                        if (Customization::loginAllowed("offline", "")) {
+                            bool offlineOnly =
+                                    !Customization::logins().empty() && !Customization::loginAllowed("microsoft", "");
+                            bool allowed = hasOnline() || offlineOnly;
+                            items.push_back(ActionMenuItem::make(allowed ? "离线账户" : "离线账户（先登录微软账户）",
+                                                                 0xf007, [] { openOffline(); })
+                                                    ->enabledIf([offlineOnly] { return hasOnline() || offlineOnly; }));
+                        }
                         return items;
                     },
                     x, y, 230.0f);
@@ -398,15 +418,15 @@ namespace AccountsScreen {
                 std::string cancel = "取消";
                 float cancelW = Page::buttonWidth(cancel);
                 float cancelX = Page::right() - cancelW;
-                if (Page::button("accounts#cancel", cancel, cancelX, ACTION_Y, cancelW, false, blocked)) {
+                if (Page::button("accounts#cancel", cancel, cancelX, actionY(), cancelW, false, blocked)) {
                     Accounts::cancelLogin();
                 }
                 std::string status = state == Accounts::Login::Browser ? "在浏览器中完成登录" : "正在登录";
                 float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float statusX = cancelX - 12.0f - statusW;
-                UiRender::textY(status, statusX, ACTION_Y, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                UiRender::textY(status, statusX, actionY(), Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);
-                Page::spinner(statusX - 14.0f, ACTION_Y + Page::FIELD_H * 0.5f, 7.0f, UiTheme::accent());
+                Page::spinner(statusX - 14.0f, actionY() + Page::FIELD_H * 0.5f, 7.0f, UiTheme::accent());
                 return;
             }
             const int ADD_GLYPH = 0xf234;
@@ -414,9 +434,9 @@ namespace AccountsScreen {
             std::string add = "添加";
             float addW = Page::buttonWidth(add, ADD_GLYPH);
             float addX = Page::right() - addW;
-            if (Page::button("accounts#add", add, addX, ACTION_Y, addW, true, blocked, ADD_GLYPH) || addPending) {
+            if (Page::button("accounts#add", add, addX, actionY(), addW, true, blocked, ADD_GLYPH) || addPending) {
                 addPending = false;
-                openAddMenu(Page::right() - 230.0f, ACTION_Y + Page::FIELD_H + 6.0f);
+                openAddMenu(Page::right() - 230.0f, actionY() + Page::FIELD_H + 6.0f);
             }
             if (!importable()) {
                 if (NewUi::menuOwner == "accounts#import") {
@@ -427,8 +447,8 @@ namespace AccountsScreen {
             std::string import = "导入";
             float importW = Page::buttonWidth(import, IMPORT_GLYPH);
             float importX = addX - 8.0f - importW;
-            if (Page::button("accounts#import", import, importX, ACTION_Y, importW, false, blocked, IMPORT_GLYPH)) {
-                openImportMenu(importX, ACTION_Y + Page::FIELD_H + 6.0f);
+            if (Page::button("accounts#import", import, importX, actionY(), importW, false, blocked, IMPORT_GLYPH)) {
+                openImportMenu(importX, actionY() + Page::FIELD_H + 6.0f);
             }
         }
 
@@ -539,7 +559,8 @@ namespace AccountsScreen {
             UiRender::roundRect(x, y, size, size, 4.0f,
                                 UiRender::mix(UiTheme::surfaceRaised(), UiTheme::accent(), lit));
             if (lit < 0.99f) {
-                UiRender::outline(x, y, size, size, 4.0f, UiRender::mix(UiTheme::outline(), UiTheme::accent(), lit));
+                UiRender::outline(x, y, size, size, 4.0f,
+                                  UiRender::mix(UiTheme::border(UiTheme::outline()), UiTheme::accent(), lit));
             }
             if (lit > 0.01f) {
                 float savedAlpha = UiRender::alphaMul;
@@ -594,15 +615,20 @@ namespace AccountsScreen {
         void loginButtons(const std::string& id, const std::string& microsoft, float cx, float y, bool primary,
                           bool blocked) {
             std::string other = "第三方登录";
-            float microsoftW = Page::buttonWidth(microsoft, SIGN_IN_GLYPH);
-            float otherW = Page::buttonWidth(other, 0xf0c1);
-            float x = cx - (microsoftW + 8.0f + otherW) * 0.5f;
-            if (Page::button(id + "#microsoft", microsoft, x, y, microsoftW, primary, blocked, SIGN_IN_GLYPH)) {
+            bool showMicrosoft = Customization::loginAllowed("microsoft", "");
+            bool showOther = Customization::loginAllowed("yggdrasil", "");
+            float microsoftW = showMicrosoft ? Page::buttonWidth(microsoft, SIGN_IN_GLYPH) : 0.0f;
+            float otherW = showOther ? Page::buttonWidth(other, 0xf0c1) : 0.0f;
+            float gap = showMicrosoft && showOther ? 8.0f : 0.0f;
+            float x = cx - (microsoftW + gap + otherW) * 0.5f;
+            if (showMicrosoft &&
+                Page::button(id + "#microsoft", microsoft, x, y, microsoftW, primary, blocked, SIGN_IN_GLYPH)) {
                 Accounts::startLogin();
             }
-            float otherX = x + microsoftW + 8.0f;
-            if (Page::button(id + "#third", other, otherX, y, otherW, false, blocked, 0xf0c1)) {
-                openServerLogin(blb::auth::account_type::yggdrasil, std::string(), std::string());
+            float otherX = x + microsoftW + gap;
+            if (showOther &&
+                Page::button(id + "#third", other, otherX, y, otherW, !showMicrosoft && primary, blocked, 0xf0c1)) {
+                openServerLogin(blb::auth::account_type::yggdrasil, packServer(), std::string());
             }
         }
 
@@ -692,7 +718,7 @@ namespace AccountsScreen {
         }
 
         void welcome(bool blocked) {
-            const float top = Page::TOP;
+            const float top = Page::top();
             float cx = Page::left() + Page::width() * 0.5f;
             float middle = MainWindow::height() * 0.5f;
 
@@ -957,7 +983,8 @@ namespace AccountsScreen {
             if (lit > 0.001f) {
                 UiRender::roundRect(x, y, w, LOGIN_FIELD, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
             }
-            UiRender::outline(x, y, w, LOGIN_FIELD, 7.0f, open ? UiTheme::accent() : UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, LOGIN_FIELD, 7.0f,
+                              open ? UiTheme::accent() : UiTheme::border(UiTheme::outlineSoft()));
             serverMark(x + 10.0f, y + (LOGIN_FIELD - 16.0f) * 0.5f, 16.0f);
             UiRender::textY(choice->label(), x + 34.0f, y, LOGIN_FIELD, UiTheme::textPrimary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
@@ -1147,7 +1174,7 @@ namespace AccountsScreen {
             }
             std::string name = UiFont::fitEnd(profile.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, w - 24.0f);
             Page::centredText(name, x + w * 0.5f, top + 10.0f, 24.0f, UiTheme::textPrimary(), UiWidgets::TEXT_CONTROL);
-            UiRender::outline(x, top, w, h, 12.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, top, w, h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
             blb::auth::account candidate = Accounts::serverCandidate(index);
             if (Avatars::style() == Avatars::Style::Head) {
                 headIn(Textures::of(Avatars::head(candidate)), x + (w - PROFILE_HEAD) * 0.5f,
@@ -1461,7 +1488,7 @@ namespace AccountsScreen {
                 welcomeSteps.mix = 1.0f;
             }
             UiRender::alphaMul = savedAlpha * (1.0f - first);
-            Page::title("账户", Page::left(), Page::TOP);
+            Page::title("账户", Page::left(), Page::top());
             bool listBlocked = covered || first > 0.5f;
             actions(listBlocked);
 
@@ -1471,7 +1498,7 @@ namespace AccountsScreen {
             float cardW = (width - CARD_GAP * (float) (columns - 1)) / (float) columns;
             int cardRows = ((int) accounts.size() + columns - 1) / columns;
             float gridH = cardRows > 0 ? cardRows * (CARD_H + CARD_GAP) - CARD_GAP : 0.0f;
-            Page::Scroll body("accounts#body", Page::TOP + 40.0f, MainWindow::height() - 14.0f, gridH);
+            Page::Scroll body("accounts#body", Page::top() + 40.0f, MainWindow::height() - 14.0f, gridH);
             bool outside = body.begin();
             bool blocked = outside || listBlocked;
             float y = body.top - body.offset;

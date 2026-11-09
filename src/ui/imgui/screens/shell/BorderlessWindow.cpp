@@ -20,9 +20,10 @@ namespace {
     constexpr DWORD DWMWA_WINDOW_CORNER_PREFERENCE_ = 33;
     constexpr DWORD DWMWA_BORDER_COLOR_ = 34;
     constexpr DWORD DWMWA_CAPTION_COLOR_ = 35;
+    constexpr int DWMWCP_DONOTROUND_ = 1;
     constexpr int DWMWCP_ROUND_ = 2;
+    constexpr int DWMWCP_ROUNDSMALL_ = 3;
     constexpr COLORREF DWMWA_COLOR_NONE_ = 0xFFFFFFFE;
-    constexpr int CORNER_RADIUS = 8;
     const wchar_t* const CLASS_NAME = L"b-launcher.window";
 
     struct WindowClass {
@@ -266,7 +267,7 @@ void BorderlessWindow::applyFrame() {
     DwmExtendFrameIntoClientArea(hwnd, &margins);
     COLORREF none = DWMWA_COLOR_NONE_;
     DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR_, &none, sizeof(none));
-    int corner = DWMWCP_ROUND_;
+    int corner = cornerPreference();
     if (FAILED(DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_, &corner, sizeof(corner)))) {
         // Before Windows 11 DWM cannot round the corners. A region can, but its edge is aliased, so
         // prefer corners cut with alpha. The frame then must not extend into the client area, or DWM
@@ -321,7 +322,26 @@ int BorderlessWindow::dpi() const {
 }
 
 int BorderlessWindow::cornerRadius() const {
-    return MulDiv(CORNER_RADIUS, dpi(), 96);
+    return MulDiv(logicalRadius, dpi(), 96);
+}
+
+int BorderlessWindow::cornerPreference() const {
+    return logicalRadius == 0 ? DWMWCP_DONOTROUND_ : logicalRadius <= 4 ? DWMWCP_ROUNDSMALL_ : DWMWCP_ROUND_;
+}
+
+void BorderlessWindow::setCornerRadius(int logical) {
+    logical = std::clamp(logical, 0, 24);
+    if (logical == logicalRadius) {
+        return;
+    }
+    logicalRadius = logical;
+    if (hwnd == nullptr || framed) {
+        return;
+    }
+    int corner = cornerPreference();
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE_, &corner, sizeof(corner));
+    applyRegion();
+    syncShadow(nullptr, false);
 }
 
 void BorderlessWindow::syncShadow(const RECT* bounds, bool hiding) {

@@ -372,7 +372,7 @@ namespace {
 
     void layoutFlow(Flow& f, float maxWidth) {
         float scale = UiRender::uiScale;
-        long long generation = WebImages::generation();
+        long long generation = WebImages::generation() + ((long long) UiFont::generation() << 40);
         if (f.cachedWidth == maxWidth && f.cachedScale == scale && f.cachedGeneration == generation) {
             return;
         }
@@ -1164,7 +1164,8 @@ struct MarkdownView::State {
                 float bw = piece.w + CODE_GAP * 2.0f - 2.0f;
                 UiRender::roundRect(bx, py - 2.0f, bw, run.size + 5.0f, 4.0f, UiTheme::overlay(16));
                 if (run.style & Markdown::KBD) {
-                    UiRender::outline(bx, py - 2.0f, bw, run.size + 5.0f, 4.0f, UiTheme::outlineSoft());
+                    UiRender::outline(bx, py - 2.0f, bw, run.size + 5.0f, 4.0f,
+                                      UiTheme::border(UiTheme::outlineSoft()));
                 }
             }
             uint32_t color = linked ? UiTheme::accentText() : code ? UiTheme::textPrimary() : toneColor(run.tone);
@@ -1351,7 +1352,7 @@ struct MarkdownView::State {
         for (size_t c = 1; c < b.colX.size(); c++) {
             UiRender::vLine(x + b.colX[c], y, y + b.h, UiTheme::outlineSoft());
         }
-        UiRender::outline(x, y, b.tableW, b.h, 8.0f, UiTheme::outline());
+        UiRender::outline(x, y, b.tableW, b.h, 8.0f, UiTheme::border(UiTheme::outline()));
     }
 };
 
@@ -1381,7 +1382,7 @@ bool MarkdownView::empty() const {
 
 float MarkdownView::measure(float width) {
     float scale = UiRender::uiScale;
-    long long generation = WebImages::generation();
+    long long generation = WebImages::generation() + ((long long) UiFont::generation() << 40);
     if (!state->dirty && state->cachedWidth == width && state->cachedScale == scale &&
         state->cachedGeneration == generation) {
         return state->height;

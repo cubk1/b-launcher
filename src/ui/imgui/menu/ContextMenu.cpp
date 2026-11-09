@@ -6,6 +6,7 @@
 #include "../panel/UiRender.h"
 #include "../panel/UiState.h"
 #include "../panel/UiTheme.h"
+#include "../theme/ThemeStyle.h"
 #include "../panel/UiWidgets.h"
 
 #include <algorithm>
@@ -86,11 +87,16 @@ void ContextMenu::paintRows(float rowsX, float rowsY, float rowsW) {
         bool danger = item.itemDanger();
         uint32_t tint = !enabled ? UiTheme::textFaint() : danger ? UiTheme::danger() : UiTheme::textPrimary();
         uint32_t iconTint = !enabled ? UiTheme::textFaint() : danger ? UiTheme::dangerSoft() : UiTheme::textMuted();
+        float textX = rowsX + 38;
         if (!item.itemIcon(rowsX + 22, ry + 16.0f, enabled ? UiTheme::textPrimary() : UiTheme::textFaint())) {
-            UiWidgets::iconBeside(Ui::glyph(item.itemGlyph()), rowsX + 22, item.itemText(), UiFont::MEDIUM,
-                                  UiWidgets::TEXT_CONTROL, ry, 32.0f, iconTint, 11.0f);
+            if (ThemeStyle::icons()) {
+                UiWidgets::iconBeside(Ui::glyph(item.itemGlyph()), rowsX + 22, item.itemText(), UiFont::MEDIUM,
+                                      UiWidgets::TEXT_CONTROL, ry, 32.0f, iconTint, 11.0f);
+            } else {
+                textX = rowsX + 14;
+            }
         }
-        UiRender::textY(item.itemText(), rowsX + 38, ry, 32.0f, tint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        UiRender::textY(item.itemText(), textX, ry, 32.0f, tint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         item.itemTrail(rowHover);
         if (!blocked && !overChild && enabled && NewUi::click(rowsX, ry, rowsW, 32.0f)) {
             if (hasChildren) {
