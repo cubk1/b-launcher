@@ -52,7 +52,5 @@ namespace About {
             {"libzt", "BUSL-1.1", "https://github.com/zerotier/libzt"},
             {"Font Awesome Free", "SIL OFL 1.1", "https://fontawesome.com"},
             {"Duktape", "MIT", "https://duktape.org"},
-            {"Material Color Utilities", "Apache-2.0",
-             "https://github.com/material-foundation/material-color-utilities"},
     };
 }

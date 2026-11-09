@@ -191,7 +191,7 @@ namespace ThemeManager {
                         }));
                         if (!builtIn) {
                             items.push_back(ActionMenuItem::make("打开所在文件夹", 0xf07c,
-                                                                 [id] { Platform::open(ThemeStore::folder() / id); }));
+                                                                 [id] { Platform::open(ThemeStore::location(id)); }));
                         }
                         const ThemePreview::Data& data = ThemePreview::of(id);
                         bool troubled =

@@ -322,7 +322,11 @@ namespace ThemeImport {
                 return;
             }
             nextWatch = now + std::chrono::milliseconds(500);
-            std::filesystem::file_time_type latest = newest(ThemeStore::folder() / id);
+            const ThemeStore::Entry* entry = ThemeStore::find(id);
+            std::error_code ec;
+            std::filesystem::file_time_type latest = entry != nullptr && !entry->zip.empty()
+                    ? std::filesystem::last_write_time(entry->zip, ec)
+                    : newest(ThemeStore::folder() / id);
             if (id != watchedId) {
                 watchedId = id;
                 watchedStamp = latest;

@@ -15,6 +15,8 @@ namespace ThemeStore {
         std::string name;
         bool builtIn = false;
         bool packed = false;
+        std::filesystem::path zip;
+        std::string prefix;
     };
 
     struct Source {
@@ -22,6 +24,8 @@ namespace ThemeStore {
         size_t size = 0;
         std::filesystem::path file;
         std::shared_ptr<const std::string> owned;
+        std::filesystem::path zip;
+        std::string entry;
     };
 
     void rescan();
@@ -32,6 +36,7 @@ namespace ThemeStore {
     std::optional<Source> locate(const std::string& id, const std::string& path);
     std::optional<std::string> contents(const Source& source);
     std::filesystem::path folder();
+    std::filesystem::path location(const std::string& id);
     bool validId(std::string_view id);
     bool builtIn(const std::string& id);
     std::optional<std::string> duplicate(const std::string& id);

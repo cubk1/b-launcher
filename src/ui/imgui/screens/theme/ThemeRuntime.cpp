@@ -109,11 +109,11 @@ namespace ThemeRuntime {
         return inputs.accent;
     }
 
-    void setImageSwatches(const Swatches& swatches) {
-        if (inputs.image == swatches) {
+    void setImageSample(const ImageSample& sample) {
+        if (inputs.image == sample) {
             return;
         }
-        inputs.image = swatches;
+        inputs.image = sample;
         resolveNow();
     }
 
