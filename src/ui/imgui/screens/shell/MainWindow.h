@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/imgui/screens/shell/ShellLayout.h"
+
 #include <string>
 
 namespace MainWindow {
@@ -19,14 +21,28 @@ namespace MainWindow {
     float width();
     float sidebarWidth();
     float height();
+    float titleHeight();
+    float contentTop();
     bool maximized();
+
+    struct Rect {
+        float x;
+        float y;
+        float w;
+        float h;
+    };
+    Rect panel();
     void save();
 
     void draw();
     float miniatureRadius(float width, float height);
     void miniature(float x, float y, float width, float height);
+    void miniature(float x, float y, float width, float height, const ShellLayout::Spec* layout, bool placeholder);
     void showHome();
+    std::string pageName();
+    bool launchColumnShown();
     void showAccounts();
+    void showSettings();
     void showNewInstance();
     void startNewInstance();
     void showDownloads();

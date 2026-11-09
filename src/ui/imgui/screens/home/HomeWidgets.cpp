@@ -117,7 +117,8 @@ namespace HomeWidgets {
                 UiRender::roundRect(x, y, w, h, SHOTS_RADIUS, UiTheme::surfaceRaised());
                 Page::spinner(x + w * 0.5f, y + h * 0.5f, 6.0f, UiTheme::accent());
             }
-            UiRender::outline(x, y, w, h, SHOTS_RADIUS, UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), lit));
+            UiRender::outline(x, y, w, h, SHOTS_RADIUS,
+                              UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::accent(), lit));
             if (!blocked && NewUi::click(x, y, w, h)) {
                 UiSound::request(UiSound::PAGE);
                 ScreenshotViewer::open(key, entry.path);
@@ -230,12 +231,11 @@ namespace HomeWidgets {
         }
 
         uint32_t latencyColor(int latency) {
-            bool light = UiTheme::isLight();
             if (latency < 120) {
-                return light ? 0xFF2F9E5Cu : 0xFF5CC98Au;
+                return UiTheme::success();
             }
             if (latency < 300) {
-                return light ? 0xFFB7791Fu : 0xFFE3B34Du;
+                return UiTheme::caution();
             }
             return UiTheme::danger();
         }
@@ -372,6 +372,9 @@ namespace HomeWidgets {
         std::vector<std::string> visible(float w) {
             std::vector<std::string> out;
             for (const auto* item : options.shown()) {
+                if (MainWindow::launchColumnShown() && (item->id == ACCOUNT || item->id == LAUNCH)) {
+                    continue;
+                }
                 if (heightOf(item->id, w) > 0.0f) {
                     out.push_back(item->id);
                 }
@@ -386,6 +389,10 @@ namespace HomeWidgets {
 
     bool enabled(const std::string& id) {
         return options.enabled(id);
+    }
+
+    bool launchWidget() {
+        return options.enabled(LAUNCH) && !MainWindow::launchColumnShown();
     }
 
     const std::vector<WidgetKind>& widgetKinds() {
@@ -446,11 +453,11 @@ namespace HomeWidgets {
         } else {
             UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
         }
-        UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
+        UiRender::outline(x, y, w, h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
     }
 
     float width(float left, float right) {
-        if (!enabled(LAUNCH)) {
+        if (!launchWidget()) {
             return COLUMN_NARROW;
         }
         return std::clamp(right - left - 80.0f, COLUMN_MIN, COLUMN_MAX);

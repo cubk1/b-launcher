@@ -16,11 +16,14 @@
 #include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Catalog.h"
+#include "app/system/Config.h"
+#include "app/system/Customization.h"
 #include "app/system/Transfers.h"
 
 #include <core/auth/offline.hpp>
 #include <core/base/cancellation.hpp>
 #include <core/base/fs.hpp>
+#include <core/base/json.hpp>
 #include <core/base/platform.hpp>
 #include <core/base/progress.hpp>
 #include <core/base/strings.hpp>
@@ -618,6 +621,14 @@ namespace Game {
             Interface::needAccount(login, authServer);
             return 0;
         }
+        if (!Customization::logins().empty() &&
+            std::none_of(Customization::logins().begin(), Customization::logins().end(),
+                         [&](const Customization::Login& rule) {
+                             return Accounts::matches(*account, rule.type, rule.server);
+                         })) {
+            Instances::notify("这个启动器不允许用 " + Accounts::kindOf(*account) + " 账户启动游戏", true);
+            return 0;
+        }
         const blb::auth::account* chosen = Accounts::current();
         bool substituted = chosen != nullptr && Accounts::keyOf(*chosen) != Accounts::keyOf(*account);
         size_t alongside = sessionsOf(target).size();
@@ -626,6 +637,13 @@ namespace Game {
         blb::launch::launch_settings settings = manager.launch_settings_for(entry->info);
         if (!server.empty()) {
             settings.server = server;
+        } else if (settings.server.empty() && !Customization::autoJoin().empty() && !Customization::servers().empty() &&
+                   Customization::autoJoin() == "choose") {
+            std::string chosen = b_launcher_base::json_text(Config::data(), "packServer");
+            settings.server = chosen.empty() ? Customization::servers().front().address : chosen;
+        } else if (settings.server.empty() && !Customization::autoJoin().empty() &&
+                   Customization::autoJoin() != "choose") {
+            settings.server = Customization::autoJoin();
         }
         std::filesystem::path root = source->root;
         const blb::instance::instance_settings& options = entry->info.settings;

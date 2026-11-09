@@ -252,7 +252,7 @@ namespace ToolboxTab {
 #else
             float contentH = Page::CAPTION_H + downloadRows * Page::ROW_H + buttonBlockH;
 #endif
-            Page::Scroll body("settings#tools#home", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#tools#home", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;

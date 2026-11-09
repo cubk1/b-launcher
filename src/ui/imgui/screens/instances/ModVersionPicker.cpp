@@ -67,7 +67,7 @@ namespace ModVersionPicker {
         }
 
         uint32_t warningInk() {
-            return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+            return UiTheme::warningInk();
         }
 
         float pill(const std::string& text, float x, float cy, uint32_t fill, uint32_t ink) {
@@ -116,7 +116,7 @@ namespace ModVersionPicker {
                     UiRender::roundRect(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
                                         UiTheme::surface());
                     UiRender::outline(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
-                                      UiTheme::outlineSoft());
+                                      UiTheme::border(UiTheme::outlineSoft()));
                 }
                 uint32_t ink = chosen ? UiTheme::accent() : hovered ? UiTheme::textSecondary() : UiTheme::textMuted();
                 const float mark = 13.0f;

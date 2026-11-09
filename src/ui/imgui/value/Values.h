@@ -125,6 +125,8 @@ public:
 class ColorValue {
 public:
     std::string owner;
+    bool opaque = false;
+    bool hueOnly = false;
 
     explicit ColorValue(const std::string& owner) : owner(owner) {}
 

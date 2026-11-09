@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/imgui/theme/ThemePaintSpec.h"
+
 #include <cstdint>
 #include <string>
 
@@ -37,6 +39,8 @@ namespace UiWidgets {
     void dotsButton(const std::string& id, float x, float y, bool open, bool hovered);
     void menuPanel(float x, float y, float w, float h);
     void overlayPanel(float x, float y, float w, float h, float radius, uint32_t fill, int cornerMask);
+    void overlayPanel(float x, float y, float w, float h, float radius, uint32_t fill, int cornerMask,
+                      ThemePaintSpec::Region region);
     void menuRowHover(const std::string& id, float x, float y, float w, float h, bool hovered);
     void subPanel(float x, float y, float w, float h);
     void subGroup(float x, float y, float w, float h);

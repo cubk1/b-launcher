@@ -244,26 +244,26 @@ namespace ProjectPage {
                     bool covered) {
             float x0 = mainX();
             float right = Page::right();
-            if (Page::iconButton("downloads#back", 0xf053, "返回", x0 - 4.0f, Page::TOP - 2.0f + (ICON - 28.0f) * 0.5f,
-                                 covered)) {
+            if (Page::iconButton("downloads#back", 0xf053, "返回", x0 - 4.0f,
+                                 Page::top() - 2.0f + (ICON - 28.0f) * 0.5f, covered)) {
                 DownloadsParts::back();
                 return;
             }
             float iconX = x0 + 30.0f;
-            DownloadsParts::projectIcon(!d.iconUrl.empty() ? d.iconUrl : route.hit.iconUrl, iconX, Page::TOP - 2.0f,
+            DownloadsParts::projectIcon(!d.iconUrl.empty() ? d.iconUrl : route.hit.iconUrl, iconX, Page::top() - 2.0f,
                                         ICON, route.kind);
             float textX = iconX + ICON + 12.0f;
             float linkX = right - 28.0f;
             std::string site = std::string("在 ") + Addons::sourceName(route.source) + " 上查看";
             std::string pageUrl = !d.pageUrl.empty() ? d.pageUrl : route.hit.pageUrl;
-            if (Page::iconButton("downloads#open", 0xf35d, site, linkX, Page::TOP - 6.0f, covered) &&
+            if (Page::iconButton("downloads#open", 0xf35d, site, linkX, Page::top() - 6.0f, covered) &&
                 !pageUrl.empty()) {
                 Platform::openUrl(pageUrl);
             }
             float titleRight = linkX - 6.0f;
             if (mcmod != nullptr && !mcmod->url.empty()) {
                 float wikiX = linkX - 30.0f;
-                if (wikiButton(wikiX, Page::TOP - 6.0f, covered)) {
+                if (wikiButton(wikiX, Page::top() - 6.0f, covered)) {
                     Platform::openUrl(mcmod->url);
                 }
                 titleRight = wikiX - 6.0f;
@@ -271,25 +271,25 @@ namespace ProjectPage {
             const std::string& title = route.hit.title;
             std::string heading =
                     fitEnd(DownloadsParts::displayTitle(title, route.kind), titleRight - textX, Page::TITLE_SIZE);
-            UiRender::textY(heading, textX, Page::TOP - 4.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
+            UiRender::textY(heading, textX, Page::top() - 4.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
                             Page::TITLE_SIZE);
             float otherX = textX + UiFont::width(heading, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
             std::string other = DownloadsParts::otherTitle(title, route.kind);
             if (!other.empty() && otherX < titleRight) {
-                UiRender::textY(fitEnd(other, titleRight - otherX, UiWidgets::TEXT_CONTROL), otherX, Page::TOP - 4.0f,
+                UiRender::textY(fitEnd(other, titleRight - otherX, UiWidgets::TEXT_CONTROL), otherX, Page::top() - 4.0f,
                                 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             }
             float actionRight = right;
             float actionW = 0.0f;
             if (install != nullptr) {
                 actionW = 96.0f;
-                DownloadsParts::versionAction(*install, route, actionRight, Page::TOP + 26.0f, 26.0f, true, covered);
+                DownloadsParts::versionAction(*install, route, actionRight, Page::top() + 26.0f, 26.0f, true, covered);
             }
             float lineRight = right - actionW - 12.0f;
             std::string summary = !d.summary.empty() ? d.summary : route.hit.description;
-            UiRender::textY(fitEnd(summary, lineRight - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
-                            UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            float statY = Page::TOP + 38.0f;
+            UiRender::textY(fitEnd(summary, lineRight - textX, UiWidgets::TEXT_SMALL), textX, Page::top() + 20.0f,
+                            16.0f, UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float statY = Page::top() + 38.0f;
             float sx = textX;
             const Projects::Member* owner = lead(d, route);
             std::string authorName = owner != nullptr ? owner->name : route.hit.author;
@@ -1090,7 +1090,7 @@ namespace ProjectPage {
                 bool open = version.id == st.expanded;
                 float h = Page::ROW_H + (open ? panelH : 0.0f);
                 if (i > 0) {
-                    UiRender::hLine(x + 14.0f, x + w - 14.0f, y, UiTheme::outlineSoft());
+                    UiRender::hLine(x + 14.0f, x + w - 14.0f, y, UiTheme::rowDivider(UiTheme::outlineSoft()));
                 }
                 if (y + h >= scroll.top && y <= scroll.bottom) {
                     versionRow(route, st, version, prefix, c, x, y, w, blocked);
@@ -1320,7 +1320,7 @@ namespace ProjectPage {
         if (!known) {
             route.tab = DESCRIPTION;
         }
-        float tabsY = Page::TOP + TABS_Y;
+        float tabsY = Page::top() + TABS_Y;
         float switchW = route.tab == DESCRIPTION ? bodySwitch(route.source, st, mcmod, tabsY, covered) : 0.0f;
         route.tab = DownloadsParts::segments("project", route.tab, items, mainX(), tabsY, covered,
                                              mainW() - (switchW > 0.0f ? switchW + 12.0f : 0.0f));

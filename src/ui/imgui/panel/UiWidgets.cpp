@@ -1,6 +1,7 @@
 #include "UiWidgets.h"
 #include "UiRender.h"
 #include "UiTheme.h"
+#include "../screens/theme/ThemePaint.h"
 #include "UiFont.h"
 #include "UiState.h"
 #include "UiCommon.h"
@@ -43,15 +44,15 @@ namespace UiWidgets {
     namespace {
         uint32_t switchTrack(uint32_t off, float on, float hover) {
             uint32_t idle = UiRender::over(UiTheme::overlay(Ui::round(22.0f * hover)), off);
-            uint32_t lit = UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover);
+            uint32_t lit = UiRender::mix(UiTheme::accent(), UiTheme::accentHover(), 0.10f * hover);
             return UiRender::mix(idle, lit, on);
         }
     }
 
     void card(float x, float y, float w, float h, const std::string& title) {
         UiRender::text(title, x + 12, y - 18, UiTheme::textFaint(), UiFont::MEDIUM, TEXT_CAPTION);
-        UiRender::roundRect(x, y, w, h, 14.0f, UiTheme::surface());
-        UiRender::outline(x, y, w, h, 14.0f, UiTheme::outlineSoft());
+        ThemePaint::fill(ThemePaintSpec::CARD, x, y, w, h, 14.0f, 0xF, UiTheme::surface());
+        UiRender::outline(x, y, w, h, 14.0f, UiTheme::border(UiTheme::outlineSoft()));
     }
 
     void toggle(const std::string& id, float x, float y, bool value, bool enabled, bool hovered) {
@@ -69,7 +70,8 @@ namespace UiWidgets {
         uint32_t fillColor = UiRender::over(lift, UiTheme::surfaceRaised());
         UiRender::roundRect(x, y, w, 23, 5.0f, fillColor);
         UiRender::outline(x, y, w, 23, 5.0f,
-                          UiRender::over(UiTheme::overlay(Ui::round(22.0f * response) + 10), UiTheme::surfaceRaised()),
+                          UiTheme::border(UiRender::over(UiTheme::overlay(Ui::round(22.0f * response) + 10),
+                                                         UiTheme::surfaceRaised())),
                           0xF, 0.5f);
         UiRender::textClipped(value.empty() ? std::string("请选择") : value, x + 7, y, 23, w - 26,
                               UiTheme::textSecondary(), UiFont::MEDIUM, TEXT_CONTROL, fillColor);
@@ -211,14 +213,23 @@ namespace UiWidgets {
 
     void menuPanel(float x, float y, float w, float h) {
         UiRender::shadow(x, y, w, h, 14.0f, 10.0f, 4.0f, UiTheme::shadow());
-        overlayPanel(x, y, w, h, 14.0f, UiTheme::menu(), 0xF);
+        overlayPanel(x, y, w, h, 14.0f, UiTheme::menu(), 0xF, ThemePaintSpec::MENU);
     }
 
     void overlayPanel(float x, float y, float w, float h, float radius, uint32_t fill, int cornerMask) {
+        overlayPanel(x, y, w, h, radius, fill, cornerMask, ThemePaintSpec::REGION_COUNT);
+    }
+
+    void overlayPanel(float x, float y, float w, float h, float radius, uint32_t fill, int cornerMask,
+                      ThemePaintSpec::Region region) {
         UiRender::bloom(x, y, w, h, radius, 12.0f, 1.0f, UiTheme::shadow());
         UiRender::blur(x, y, w, h, radius, 8, true, cornerMask);
-        UiRender::roundRect(x, y, w, h, radius, fill, cornerMask);
-        UiRender::outline(x, y, w, h, radius, UiTheme::panelOutline(), cornerMask, 0.5f);
+        if (region == ThemePaintSpec::REGION_COUNT) {
+            UiRender::roundRect(x, y, w, h, radius, fill, cornerMask);
+        } else {
+            ThemePaint::fill(region, x, y, w, h, radius, cornerMask, fill);
+        }
+        UiRender::outline(x, y, w, h, radius, UiTheme::border(UiTheme::panelOutline()), cornerMask, 0.5f);
     }
 
     void menuRowHover(const std::string& id, float x, float y, float w, float h, bool hovered) {
@@ -230,11 +241,11 @@ namespace UiWidgets {
 
     void subPanel(float x, float y, float w, float h) {
         UiRender::shadow(x, y, w, h, 12.0f, 14.0f, 5.0f, UiTheme::shadow());
-        overlayPanel(x, y, w, h, 12.0f, UiTheme::surface(), 0xF);
+        overlayPanel(x, y, w, h, 12.0f, UiTheme::surface(), 0xF, ThemePaintSpec::MENU);
     }
 
     void subGroup(float x, float y, float w, float h) {
-        UiRender::outline(x, y, w, h, 12.0f, UiTheme::groupOutline());
+        UiRender::outline(x, y, w, h, 12.0f, UiTheme::border(UiTheme::groupOutline()));
     }
 
     void subRowHover(const std::string& id, float x, float y, float w, float h, bool hovered) {

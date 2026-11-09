@@ -11,6 +11,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
 #include "ui/imgui/screens/home/Homepage.h"
+#include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/launch/CrashDialog.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
@@ -20,6 +21,8 @@
 #include "app/system/Config.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
+#include "app/system/Customization.h"
+#include "app/system/Features.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/instances/InstancePage.h"
@@ -27,6 +30,8 @@
 #include "ui/imgui/screens/launch/LaunchButton.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
 #include "ui/imgui/screens/shell/Page.h"
+#include "ui/imgui/screens/shell/ShellLayout.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/screens/settings/SettingsScreen.h"
 #include "ui/imgui/screens/versions/VersionsScreen.h"
 #include "app/system/Platform.h"
@@ -45,8 +50,11 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/theme/ThemeStyle.h"
 #include "ui/imgui/widget/InputWidget.h"
 #include "ui/imgui/widget/NavItemWidget.h"
+#include "ui/imgui/widget/SelectWidget.h"
+#include "ui/imgui/value/Bind.h"
 
 #include "imgui.h"
 
@@ -68,13 +76,19 @@ namespace MainWindow {
 
     static const float RAIL_W = 48.0f;
     static const float ITEM_X = 8.0f;
-    static const float ITEM_W = SIDEBAR_WIDTH - 16.0f;
     static const float SCROLL_ROOM = 8.0f;
     static float sideW = SIDEBAR_WIDTH;
-    static float itemW = ITEM_W;
-    static float listW = ITEM_W;
-    static float fullListW = ITEM_W;
+    static float openW = SIDEBAR_WIDTH;
+    static float openItemW = SIDEBAR_WIDTH - 16.0f;
+    static float itemW = openItemW;
+    static float listW = openItemW;
+    static float fullListW = openItemW;
+    static ShellLayout::Spec spec;
+    static bool topbarShown = false;
+    static bool launchColumn = false;
+    static float titleH = TITLE_HEIGHT;
     static float fold = 0.0f;
+    static bool previewing = false;
     static bool folded = false;
     static int searchClaimed = -10;
     static bool foldLoaded = false;
@@ -103,10 +117,6 @@ namespace MainWindow {
     static const int INSTANCE_PAGES = 10000;
 
     static const float SHELL_RADIUS = 14.0f;
-    static const float SIDEBAR_SHADE_DARK = 0.72f;
-    static const float PANEL_SHADE_DARK = 0.60f;
-    static const float SIDEBAR_SHADE_LIGHT = 0.80f;
-    static const float PANEL_SHADE_LIGHT = 0.70f;
 
     static PageTransition pages(PAGE_HOME);
     static std::unordered_map<std::string, int> instancePages;
@@ -135,13 +145,6 @@ namespace MainWindow {
     static float layoutHeight = MIN_HEIGHT;
     static bool layoutMaximized = false;
 
-    struct Rect {
-        float x;
-        float y;
-        float w;
-        float h;
-    };
-
     static std::vector<Rect> titleControls;
 
     static bool windowButton(const char* id, int glyph, float x, float y, bool danger) {
@@ -152,8 +155,11 @@ namespace MainWindow {
         if (response > 0.001f) {
             UiRender::roundRect(x, y, size, size, 7.0f, UiTheme::overlay(Ui::round(16 * response)));
         }
-        uint32_t tint =
-                UiRender::mix(UiTheme::textSecondary(), danger ? UiTheme::danger() : UiTheme::textPrimary(), response);
+        uint32_t idle = topbarShown ? UiTheme::tokenOr(UiTheme::TITLE_MUTED, UiTheme::textSecondary())
+                                    : UiTheme::textSecondary();
+        uint32_t lit =
+                topbarShown ? UiTheme::tokenOr(UiTheme::TITLE_TEXT, UiTheme::textPrimary()) : UiTheme::textPrimary();
+        uint32_t tint = UiRender::mix(idle, danger ? UiTheme::danger() : lit, response);
         UiWidgets::icon(Ui::glyph(glyph), x + size * 0.5f, y + size * 0.5f, tint, danger ? 12.0f : 11.0f);
         bool clicked = NewUi::click(x, y, size, size);
         if (clicked && danger) {
@@ -170,7 +176,11 @@ namespace MainWindow {
         if (response > 0.001f) {
             UiRender::roundRect(x, y, size, size, 7.0f, UiTheme::overlay(Ui::round(16 * response)));
         }
-        uint32_t tint = UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), response);
+        uint32_t idle = topbarShown ? UiTheme::tokenOr(UiTheme::TITLE_MUTED, UiTheme::textSecondary())
+                                    : UiTheme::textSecondary();
+        uint32_t lit =
+                topbarShown ? UiTheme::tokenOr(UiTheme::TITLE_TEXT, UiTheme::textPrimary()) : UiTheme::textPrimary();
+        uint32_t tint = UiRender::mix(idle, lit, response);
         float stroke = std::max(1.0f, std::round(1.2f * UiRender::uiScale * UiRender::guiScale()));
         float cx = x + size * 0.5f;
         float cy = y + size * 0.5f;
@@ -242,6 +252,7 @@ namespace MainWindow {
 
     void setSize(float w, float h, bool isMaximized) {
         bool compact = Compact::active();
+        spec = ShellLayout::current();
         layoutWidth = compact ? w : std::max(MIN_WIDTH, w);
         layoutHeight = compact ? h : std::max(MIN_HEIGHT, h);
         layoutMaximized = isMaximized;
@@ -253,6 +264,21 @@ namespace MainWindow {
 
     float height() {
         return layoutHeight;
+    }
+
+    float titleHeight() {
+        return titleH;
+    }
+
+    float contentTop() {
+        return topbarShown ? titleH + 12.0f : titleH;
+    }
+
+    Rect panel() {
+        if (topbarShown) {
+            return {sideW, titleH, layoutWidth - sideW, layoutHeight - titleH};
+        }
+        return {sideW, 0.0f, layoutWidth - sideW, layoutHeight};
     }
 
     float sidebarWidth() {
@@ -281,6 +307,14 @@ namespace MainWindow {
 
     void showHome() {
         pages.go(PAGE_HOME);
+    }
+
+    void showSettings() {
+        Compact::request(false);
+        if (pages.page != PAGE_SETTINGS) {
+            SettingsScreen::reset();
+        }
+        pages.go(PAGE_SETTINGS);
     }
 
     void showAccounts() {
@@ -383,7 +417,7 @@ namespace MainWindow {
     static bool navItem(const std::string& id, int glyph, const std::string& label, float x, float y, float w, int page,
                         bool blocked = false, uint32_t image = 0, const std::string& note = std::string()) {
         NavItemWidget item(id, Ui::glyph(glyph), label);
-        item.selected(pages.page == page).note(note).folded(fold, ITEM_W).bounds(x, y, w, ITEM_H);
+        item.selected(pages.page == page).note(note).folded(fold, openItemW).bounds(x, y, w, ITEM_H);
         if (image != 0) {
             item.image(image, 16.0f);
         }
@@ -418,7 +452,18 @@ namespace MainWindow {
     }
 
     static std::string brandText() {
-        return b_launcher_base::replace_all(Appearance::brandTitle(), "{FPS}", std::to_string(fpsShown));
+        std::string title = Appearance::customBrandTitle().empty() && !spec.brandText.empty()
+                ? spec.brandText
+                : Appearance::brandTitle();
+        return b_launcher_base::replace_all(title, "{FPS}", std::to_string(fpsShown));
+    }
+
+    static float windowButtonsWidth() {
+        return spec.maximizeButton ? 14.0f + 86.0f : 14.0f + 56.0f;
+    }
+
+    static float brandTextX() {
+        return spec.brandIcon ? ITEM_X + LABEL_X : ITEM_X + 10.0f;
     }
 
     static float foldToggle(float x, float y, float size, float radius) {
@@ -453,23 +498,33 @@ namespace MainWindow {
                         UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), wake), 11.0f);
     }
 
-    static void brand() {
+    static void brand(float room) {
         float logo = 20.0f;
-        float logoY = (TITLE_HEIGHT - logo) * 0.5f;
+        float logoY = (titleH - logo) * 0.5f;
         float cx = ITEM_X + ICON_CENTER;
-        float cy = TITLE_HEIGHT * 0.5f;
-        const float size = 28.0f;
-        float x = cx - size * 0.5f;
-        float y = cy - size * 0.5f;
-        titleControls.push_back({x, y, size, size});
-        float wake = foldToggle(x, y, size, 7.0f);
-        Logo::brand(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
+        float cy = titleH * 0.5f;
+        float wake = 0.0f;
+        if (!topbarShown) {
+            const float size = 28.0f;
+            float x = cx - size * 0.5f;
+            float y = cy - size * 0.5f;
+            titleControls.push_back({x, y, size, size});
+            wake = foldToggle(x, y, size, 7.0f);
+        }
+        if (spec.brandIcon) {
+            Logo::brand(cx - logo * 0.5f, logoY, logo, 1.0f - wake);
+        }
         fadeGlyph(folded ? 0xf101 : 0xf100, cx, cy, UiTheme::textPrimary(), wake, 11.0f);
+        if (room <= 0.0f) {
+            return;
+        }
         float savedAlpha = UiRender::alphaMul;
-        UiRender::alphaMul = savedAlpha * fading();
-        float room = ITEM_W - LABEL_X;
-        std::string title = UiFont::fitEnd(brandText(), UiFont::MEDIUM, 15.0f, room);
-        UiRender::textY(title, ITEM_X + LABEL_X, logoY, logo, UiTheme::textPrimary(), UiFont::MEDIUM, 15.0f);
+        UiRender::alphaMul = savedAlpha * (topbarShown ? 1.0f : fading());
+        std::string title = UiFont::fitEnd(brandText(), UiFont::MEDIUM, spec.brandSize, room);
+        UiRender::textY(title, brandTextX(), logoY, logo,
+                        topbarShown ? UiTheme::tokenOr(UiTheme::TITLE_TEXT, UiTheme::textPrimary())
+                                    : UiTheme::textPrimary(),
+                        UiFont::MEDIUM, spec.brandSize);
         UiRender::alphaMul = savedAlpha;
     }
 
@@ -522,7 +577,10 @@ namespace MainWindow {
     }
 
     static void searchBox() {
-        bool framed = Appearance::systemFrameRunning();
+        if (Customization::singleInstance()) {
+            return;
+        }
+        bool framed = Appearance::systemFrameRunning() || topbarShown;
         float x = ITEM_X;
         float y = searchY;
         float w = framed ? foldButtonX() - SEARCH_GAP - ITEM_X : itemW;
@@ -534,7 +592,9 @@ namespace MainWindow {
             bool over = NewUi::hit(x, y, w, h);
             float lit = UiState::motion("search#ring", over ? 0.5f : 0.0f, 18.0f);
             UiRender::roundRect(x, y, w, h, 8.0f, UiTheme::overlay(10));
-            UiRender::outline(x, y, w, h, 8.0f, UiRender::mix(UiTheme::outlineSoft(), UiTheme::outline(), lit));
+            UiRender::outline(
+                    x, y, w, h, 8.0f,
+                    UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::border(UiTheme::outline()), lit));
             UiWidgets::icon(Ui::glyph(0xf002), x + w * 0.5f, y + h * 0.5f,
                             over ? UiTheme::textSecondary() : UiTheme::textFaint(), 11.0f);
             if (over) {
@@ -560,7 +620,8 @@ namespace MainWindow {
         UiRender::roundRect(x, y, w, h, 8.0f, UiTheme::overlay(10));
         UiRender::outline(x, y, w, h, 8.0f,
                           focused ? UiTheme::accent()
-                                  : UiRender::mix(UiTheme::outlineSoft(), UiTheme::outline(), ring));
+                                  : UiRender::mix(UiTheme::border(UiTheme::outlineSoft()),
+                                                  UiTheme::border(UiTheme::outline()), ring));
         std::string shown = hasText ? UiInput::get(SEARCH_ID) : std::string("搜索实例");
         UiWidgets::iconBeside(Ui::glyph(0xf002), x + ICON_CENTER, shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, y, h,
                               focused ? UiTheme::textSecondary() : UiTheme::textFaint(), 11.0f);
@@ -704,7 +765,7 @@ namespace MainWindow {
         if (state == Game::State::Preparing) {
             Page::spinner(cx, cy, 4.5f, UiTheme::accent());
         } else {
-            UiRender::circle(cx, cy, 3.5f, UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au);
+            UiRender::circle(cx, cy, 3.5f, UiTheme::success());
         }
         if (count > 1 && fold < 0.5f) {
             std::string text = std::to_string(count);
@@ -898,16 +959,142 @@ namespace MainWindow {
         UiRender::alphaMul = savedAlpha;
     }
 
+    struct Destination {
+        const char* id;
+        int glyph;
+        const char* label;
+        int page;
+    };
+
+    static const Destination HOME_DESTINATION = {"nav#home", 0xf015, "主页", PAGE_HOME};
+    static const Destination DESTINATIONS[] = {
+            {"nav#new", 0xf067, "新建实例", PAGE_NEW_INSTANCE},
+            {"nav#downloads", 0xf019, "下载附加件", PAGE_DOWNLOADS},
+            {"nav#transfers", 0xf0ae, "下载列表", PAGE_TRANSFERS},
+            {"nav#accounts", 0xf007, "账户", PAGE_ACCOUNTS},
+            {"nav#multiplayer", 0xf6ff, "联机", PAGE_MULTIPLAYER},
+            {"nav#settings", 0xf013, "选项", PAGE_SETTINGS},
+    };
+
+    static bool pageAllowed(int page) {
+        switch (page) {
+            case PAGE_NEW_INSTANCE:
+                return Features::enabled(Features::NEW_INSTANCE) && !Customization::singleInstance();
+            case PAGE_EDIT_LOADERS: return Features::enabled(Features::INSTANCE_EDIT);
+            case PAGE_DOWNLOADS: return Features::enabled(Features::DOWNLOADS);
+            case PAGE_TRANSFERS: return Features::enabled(Features::TRANSFERS);
+            case PAGE_ACCOUNTS: return Features::enabled(Features::ACCOUNTS);
+            case PAGE_MULTIPLAYER: return Features::enabled(Features::MULTIPLAYER);
+            case PAGE_VERSIONS: return Features::enabled(Features::VERSIONS);
+            default: return true;
+        }
+    }
+
+    static std::vector<const Destination*> shownDestinations() {
+        std::vector<const Destination*> out;
+        for (const Destination& to : DESTINATIONS) {
+            if (pageAllowed(to.page)) {
+                out.push_back(&to);
+            }
+        }
+        return out;
+    }
+
+    static float footerHeight() {
+        return 10.0f + (float) shownDestinations().size() * ITEM_STEP + 10.0f;
+    }
+
+    static std::string destinationNote(int page);
+    static void arrive(int page, int from);
+
+    static void footer() {
+        if (topbarShown) {
+            return;
+        }
+        float footerY = height() - footerHeight();
+        UiRender::hLine(12.0f, sideW - 12.0f, footerY, UiTheme::divider());
+        float rowY = footerY + 10.0f;
+        int from = pages.page;
+        std::vector<const Destination*> shown = shownDestinations();
+        for (int k = 0; k < (int) shown.size(); k++) {
+            const Destination& to = *shown[(size_t) k];
+            if (navItem(to.id, to.glyph, to.label, ITEM_X, rowY + k * ITEM_STEP, itemW, to.page, false, 0,
+                        destinationNote(to.page))) {
+                arrive(to.page, from);
+            }
+        }
+    }
+
+    static const float PILL_H = 30.0f;
+    static const float PILL_PAD = 10.0f;
+    static const float PILL_ICON = 18.0f;
+    static const float PILL_GAP = 2.0f;
+    static const int PILL_FULL = 0;
+    static const int PILL_TEXT = 1;
+    static const int PILL_GLYPH = 2;
+
+    static std::string destinationNote(int page) {
+        if (page == PAGE_TRANSFERS) {
+            int transferring = Transfers::running();
+            return transferring > 0 ? std::to_string(transferring) : std::string();
+        }
+        if (page == PAGE_ACCOUNTS) {
+            const b_launcher_base::auth::account* account = Accounts::current();
+            return account != nullptr ? account->name : std::string();
+        }
+        if (page == PAGE_MULTIPLAYER) {
+            return Multiplayer::active() ? Multiplayer::state().code : std::string();
+        }
+        return std::string();
+    }
+
+    static void arrive(int page, int from) {
+        if (page == PAGE_NEW_INSTANCE) {
+            if (from != PAGE_NEW_INSTANCE) {
+                NewInstanceScreen::reset();
+            } else {
+                NewInstanceScreen::leaveModpack();
+            }
+        } else if (page == PAGE_DOWNLOADS) {
+            DownloadsScreen::openFor(Instances::selected());
+        } else if (page == PAGE_ACCOUNTS && from != PAGE_ACCOUNTS) {
+            AccountsScreen::reset();
+        } else if (page == PAGE_SETTINGS && from != PAGE_SETTINGS) {
+            SettingsScreen::reset();
+        }
+    }
+
+    bool launchColumnShown() {
+        return launchColumn;
+    }
+
     static void sidebar() {
+        if (launchColumn) {
+            if (sideW > 1.0f) {
+                UiRender::scissor(0, titleH, sideW, height() - titleH);
+                float savedAlpha = UiRender::alphaMul;
+                UiRender::alphaMul = savedAlpha * std::clamp(sideW / std::max(1.0f, openW), 0.0f, 1.0f);
+                HomeLaunchPanel::column(sideW - openW, titleH, openW, height(), NewUi::overlayCoversMouse(),
+                                        spec.launchAvatar, spec.launchAvatarRadius);
+                UiRender::alphaMul = savedAlpha;
+                UiRender::unscissor();
+            }
+            return;
+        }
         UiRender::scissor(0, 0, sideW, height());
-        if (Appearance::systemFrameRunning()) {
+        if (Appearance::systemFrameRunning() || topbarShown) {
             searchBox();
             foldButton();
         } else {
-            brand();
+            brand(openItemW - LABEL_X);
             searchBox();
         }
 
+        if (Customization::singleInstance()) {
+            footer();
+            UiRender::unscissor();
+            return;
+        }
         std::string query = searchQuery();
         bool searching = !query.empty();
         const std::vector<Instances::Source>& sources = Instances::sources();
@@ -933,7 +1120,7 @@ namespace MainWindow {
             contentH += GROUP_H + groupRows(grouped[i]) * ITEM_STEP * opens[i] + GROUP_GAP;
         }
 
-        float listBottom = height() - FOOTER_H - 10.0f;
+        float listBottom = height() - (topbarShown ? 0.0f : footerHeight()) - 10.0f;
         float viewH = listBottom - listTop;
         float maxScroll = std::max(0.0f, contentH - viewH);
         if (searching) {
@@ -948,7 +1135,7 @@ namespace MainWindow {
         bool lifting = !holdKey.empty() && dragKey.empty() && ImGui::GetTime() - holdAt >= HOLD_TIME;
         bool dragging = !dragKey.empty();
         float room = UiState::motion("sidebar#scrollRoom", maxScroll > 0.5f ? 1.0f : 0.0f, 14.0f);
-        fullListW = UiRender::snapLayout(ITEM_W - SCROLL_ROOM * room);
+        fullListW = UiRender::snapLayout(openItemW - SCROLL_ROOM * room);
         listW = UiRender::snapLayout(itemW - SCROLL_ROOM * room * (1.0f - fold));
         if (!scrollRestored && !Instances::loading()) {
             scrollRestored = true;
@@ -1085,19 +1272,46 @@ namespace MainWindow {
             }
         }
 
-        float footerY = height() - FOOTER_H;
-        UiRender::hLine(12.0f, sideW - 12.0f, footerY, UiTheme::divider());
-        float rowY = footerY + 10.0f;
-        int from = pages.page;
-        if (navItem("nav#new", 0xf067, "新建实例", ITEM_X, rowY, itemW, PAGE_NEW_INSTANCE)) {
-            if (from != PAGE_NEW_INSTANCE) {
-                NewInstanceScreen::reset();
-            } else {
-                NewInstanceScreen::leaveModpack();
-            }
+        footer();
+        UiRender::unscissor();
+    }
+
+    static float pillWidth(const char* label, int mode) {
+        if (mode == PILL_GLYPH) {
+            return PILL_H + 4.0f;
         }
-        if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
-            DownloadsScreen::openFor(Instances::selected());
+        return PILL_PAD * 2.0f + (mode == PILL_FULL ? PILL_ICON : 0.0f) +
+                UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+    }
+
+    static void navPill(const Destination& to, float x, float y, float w, int mode, int from, bool blocked) {
+        std::string label = to.label;
+        std::string note = destinationNote(to.page);
+        titleControls.push_back({x, y, w, PILL_H});
+        bool hovered = !blocked && NewUi::hit(x, y, w, PILL_H);
+        float lit = UiState::motion(std::string(to.id) + "#pill",
+                                    pages.page == to.page ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
+        ThemePaint::selectedFill(ThemePaintSpec::NAV_ACTIVE, std::string(to.id) + "#pill", x, y, w, PILL_H,
+                                 PILL_H * 0.5f, pages.page == to.page, hovered, lit);
+        uint32_t muted = UiTheme::tokenOr(UiTheme::TITLE_MUTED, UiTheme::textMuted());
+        uint32_t glyphTint = UiRender::mix(muted, UiTheme::accent(), lit);
+        if (mode == PILL_GLYPH) {
+            UiWidgets::icon(Ui::glyph(to.glyph), x + w * 0.5f, y + PILL_H * 0.5f, glyphTint, UiWidgets::TEXT_ICON);
+        } else {
+            float textX = x + PILL_PAD;
+            if (mode == PILL_FULL) {
+                UiWidgets::iconBeside(Ui::glyph(to.glyph), textX + 7.0f, label, UiFont::MEDIUM, UiWidgets::TEXT_BODY, y,
+                                      PILL_H, glyphTint, UiWidgets::TEXT_ICON);
+                textX += PILL_ICON;
+            }
+            UiRender::textY(label, textX, y, PILL_H,
+                            UiRender::mix(muted, UiTheme::tokenOr(UiTheme::TITLE_ACTIVE, UiTheme::textPrimary()), lit),
+                            UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+        }
+        if (hovered && (mode == PILL_GLYPH || !note.empty())) {
+            NewUi::tooltipText = note.empty() ? label : label + "\xEF\xBC\x88" + note + "\xEF\xBC\x89";
+            NewUi::tooltipX = x;
+            NewUi::tooltipY = y + PILL_H + 4.0f;
         }
         const b_launcher_base::auth::account* account = Accounts::current();
         if (navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
@@ -1110,8 +1324,49 @@ namespace MainWindow {
         if (navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS) &&
             from != PAGE_SETTINGS) {
             SettingsScreen::reset();
+        if (!blocked && NewUi::click(x, y, w, PILL_H)) {
+            UiSound::request(UiSound::TICK);
+            pages.go(to.page);
+            arrive(to.page, from);
         }
-        UiRender::unscissor();
+    }
+
+    static void topbar() {
+        std::vector<const Destination*> row = {&HOME_DESTINATION};
+        for (const Destination* to : shownDestinations()) {
+            row.push_back(to);
+        }
+        auto span = [&row](int mode) {
+            float sum = PILL_GAP * (float) (row.size() - 1);
+            for (const Destination* to : row) {
+                sum += pillWidth(to->label, mode);
+            }
+            return sum;
+        };
+        float right = width() - (Appearance::systemFrameRunning() ? 14.0f : windowButtonsWidth() + 10.0f);
+        float brandRoom = openItemW - LABEL_X;
+        float brandEnd =
+                brandTextX() + std::min(brandRoom, UiFont::width(brandText(), UiFont::MEDIUM, spec.brandSize)) + 12.0f;
+        float left = launchColumn ? brandEnd : std::max(brandEnd, openW + 8.0f);
+        int mode = ThemeStyle::icons() ? PILL_FULL : PILL_TEXT;
+        while (mode < PILL_GLYPH && span(mode) > right - left) {
+            mode++;
+        }
+        float total = span(mode);
+        if (total > right - left) {
+            brandRoom = 0.0f;
+            left = ITEM_X + ICON_CENTER + 18.0f;
+        }
+        float x = spec.navCentered ? std::clamp((width() - total) * 0.5f, left, std::max(left, right - total)) : left;
+        brand(brandRoom);
+        float y = UiRender::snapLayout((titleH - PILL_H) * 0.5f);
+        int from = pages.page;
+        bool blocked = NewUi::overlayCoversMouse();
+        for (const Destination* to : row) {
+            float w = pillWidth(to->label, mode);
+            navPill(*to, x, y, w, mode, from, blocked);
+            x += w + PILL_GAP;
+        }
     }
 
     static void followList() {
@@ -1170,6 +1425,71 @@ namespace MainWindow {
         return (BANNER_H + BANNER_GAP) * eased;
     }
 
+    static void homeExtras(bool floating) {
+        bool blocked = NewUi::overlayCoversMouse();
+        float y = height() - 14.0f - Page::FIELD_H - 8.0f;
+        float x = Page::left();
+        const std::vector<Customization::Link>& links = Customization::links();
+        for (size_t i = 0; i < links.size(); i++) {
+            const Customization::Link& link = links[i];
+            std::string label = link.label.empty() ? link.url : link.label;
+            float w = Page::buttonWidth(label, 0xf0c1);
+            if (x + w > Page::right()) {
+                break;
+            }
+            if (Page::button("home#link#" + std::to_string(i), label, x, y, w, false, blocked, 0xf0c1)) {
+                Platform::openUrl(link.url);
+            }
+            x += w + 8.0f;
+        }
+        const std::vector<Customization::Server>& servers = Customization::servers();
+        if (Customization::autoJoin() != "choose" || servers.empty()) {
+            return;
+        }
+        const float w = 210.0f;
+        float sx = floating ? width() - Page::RIGHT_MARGIN - w : Page::right() - w;
+        float sy = floating ? height() - LAUNCH_MARGIN - LaunchButton::SIZE - 12.0f - Page::FIELD_H : y;
+        auto choice = std::make_shared<ModeBinding>(
+                "home#server",
+                [] {
+                    std::string chosen = b_launcher_base::json_text(Config::data(), "packServer");
+                    for (const Customization::Server& server : Customization::servers()) {
+                        if (server.address == chosen) {
+                            return server.name.empty() ? server.address : server.name;
+                        }
+                    }
+                    const Customization::Server& first = Customization::servers().front();
+                    return first.name.empty() ? first.address : first.name;
+                },
+                [](const std::string& picked) {
+                    for (const Customization::Server& server : Customization::servers()) {
+                        if ((server.name.empty() ? server.address : server.name) == picked) {
+                            Config::data()["packServer"] = server.address;
+                            Config::save();
+                        }
+                    }
+                },
+                [] {
+                    std::vector<std::string> names;
+                    for (const Customization::Server& server : Customization::servers()) {
+                        names.push_back(server.name.empty() ? server.address : server.name);
+                    }
+                    return names;
+                });
+        SelectWidget widget("home#server", choice);
+        widget.bounds(sx, sy, w, Page::FIELD_H).block(blocked);
+        widget.paint();
+    }
+
+    static void featureShortcut() {
+        if (!ImGui::IsKeyPressed(ImGuiKey_F12, false) || NewUi::bindingKey != nullptr ||
+            NewUi::recordingShortcut != nullptr || !Features::anyHidden()) {
+            return;
+        }
+        Features::toggleReveal();
+        Notices::add(Notices::Kind::Info, Features::revealed() ? "已临时显示隐藏的功能" : "已恢复隐藏的功能", 2500);
+    }
+
     static void home() {
         bool floating = !Homepage::launchShown();
         float reserve = floating ? LaunchButton::SIZE + 22.0f : 0.0f;
@@ -1190,6 +1510,9 @@ namespace MainWindow {
         } else {
             DownloadButton::draw(width() - DownloadButton::MARGIN - DownloadButton::SIZE,
                                  height() - DownloadButton::MARGIN - DownloadButton::SIZE);
+        }
+        if (Customization::active()) {
+            homeExtras(floating);
         }
     }
 
@@ -1234,6 +1557,9 @@ namespace MainWindow {
         if (NewUi::popupOpen || !UiOverlays::isEmpty()) {
             return;
         }
+        if (launchColumn) {
+            return;
+        }
         if (folded) {
             setFolded(false);
         }
@@ -1251,10 +1577,21 @@ namespace MainWindow {
             foldLoaded = true;
             folded = b_launcher_base::json_bool(Config::data(), "sidebarFolded");
         }
-        fold = UiState::motionFrom("sidebar#fold", folded ? 1.0f : 0.0f, 12.0f, folded ? 1.0f : 0.0f);
-        sideW = UiRender::snapLayout(UiRender::lerp(SIDEBAR_WIDTH, RAIL_W, fold));
+        launchColumn = spec.preset == ShellLayout::Preset::Launch;
+        topbarShown = spec.preset == ShellLayout::Preset::Topbar || launchColumn;
+        titleH = std::round(topbarShown ? spec.titleHeight : spec.sidebarTitle);
+        openW = std::round(launchColumn ? spec.launchWidth : topbarShown ? spec.columnWidth : spec.sidebarWidth);
+        openItemW = openW - 2.0f * ITEM_X;
+        float target = folded ? 1.0f : 0.0f;
+        fold = UiState::motionFrom("sidebar#fold", target, 12.0f, target);
+        sideW = UiRender::snapLayout(UiRender::lerp(openW, RAIL_W, fold));
+        if (launchColumn) {
+            fold = 0.0f;
+            float open = previewing || pages.page == PAGE_HOME ? 1.0f : 0.0f;
+            sideW = UiRender::snapLayout(openW * UiState::motion("sidebar#launch", open, 12.0f));
+        }
         itemW = sideW - 2.0f * ITEM_X;
-        searchY = Appearance::systemFrameRunning() ? 10.0f : 50.0f;
+        searchY = topbarShown ? titleH + 10.0f : Appearance::systemFrameRunning() ? 10.0f : titleH + 6.0f;
         listTop = searchY + SEARCH_H + 8.0f;
     }
 
@@ -1266,6 +1603,10 @@ namespace MainWindow {
             unfold();
             followList();
             searchShortcut();
+            featureShortcut();
+            if (!pageAllowed(pages.page)) {
+                pages.go(PAGE_HOME);
+            }
             Compact::shortcut();
             shell();
         }
@@ -1274,7 +1615,7 @@ namespace MainWindow {
         }
         // Keep notifications visible and expiring while the guide covers the shell.
         bool underTitle = Onboarding::drawing() || (pages.page == PAGE_HOME && HomeWidgets::alignBottom());
-        bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();
+        bool floating = pages.page == PAGE_HOME && !Homepage::launchShown() && !launchColumn;
         float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
         if (!floating && DownloadButton::shown() > 0.5f &&
             (pages.page == PAGE_HOME || pages.page == PAGE_DOWNLOADS)) {
@@ -1286,25 +1627,114 @@ namespace MainWindow {
             columnBottom + 8.0f > height() - Notifications::clearance()) {
             inset = Notifications::insetAbove(height(), columnTop);
         }
-        Notifications::render(width(), height(), inset, underTitle, TITLE_HEIGHT + 6.0f);
+        Notifications::render(width(), height(), inset, underTitle, titleH + 6.0f);
         if (!Appearance::systemFrameRunning()) {
-            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
-            if (windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false)) {
+            float buttonY = (titleH - 26.0f) * 0.5f;
+            if (windowButton("window#minimize", 0xf068, width() - windowButtonsWidth(), buttonY, false)) {
                 minimizeRequested = true;
             }
-            maximizeButton(width() - 14 - 56, buttonY);
+            if (spec.maximizeButton) {
+                maximizeButton(width() - 14 - 56, buttonY);
+            }
             if (windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true)) {
                 closeRequested = true;
             }
         }
     }
 
+    struct Panes {
+        ShaderUtil::Shape plate;
+        ShaderUtil::Shape main;
+        int plateCodes = 0;
+        int mainCodes = 0;
+        float inner = 0.0f;
+    };
+
+    static Panes panes(float outer) {
+        using ShaderUtil::SHELL_INNER;
+        using ShaderUtil::SHELL_OUTER;
+        Rect main = panel();
+        float mainW = UiRender::transformW(main.w);
+        float mainH = UiRender::transformW(main.h);
+        Panes out;
+        out.inner = ShaderUtil::styledRadius(UiRender::transformW(spec.innerRadius), mainW, mainH);
+        float rim = ShaderUtil::styledRadius(UiRender::transformW(outer), UiRender::transformW(width()),
+                                             UiRender::transformW(height()));
+        out.plateCodes = topbarShown ? SHELL_OUTER | SHELL_OUTER << 2 | SHELL_OUTER << 4 | SHELL_OUTER << 6
+                                     : SHELL_OUTER | SHELL_OUTER << 4;
+        int bottomLeft = sideW < 1.0f ? SHELL_OUTER : SHELL_INNER;
+        out.mainCodes = topbarShown ? SHELL_INNER | bottomLeft << 4 | SHELL_OUTER << 6
+                                    : SHELL_INNER | SHELL_OUTER << 2 | SHELL_INNER << 4 | SHELL_OUTER << 6;
+        float plateW = topbarShown ? width() : sideW + main.w * 0.5f;
+        float plateRect[4] = {UiRender::transformX(0), UiRender::transformY(0), UiRender::transformW(plateW),
+                              UiRender::transformW(height())};
+        float mainRect[4] = {UiRender::transformX(main.x), UiRender::transformY(main.y), mainW, mainH};
+        out.plate = ShaderUtil::paneShape(plateRect, out.plateCodes, out.inner, rim);
+        out.main = ShaderUtil::paneShape(mainRect, out.mainCodes, out.inner, rim);
+        return out;
+    }
+
+    static ShaderUtil::Shape band(float x, float y, float w, float h, float topLeft, float topRight, float bottomLeft,
+                                  float bottomRight) {
+        return {{x, y, w, h}, {topLeft, topRight, bottomLeft, bottomRight}};
+    }
+
+    static void paneImage(uint32_t texture, const ShaderUtil::Shape& shape, const ShaderUtil::Shape* hole) {
+        float uSpan = 1.0f;
+        float vSpan = 1.0f;
+        coverSpan(width(), height(), MIN_WIDTH, MIN_HEIGHT, uSpan, vSpan);
+        ShaderUtil::Paint paint;
+        paint.kind = ShaderUtil::PAINT_IMAGE;
+        paint.texture = texture;
+        paint.frame[0] = UiRender::transformX(0);
+        paint.frame[1] = UiRender::transformY(0);
+        paint.frame[2] = UiRender::transformW(width());
+        paint.frame[3] = UiRender::transformW(height());
+        paint.uv[0] = uSpan;
+        paint.uv[1] = vSpan;
+        paint.uv[2] = (1.0f - uSpan) * 0.5f;
+        paint.uv[3] = (1.0f - vSpan) * 0.5f;
+        paint.tint = UiRender::applyAlpha(0xFFFFFFFFu);
+        ShaderUtil::paint(shape, nullptr, hole, paint);
+    }
+
+    static void paneSolid(uint32_t color, const ShaderUtil::Shape& shape, const ShaderUtil::Shape* clip,
+                          const ShaderUtil::Shape* hole) {
+        ShaderUtil::Paint paint;
+        paint.count = 1;
+        paint.colors[0] = UiRender::applyAlpha(color);
+        ShaderUtil::paint(shape, clip, hole, paint);
+    }
+
     static void frame(float outer) {
-        float r = SHELL_RADIUS;
+        float r = spec.innerRadius;
         uint32_t sidebarFill = UiTheme::sidebar();
         uint32_t panelFill = UiTheme::panel();
-        if (Appearance::backgroundImage() && Background::sidebar() != 0 && Background::panel() != 0) {
-            bool light = UiTheme::isLight();
+        bool classic = !topbarShown && openW == SIDEBAR_WIDTH;
+        float opacity = std::clamp(UiRender::alphaMul, 0.0f, 1.0f);
+        if (ThemePaint::custom(ThemePaintSpec::WINDOW)) {
+            ShaderUtil::Shape window = ShaderUtil::roundShape(
+                    UiRender::transformX(0), UiRender::transformY(0), UiRender::transformW(width()),
+                    UiRender::transformW(height()), UiRender::transformW(cornerRadius), 0xF);
+            ThemePaint::layers(ThemePaintSpec::WINDOW, window, nullptr, nullptr, opacity);
+        }
+        Panes shapes = panes(outer);
+        auto shade = [&]() {
+            float sidebarShade = UiTheme::scalar(UiTheme::SIDEBAR_SHADE);
+            float panelShade = UiTheme::scalar(UiTheme::PANEL_SHADE);
+            sidebarFill = (sidebarFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * sidebarShade) << 24);
+            panelFill = (panelFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * panelShade) << 24);
+        };
+        if (!previewing && Appearance::backgroundImage() && !classic) {
+            uint32_t strong = Background::wholeSidebar();
+            uint32_t light = Background::wholePanel();
+            if (strong != 0 && light != 0 && !ShaderUtil::paintBroken()) {
+                paneImage(strong, shapes.plate, nullptr);
+                paneImage(light, shapes.main, nullptr);
+                shade();
+            }
+        } else if (!previewing && Appearance::backgroundImage() && Background::sidebar() != 0 &&
+                   Background::panel() != 0) {
             float uSpan = 1.0f;
             float vSpan = 1.0f;
             coverSpan(SIDEBAR_WIDTH + r, height(), SIDEBAR_WIDTH + r, MIN_HEIGHT, uSpan, vSpan);
@@ -1322,25 +1752,128 @@ namespace MainWindow {
                                  UiRender::transformW(width() - sideW), UiRender::transformW(height()),
                                  UiRender::transformW(r), Background::panel(), 0.0f, (1.0f - vSpan) * 0.5f, uSpan,
                                  (1.0f + vSpan) * 0.5f, UiRender::applyAlpha(0xFFFFFFFFu), outer > 0.0f ? 0xF : 1 | 4);
-            float sidebarShade = light ? SIDEBAR_SHADE_LIGHT : SIDEBAR_SHADE_DARK;
-            float panelShade = light ? PANEL_SHADE_LIGHT : PANEL_SHADE_DARK;
-            sidebarFill = (sidebarFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * sidebarShade) << 24);
-            panelFill = (panelFill & 0x00FFFFFFu) | ((uint32_t) Ui::round(255 * panelShade) << 24);
+            shade();
         }
-        UiRender::shell(0, 0, width(), height(), sideW, r, sidebarFill, panelFill, outer);
-        UiRender::outlineFade(sideW, 0, width() - sideW, height(), r, UiTheme::outline(), 1.0f, 0.5f);
+        const float* plate = shapes.plate.rect;
+        const float* pane = shapes.main.rect;
+        float bottom = plate[1] + plate[3];
+        float columnW = pane[0] - plate[0] + shapes.inner;
+        const float* rim = shapes.plate.radii;
+        ShaderUtil::Shape title = band(plate[0], plate[1], plate[2], pane[1] - plate[1], rim[0], rim[1], 0.0f, 0.0f);
+        ShaderUtil::Shape column = topbarShown
+                ? band(plate[0], pane[1], columnW, bottom - pane[1], 0.0f, 0.0f, rim[2], 0.0f)
+                : band(plate[0], plate[1], columnW, plate[3], rim[0], 0.0f, rim[2], 0.0f);
+        bool recapture = true;
+        auto blurPane = [&](ThemePaintSpec::Region region, const ShaderUtil::Shape& shape,
+                            const ShaderUtil::Shape* hole) {
+            float amount = ThemePaint::blur(region);
+            if (amount <= 0.0f || opacity <= 0.0f || shape.rect[2] <= 0.0f || shape.rect[3] <= 0.0f) {
+                return;
+            }
+            ShaderUtil::kawaseBlur(shape, hole, amount, UiRender::applyAlpha(0xFFFFFFFFu), recapture);
+            recapture = false;
+        };
+        if (topbarShown) {
+            blurPane(ThemePaintSpec::TITLEBAR, title, nullptr);
+        }
+        blurPane(ThemePaintSpec::SIDEBAR, column, &shapes.main);
+        blurPane(ThemePaintSpec::CONTENT, shapes.main, nullptr);
+
+        bool titleCustom = topbarShown && ThemePaint::custom(ThemePaintSpec::TITLEBAR);
+        bool sideCustom = ThemePaint::custom(ThemePaintSpec::SIDEBAR);
+        bool contentCustom = ThemePaint::custom(ThemePaintSpec::CONTENT);
+        uint32_t plateFill = titleCustom || sideCustom ? 0u : sidebarFill;
+        uint32_t mainFill = contentCustom ? 0u : panelFill;
+        Rect main = panel();
+        if (topbarShown) {
+            float plateRect[4] = {0.0f, 0.0f, width(), height()};
+            float paneRect[4] = {main.x, main.y, main.w, main.h};
+            UiRender::shellPanes(plateRect, shapes.plateCodes, paneRect, shapes.mainCodes, r, outer, plateFill,
+                                 mainFill);
+        } else {
+            UiRender::shell(0, 0, width(), height(), sideW, r, plateFill, mainFill, outer);
+        }
+        if (topbarShown && (titleCustom || sideCustom)) {
+            ShaderUtil::Shape above = band(plate[0] - 1.0f, plate[1] - 1.0f, plate[2] + 2.0f, pane[1] - plate[1] + 1.0f,
+                                           0.0f, 0.0f, 0.0f, 0.0f);
+            ShaderUtil::Shape below =
+                    band(plate[0] - 1.0f, pane[1], columnW + 1.0f, bottom - pane[1] + 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            if (titleCustom) {
+                ThemePaint::layers(ThemePaintSpec::TITLEBAR, shapes.plate, &above, &shapes.main, opacity);
+            } else {
+                paneSolid(sidebarFill, shapes.plate, &above, &shapes.main);
+            }
+            if (sideCustom) {
+                ThemePaint::layers(ThemePaintSpec::SIDEBAR, shapes.plate, &below, &shapes.main, opacity);
+            } else {
+                paneSolid(sidebarFill, shapes.plate, &below, &shapes.main);
+            }
+        } else if (sideCustom) {
+            ShaderUtil::Shape within =
+                    band(plate[0] - 1.0f, plate[1] - 1.0f, columnW + 1.0f, plate[3] + 2.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            ThemePaint::layers(ThemePaintSpec::SIDEBAR, shapes.plate, &within, &shapes.main, opacity);
+        }
+        if (contentCustom) {
+            ThemePaint::layers(ThemePaintSpec::CONTENT, shapes.main, nullptr, nullptr, opacity);
+        }
+        UiRender::outlineFade(main.x, main.y, main.w, main.h, r,
+                              UiTheme::border(UiTheme::tokenOr(UiTheme::SHELL_OUTLINE, UiTheme::outline())), 1.0f,
+                              0.5f);
+    }
+
+    std::string pageName() {
+        switch (pages.page) {
+            case PAGE_HOME: return "home";
+            case PAGE_NEW_INSTANCE: return "new";
+            case PAGE_SETTINGS: return "settings";
+            case PAGE_ACCOUNTS: return "accounts";
+            case PAGE_DOWNLOADS: return "downloads";
+            case PAGE_EDIT_LOADERS: return "loaders";
+            case PAGE_MULTIPLAYER: return "multiplayer";
+            case PAGE_VERSIONS: return "versions";
+            case PAGE_TRANSFERS: return "transfers";
+            default: return "instance";
+        }
+    }
+
+    static void decorate(bool above, float outer) {
+        if (ThemePaintSpec::current().decorations.empty()) {
+            return;
+        }
+        ThemePaint::Frames frames = {
+                {{0.0f, 0.0f, width(), height()},
+                 {0.0f, 0.0f, width(), titleH},
+                 {0.0f, topbarShown ? titleH : 0.0f, sideW, height() - (topbarShown ? titleH : 0.0f)},
+                 {0.0f, 0.0f, 0.0f, 0.0f}}};
+        Rect main = panel();
+        frames.rects[ThemePaintSpec::CONTENT][0] = main.x;
+        frames.rects[ThemePaintSpec::CONTENT][1] = main.y;
+        frames.rects[ThemePaintSpec::CONTENT][2] = main.w;
+        frames.rects[ThemePaintSpec::CONTENT][3] = main.h;
+        ShaderUtil::Shape window =
+                ShaderUtil::roundShape(UiRender::transformX(0), UiRender::transformY(0), UiRender::transformW(width()),
+                                       UiRender::transformW(height()), UiRender::transformW(cornerRadius), 0xF);
+        ShaderUtil::Shape shellShape =
+                ShaderUtil::roundShape(UiRender::transformX(0), UiRender::transformY(0), UiRender::transformW(width()),
+                                       UiRender::transformW(height()), UiRender::transformW(outer), 0xF);
+        ThemePaint::decorations(above, pageName(), frames, window, shellShape);
     }
 
     static void shell() {
-        frame(cornerRadius);
+        float outer = cornerRadius;
+        frame(outer);
+        decorate(false, outer);
+        if (topbarShown) {
+            topbar();
+        }
         sidebar();
         content();
 
         // Every page but the home page offers the way back in the title bar, where no page keeps its own controls.
-        if (pages.page != PAGE_HOME) {
+        if (pages.page != PAGE_HOME && !topbarShown) {
             std::string back = "返回主页";
             float backW = std::max(76.0f, Page::buttonWidth(back, 0xf015));
-            float backY = (TITLE_HEIGHT - Page::FIELD_H) * 0.5f;
+            float backY = (titleH - Page::FIELD_H) * 0.5f;
             titleControls.push_back({sideW + 20.0f, backY, backW, Page::FIELD_H});
             if (Page::button("topbar#home", back, sideW + 20.0f, backY, backW, false, NewUi::overlayCoversMouse(),
                              0xf015)) {
@@ -1348,6 +1881,7 @@ namespace MainWindow {
             }
         }
 
+        decorate(true, outer);
         Drop::draw(width(), height());
     }
 
@@ -1355,7 +1889,37 @@ namespace MainWindow {
         return SHELL_RADIUS * std::min(w / MIN_WIDTH, h / MIN_HEIGHT);
     }
 
+    static void placeholderContent() {
+        Rect main = panel();
+        float x = main.x + 22.0f;
+        float w = main.w - 44.0f;
+        float y = contentTop() + 16.0f;
+        uint32_t ink = (UiTheme::textPrimary() & 0x00FFFFFFu) | 0x50000000u;
+        uint32_t faint = (UiTheme::textMuted() & 0x00FFFFFFu) | 0x40000000u;
+        UiRender::roundRect(x, y, std::min(180.0f, w * 0.4f), 16.0f, 8.0f, ink);
+        y += 36.0f;
+        for (int card = 0; card < 2; card++) {
+            float h = card == 0 ? 120.0f : 84.0f;
+            ThemePaint::fill(ThemePaintSpec::CARD, x, y, w, h, 12.0f, 0xF, UiTheme::surface());
+            UiRender::outline(x, y, w, h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
+            for (int row = 0; row < (card == 0 ? 3 : 2); row++) {
+                float rowY = y + 18.0f + row * 34.0f;
+                UiRender::roundRect(x + 18.0f, rowY, w * 0.3f, 12.0f, 6.0f, faint);
+                if (card == 0 && row == 0) {
+                    ThemePaint::primaryFill(x + w - 128.0f, rowY - 8.0f, 110.0f, 28.0f, 7.0f, 0.0f);
+                } else {
+                    UiRender::roundRect(x + w - 128.0f, rowY - 8.0f, 110.0f, 28.0f, 7.0f, UiTheme::surfaceRaised());
+                }
+            }
+            y += h + 16.0f;
+        }
+    }
+
     void miniature(float x, float y, float w, float h) {
+        miniature(x, y, w, h, nullptr, false);
+    }
+
+    void miniature(float x, float y, float w, float h, const ShellLayout::Spec* layout, bool placeholder) {
         float scale = std::min(w / MIN_WIDTH, h / MIN_HEIGHT);
         if (scale <= 0.0f) {
             return;
@@ -1372,6 +1936,19 @@ namespace MainWindow {
         float savedSmooth = listSmooth;
         bool savedRestored = scrollRestored;
         size_t savedControls = titleControls.size();
+        ShellLayout::Spec savedSpec = spec;
+        bool savedTopbar = topbarShown;
+        bool savedLaunch = launchColumn;
+        float savedTitle = titleH;
+        float savedOpen = openW;
+        float savedOpenItem = openItemW;
+        float savedFold = fold;
+        float savedSide = sideW;
+        float savedItem = itemW;
+        float savedSearch = searchY;
+        float savedListTop = listTop;
+        float savedFull = fullListW;
+        float savedList = listW;
         Page::ScrollScope previewScroll("miniature");
 
         UiRender::scissor(x, y, w, h);
@@ -1383,18 +1960,47 @@ namespace MainWindow {
         NewUi::mouseX = -1.0e6f;
         NewUi::mouseY = -1.0e6f;
         NewUi::mouseDown = false;
+        if (layout != nullptr) {
+            spec = ShellLayout::effective(*layout);
+        }
+        previewing = true;
+        UiState::setFrozen(true);
 
         unfold();
         frame(SHELL_RADIUS);
+        if (topbarShown) {
+            topbar();
+        }
         sidebar();
-        home();
+        if (placeholder) {
+            placeholderContent();
+        } else {
+            home();
+        }
         if (!Appearance::systemFrameRunning()) {
-            float buttonY = (TITLE_HEIGHT - 26.0f) * 0.5f;
-            windowButton("window#minimize", 0xf068, width() - 14 - 86, buttonY, false);
-            maximizeButton(width() - 14 - 56, buttonY);
+            float buttonY = (titleH - 26.0f) * 0.5f;
+            windowButton("window#minimize", 0xf068, width() - windowButtonsWidth(), buttonY, false);
+            if (spec.maximizeButton) {
+                maximizeButton(width() - 14 - 56, buttonY);
+            }
             windowButton("window#close", 0xf00d, width() - 14 - 26, buttonY, true);
         }
 
+        UiState::setFrozen(false);
+        previewing = false;
+        spec = savedSpec;
+        topbarShown = savedTopbar;
+        launchColumn = savedLaunch;
+        titleH = savedTitle;
+        openW = savedOpen;
+        openItemW = savedOpenItem;
+        fold = savedFold;
+        sideW = savedSide;
+        itemW = savedItem;
+        searchY = savedSearch;
+        listTop = savedListTop;
+        fullListW = savedFull;
+        listW = savedList;
         layoutWidth = savedWidth;
         layoutHeight = savedHeight;
         UiRender::uiScale = savedUi;
@@ -1414,7 +2020,7 @@ namespace MainWindow {
         if (Compact::active() || NewUi::popupOpen || !UiOverlays::isEmpty()) {
             return false;
         }
-        if (y < 0 || y >= TITLE_HEIGHT) {
+        if (y < 0 || y >= titleH) {
             return false;
         }
         if (Appearance::systemFrameRunning() && x < sideW) {

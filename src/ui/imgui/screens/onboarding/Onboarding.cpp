@@ -16,6 +16,7 @@
 #include "ui/imgui/panel/UiSound.h"
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
 #include "ui/imgui/widget/ToggleWidget.h"
@@ -159,15 +160,14 @@ namespace Onboarding {
             float dy = push * 1.0f;
             uint32_t ink;
             if (primary) {
-                UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f,
-                                    UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * lit + 0.05f * push));
-                ink = UiTheme::onAccent();
+                ThemePaint::primaryFill(x, y + dy, w, CONTROL_H, 9.0f, 0.10f * lit + 0.05f * push);
+                ink = UiTheme::tokenOr(UiTheme::PRIMARY_TEXT, UiTheme::onAccent());
             } else {
                 UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::surfaceRaised());
                 if (lit > 0.001f) {
                     UiRender::roundRect(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::overlay(Ui::round(14.0f * lit)));
                 }
-                UiRender::outline(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::outlineSoft());
+                UiRender::outline(x, y + dy, w, CONTROL_H, 9.0f, UiTheme::border(UiTheme::outlineSoft()));
                 ink = UiTheme::textPrimary();
             }
             float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -214,6 +214,7 @@ namespace Onboarding {
             static auto binding = std::make_shared<ColorBinding>(
                     "onboarding#accent", [] { return Appearance::accent(); },
                     [](uint32_t argb) { Appearance::setAccent(argb); });
+            binding->opaque = true;
             return binding;
         }
 
@@ -368,7 +369,7 @@ namespace Onboarding {
                     UiRender::roundRect(cx, cy, cellW, CONTROL_H, r, UiTheme::overlay(Ui::round(14.0f * lit)));
                 }
                 UiRender::outline(cx, cy, cellW, CONTROL_H, r,
-                                  UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), sel));
+                                  UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::accent(), sel));
                 uint32_t rest = UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit);
                 Page::centredText(std::to_string(zooms[i]) + "%", cx + cellW * 0.5f, cy, CONTROL_H,
                                   UiRender::mix(rest, UiTheme::onAccent(), sel), UiWidgets::TEXT_CONTROL);
@@ -409,7 +410,7 @@ namespace Onboarding {
                 fieldRight = resetX - 8.0f;
             }
             UiRender::roundRect(x, rowY, fieldRight - x, CONTROL_H, 9.0f, UiTheme::surfaceSunken());
-            UiRender::outline(x, rowY, fieldRight - x, CONTROL_H, 9.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, rowY, fieldRight - x, CONTROL_H, 9.0f, UiTheme::border(UiTheme::outlineSoft()));
             float textRight = fieldRight - 12.0f;
             if (Page::iconButton("onboarding#bgPick", 0xf07c, "选择图片", pickX, buttonY)) {
                 std::filesystem::path start =
@@ -419,8 +420,8 @@ namespace Onboarding {
                     path = Background::path();
                 }
             }
-            std::string name =
-                    path.empty() ? std::string("默认图片") : Platform::display(b_launcher_base::path_from_utf8(path));
+            std::string name = path.empty() ? std::string(Background::themeImage() ? "主题图片" : "默认图片")
+                                            : Platform::display(b_launcher_base::path_from_utf8(path));
             name = UiFont::fitStart(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                     std::max(0.0f, textRight - (x + 12.0f)));
             UiRender::textY(name, x + 12.0f, rowY, CONTROL_H,
@@ -451,7 +452,7 @@ namespace Onboarding {
                     .hitArea(x, y, w, LIST_ROW);
             toggle.paint();
             if (!last) {
-                UiRender::hLine(x + 12.0f, x + w - 12.0f, y + LIST_ROW, UiTheme::divider());
+                UiRender::hLine(x + 12.0f, x + w - 12.0f, y + LIST_ROW, UiTheme::rowDivider(UiTheme::divider()));
             }
         }
 
@@ -474,7 +475,7 @@ namespace Onboarding {
             const std::vector<HomeWidgets::WidgetKind>& kinds = HomeWidgets::widgetKinds();
             float cardH = LIST_ROW * (float) kinds.size();
             UiRender::roundRect(x, y, w, cardH, 10.0f, UiTheme::surfaceRaised());
-            UiRender::outline(x, y, w, cardH, 10.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, cardH, 10.0f, UiTheme::border(UiTheme::outlineSoft()));
             for (size_t i = 0; i < kinds.size(); i++) {
                 widgetRow(kinds[i], x, y + LIST_ROW * (float) i, w, i + 1 == kinds.size());
             }
@@ -489,7 +490,7 @@ namespace Onboarding {
             float radius = MainWindow::miniatureRadius(w, h);
             UiRender::shadow(x, y, w, h, radius, 10.0f, 4.0f, UiTheme::shadow());
             MainWindow::miniature(x, y, w, h);
-            UiRender::outline(x, y, w, h, radius, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, h, radius, UiTheme::border(UiTheme::outlineSoft()));
             if (glow > 0.01f) {
                 UiRender::outline(x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, radius + 2.0f,
                                   withAlpha(UiTheme::accent(), 0.18f * glow));

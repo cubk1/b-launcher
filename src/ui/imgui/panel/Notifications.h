@@ -7,7 +7,7 @@ namespace Notifications {
 
     struct Style {
         int icon;
-        uint32_t color;
+        int tone;
     };
 
     extern const Style INFO;

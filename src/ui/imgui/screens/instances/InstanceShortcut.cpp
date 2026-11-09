@@ -133,17 +133,17 @@ namespace InstanceShortcut {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
-        bool back = Page::iconButton("shortcut#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
+        bool back = Page::iconButton("shortcut#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "生成快捷方式";
-        Page::title(title, Page::left() + 30.0f, Page::TOP);
+        Page::title(title, Page::left() + 30.0f, Page::top());
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
         UiRender::textY(UiFont::fitEnd(entry.info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::right() - nameX),
-                        nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                        nameX, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
 
         bool custom = Shortcuts::draft(key).icon == Shortcuts::Icon::Custom;
         int rows = custom ? 3 : 2;
         float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
-        Page::Scroll body("shortcut#body#" + key, Page::TOP + 40.0f, buttonTop - 14.0f,
+        Page::Scroll body("shortcut#body#" + key, Page::top() + 40.0f, buttonTop - 14.0f,
                           Page::CAPTION_H + rows * Page::ROW_H);
         bool outside = body.begin();
         bool blocked = outside || covered;

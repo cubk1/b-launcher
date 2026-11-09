@@ -2,6 +2,7 @@
 #include "NewUi.h"
 #include "UiRender.h"
 #include "UiState.h"
+#include "../theme/ThemeStyle.h"
 
 #include <cmath>
 
@@ -19,7 +20,7 @@ bool PageTransition::go(int next) {
 
 void PageTransition::begin() {
     mix = UiRender::lerp(mix, 1.0f, 1.0f - (float) std::exp(-15.0f * UiRender::deltaTime()));
-    if (mix > 0.9995f) {
+    if (mix > 0.9995f || !ThemeStyle::animations()) {
         mix = 1.0f;
     } else {
         UiState::keepAnimating();

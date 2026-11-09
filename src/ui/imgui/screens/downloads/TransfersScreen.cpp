@@ -506,14 +506,14 @@ namespace TransfersScreen {
         void empty() {
             std::string text = "没有正在进行的下载";
             float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::textY(text, Page::left() + (Page::width() - w) * 0.5f, Page::TOP + 110.0f, 24.0f,
+            UiRender::textY(text, Page::left() + (Page::width() - w) * 0.5f, Page::top() + 110.0f, 24.0f,
                             UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         }
     }
 
     void draw() {
         bool blocked = NewUi::overlayCoversMouse();
-        Page::title("下载列表", Page::left(), Page::TOP);
+        Page::title("下载列表", Page::left(), Page::top());
         const std::vector<Task>& all = Transfers::list();
         std::vector<const Task*> running;
         std::vector<const Task*> finished;
@@ -524,7 +524,8 @@ namespace TransfersScreen {
         if (!finished.empty()) {
             std::string text = "清除已完成";
             float w = Page::buttonWidth(text, 0xf2ed);
-            if (Page::button("transfers#clear", text, Page::right() - w, Page::TOP + 1.0f, w, false, blocked, 0xf2ed)) {
+            if (Page::button("transfers#clear", text, Page::right() - w, Page::top() + 1.0f, w, false, blocked,
+                             0xf2ed)) {
                 Transfers::clear();
             }
         }
@@ -543,7 +544,7 @@ namespace TransfersScreen {
         if (!finished.empty()) {
             contentH += (running.empty() ? 0.0f : 8.0f) + captionH + (float) finished.size() * ROW_H + 10.0f;
         }
-        Page::Scroll body("transfers#body", Page::TOP + 40.0f, MainWindow::height() - 14.0f, contentH);
+        Page::Scroll body("transfers#body", Page::top() + 40.0f, MainWindow::height() - 14.0f, contentH);
         bool outside = body.begin();
         bool listBlocked = outside || blocked;
         float x = Page::left();

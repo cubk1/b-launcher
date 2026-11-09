@@ -1,6 +1,12 @@
 #include "ui/imgui/screens/shell/Background.h"
 #include "app/system/Config.h"
+#include "app/system/EmbeddedIcons.h"
+#include "app/system/Pixels.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "ui/imgui/screens/theme/ImageSample.h"
+#include "ui/imgui/screens/theme/ThemeRuntime.h"
+#include "ui/imgui/screens/theme/ThemeStore.h"
+#include "ui/imgui/theme/ThemePaintSpec.h"
 #include "app/system/Notices.h"
 
 #include "ui/imgui/panel/UiImages.h"
@@ -19,8 +25,6 @@
 #include <windows.h>
 #include <wincodec.h>
 #else
-#include "app/system/Pixels.h"
-
 #include <core/base/fs.hpp>
 #endif
 
@@ -29,6 +33,7 @@
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -40,8 +45,7 @@ namespace Background {
         constexpr int SCALE = 2;
         constexpr int SIDEBAR_W = 188;
         constexpr int SHELL_RADIUS = 14;
-        constexpr float SIDEBAR_BLUR = 40.0f;
-        constexpr float PANEL_BLUR = 12.0f;
+        constexpr float DEFAULT_EXTRA_BLUR = 38.0f;
 
         struct Image {
             int width = 0;
@@ -49,25 +53,85 @@ namespace Background {
             std::vector<unsigned char> rgba;
         };
 
+        struct Key {
+            std::string file;
+            std::string theme;
+            bool stretch = false;
+            float sidebarBlur = 40.0f;
+            float panelBlur = 12.0f;
+
+            bool operator==(const Key& other) const = default;
+        };
+
         struct Prepared {
+            Key key;
+            bool whole = false;
             bool ok = false;
             std::string error;
             Image sidebar;
             Image panel;
+            Image wholeSidebar;
+            Image wholePanel;
+            ImageSample sample;
         };
 
         std::string chosen;
+        std::string failedTheme;
         bool loaded = false;
+        bool wantWhole = false;
         uint32_t sidebarTexture = 0;
         uint32_t panelTexture = 0;
+        uint32_t wholeSidebarTexture = 0;
+        uint32_t wholePanelTexture = 0;
+        std::optional<Key> shownKey;
+        std::optional<Key> wholeKey;
         bool working = false;
         std::thread worker;
         std::mutex lock;
         std::shared_ptr<Prepared> finished;
-        std::string workingOn;
+
+        bool cropFor(int sw, int sh, int w, int h, bool stretch, int& x, int& y, int& cw, int& ch) {
+            x = 0;
+            y = 0;
+            cw = sw;
+            ch = sh;
+            if (stretch) {
+                return true;
+            }
+            double wanted = (double) w / h;
+            if ((double) sw / sh > wanted) {
+                cw = (int) std::lround(sh * wanted);
+                x = (sw - cw) / 2;
+            } else {
+                ch = (int) std::lround(sw / wanted);
+                y = (sh - ch) / 2;
+            }
+            return true;
+        }
+
+        bool fit(const Pixels& pixels, int w, int h, bool stretch, Image& out, std::string& error) {
+            if (pixels.width <= 0 || pixels.height <= 0) {
+                error = "无法读取这张图片";
+                return false;
+            }
+            int x = 0;
+            int y = 0;
+            int cw = 0;
+            int ch = 0;
+            cropFor(pixels.width, pixels.height, w, h, stretch, x, y, cw, ch);
+            Pixels scaled = Pixels::resized(pixels, x, y, cw, ch, w, h);
+            if (scaled.rgba.empty()) {
+                error = "无法处理这张图片";
+                return false;
+            }
+            out.width = w;
+            out.height = h;
+            out.rgba = std::move(scaled.rgba);
+            return true;
+        }
 
 #if defined(_WIN32)
-        bool decode(const std::wstring& file, int w, int h, Image& out, std::string& error) {
+        bool decode(const std::wstring& file, int w, int h, bool stretch, Image& out, std::string& error) {
             IWICImagingFactory* factory = nullptr;
             if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                         IID_PPV_ARGS(&factory)))) {
@@ -87,15 +151,12 @@ namespace Background {
                 FAILED(decoder->GetFrame(0, &frame)) || FAILED(frame->GetSize(&sw, &sh)) || sw == 0 || sh == 0) {
                 error = "无法读取这张图片";
             } else {
-                double wanted = (double) w / h;
-                WICRect crop = {0, 0, (INT) sw, (INT) sh};
-                if ((double) sw / sh > wanted) {
-                    crop.Width = (INT) std::lround(sh * wanted);
-                    crop.X = ((INT) sw - crop.Width) / 2;
-                } else {
-                    crop.Height = (INT) std::lround(sw / wanted);
-                    crop.Y = ((INT) sh - crop.Height) / 2;
-                }
+                int x = 0;
+                int y = 0;
+                int cw = 0;
+                int ch = 0;
+                cropFor((int) sw, (int) sh, w, h, stretch, x, y, cw, ch);
+                WICRect crop = {x, y, cw, ch};
                 if (SUCCEEDED(factory->CreateBitmapClipper(&clipper)) && SUCCEEDED(clipper->Initialize(frame, &crop)) &&
                     SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
                     SUCCEEDED(scaler->Initialize(clipper, w, h, WICBitmapInterpolationModeHighQualityCubic)) &&
@@ -120,38 +181,26 @@ namespace Background {
             return ok;
         }
 #else
-        bool decode(const std::filesystem::path& file, int w, int h, Image& out, std::string& error) {
+        bool decode(const std::filesystem::path& file, int w, int h, bool stretch, Image& out, std::string& error) {
             b_launcher_base::result<std::string> data = b_launcher_base::fs::read_file(file);
             std::shared_ptr<const Pixels> pixels = data ? Pixels::decode(data->data(), data->size()) : nullptr;
-            if (!pixels || pixels->width <= 0 || pixels->height <= 0) {
+            if (!pixels) {
                 error = "无法读取这张图片";
                 return false;
             }
-            int sw = pixels->width;
-            int sh = pixels->height;
-            double wanted = (double) w / h;
-            int x = 0;
-            int y = 0;
-            int cw = sw;
-            int ch = sh;
-            if ((double) sw / sh > wanted) {
-                cw = (int) std::lround(sh * wanted);
-                x = (sw - cw) / 2;
-            } else {
-                ch = (int) std::lround(sw / wanted);
-                y = (sh - ch) / 2;
-            }
-            Pixels scaled = Pixels::resized(*pixels, x, y, cw, ch, w, h);
-            if (scaled.rgba.empty()) {
-                error = "无法处理这张图片";
-                return false;
-            }
-            out.width = w;
-            out.height = h;
-            out.rgba = std::move(scaled.rgba);
-            return true;
+            return fit(*pixels, w, h, stretch, out, error);
         }
 #endif
+
+        bool decodeBytes(const ThemeStore::Source& source, int w, int h, bool stretch, Image& out, std::string& error) {
+            std::optional<std::string> bytes = ThemeStore::contents(source);
+            std::shared_ptr<const Pixels> pixels = bytes ? Pixels::decode(bytes->data(), bytes->size()) : nullptr;
+            if (!pixels) {
+                error = "无法读取这张图片";
+                return false;
+            }
+            return fit(*pixels, w, h, stretch, out, error);
+        }
 
         std::vector<int> boxes(float sigma) {
             const int n = 3;
@@ -227,7 +276,20 @@ namespace Background {
             return out;
         }
 
-        void release() {
+        bool defaultWhole(const Pixels& main, Image& out) {
+            int height = std::min(main.height, main.width * WINDOW_H / WINDOW_W);
+            if (main.width <= 0 || height <= 0) {
+                return false;
+            }
+            int top = (main.height - height) / 2;
+            out.width = main.width;
+            out.height = height;
+            out.rgba.assign(main.rgba.begin() + (size_t) top * main.width * 4,
+                            main.rgba.begin() + (size_t) (top + height) * main.width * 4);
+            return true;
+        }
+
+        void releaseShown() {
             if (sidebarTexture != 0 || panelTexture != 0) {
                 const GLuint textures[] = {sidebarTexture, panelTexture};
                 UiGL::DeleteTextures(2, textures);
@@ -236,32 +298,103 @@ namespace Background {
             panelTexture = 0;
         }
 
-        void start() {
-            if (chosen.empty() || working) {
+        void releaseWhole() {
+            if (wholeSidebarTexture != 0 || wholePanelTexture != 0) {
+                const GLuint textures[] = {wholeSidebarTexture, wholePanelTexture};
+                UiGL::DeleteTextures(2, textures);
+            }
+            wholeSidebarTexture = 0;
+            wholePanelTexture = 0;
+            wholeKey.reset();
+        }
+
+        Key currentKey() {
+            const ThemePaintSpec::BackgroundSpec& spec = ThemePaintSpec::current().background;
+            Key key;
+            key.file = chosen;
+            if (chosen.empty() && spec.image != failedTheme) {
+                key.theme = spec.image;
+            }
+            key.stretch = spec.stretch;
+            key.sidebarBlur = spec.sidebarBlur;
+            key.panelBlur = spec.panelBlur;
+            return key;
+        }
+
+        bool builtIn(const Key& key) {
+            return key.file.empty() && key.theme.empty();
+        }
+
+        void prepare(Prepared& result, const std::optional<ThemeStore::Source>& source) {
+            const Key& key = result.key;
+            int width = WINDOW_W * SCALE;
+            int height = WINDOW_H * SCALE;
+            if (builtIn(key)) {
+                std::shared_ptr<const Pixels> pixels =
+                        Pixels::decode(EmbeddedIcons::backgroundPanel, EmbeddedIcons::backgroundPanelSize);
+                if (pixels && pixels->width > 0 && pixels->height > 0) {
+                    result.sample = ImageSample::of(pixels->rgba.data(), pixels->width, pixels->height);
+                    result.ok = true;
+                    Image whole;
+                    if (result.whole && defaultWhole(*pixels, whole)) {
+                        result.wholeSidebar = blur(whole, DEFAULT_EXTRA_BLUR);
+                        result.wholePanel = std::move(whole);
+                    }
+                }
                 return;
             }
-            working = true;
-            workingOn = chosen;
+            Image image;
+            bool decoded = false;
+            if (!key.file.empty()) {
 #if defined(_WIN32)
-            std::wstring file = b_launcher_base::path_from_utf8(chosen).wstring();
+                decoded = decode(b_launcher_base::path_from_utf8(key.file).wstring(), width, height, key.stretch, image,
+                                 result.error);
 #else
-            std::filesystem::path file = b_launcher_base::path_from_utf8(chosen);
+                decoded = decode(b_launcher_base::path_from_utf8(key.file), width, height, key.stretch, image,
+                                 result.error);
 #endif
+            } else if (source) {
+                decoded = decodeBytes(*source, width, height, key.stretch, image, result.error);
+            } else {
+                result.error = "找不到主题的背景图片";
+            }
+            if (!decoded) {
+                return;
+            }
+            int split = SIDEBAR_W * SCALE;
+            Image strong = blur(image, key.sidebarBlur);
+            Image light = blur(image, key.panelBlur);
+            result.sidebar = crop(strong, 0, split + SHELL_RADIUS * SCALE);
+            result.panel = crop(light, split, image.width);
+            if (result.whole) {
+                result.wholeSidebar = std::move(strong);
+                result.wholePanel = std::move(light);
+            }
+            result.sample = ImageSample::of(image.rgba.data(), image.width, image.height);
+            result.ok = true;
+        }
+
+        void start(const Key& key, bool whole) {
+            std::optional<ThemeStore::Source> source;
+            if (key.file.empty() && !key.theme.empty()) {
+                std::string owner;
+                std::string file;
+                if (ThemePaintSpec::splitSource(key.theme, owner, file)) {
+                    source = ThemeStore::locate(owner, file);
+                }
+            }
+            working = true;
             if (worker.joinable()) {
                 worker.join();
             }
-            worker = std::thread([file] {
+            worker = std::thread([key, whole, source] {
 #if defined(_WIN32)
                 HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 #endif
                 auto result = std::make_shared<Prepared>();
-                Image image;
-                if (decode(file, WINDOW_W * SCALE, WINDOW_H * SCALE, image, result->error)) {
-                    int split = SIDEBAR_W * SCALE;
-                    result->sidebar = crop(blur(image, SIDEBAR_BLUR), 0, split + SHELL_RADIUS * SCALE);
-                    result->panel = crop(blur(image, PANEL_BLUR), split, image.width);
-                    result->ok = true;
-                }
+                result->key = key;
+                result->whole = whole;
+                prepare(*result, source);
 #if defined(_WIN32)
                 if (SUCCEEDED(com)) {
                     CoUninitialize();
@@ -278,18 +411,80 @@ namespace Background {
             }
             loaded = true;
             chosen = b_launcher_base::json_text(Config::data(), "backgroundPath");
-            start();
+        }
+
+        void accept(Prepared& result) {
+            const Key& key = result.key;
+            if (!result.ok) {
+                if (!key.file.empty()) {
+                    Notices::add(Notices::Kind::Failed, "背景图片：" + result.error, 4000);
+                    chosen.clear();
+                    Config::data()["backgroundPath"] = chosen;
+                    Config::save();
+                } else if (!key.theme.empty()) {
+                    Notices::add(Notices::Kind::Failed, "主题背景图片：" + result.error, 4000);
+                    failedTheme = key.theme;
+                } else {
+                    shownKey = key;
+                    if (result.whole) {
+                        wholeKey = key;
+                    }
+                }
+                return;
+            }
+            ThemeRuntime::setImageSample(result.sample);
+            if (!builtIn(key)) {
+                GLuint nextSidebar =
+                        UiImages::upload(result.sidebar.rgba.data(), result.sidebar.width, result.sidebar.height);
+                GLuint nextPanel = UiImages::upload(result.panel.rgba.data(), result.panel.width, result.panel.height);
+                releaseShown();
+                sidebarTexture = nextSidebar;
+                panelTexture = nextPanel;
+            }
+            shownKey = key;
+            if (!result.whole) {
+                return;
+            }
+            GLuint nextSidebar = 0;
+            GLuint nextPanel = 0;
+            if (!result.wholeSidebar.rgba.empty() && !result.wholePanel.rgba.empty()) {
+                nextSidebar = UiImages::upload(result.wholeSidebar.rgba.data(), result.wholeSidebar.width,
+                                               result.wholeSidebar.height);
+                nextPanel = UiImages::upload(result.wholePanel.rgba.data(), result.wholePanel.width,
+                                             result.wholePanel.height);
+            }
+            releaseWhole();
+            wholeSidebarTexture = nextSidebar;
+            wholePanelTexture = nextPanel;
+            wholeKey = key;
         }
     }
 
     uint32_t sidebar() {
         load();
-        return chosen.empty() ? Icons::backgroundSidebar() : sidebarTexture;
+        return builtIn(currentKey()) ? Icons::backgroundSidebar() : sidebarTexture;
     }
 
     uint32_t panel() {
         load();
-        return chosen.empty() ? Icons::backgroundPanel() : panelTexture;
+        return builtIn(currentKey()) ? Icons::backgroundPanel() : panelTexture;
+    }
+
+    uint32_t wholeSidebar() {
+        load();
+        wantWhole = true;
+        return wholeSidebarTexture;
+    }
+
+    uint32_t wholePanel() {
+        load();
+        wantWhole = true;
+        return wholePanelTexture;
+    }
+
+    bool themeImage() {
+        load();
+        return !currentKey().theme.empty();
     }
 
     std::string path() {
@@ -305,7 +500,6 @@ namespace Background {
         chosen = value;
         Config::data()["backgroundPath"] = chosen;
         Config::save();
-        start();
     }
 
     bool preparing() {
@@ -313,40 +507,36 @@ namespace Background {
     }
 
     void poll() {
+        load();
+        Key key = currentKey();
         // setPath() may run while this frame's draw list still references the
         // old background. Retire textures here, before the next frame is built.
-        if (chosen.empty()) {
-            release();
+        if (builtIn(key)) {
+            releaseShown();
         }
         std::shared_ptr<Prepared> result;
         {
             std::lock_guard<std::mutex> guard(lock);
             result.swap(finished);
         }
-        if (!result) {
+        if (result) {
+            working = false;
+            if (worker.joinable()) {
+                worker.join();
+            }
+            if (result->key == key) {
+                accept(*result);
+                key = currentKey();
+            }
+        }
+        if (working) {
             return;
         }
-        working = false;
-        if (worker.joinable()) {
-            worker.join();
+        bool stale = !shownKey || !(*shownKey == key);
+        bool wholeStale = wantWhole && (!wholeKey || !(*wholeKey == key));
+        if (stale || wholeStale) {
+            start(key, wantWhole);
         }
-        if (workingOn != chosen) {
-            start();
-            return;
-        }
-        if (!result->ok) {
-            Notices::add(Notices::Kind::Failed, "背景图片：" + result->error, 4000);
-            chosen.clear();
-            Config::data()["backgroundPath"] = chosen;
-            Config::save();
-            release();
-            return;
-        }
-        GLuint nextSidebar = UiImages::upload(result->sidebar.rgba.data(), result->sidebar.width, result->sidebar.height);
-        GLuint nextPanel = UiImages::upload(result->panel.rgba.data(), result->panel.width, result->panel.height);
-        release();
-        sidebarTexture = nextSidebar;
-        panelTexture = nextPanel;
     }
 
     void shutdown() {
@@ -358,6 +548,8 @@ namespace Background {
             finished.reset();
         }
         working = false;
-        release();
+        releaseShown();
+        releaseWhole();
+        shownKey.reset();
     }
 }

@@ -35,6 +35,7 @@
 #include "ui/imgui/panel/UiSound.h"
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
 #include "ui/imgui/widget/NavItemWidget.h"
@@ -1061,7 +1062,7 @@ namespace DownloadsScreen {
         }
 
         void side(bool covered) {
-            float y = Page::TOP;
+            float y = Page::top();
             NavItemWidget search("downloads#aggregate", Ui::glyph(0xf002), "搜索");
             search.selected(aggregate && !java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             search.paint();
@@ -1322,7 +1323,7 @@ namespace DownloadsScreen {
                 translating = rewrite.waiting;
                 effective.text = rewrite.text;
             }
-            float y = Page::TOP;
+            float y = Page::top();
             float listTop = y + FILTER_H + 10.0f;
             const float pagesH = 28.0f;
             float pagesY = MainWindow::height() - 12.0f - pagesH - DownloadButton::inset();
@@ -1523,10 +1524,9 @@ namespace DownloadsScreen {
 
             bool searchHovered = !blocked && NewUi::hit(buttonX, innerY, inner, inner);
             float searchLit = UiState::motion("downloads#ask#hover", searchHovered ? 1.0f : 0.0f, 18.0f);
-            UiRender::roundRect(buttonX, innerY, inner, inner, SEARCH_RADIUS - SEARCH_INSET,
-                                UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * searchLit));
-            UiWidgets::icon(Ui::glyph(0xf002), buttonX + inner * 0.5f, innerY + inner * 0.5f, UiTheme::onAccent(),
-                            11.0f);
+            ThemePaint::primaryFill(buttonX, innerY, inner, inner, SEARCH_RADIUS - SEARCH_INSET, 0.10f * searchLit);
+            UiWidgets::icon(Ui::glyph(0xf002), buttonX + inner * 0.5f, innerY + inner * 0.5f,
+                            UiTheme::tokenOr(UiTheme::PRIMARY_TEXT, UiTheme::onAccent()), 11.0f);
 
             if (scopePressed) {
                 UiSound::request(UiSound::TICK);
@@ -1714,7 +1714,7 @@ namespace DownloadsScreen {
                             UiWidgets::TEXT_SMALL);
             float limit = right - countW - 12.0f;
             if (results.partial) {
-                uint32_t ink = UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+                uint32_t ink = UiTheme::warningInk();
                 float tagW = tag("结果可能不完整", x, y + Page::FIELD_H * 0.5f, limit,
                                  (ink & 0x00FFFFFFu) | 0x2E000000u, ink);
                 if (tagW > 0.0f) {
@@ -1812,7 +1812,7 @@ namespace DownloadsScreen {
             if (asked.empty()) {
                 return;
             }
-            float toolsY = Page::TOP + SEARCH_H + 6.0f;
+            float toolsY = Page::top() + SEARCH_H + 6.0f;
             float listTop = toolsY + Page::FIELD_H + 4.0f;
             Aggregate::Request request = askedRequest();
             const Aggregate::Results& results = Aggregate::search(request);

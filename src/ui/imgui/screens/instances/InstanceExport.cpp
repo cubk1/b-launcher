@@ -91,12 +91,12 @@ namespace InstanceExport {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
-        bool back = Page::iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
+        bool back = Page::iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "导出整合包";
-        Page::title(title, Page::left() + 30.0f, Page::TOP);
+        Page::title(title, Page::left() + 30.0f, Page::top());
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
         UiRender::textY(UiFont::fitEnd(entry.info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::right() - nameX),
-                        nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                        nameX, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         Exports::options(key);
 
         const int packCount = 4;
@@ -104,7 +104,7 @@ namespace InstanceExport {
         const int fileCount = 1;
         float contentH = 3 * Page::CAPTION_H + (packCount + contentCount + fileCount) * Page::ROW_H + 2 * Page::GAP;
         float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
-        Page::Scroll body("export#body#" + key, Page::TOP + 40.0f, buttonTop - 14.0f, contentH);
+        Page::Scroll body("export#body#" + key, Page::top() + 40.0f, buttonTop - 14.0f, contentH);
         bool outside = body.begin();
         bool blocked = outside || covered || (Exports::running() && Exports::runningKey() == key);
         float y = body.top - body.offset;

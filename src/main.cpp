@@ -1,6 +1,7 @@
 #include "app/launch/Game.h"
 #include "app/system/DiskScan.h"
 #include "app/system/Config.h"
+#include "app/system/Customization.h"
 #include "app/system/Platform.h"
 #include "app/system/UiStyles.h"
 #if defined(_WIN32)
@@ -23,7 +24,12 @@ int main() {
     if (std::optional<DiskScan::Helper> helper = DiskScan::helperArgument()) {
         return DiskScan::runHelper(*helper);
     }
+    if (std::optional<int> code = Customization::command()) {
+        return *code;
+    }
     Platform::waitForPrevious();
+    Customization::load();
+    Customization::apply();
     std::string pendingLaunch = Platform::launchArgument();
     bool headless = !pendingLaunch.empty() && Platform::headlessArgument();
     // A shortcut launch always goes to the running launcher. A plain start goes there only when
