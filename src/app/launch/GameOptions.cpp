@@ -6,9 +6,9 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
-#include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <string_view>
@@ -49,8 +49,13 @@ namespace GameOptions {
             if (first == std::string_view::npos) return std::nullopt;
             input = input.substr(first, input.find_last_not_of(" \t\r\n") - first + 1);
             double value = 0;
-            auto [end, error] = std::from_chars(input.data(), input.data() + input.size(), value);
-            if (error != std::errc() || end != input.data() + input.size() || !std::isfinite(value)) return std::nullopt;
+            // Not std::from_chars: the libc++ before macOS 26 has none for double. The launcher never
+            // calls setlocale, so strtod reads '.'. Reject what from_chars rejects: '+' and hexadecimal.
+            if (input.front() == '+' || input.find_first_of("xX") != std::string_view::npos) return std::nullopt;
+            std::string copy(input);
+            char* end = nullptr;
+            value = std::strtod(copy.c_str(), &end);
+            if (end != copy.c_str() + copy.size() || !std::isfinite(value)) return std::nullopt;
             return value;
         }
 
