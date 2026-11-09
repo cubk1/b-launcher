@@ -10,7 +10,7 @@
 
 namespace Transfers {
 
-    enum class Kind { Instance, Modpack, Java, Project, Mods, Launch, File };
+    enum class Kind { Instance, Modpack, Java, Project, Mods, Launch, File, Theme };
     enum class State { Running, Done, Failed, Cancelled };
 
     struct Spec {
