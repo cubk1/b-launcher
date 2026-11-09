@@ -20,6 +20,7 @@
 #include "ui/imgui/screens/theme/ThemeSounds.h"
 #include "ui/imgui/screens/theme/ThemeRuntime.h"
 #include "ui/imgui/screens/theme/ThemeEffects.h"
+#include "ui/imgui/screens/theme/ThemeCatalog.h"
 #include "ui/imgui/screens/theme/ThemeImport.h"
 #include "ui/imgui/screens/theme/ThemeShaders.h"
 #include "ui/imgui/theme/ThemeStyle.h"
@@ -393,6 +394,7 @@ namespace ImGuiApp {
             ThemeAssets::poll();
             ThemeShaders::frame();
             ThemeImport::poll();
+            ThemeCatalog::poll();
             ThemeEffects::frame();
             Logo::poll();
             Homepage::poll();
@@ -579,6 +581,7 @@ namespace ImGuiApp {
         ThemeAssets::shutdown();
         ThemeShaders::shutdown();
         ThemeImport::shutdown();
+        ThemeCatalog::shutdown();
         Logo::shutdown();
         Services::stop();
         ImGui_ImplOpenGL3_Shutdown();
