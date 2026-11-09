@@ -276,27 +276,16 @@ namespace Background {
             return out;
         }
 
-        bool stitchDefault(Image& out) {
-            std::shared_ptr<const Pixels> side =
-                    Pixels::decode(EmbeddedIcons::backgroundSidebar, EmbeddedIcons::backgroundSidebarSize);
-            std::shared_ptr<const Pixels> main =
-                    Pixels::decode(EmbeddedIcons::backgroundPanel, EmbeddedIcons::backgroundPanelSize);
-            int width = WINDOW_W * SCALE;
-            int height = WINDOW_H * SCALE;
-            int split = SIDEBAR_W * SCALE;
-            if (!side || !main || side->height != height || main->height != height || side->width < split ||
-                main->width != width - split) {
+        bool defaultWhole(const Pixels& main, Image& out) {
+            int height = std::min(main.height, main.width * WINDOW_H / WINDOW_W);
+            if (main.width <= 0 || height <= 0) {
                 return false;
             }
-            out.width = width;
+            int top = (main.height - height) / 2;
+            out.width = main.width;
             out.height = height;
-            out.rgba.resize((size_t) width * height * 4);
-            for (int y = 0; y < height; y++) {
-                unsigned char* row = out.rgba.data() + (size_t) y * width * 4;
-                std::copy_n(side->rgba.data() + (size_t) y * side->width * 4, (size_t) split * 4, row);
-                std::copy_n(main->rgba.data() + (size_t) y * main->width * 4, (size_t) main->width * 4,
-                            row + (size_t) split * 4);
-            }
+            out.rgba.assign(main.rgba.begin() + (size_t) top * main.width * 4,
+                            main.rgba.begin() + (size_t) (top + height) * main.width * 4);
             return true;
         }
 
@@ -346,11 +335,11 @@ namespace Background {
                 if (pixels && pixels->width > 0 && pixels->height > 0) {
                     result.sample = ImageSample::of(pixels->rgba.data(), pixels->width, pixels->height);
                     result.ok = true;
-                }
-                Image stitched;
-                if (result.whole && stitchDefault(stitched)) {
-                    result.wholeSidebar = blur(stitched, DEFAULT_EXTRA_BLUR);
-                    result.wholePanel = std::move(stitched);
+                    Image whole;
+                    if (result.whole && defaultWhole(*pixels, whole)) {
+                        result.wholeSidebar = blur(whole, DEFAULT_EXTRA_BLUR);
+                        result.wholePanel = std::move(whole);
+                    }
                 }
                 return;
             }

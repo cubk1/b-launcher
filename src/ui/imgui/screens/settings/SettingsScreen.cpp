@@ -703,11 +703,11 @@ namespace SettingsScreen {
 #if defined(_WIN32)
                 {SECTION_THEMES, nullptr, "忘却的旋律 界面风格 EXUI"},
 #endif
-                {SECTION_THEMES, "布局", "侧栏 顶栏 启动栏"},
-                {SECTION_THEMES, "主题动画", "动态 渐变"},
-                {SECTION_THEMES, "动画帧率", "FPS 帧数"},
-                {SECTION_THEMES, "主题字体大小", "字号 字体"},
-                {SECTION_THEMES, "自定义着色器", "GLSL shader 着色器"},
+                {SECTION_LOOK, "布局", "侧栏 顶栏 启动栏"},
+                {SECTION_LOOK, "主题动画", "动态 渐变"},
+                {SECTION_LOOK, "动画帧率", "FPS 帧数"},
+                {SECTION_LOOK, "主题字体大小", "字号 字体"},
+                {SECTION_LOOK, "自定义着色器", "GLSL shader 着色器"},
                 {SECTION_WINDOW, "紧凑模式", "托盘 迷你 小窗 Ctrl+M"},
                 {SECTION_WINDOW, "记住窗口大小", nullptr},
                 {SECTION_WINDOW, "允许多个启动器同时开启", "多开 单实例"},
@@ -1500,6 +1500,35 @@ namespace SettingsScreen {
             }
         }
 
+        void lookSection(bool covered) {
+            int look = lookCount();
+            int theme = ThemeManager::settingCount();
+            int display = ThemeManager::displayCount();
+            float contentH = look * Page::ROW_H + Page::GAP + Page::CAPTION_H + display * Page::ROW_H;
+            if (theme > 0) {
+                contentH += Page::GAP + Page::CAPTION_H + theme * Page::ROW_H;
+            }
+            Page::Scroll body("settings#look", Page::top(), MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            Page::card(y, look);
+            lookRows(y, blocked);
+            y += look * Page::ROW_H + Page::GAP;
+            if (theme > 0) {
+                Page::caption("主题设置", y);
+                y += Page::CAPTION_H;
+                Page::card(y, theme);
+                ThemeManager::settingRows(mainX(), mainW(), y, blocked);
+                y += theme * Page::ROW_H + Page::GAP;
+            }
+            Page::caption("主题偏好", y);
+            y += Page::CAPTION_H;
+            Page::card(y, display);
+            ThemeManager::displayRows(mainX(), mainW(), y, blocked);
+            body.end();
+        }
+
         void networkSection(bool covered) {
             float contentH = 2 * Page::CAPTION_H + 6 * Page::ROW_H + Page::GAP;
             Page::Scroll body("settings#network", Page::top(), MainWindow::height() - 14.0f, contentH);
@@ -2015,7 +2044,7 @@ namespace SettingsScreen {
                 case SECTION_KEYS: keysTab(covered); break;
                 case SECTION_PATCH: patchTab(covered); break;
                 case SECTION_FOLDERS: foldersSection(covered); break;
-                case SECTION_LOOK: cardPage("settings#look", lookCount(), covered, lookRows); break;
+                case SECTION_LOOK: lookSection(covered); break;
                 case SECTION_THEMES: ThemeManager::draw(mainX(), mainW(), covered); break;
                 case SECTION_FEATURES: featuresSection(covered); break;
                 case SECTION_WINDOW: cardPage("settings#window", windowCount(), covered, windowSettingRows); break;

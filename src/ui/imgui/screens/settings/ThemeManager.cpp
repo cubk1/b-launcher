@@ -345,10 +345,6 @@ namespace ThemeManager {
             }
         }
 
-        int settingRows() {
-            return (int) ThemeRuntime::settings().size();
-        }
-
         void settingRow(const ThemeSetting& setting, const nlohmann::json& values, float y, bool blocked) {
             std::string id = "settings#themes#setting#" + setting.id;
             std::string name = setting.id;
@@ -409,7 +405,7 @@ namespace ThemeManager {
 
         constexpr int DISPLAY_ROWS = 5;
 
-        void displayRows(float y, bool blocked) {
+        void paintDisplayRows(float y, bool blocked) {
             Page::label("布局", y);
             select("settings#layout",
                    std::make_shared<ModeBinding>(
@@ -508,13 +504,9 @@ namespace ThemeManager {
         float cardH = cardHeight(cardW);
         int rows = (total + columns - 1) / columns;
         float gridH = rows * cardH + std::max(0, rows - 1) * CARD_GAP;
-        int settings = settingRows();
         std::vector<std::string> problems = currentProblems();
         int problemRows = std::min((int) problems.size(), 12);
-        float contentH = Page::FIELD_H + Page::GAP + gridH + Page::GAP + Page::CAPTION_H + DISPLAY_ROWS * Page::ROW_H;
-        if (settings > 0) {
-            contentH += Page::GAP + Page::CAPTION_H + settings * Page::ROW_H;
-        }
+        float contentH = Page::FIELD_H + Page::GAP + gridH;
         if (problemRows > 0) {
             contentH += Page::GAP + Page::CAPTION_H + problemRows * Page::ROW_H;
         }
@@ -541,23 +533,7 @@ namespace ThemeManager {
             ThemeStore::Entry entry = entries[(size_t) (melody >= 0 && i > melody ? i - 1 : i)];
             card(entry, cardX, cardY, cardW, blocked);
         }
-        y += gridH + Page::GAP;
-        if (settings > 0) {
-            Page::caption("主题设置", y);
-            y += Page::CAPTION_H;
-            Page::card(y, settings);
-            nlohmann::json values = ThemeRuntime::settingValues();
-            for (const ThemeSetting& setting : ThemeRuntime::settings()) {
-                settingRow(setting, values, y, blocked);
-                y += Page::ROW_H;
-            }
-            y += Page::GAP;
-        }
-        Page::caption("显示", y);
-        y += Page::CAPTION_H;
-        Page::card(y, DISPLAY_ROWS);
-        displayRows(y, blocked);
-        y += DISPLAY_ROWS * Page::ROW_H;
+        y += gridH;
         if (problemRows > 0) {
             y += Page::GAP;
             Page::caption("问题", y);
@@ -574,5 +550,29 @@ namespace ThemeManager {
             }
         }
         body.end();
+    }
+
+    int settingCount() {
+        return (int) ThemeRuntime::settings().size();
+    }
+
+    void settingRows(float left, float width, float y, bool blocked) {
+        sectionLeft = left;
+        sectionWidth = width;
+        nlohmann::json values = ThemeRuntime::settingValues();
+        for (const ThemeSetting& setting : ThemeRuntime::settings()) {
+            settingRow(setting, values, y, blocked);
+            y += Page::ROW_H;
+        }
+    }
+
+    int displayCount() {
+        return DISPLAY_ROWS;
+    }
+
+    void displayRows(float left, float width, float y, bool blocked) {
+        sectionLeft = left;
+        sectionWidth = width;
+        paintDisplayRows(y, blocked);
     }
 }

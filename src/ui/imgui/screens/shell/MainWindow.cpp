@@ -1700,7 +1700,7 @@ namespace MainWindow {
             uint32_t strong = Background::wholeSidebar();
             uint32_t light = Background::wholePanel();
             if (strong != 0 && light != 0 && !ShaderUtil::paintBroken()) {
-                paneImage(strong, shapes.plate, &shapes.main);
+                paneImage(strong, shapes.plate, nullptr);
                 paneImage(light, shapes.main, nullptr);
                 shade();
             }
