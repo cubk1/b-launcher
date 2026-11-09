@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/downloads/AuthorPage.h"
 #include "app/downloads/Projects.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 
@@ -139,7 +140,7 @@ namespace AuthorPage {
 
         float tabsY = Page::TOP + TABS_Y;
         float top = tabsY + DownloadsParts::SEGMENT_H + 12.0f;
-        float bottom = MainWindow::height() - 14.0f;
+        float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
         if (profile.status == Status::Loading) {
             DownloadsParts::message("正在获取作者信息", UiTheme::textMuted(), top, bottom, true);
             return;

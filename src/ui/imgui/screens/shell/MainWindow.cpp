@@ -21,6 +21,7 @@
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/instances/InstancePage.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/launch/LaunchButton.h"
@@ -29,7 +30,6 @@
 #include "ui/imgui/screens/settings/SettingsScreen.h"
 #include "ui/imgui/screens/versions/VersionsScreen.h"
 #include "app/system/Platform.h"
-#include "app/system/Transfers.h"
 
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
@@ -87,7 +87,7 @@ namespace MainWindow {
     static const char* const SEARCH_ID = "sidebar#search";
     static const float ICON_CENTER = 16.0f;
     static const float LABEL_X = 31.0f;
-    static const float FOOTER_H = 10.0f + 6 * ITEM_STEP + 10.0f;
+    static const float FOOTER_H = 10.0f + 5 * ITEM_STEP + 10.0f;
     static const float GROUP_H = 26.0f;
     static const float GROUP_GAP = 6.0f;
 
@@ -1099,18 +1099,15 @@ namespace MainWindow {
         if (navItem("nav#downloads", 0xf019, "下载附加件", ITEM_X, rowY + ITEM_STEP, itemW, PAGE_DOWNLOADS)) {
             DownloadsScreen::openFor(Instances::selected());
         }
-        int transferring = Transfers::running();
-        navItem("nav#transfers", 0xf0ae, "下载列表", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_TRANSFERS, false, 0,
-                transferring > 0 ? std::to_string(transferring) : std::string());
         const b_launcher_base::auth::account* account = Accounts::current();
-        if (navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
+        if (navItem("nav#accounts", 0xf007, "账户", ITEM_X, rowY + 2 * ITEM_STEP, itemW, PAGE_ACCOUNTS, false, 0,
                     account != nullptr ? account->name : std::string()) &&
             from != PAGE_ACCOUNTS) {
             AccountsScreen::reset();
         }
-        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
+        navItem("nav#multiplayer", 0xf6ff, "联机", ITEM_X, rowY + 3 * ITEM_STEP, itemW, PAGE_MULTIPLAYER, false, 0,
                 Multiplayer::active() ? Multiplayer::state().code : std::string());
-        if (navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 5 * ITEM_STEP, itemW, PAGE_SETTINGS) &&
+        if (navItem("nav#settings", 0xf013, "选项", ITEM_X, rowY + 4 * ITEM_STEP, itemW, PAGE_SETTINGS) &&
             from != PAGE_SETTINGS) {
             SettingsScreen::reset();
         }
@@ -1175,13 +1172,24 @@ namespace MainWindow {
 
     static void home() {
         bool floating = !Homepage::launchShown();
+        float reserve = floating ? LaunchButton::SIZE + 22.0f : 0.0f;
+        if (!floating) {
+            reserve = std::max(reserve, DownloadButton::inset());
+        }
         float top = TITLE_HEIGHT + setupBanner(TITLE_HEIGHT);
-        Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, floating ? LaunchButton::SIZE + 22.0f : 0.0f,
-                       NewUi::overlayCoversMouse());
+        Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, reserve, NewUi::overlayCoversMouse());
         if (floating) {
             float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
-            LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
-            LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
+            float buttonY = height() - LAUNCH_MARGIN - LaunchButton::SIZE;
+            float downloadX = LaunchButton::besideX(buttonX);
+            LaunchButton::draw(buttonX, buttonY);
+            DownloadButton::draw(downloadX, buttonY);
+            // The steps card sits over the button row, so it keeps clear of the download button as that fades in.
+            float statusRight = UiRender::lerp(buttonX - 14.0f, downloadX - 14.0f, DownloadButton::shown());
+            LaunchButton::drawStatus(statusRight, height() - LAUNCH_MARGIN);
+        } else {
+            DownloadButton::draw(width() - DownloadButton::MARGIN - DownloadButton::SIZE,
+                                 height() - DownloadButton::MARGIN - DownloadButton::SIZE);
         }
     }
 
@@ -1199,6 +1207,8 @@ namespace MainWindow {
             AccountsScreen::draw();
         } else if (pages.page == PAGE_DOWNLOADS) {
             DownloadsScreen::draw();
+            DownloadButton::draw(width() - DownloadButton::MARGIN - DownloadButton::SIZE,
+                                 height() - DownloadButton::MARGIN - DownloadButton::SIZE);
         } else if (pages.page == PAGE_TRANSFERS) {
             TransfersScreen::draw();
         } else if (pages.page == PAGE_MULTIPLAYER) {
@@ -1266,6 +1276,10 @@ namespace MainWindow {
         bool underTitle = Onboarding::drawing() || (pages.page == PAGE_HOME && HomeWidgets::alignBottom());
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown();
         float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
+        if (!floating && DownloadButton::shown() > 0.5f &&
+            (pages.page == PAGE_HOME || pages.page == PAGE_DOWNLOADS)) {
+            inset = DownloadButton::MARGIN + DownloadButton::SIZE;
+        }
         float columnTop = 0.0f;
         float columnBottom = 0.0f;
         if (pages.page == PAGE_HOME && !underTitle && !floating && Homepage::column(columnTop, columnBottom) &&
