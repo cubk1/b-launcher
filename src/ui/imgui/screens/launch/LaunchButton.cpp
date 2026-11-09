@@ -71,18 +71,6 @@ namespace LaunchButton {
                             UiRender::transformW(STROKE), from, to, UiRender::applyAlpha(color));
         }
 
-        void progress(float cx, float cy, uint32_t color, float value) {
-            float known = UiState::motion("launch#known", value >= 0.0f ? 1.0f : 0.0f, 8.0f);
-            float shown = UiState::motion("launch#fraction", std::max(0.0f, value), 10.0f);
-            ring(cx, cy, 0.0f, TAU, (color & 0x00FFFFFFu) | 0x47000000u);
-            float spinFrom = 0.0f;
-            float spinTo = 0.0f;
-            Page::spinnerArc(spinFrom, spinTo);
-            float from = UiRender::lerp(spinFrom - TAU * 0.25f, -TAU * 0.25f, known);
-            float to = UiRender::lerp(spinTo - TAU * 0.25f, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
-            ring(cx, cy, from, to, color);
-        }
-
         constexpr float CARD_RADIUS = 12.0f;
         constexpr float STEP_H = 26.0f;
         constexpr float CARD_PAD = 8.0f;
@@ -113,7 +101,6 @@ namespace LaunchButton {
             }
         }
 
-        constexpr float GAP = 12.0f;
         constexpr float MENU_W = 220.0f;
         constexpr float MENU_ROW = 32.0f;
 
@@ -278,6 +265,22 @@ namespace LaunchButton {
         Game::launch(key);
     }
 
+    void progressRing(const std::string& id, float cx, float cy, uint32_t color, float value) {
+        float known = UiState::motion(id + "#known", value >= 0.0f ? 1.0f : 0.0f, 8.0f);
+        float shown = UiState::motion(id + "#fraction", std::max(0.0f, value), 10.0f);
+        ring(cx, cy, 0.0f, TAU, (color & 0x00FFFFFFu) | 0x47000000u);
+        float spinFrom = 0.0f;
+        float spinTo = 0.0f;
+        Page::spinnerArc(spinFrom, spinTo);
+        float from = UiRender::lerp(spinFrom - TAU * 0.25f, -TAU * 0.25f, known);
+        float to = UiRender::lerp(spinTo - TAU * 0.25f, -TAU * 0.25f + std::max(0.02f, shown) * TAU, known);
+        ring(cx, cy, from, to, color);
+    }
+
+    float besideX(float buttonX) {
+        return buttonX - GAP - SIZE - (SIZE + GAP) * UiState::getOrDefault("launch#more", 0.0f);
+    }
+
     void drawStatus(float right, float bottom) {
         static std::vector<Game::Step> shown;
         std::string key = Instances::selected();
@@ -366,7 +369,7 @@ namespace LaunchButton {
         float fraction = Game::progress(key);
         morph(cx + 1.5f, cy, play, [&] { UiWidgets::icon(Ui::glyph(0xf04b), cx + 1.5f, cy, ink, 17.0f); });
         morph(cx, cy, login, [&] { UiWidgets::icon(Ui::glyph(0xf090), cx, cy, ink, 16.0f); });
-        morph(cx, cy, busy, [&] { progress(cx, cy, ink, fraction); });
+        morph(cx, cy, busy, [&] { progressRing("launch", cx, cy, ink, fraction); });
         morph(cx, cy, stop, [&] { UiWidgets::icon(Ui::glyph(0xf04d), cx, cy, ink, 15.0f); });
 
         UiRender::alphaMul = savedAlpha;
