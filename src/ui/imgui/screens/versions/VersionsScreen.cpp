@@ -142,15 +142,15 @@ namespace VersionsScreen {
         float width = right - left;
 
         size_t total = Instances::list().size();
-        Page::title("选择版本", left, Page::TOP);
+        Page::title("选择版本", left, Page::top());
         if (total > 0) {
             std::string count = std::to_string(total) + " 个版本";
             float countW = UiFont::width(count, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            UiRender::textY(count, right - countW, Page::TOP + 4.0f, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+            UiRender::textY(count, right - countW, Page::top() + 4.0f, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_SMALL);
         }
 
-        float searchY = Page::TOP + 32.0f;
+        float searchY = Page::top() + 32.0f;
         float searchW = std::min(SEARCH_W, width);
         bool hasText = !UiInput::get(SEARCH_ID).empty();
         float clearRoom = hasText ? 26.0f : 0.0f;
@@ -158,8 +158,9 @@ namespace VersionsScreen {
         bool over = !covered && NewUi::hit(left, searchY, searchW, SEARCH_H);
         UiRender::roundRect(left, searchY, searchW, SEARCH_H, 8.0f, UiTheme::overlay(10));
         UiRender::outline(left, searchY, searchW, SEARCH_H, 8.0f,
-                          focused ? UiTheme::accent() : UiRender::mix(UiTheme::outlineSoft(), UiTheme::outline(),
-                                                                     over ? 0.5f : 0.0f));
+                          focused ? UiTheme::accent()
+                                  : UiRender::mix(UiTheme::border(UiTheme::outlineSoft()),
+                                                  UiTheme::border(UiTheme::outline()), over ? 0.5f : 0.0f));
         std::string hint = hasText ? UiInput::get(SEARCH_ID) : std::string("搜索版本");
         UiWidgets::iconBeside(Ui::glyph(0xf002), left + 16.0f, hint, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                               searchY, SEARCH_H, focused ? UiTheme::textSecondary() : UiTheme::textFaint(), 11.0f);

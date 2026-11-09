@@ -7,16 +7,15 @@
 namespace Appearance {
 
     struct Theme {
-        const char* key;
-        const char* label;
-        int mode;
+        std::string key;
+        std::string label;
+        bool builtIn = false;
     };
 
     const std::vector<Theme>& themes();
     void load();
     const Theme& theme();
     void setTheme(const std::string& key);
-    void toggleLight();
 
     uint32_t accent();
     void setAccent(uint32_t argb);

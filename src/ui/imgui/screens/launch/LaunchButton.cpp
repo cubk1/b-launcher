@@ -16,6 +16,8 @@
 #include "ui/imgui/panel/UiSound.h"
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/screens/theme/ThemeEffects.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/panel/UiWidgets.h"
 
 #include "imgui.h"
@@ -239,7 +241,7 @@ namespace LaunchButton {
             UiRender::shadow(x, y, size, size, RADIUS, 12.0f, 4.0f, UiTheme::shadow());
             UiRender::roundRect(x, y, size, size, RADIUS,
                                 UiRender::mix(UiTheme::surface(), UiTheme::surfaceRaised(), hover));
-            UiRender::outline(x, y, size, size, RADIUS, UiTheme::outlineSoft());
+            UiRender::outline(x, y, size, size, RADIUS, UiTheme::border(UiTheme::outlineSoft()));
             UiWidgets::icon(Ui::glyph(0xf067), cx, cy,
                             UiRender::mix(UiTheme::textSecondary(), UiTheme::accentText(), hover), 16.0f);
             UiRender::alphaMul = savedAlpha;
@@ -303,7 +305,7 @@ namespace LaunchButton {
                               UiRender::transformW(h), UiRender::transformW(CARD_RADIUS), CARD_BLUR, blurTint, 0xF,
                               6.0f);
         ShaderUtil::flushBlur();
-        float fillAlpha = UiTheme::isLight() ? 0.60f : 0.55f;
+        float fillAlpha = UiTheme::scalar(UiTheme::GLASS_FILL);
         UiRender::roundRect(x, y, w, h, CARD_RADIUS,
                             (UiTheme::surface() & 0x00FFFFFFu) | ((uint32_t) Ui::round(255.0f * fillAlpha) << 24));
 
@@ -358,12 +360,12 @@ namespace LaunchButton {
         UiRender::scaleFactor = savedScale * UiRender::lerp(1.0f, 0.94f, press);
         UiRender::alphaMul = savedAlpha * UiRender::lerp(0.45f, 1.0f, enabled);
 
-        uint32_t fill = UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover);
         float glow = UiRender::lerp(0.3f, 0.45f, hover) * enabled;
         UiRender::bloom(x, y, size, size, RADIUS, 10.0f, 1.0f,
                         (UiTheme::accent() & 0x00FFFFFFu) | ((uint32_t) Ui::round(255.0f * glow) << 24));
-        UiRender::roundRect(x, y, size, size, RADIUS, fill);
-        uint32_t ink = UiTheme::onAccent();
+        ThemePaint::primaryFill(x, y, size, size, RADIUS, 0.10f * hover);
+        uint32_t ink = UiTheme::tokenOr(UiTheme::PRIMARY_TEXT, UiTheme::onAccent());
+        ThemeEffects::button("launch#button", "primary", x, y, size, size, RADIUS, 0xF, ink, usable && hovered);
         float fraction = Game::progress(key);
         morph(cx + 1.5f, cy, play, [&] { UiWidgets::icon(Ui::glyph(0xf04b), cx + 1.5f, cy, ink, 17.0f); });
         morph(cx, cy, login, [&] { UiWidgets::icon(Ui::glyph(0xf090), cx, cy, ink, 16.0f); });

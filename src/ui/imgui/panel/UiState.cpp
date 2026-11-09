@@ -1,5 +1,6 @@
 #include "UiState.h"
 #include "UiRender.h"
+#include "../theme/ThemeStyle.h"
 
 #include <cmath>
 
@@ -23,7 +24,24 @@ namespace UiState {
         return moving;
     }
 
+    static bool still = false;
+
+    void setFrozen(bool on) {
+        still = on;
+    }
+
+    bool frozen() {
+        return still;
+    }
+
     float motion(const std::string& id, float target, float speed) {
+        if (still) {
+            return target;
+        }
+        if (!ThemeStyle::animations()) {
+            motionMap[id] = target;
+            return target;
+        }
         auto it = motionMap.find(id);
         float current = it == motionMap.end() ? target : it->second;
         float value = UiRender::lerp(current, target, 1.0f - (float) std::exp(-speed * UiRender::deltaTime()));
@@ -37,6 +55,13 @@ namespace UiState {
     }
 
     float motionFrom(const std::string& id, float target, float speed, float initial) {
+        if (still) {
+            return target;
+        }
+        if (!ThemeStyle::animations()) {
+            motionMap[id] = target;
+            return target;
+        }
         if (motionMap.find(id) == motionMap.end()) {
             motionMap[id] = initial;
             return initial;

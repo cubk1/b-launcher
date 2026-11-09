@@ -2,6 +2,7 @@
 #include "UiCommon.h"
 #include "UiFont.h"
 #include "UiRender.h"
+#include "UiTheme.h"
 #include "../gl/ShaderUtil.h"
 
 #include <chrono>
@@ -11,9 +12,9 @@
 
 namespace Notifications {
 
-    const Style INFO = {0xf05a, 0xFFC9C9C9u};
-    const Style DONE = {0xf00c, 0xFF78C86Eu};
-    const Style FAILED = {0xf071, 0xFFE74C4Cu};
+    const Style INFO = {0xf05a, UiTheme::TOAST_INFO};
+    const Style DONE = {0xf00c, UiTheme::TOAST_DONE};
+    const Style FAILED = {0xf071, UiTheme::TOAST_FAILED};
 
     namespace {
         constexpr float SCALE = 1.5f;
@@ -26,8 +27,6 @@ namespace Notifications {
         constexpr float BOTTOM = 16.0f;
         constexpr float MARGIN = 6.0f;
         constexpr float TEXT_SIZE = 10.5f;
-        constexpr uint32_t TEXT_COLOR = 0xFFE4E4E8u;
-        constexpr uint32_t FILL_COLOR = 0x90000000u;
         constexpr long long FOREVER = std::numeric_limits<long long>::max() / 4;
         const char32_t BRAILLE[] = {0x280B, 0x2819, 0x2839, 0x2838, 0x283C, 0x2834, 0x2826, 0x2827, 0x2807, 0x280F};
 
@@ -151,7 +150,7 @@ namespace Notifications {
         }
 
         void drawText(const std::string& text, float x, float y, float alpha) {
-            UiRender::textY(text, x, y, HEIGHT, withAlpha(TEXT_COLOR, alpha), UiFont::MONO, TEXT_SIZE);
+            UiRender::textY(text, x, y, HEIGHT, withAlpha(UiTheme::toastText(), alpha), UiFont::MONO, TEXT_SIZE);
         }
 
         void renderItems(float screenW, float screenH, float inset, bool top, float topInset) {
@@ -205,9 +204,10 @@ namespace Notifications {
                                           0xF, 6.0f);
                     ShaderUtil::flushBlur();
                 }
-                UiRender::roundRect(drawX, cy, w, HEIGHT, 5.0f, withAlpha(FILL_COLOR, opacity));
+                UiRender::roundRect(drawX, cy, w, HEIGHT, 5.0f, withAlpha(UiTheme::toastFill(), opacity));
                 UiRender::textY(Ui::encode((char32_t) item.style.icon), drawX + 10.0f, cy, HEIGHT,
-                                withAlpha(item.style.color, opacity), UiFont::ICON, 10.0f);
+                                withAlpha(UiTheme::token((UiTheme::Token) item.style.tone), opacity), UiFont::ICON,
+                                10.0f);
 
                 float textX = drawX + 28.0f;
                 if (item.live) {

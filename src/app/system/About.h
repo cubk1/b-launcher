@@ -51,5 +51,6 @@ namespace About {
             {"nanosvg", "zlib License", "https://github.com/memononen/nanosvg"},
             {"libzt", "BUSL-1.1", "https://github.com/zerotier/libzt"},
             {"Font Awesome Free", "SIL OFL 1.1", "https://fontawesome.com"},
+            {"Duktape", "MIT", "https://duktape.org"},
     };
 }

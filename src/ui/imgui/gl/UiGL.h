@@ -26,6 +26,7 @@ typedef char GLchar;
 typedef unsigned int GLbitfield;
 typedef void GLvoid;
 typedef std::ptrdiff_t GLsizeiptr;
+typedef unsigned long long GLuint64;
 
 #define UGL_FALSE 0
 #define UGL_TRUE 1
@@ -40,13 +41,22 @@ typedef std::ptrdiff_t GLsizeiptr;
 #define UGL_SRC_ALPHA 0x0302
 #define UGL_ONE_MINUS_SRC_ALPHA 0x0303
 #define UGL_ONE_MINUS_SRC_COLOR 0x0301
+#define UGL_DST_COLOR 0x0306
 #define UGL_CONSTANT_COLOR 0x8001
 #define UGL_ONE 1
 #define UGL_ZERO 0
 #define UGL_FUNC_ADD 0x8006
 #define UGL_TEXTURE_2D 0x0DE1
 #define UGL_TEXTURE0 0x84C0
+#define UGL_TEXTURE1 0x84C1
 #define UGL_TEXTURE3 0x84C3
+#define UGL_TEXTURE4 0x84C4
+#define UGL_TEXTURE5 0x84C5
+#define UGL_TEXTURE6 0x84C6
+#define UGL_TEXTURE7 0x84C7
+#define UGL_TIME_ELAPSED 0x88BF
+#define UGL_QUERY_RESULT 0x8866
+#define UGL_QUERY_RESULT_AVAILABLE 0x8867
 #define UGL_TEXTURE_MIN_FILTER 0x2801
 #define UGL_TEXTURE_MAG_FILTER 0x2800
 #define UGL_TEXTURE_WRAP_S 0x2802
@@ -54,6 +64,7 @@ typedef std::ptrdiff_t GLsizeiptr;
 #define UGL_TEXTURE_BASE_LEVEL 0x813C
 #define UGL_TEXTURE_MAX_LEVEL 0x813D
 #define UGL_CLAMP_TO_EDGE 0x812F
+#define UGL_REPEAT 0x2901
 #define UGL_LINEAR 0x2601
 #define UGL_NEAREST 0x2600
 #define UGL_LINEAR_MIPMAP_LINEAR 0x2703
@@ -116,6 +127,17 @@ namespace UiGL {
     extern void(UGL_APIENTRY* Uniform2f)(GLint location, GLfloat v0, GLfloat v1);
     extern void(UGL_APIENTRY* Uniform4f)(GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
     extern void(UGL_APIENTRY* Uniform1i)(GLint location, GLint v0);
+    extern void(UGL_APIENTRY* Uniform1fv)(GLint location, GLsizei count, const GLfloat* value);
+    extern void(UGL_APIENTRY* Uniform4fv)(GLint location, GLsizei count, const GLfloat* value);
+    extern void(UGL_APIENTRY* Uniform3f)(GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+    extern void(UGL_APIENTRY* Uniform1iv)(GLint location, GLsizei count, const GLint* value);
+    extern void(UGL_APIENTRY* Finish)();
+    extern void(UGL_APIENTRY* GenQueries)(GLsizei n, GLuint* ids);
+    extern void(UGL_APIENTRY* DeleteQueries)(GLsizei n, const GLuint* ids);
+    extern void(UGL_APIENTRY* BeginQuery)(GLenum target, GLuint id);
+    extern void(UGL_APIENTRY* EndQuery)(GLenum target);
+    extern void(UGL_APIENTRY* GetQueryObjectiv)(GLuint id, GLenum pname, GLint* params);
+    extern void(UGL_APIENTRY* GetQueryObjectui64v)(GLuint id, GLenum pname, GLuint64* params);
     extern void(UGL_APIENTRY* UniformMatrix4fv)(GLint location, GLsizei count, GLboolean transpose,
                                                 const GLfloat* value);
     extern void(UGL_APIENTRY* GenVertexArrays)(GLsizei n, GLuint* arrays);

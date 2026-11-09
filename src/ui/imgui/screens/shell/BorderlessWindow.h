@@ -62,6 +62,7 @@ public:
     bool preparingResize() const;
     void close();
     void setDarkMode(bool dark);
+    void setCornerRadius(int logical);
     void setIcons(HICON large, HICON compact);
     void setTitle(const std::wstring& title);
     bool pumpMessages();
@@ -80,6 +81,7 @@ private:
     bool alphaPixels() const;
     int dpi() const;
     int cornerRadius() const;
+    int cornerPreference() const;
     void cutCorners();
     void syncShadow(const RECT* bounds, bool hiding = false);
     bool createGlContext(HGLRC share);
@@ -103,4 +105,5 @@ private:
     bool regionCorners = false;
     bool regionSuspended = false;
     bool alphaCorners = false;
+    int logicalRadius = 8;
 };

@@ -106,15 +106,14 @@ namespace Dialog {
             float savedPivotX = UiRender::pivotX;
             float savedPivotY = UiRender::pivotY;
             UiRender::alphaMul = savedAlpha * open;
-            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, SHELL_RADIUS,
-                                UiTheme::isLight() ? 0x47000000u : 0x80000000u);
+            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, SHELL_RADIUS, UiTheme::scrim());
             NewUi::markOverlayUnion(0.0f, 0.0f, windowW, windowH);
             NewUi::markAbove(0.0f, 0.0f, windowW, windowH);
             UiRender::scaleFactor = savedScale * UiRender::lerp(SMALLEST, 1.0f, eased);
             UiRender::pivotX = (x + w * 0.5f) * UiRender::uiScale;
             UiRender::pivotY = (y + h * 0.5f) * UiRender::uiScale;
             UiRender::shadow(x, y, w, h, RADIUS, 14.0f, 6.0f, UiTheme::shadow());
-            UiWidgets::overlayPanel(x, y, w, h, RADIUS, UiTheme::surface(), 0xF);
+            UiWidgets::overlayPanel(x, y, w, h, RADIUS, UiTheme::surface(), 0xF, ThemePaintSpec::DIALOG);
             if (closing) {
                 Body body = layer.fading;
                 bool clicked = NewUi::pendingClick;

@@ -33,9 +33,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
-
 #include <string_view>
 #if defined(__APPLE__)
 #include <CoreText/CoreText.h>
@@ -45,6 +42,10 @@
 #include <dlfcn.h>
 #endif
 #endif
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_MULTIPLE_MASTERS_H
 
 namespace UiFont {
 
@@ -304,6 +305,28 @@ namespace UiFont {
     static int fallbackCount = 0;
     static int activeSubpixel = SUBPIXEL_OFF;
 
+    namespace {
+        const int ROLE_FAMILIES[ROLE_COUNT] = {MEDIUM, BOLD, DISPLAY, MONO, CODE};
+
+        struct Loaded {
+            std::string key;
+            ImFont* font = nullptr;
+            std::shared_ptr<const std::string> data;
+            const unsigned char* mapped = nullptr;
+            unsigned int mappedSize = 0;
+        };
+
+        ImFont* defaultFonts[FAMILY_COUNT] = {};
+        std::vector<Loaded> themeFonts;
+        FontSet activeSet;
+        FontSet pendingSet;
+        bool hasPending = false;
+        unsigned fontGeneration = 0;
+        std::vector<std::string> fontProblems;
+        std::unordered_map<ImFont*, float> fontScales;
+        std::unordered_map<std::string, std::string> fitted;
+    }
+
     static int resolveSubpixel() {
         if (subpixel != SUBPIXEL_AUTO) {
             return subpixel;
@@ -487,6 +510,7 @@ namespace UiFont {
                 baseFonts[FALLBACK + fallbackCount++] = font;
             }
         }
+        std::copy(std::begin(baseFonts), std::end(baseFonts), std::begin(defaultFonts));
     }
 
     static ImFont* baseOf(int family) {
@@ -541,7 +565,7 @@ namespace UiFont {
             size_t size = (size_t) font->Sources[0]->FontDataSize;
             size_t base = 0;
             if (size > 12 && data[0] == 't' && data[1] == 't' && data[2] == 'c' && data[3] == 'f') {
-                unsigned int index = (unsigned int) std::max(0, (int) font->Sources[0]->FontNo);
+                unsigned int index = (unsigned int) font->Sources[0]->FontNo & 0xFFFFu;
                 if (16 + index * 4 + 4 <= size) {
                     base = readU32(data, 12 + index * 4);
                 }
@@ -651,8 +675,10 @@ namespace UiFont {
 
     static std::unordered_map<unsigned long long, float> bakedSizes;
 
+    static float scaleOf(ImFont* font);
+
     static float bakedSize(ImFont* font, float size) {
-        float requested = std::max(1.0f, size * emRatio(font));
+        float requested = std::max(1.0f, size * emRatio(font) * scaleOf(font));
         float nearest = std::max(1.0f, (float) Ui::round(requested));
         if (font == baseFonts[ICON]) {
             return nearest;
@@ -847,7 +873,6 @@ namespace UiFont {
     }
 
     static std::string fitCut(const std::string& text, int family, float size, float available, bool keepEnd) {
-        static std::unordered_map<std::string, std::string> fitted;
         std::string key = text;
         key += '\x1f';
         key += std::to_string(family) + ":" + std::to_string((int) (size * 4.0f)) + ":" +
@@ -1003,6 +1028,316 @@ namespace UiFont {
         }
         fallbackCache[key] = result;
         return result;
+    }
+
+    bool FontSet::same(const FontSet& other) const {
+        for (int i = 0; i < ROLE_COUNT; i++) {
+            if (roles[i].key != other.roles[i].key) {
+                return false;
+            }
+        }
+        return scale == other.scale;
+    }
+
+    int roleFamily(int role) {
+        return role >= 0 && role < ROLE_COUNT ? ROLE_FAMILIES[role] : MEDIUM;
+    }
+
+    unsigned generation() {
+        return fontGeneration;
+    }
+
+    const std::vector<std::string>& problems() {
+        return fontProblems;
+    }
+
+    void request(const FontSet& set) {
+        pendingSet = set;
+        hasPending = true;
+    }
+
+    static void unmap(const unsigned char* view, unsigned int size) {
+        if (view == nullptr) {
+            return;
+        }
+#if defined(_WIN32)
+        UnmapViewOfFile(view);
+#else
+        munmap((void*) view, size);
+#endif
+    }
+
+    static int namedInstance(const unsigned char* data, size_t size, int face, int weight) {
+        if (weight <= 0) {
+            return face;
+        }
+        FT_Library library = nullptr;
+        if (FT_Init_FreeType(&library) != 0) {
+            return face;
+        }
+        int result = face;
+        FT_Face loaded = nullptr;
+        if (FT_New_Memory_Face(library, data, (FT_Long) size, face, &loaded) == 0) {
+            FT_MM_Var* axes = nullptr;
+            if (FT_HAS_MULTIPLE_MASTERS(loaded) && FT_Get_MM_Var(loaded, &axes) == 0) {
+                for (FT_UInt axis = 0; axis < axes->num_axis; axis++) {
+                    if (axes->axis[axis].tag != FT_MAKE_TAG('w', 'g', 'h', 't')) {
+                        continue;
+                    }
+                    double best = 1.0e9;
+                    for (FT_UInt i = 0; i < axes->num_namedstyles; i++) {
+                        double distance = std::fabs(axes->namedstyle[i].coords[axis] / 65536.0 - weight);
+                        if (distance < best) {
+                            best = distance;
+                            result = face | (int) ((i + 1) << 16);
+                        }
+                    }
+                }
+                FT_Done_MM_Var(library, axes);
+            }
+            FT_Done_Face(loaded);
+        }
+        FT_Done_FreeType(library);
+        return result;
+    }
+
+    static Loaded loadChoice(const FontChoice& choice) {
+        Loaded entry;
+        entry.key = choice.key;
+        ImFontConfig config;
+        crisp(config, loaderFlags);
+        config.Flags |= ImFontFlags_NoLoadError;
+        config.FontDataOwnedByAtlas = false;
+        config.FontNo = (ImU32) std::max(0, choice.face);
+        snprintf(config.Name, sizeof(config.Name), "%s", choice.key.c_str());
+        ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+        if (choice.data && choice.data->size() >= 100) {
+            entry.data = choice.data;
+            config.FontNo = (ImU32) namedInstance((const unsigned char*) entry.data->data(), entry.data->size(),
+                                                  (int) config.FontNo, choice.weight);
+            entry.font =
+                    atlas->AddFontFromMemoryTTF((void*) entry.data->data(), (int) entry.data->size(), 16.0f, &config);
+            return entry;
+        }
+        if (choice.spec.empty()) {
+            return entry;
+        }
+        std::string file = choice.spec;
+        size_t hash = file.rfind('#');
+        if (hash != std::string::npos) {
+            config.FontNo = (ImU32) std::max(0, std::atoi(file.c_str() + hash + 1));
+            file = file.substr(0, hash);
+        }
+        bool absolute = file.size() > 1 && (file[1] == ':' || file[0] == '\\' || file[0] == '/');
+        std::string path = absolute ? file : windowsFontsDir() + file;
+        entry.mapped = mapFile(path, entry.mappedSize);
+        if (entry.mapped == nullptr) {
+            return entry;
+        }
+        config.FontNo = (ImU32) namedInstance(entry.mapped, entry.mappedSize, (int) config.FontNo, choice.weight);
+        entry.font = atlas->AddFontFromMemoryTTF((void*) entry.mapped, (int) entry.mappedSize, 16.0f, &config);
+        if (entry.font == nullptr) {
+            unmap(entry.mapped, entry.mappedSize);
+            entry.mapped = nullptr;
+        }
+        return entry;
+    }
+
+    static void release(Loaded& entry) {
+        if (entry.font != nullptr) {
+            ImGui::GetIO().Fonts->RemoveFont(entry.font);
+            entry.font = nullptr;
+        }
+        unmap(entry.mapped, entry.mappedSize);
+        entry.mapped = nullptr;
+        entry.data.reset();
+    }
+
+    static float advanceOf(ImFontBaked* baked, char32_t c) {
+        const ImFontGlyph* glyph = baked->FindGlyphNoFallback((ImWchar) c);
+        return glyph != nullptr ? glyph->AdvanceX : 0.0f;
+    }
+
+    static bool monospace(ImFont* font) {
+        ImFontBaked* baked = font->GetFontBaked(32.0f, 1.0f);
+        if (baked == nullptr) {
+            return false;
+        }
+        float low = 1.0e9f;
+        float high = 0.0f;
+        for (char32_t c : {U'0', U'i', U'W', U'.'}) {
+            float advance = advanceOf(baked, c);
+            if (advance <= 0.0f) {
+                return false;
+            }
+            low = std::min(low, advance);
+            high = std::max(high, advance);
+        }
+        return high <= low * 1.005f;
+    }
+
+    static float capHeight(ImFont* font) {
+        ImFontBaked* baked = font->GetFontBaked(std::max(1.0f, (float) Ui::round(64.0f * emRatio(font))), 1.0f);
+        const ImFontGlyph* glyph = baked != nullptr ? baked->FindGlyphNoFallback((ImWchar) 'H') : nullptr;
+        if (glyph == nullptr || !glyph->Visible) {
+            return 0.0f;
+        }
+        Ink ink = inkOf(nullptr, glyph);
+        return ink.y1 - ink.y0;
+    }
+
+    static float scaleOf(ImFont* font) {
+        auto found = fontScales.find(font);
+        return found != fontScales.end() ? found->second : 1.0f;
+    }
+
+    bool applyPending() {
+        if (!hasPending) {
+            return false;
+        }
+        hasPending = false;
+        ensureBaseFonts();
+        if (pendingSet.same(activeSet)) {
+            return false;
+        }
+        std::vector<Loaded> next;
+        ImFont* chosen[ROLE_COUNT] = {};
+        fontProblems.clear();
+        for (int role = 0; role < ROLE_COUNT; role++) {
+            const FontChoice& choice = pendingSet.roles[role];
+            if (choice.key.empty()) {
+                continue;
+            }
+            auto reuse = std::find_if(next.begin(), next.end(),
+                                      [&](const Loaded& entry) { return entry.key == choice.key; });
+            if (reuse == next.end()) {
+                auto kept = std::find_if(themeFonts.begin(), themeFonts.end(),
+                                         [&](const Loaded& entry) { return entry.key == choice.key && entry.font; });
+                if (kept != themeFonts.end()) {
+                    next.push_back(std::move(*kept));
+                    kept->font = nullptr;
+                    kept->mapped = nullptr;
+                } else {
+                    Loaded entry = loadChoice(choice);
+                    if (entry.font == nullptr) {
+                        fontProblems.push_back("无法加载字体 " + choice.key);
+                        continue;
+                    }
+                    next.push_back(std::move(entry));
+                }
+                reuse = next.end() - 1;
+            }
+            if (ROLE_FAMILIES[role] == CODE && !monospace(reuse->font)) {
+                fontProblems.push_back("代码字体必须是等宽字体：" + choice.key);
+                continue;
+            }
+            chosen[role] = reuse->font;
+        }
+        for (auto it = next.begin(); it != next.end();) {
+            if (std::find(std::begin(chosen), std::end(chosen), it->font) == std::end(chosen)) {
+                release(*it);
+                it = next.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (Loaded& old : themeFonts) {
+            release(old);
+        }
+        themeFonts = std::move(next);
+        fallbackCache.clear();
+        emRatios.clear();
+        inks.clear();
+        bakedSizes.clear();
+        fitted.clear();
+        fontScales.clear();
+        float user = std::clamp(pendingSet.scale, 0.9f, 1.15f);
+        float reference = capHeight(defaultFonts[MEDIUM]);
+        for (const Loaded& entry : themeFonts) {
+            float own = capHeight(entry.font);
+            float normal = reference > 0.0f && own > 0.0f ? std::clamp(reference / own, 0.8f, 1.25f) : 1.0f;
+            fontScales[entry.font] = normal * user;
+        }
+        for (int role = 0; role < ROLE_COUNT; role++) {
+            int family = ROLE_FAMILIES[role];
+            baseFonts[family] = chosen[role] != nullptr ? chosen[role] : defaultFonts[family];
+        }
+        activeSet = pendingSet;
+        fontGeneration++;
+        return true;
+    }
+
+#if defined(_WIN32)
+    static std::string registryFont(HKEY root, const std::string& family) {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(root, L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", 0, KEY_READ, &key) !=
+            ERROR_SUCCESS) {
+            return {};
+        }
+        std::string found;
+        wchar_t name[512];
+        wchar_t data[1024];
+        for (DWORD index = 0; found.empty(); index++) {
+            DWORD nameLength = 512;
+            DWORD dataLength = sizeof(data);
+            DWORD type = 0;
+            LONG status = RegEnumValueW(key, index, name, &nameLength, nullptr, &type, (LPBYTE) data, &dataLength);
+            if (status == ERROR_NO_MORE_ITEMS) {
+                break;
+            }
+            if (status != ERROR_SUCCESS || type != REG_SZ) {
+                continue;
+            }
+            int bytes = WideCharToMultiByte(CP_UTF8, 0, name, (int) nameLength, nullptr, 0, nullptr, nullptr);
+            std::string label((size_t) bytes, '\0');
+            WideCharToMultiByte(CP_UTF8, 0, name, (int) nameLength, label.data(), bytes, nullptr, nullptr);
+            size_t paren = label.rfind(" (");
+            if (paren != std::string::npos) {
+                label = label.substr(0, paren);
+            }
+            int face = 0;
+            size_t start = 0;
+            while (start <= label.size()) {
+                size_t split = label.find(" & ", start);
+                std::string part = label.substr(start, split == std::string::npos ? std::string::npos : split - start);
+                if (part == family || part == family + " Regular") {
+                    size_t length = wcsnlen(data, sizeof(data) / sizeof(data[0]));
+                    int size = WideCharToMultiByte(CP_UTF8, 0, data, (int) length, nullptr, 0, nullptr, nullptr);
+                    std::string file((size_t) size, '\0');
+                    WideCharToMultiByte(CP_UTF8, 0, data, (int) length, file.data(), size, nullptr, nullptr);
+                    found = file + "#" + std::to_string(face);
+                    break;
+                }
+                if (split == std::string::npos) {
+                    break;
+                }
+                start = split + 3;
+                face++;
+            }
+        }
+        RegCloseKey(key);
+        return found;
+    }
+#endif
+
+    std::string systemFontSpec(const std::string& family) {
+#if defined(_WIN32)
+        if (family == "monospace") {
+            return "consola.ttf#0";
+        }
+        if (family == "sans-serif") {
+            return "segoeui.ttf#0";
+        }
+        if (family == "serif") {
+            return "times.ttf#0";
+        }
+        std::string spec = registryFont(HKEY_LOCAL_MACHINE, family);
+        return spec.empty() ? registryFont(HKEY_CURRENT_USER, family) : spec;
+#elif defined(__APPLE__)
+        return systemFont(family == "monospace" ? "Menlo" : family.c_str());
+#else
+        return fontConfig().find(family.c_str());
+#endif
     }
 
     bool supported(char32_t c, int family) {

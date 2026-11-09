@@ -1,9 +1,12 @@
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "app/system/About.h"
 #include "app/system/Config.h"
+#include "app/system/Customization.h"
 #include "ui/imgui/screens/shell/EmbeddedSounds.h"
+#include "ui/imgui/screens/theme/ThemeRuntime.h"
+#include "ui/imgui/screens/theme/ThemeStore.h"
+#include "ui/imgui/theme/ThemePaintSpec.h"
 
-#include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiSound.h"
 
 #include <core/base/json.hpp>
@@ -15,24 +18,10 @@ namespace Appearance {
     namespace {
         constexpr uint32_t DEFAULT_ACCENT = 0xFF4F7DFFu;
 
-        const std::vector<Theme> THEMES = {
-                {"plain", "简约", UiTheme::MODE_PLAIN},
-                {"dark", "深色", UiTheme::MODE_SHADCN},
-                {"light", "浅色", UiTheme::MODE_SHADCN_LIGHT},
-                {"iridium-dark", "Iridium 深色", UiTheme::MODE_DARK},
-                {"iridium-light", "Iridium 浅色", UiTheme::MODE_LIGHT},
-        };
+        const char* const DEFAULT_THEME = "plain";
 
-        const Theme* current = &THEMES[0];
-
-        const Theme* find(const std::string& key) {
-            for (const Theme& theme : THEMES) {
-                if (key == theme.key) {
-                    return &theme;
-                }
-            }
-            return nullptr;
-        }
+        std::vector<Theme> listed;
+        Theme shown;
 
         std::string text(const char* key, const std::string& fallback) {
             return b_launcher_base::json_text(Config::data(), key, fallback);
@@ -58,22 +47,25 @@ namespace Appearance {
             return true;
         }
 
-        void apply(const Theme& theme) {
-            current = &theme;
-            UiTheme::setMode(theme.mode);
-        }
     }
 
     const std::vector<Theme>& themes() {
-        return THEMES;
+        ThemeStore::rescanIfStale();
+        listed.clear();
+        for (const ThemeStore::Entry& entry : ThemeStore::entries()) {
+            listed.push_back({entry.id, entry.name, entry.builtIn});
+        }
+        return listed;
     }
 
     void load() {
-        const Theme* saved = find(text("theme", "plain"));
-        apply(saved != nullptr ? *saved : THEMES[0]);
+        ThemeStore::rescan();
         uint32_t color = DEFAULT_ACCENT;
         parseHex(text("accent", ""), color);
-        UiTheme::setAccent(color);
+        ThemeRuntime::setUserAccent(color);
+        std::string saved = text("theme", DEFAULT_THEME);
+        ThemeRuntime::install(ThemeStore::find(saved) != nullptr ? saved : std::string(DEFAULT_THEME));
+        ThemeRuntime::commit();
         const float volume = 0.32f;
         UiSound::load(UiSound::PRESS, EmbeddedSounds::press, EmbeddedSounds::pressSize, volume);
         UiSound::load(UiSound::TICK, EmbeddedSounds::tick, EmbeddedSounds::tickSize, volume);
@@ -84,34 +76,27 @@ namespace Appearance {
     }
 
     const Theme& theme() {
-        return *current;
+        const ThemeStore::Entry* entry = ThemeStore::find(ThemeRuntime::current());
+        shown = entry != nullptr ? Theme{entry->id, entry->name, entry->builtIn}
+                                 : Theme{ThemeRuntime::current(), ThemeRuntime::current(), false};
+        return shown;
     }
 
     void setTheme(const std::string& key) {
-        const Theme* next = find(key);
-        if (next == nullptr || next == current) {
+        if (Customization::themeLocked() || key == ThemeRuntime::current() || ThemeStore::find(key) == nullptr) {
             return;
         }
-        apply(*next);
-        Config::data()["theme"] = next->key;
+        ThemeRuntime::install(key);
+        Config::data()["theme"] = key;
         Config::save();
     }
 
-    void toggleLight() {
-        if (UiTheme::isLight()) {
-            setTheme(text("lastDarkTheme", "plain"));
-            return;
-        }
-        Config::data()["lastDarkTheme"] = current->key;
-        setTheme(std::string(current->key) == "iridium-dark" ? "iridium-light" : "light");
-    }
-
     uint32_t accent() {
-        return UiTheme::accent();
+        return ThemeRuntime::userAccent();
     }
 
     void setAccent(uint32_t argb) {
-        UiTheme::setAccent(0xFF000000u | argb);
+        ThemeRuntime::setUserAccent(0xFF000000u | argb);
         Config::data()["accent"] = hex(argb);
         Config::save();
     }
@@ -142,7 +127,12 @@ namespace Appearance {
     }
 
     bool backgroundImage() {
-        return b_launcher_base::json_bool(Config::data(), "backgroundImage");
+        const nlohmann::json& doc = Config::data();
+        auto it = doc.find("backgroundImage");
+        if (it != doc.end() && it->is_boolean()) {
+            return it->get<bool>();
+        }
+        return ThemePaintSpec::current().background.enabled == 1;
     }
 
     void setBackgroundImage(bool on) {
@@ -193,6 +183,9 @@ namespace Appearance {
 
     std::string windowTitle() {
         std::string custom = customWindowTitle();
+        if (custom.empty() && !Customization::windowTitle().empty()) {
+            return Customization::windowTitle();
+        }
         return custom.empty() ? std::string(defaultWindowTitle()) : custom;
     }
 
@@ -211,6 +204,9 @@ namespace Appearance {
 
     std::string brandTitle() {
         std::string custom = customBrandTitle();
+        if (custom.empty() && !Customization::brandTitle().empty()) {
+            return Customization::brandTitle();
+        }
         return custom.empty() ? std::string(defaultBrandTitle()) : custom;
     }
 

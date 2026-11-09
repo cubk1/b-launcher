@@ -327,7 +327,7 @@ namespace KeyBindEditor {
         }
 
         uint32_t warningInk() {
-            return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+            return UiTheme::warningInk();
         }
 
         uint32_t withAlpha(uint32_t rgba, float alpha) {
@@ -456,8 +456,8 @@ namespace KeyBindEditor {
             UiRender::roundRect(x, y + depth, w, faceH, radius, shade(face));
             UiRender::roundRect(x, y + offset, w, faceH, radius, face);
             uint32_t edge = selected                    ? UiTheme::accent()
-                    : count == 0 && !UiTheme::isLight() ? UiTheme::outline()
-                                                        : UiTheme::outlineSoft();
+                    : count == 0 && !UiTheme::isLight() ? UiTheme::border(UiTheme::outline())
+                                                        : UiTheme::border(UiTheme::outlineSoft());
             UiRender::outline(x, y + offset, w, faceH, radius, edge, 0xF, selected ? 1.5f : 1.0f);
             if (labels) {
                 float size = label.size() <= 2 ? std::clamp(unit * 0.42f, 9.0f, UiWidgets::TEXT_CONTROL)
@@ -500,7 +500,7 @@ namespace KeyBindEditor {
             uint32_t face = UiTheme::surfaceRaised();
             UiRender::roundRect(x, y + depth, w, bodyH, radius, shade(face));
             UiRender::roundRect(x, y, w, bodyH, radius, face);
-            UiRender::outline(x, y, w, bodyH, radius, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, bodyH, radius, UiTheme::border(UiTheme::outlineSoft()));
             for (const Spot* zone : {&left, &right}) {
                 int count = levelOf(index, conflicts, zone->name);
                 bool selected = state.selected == zone->name;
@@ -580,7 +580,8 @@ namespace KeyBindEditor {
             float pillX = UiRender::lerp(starts[(size_t) lower], starts[(size_t) upper], blend);
             float pillW = UiRender::lerp(widths[(size_t) lower], widths[(size_t) upper], blend);
             UiRender::roundRect(pillX, y + 2.0f, pillW, Page::FIELD_H - 4.0f, 5.0f, UiTheme::surface());
-            UiRender::outline(pillX, y + 2.0f, pillW, Page::FIELD_H - 4.0f, 5.0f, UiTheme::outlineSoft());
+            UiRender::outline(pillX, y + 2.0f, pillW, Page::FIELD_H - 4.0f, 5.0f,
+                              UiTheme::border(UiTheme::outlineSoft()));
             for (int i = 0; i < count; i++) {
                 float segmentX = starts[(size_t) i];
                 float w = widths[(size_t) i];
@@ -802,7 +803,7 @@ namespace KeyBindEditor {
 
             UiRender::shadow(x, y, POP_W, h, 12.0f, 16.0f, 6.0f, UiTheme::shadow());
             UiRender::roundRect(x, y, POP_W, h, 12.0f, UiTheme::surface());
-            UiRender::outline(x, y, POP_W, h, 12.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, POP_W, h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
             float tipX = std::clamp(arrowX, x + 18.0f, x + POP_W - 18.0f);
             if (below) {
                 UiRender::triangle(tipX, y - ARROW + 1.0f, ARROW, 0.0f, UiTheme::surface());
@@ -1449,7 +1450,8 @@ namespace KeyBindEditor {
                                       0xF, 1.4f);
                 } else {
                     UiRender::outline(capX, capY, capW, 24.0f, 7.0f,
-                                      capHovered ? UiTheme::outline() : UiTheme::outlineSoft());
+                                      capHovered ? UiTheme::border(UiTheme::outline())
+                                                 : UiTheme::border(UiTheme::outlineSoft()));
                 }
                 uint32_t capInk = capturing ? UiTheme::accentText()
                         : clash             ? warningInk()
@@ -1513,9 +1515,9 @@ namespace KeyBindEditor {
 
     bool page(const std::string& id, const std::filesystem::path& file, bool legacy, const std::string& note,
               bool blocked) {
-        bool back = Page::iconButton(id + "#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, blocked);
-        Page::title("按键绑定", Page::left() + 30.0f, Page::TOP);
-        draw(id, file, legacy, note, Page::TOP + 44.0f, blocked);
+        bool back = Page::iconButton(id + "#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked);
+        Page::title("按键绑定", Page::left() + 30.0f, Page::top());
+        draw(id, file, legacy, note, Page::top() + 44.0f, blocked);
         return back;
     }
 }

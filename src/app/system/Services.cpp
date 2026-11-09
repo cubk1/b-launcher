@@ -8,6 +8,7 @@
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Covers.h"
 #include "app/instances/Drops.h"
+#include "app/instances/PackInstall.h"
 #include "app/instances/Exports.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
@@ -47,6 +48,7 @@ namespace Services {
         Platform::pollLaunches();
         Interface::poll();
         Instances::poll();
+        PackInstall::poll();
         Accounts::poll();
         Profiles::poll();
         Avatars::poll();

@@ -6,6 +6,9 @@
 #include "../panel/UiState.h"
 #include "../panel/UiTheme.h"
 #include "../panel/UiWidgets.h"
+#include "../theme/ThemeStyle.h"
+#include "../screens/theme/ThemeEffects.h"
+#include "../screens/theme/ThemePaint.h"
 
 #include <algorithm>
 
@@ -63,26 +66,27 @@ void NavItemWidget::paint() {
         UiSound::request(UiSound::TICK);
     }
     float r = UiState::motion(id + "#r", active ? 1.0f : (isHovered ? 0.48f : 0.0f), 16.0f);
-    if (r > 0.001f) {
-        UiRender::roundRect(x + indent, y, w - indent, h, 8.0f,
-                            UiRender::mix(UiTheme::clear(), UiTheme::navHover(), r));
-    }
+    ThemePaint::selectedFill(ThemePaintSpec::NAV_ACTIVE, id, x + indent, y, w - indent, h, 8.0f, active, isHovered, r);
+    ThemeEffects::button(id, "nav", x + indent, y, w - indent, h, 8.0f, 0xF, UiTheme::textPrimary(), isHovered);
+    bool bare = !ThemeStyle::icons() && fold < 0.5f;
+    float labelX = bare ? 12.0f : 31.0f;
     if (texture != 0) {
         UiRender::texture(texture, x + indent + 8, y + (h - textureSize) * 0.5f, textureSize, textureSize);
-    } else {
+        labelX = 31.0f;
+    } else if (!bare) {
         UiWidgets::iconBeside(glyph, x + indent + 16, label, UiFont::MEDIUM, UiWidgets::TEXT_BODY, y, h,
                               UiRender::mix(UiTheme::textMuted(), UiTheme::accent(), r), UiWidgets::TEXT_ICON);
     }
     float labelW = fold > 0.0f ? std::max(w, openWidth) : w;
-    float room = labelW - indent - 31 - 10 - trail;
+    float room = labelW - indent - labelX - 10 - trail;
     std::string shown = NewUi::fit(label, room);
     float savedAlpha = UiRender::alphaMul;
     UiRender::alphaMul = savedAlpha * std::max(0.0f, 1.0f - fold * 2.0f);
-    UiRender::textY(shown, x + indent + 31, y, h, UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), r),
+    UiRender::textY(shown, x + indent + labelX, y, h, UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), r),
                     UiFont::MEDIUM, UiWidgets::TEXT_BODY);
     bool cut = shown != label;
     if (!aside.empty() && !cut) {
-        float noteX = x + indent + 31 + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+        float noteX = x + indent + labelX + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         float parens = UiFont::width("\xEF\xBC\x88\xEF\xBC\x89", UiFont::MEDIUM, UiWidgets::TEXT_BODY);
         float left = x + labelW - 10 - trail - noteX - parens;
         if (left > 12.0f) {

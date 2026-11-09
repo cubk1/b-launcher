@@ -148,7 +148,7 @@ namespace InstanceScreenshots {
             float hover = UiState::motion("screenshots#" + std::to_string(index), hovered ? 1.0f : 0.0f, 20.0f);
             image(entry.path, entry.modified, x, y, w, imgH, 1.0f - 0.05f * hover);
             UiRender::outline(x, y, w, imgH, CELL_RADIUS,
-                              UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), hover));
+                              UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::accent(), hover));
             float textX = x + 2.0f;
             float textW = w - 4.0f;
             float nameY = y + imgH + 8.0f;
@@ -191,17 +191,17 @@ namespace InstanceScreenshots {
 
         bool covered = NewUi::overlayCoversMouse();
         bool back =
-                Page::iconButton("screenshots#back", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, covered);
+                Page::iconButton("screenshots#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "截图";
-        Page::title(title, Page::left() + 30.0f, Page::TOP);
+        Page::title(title, Page::left() + 30.0f, Page::top());
 
         float refreshX = Page::right() - 28.0f;
-        if (Page::iconButton("screenshots#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, covered)) {
+        if (Page::iconButton("screenshots#refresh", 0xf2f1, "刷新", refreshX, Page::top() - 2.0f, covered)) {
             Screenshots::scan(key);
         }
         float folderX = refreshX - 32.0f;
         std::filesystem::path folder = entry.gameDirectory / "screenshots";
-        if (Page::iconButton("screenshots#folder", 0xf07c, "打开截图文件夹", folderX, Page::TOP - 2.0f, covered)) {
+        if (Page::iconButton("screenshots#folder", 0xf07c, "打开截图文件夹", folderX, Page::top() - 2.0f, covered)) {
             std::error_code error;
             std::filesystem::create_directories(folder, error);
             Platform::open(folder);
@@ -209,11 +209,11 @@ namespace InstanceScreenshots {
         if (!list.entries.empty()) {
             std::string counts = std::to_string(list.entries.size()) + " 张";
             float countsW = UiFont::width(counts, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            UiRender::textY(counts, folderX - 10.0f - countsW, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+            UiRender::textY(counts, folderX - 10.0f - countsW, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_SMALL);
         }
 
-        float top = Page::TOP + 44.0f;
+        float top = Page::top() + 44.0f;
         float bottom = MainWindow::height() - 14.0f;
         if (list.entries.empty()) {
             if (list.loading) {

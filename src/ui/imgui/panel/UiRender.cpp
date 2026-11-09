@@ -5,6 +5,7 @@
 #include "UiCommon.h"
 #include "../gl/ShaderUtil.h"
 #include "../gl/RenderUtil.h"
+#include "../theme/ThemeStyle.h"
 
 #include "imgui.h"
 
@@ -209,6 +210,14 @@ namespace UiRender {
                float outerRadius) {
         ShaderUtil::shell(transformX(x), transformY(y), transformW(w), transformW(h), transformW(split),
                           transformW(radius), applyAlpha(plateRgba), applyAlpha(mainRgba), transformW(outerRadius));
+    }
+
+    void shellPanes(const float plate[4], int plateCorners, const float main[4], int mainCorners, float inner,
+                    float outer, uint32_t plateRgba, uint32_t mainRgba) {
+        float plateGui[4] = {transformX(plate[0]), transformY(plate[1]), transformW(plate[2]), transformW(plate[3])};
+        float mainGui[4] = {transformX(main[0]), transformY(main[1]), transformW(main[2]), transformW(main[3])};
+        ShaderUtil::shellPanes(plateGui, plateCorners, mainGui, mainCorners, transformW(inner), transformW(outer),
+                               applyAlpha(plateRgba), applyAlpha(mainRgba));
     }
 
     void cliIcon(float cx, float cy, float size, int kind, uint32_t rgba) {
@@ -611,6 +620,9 @@ namespace UiRender {
     }
 
     float approach01(float current, float target, float speed) {
+        if (!ThemeStyle::animations()) {
+            return target;
+        }
         float next = lerp(current, target, 1.0f - (float) std::exp(-speed * deltaTime()));
         if (std::fabs(next - target) < 0.002f) {
             return target;
@@ -625,6 +637,9 @@ namespace UiRender {
     }
 
     float approach(float current, float target, float speed) {
+        if (!ThemeStyle::animations()) {
+            return target;
+        }
         float next = lerp(current, target, 1.0f - (float) std::exp(-speed * deltaTime()));
         if (std::fabs(next - target) < 0.25f) {
             return target;

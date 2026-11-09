@@ -27,7 +27,8 @@ void KeyFieldWidget::paint() {
     uint32_t fill = UiRender::over(UiTheme::overlay(Ui::round(18 * lit)), UiTheme::surfaceSunken());
     UiRender::roundRect(x, y, w, h, 5.0f, fill);
     UiRender::outline(x, y, w, h, 5.0f,
-                      isCapturing ? UiTheme::accent() : UiRender::over(UiTheme::overlay(10), UiTheme::surfaceSunken()),
+                      isCapturing ? UiTheme::accent()
+                                  : UiTheme::border(UiRender::over(UiTheme::overlay(10), UiTheme::surfaceSunken())),
                       0xF, 1.0f);
     int key = value->get();
     std::string text = isCapturing ? "..." : (!UiKeys::isValidBind(key) ? "-" : RenderUtil::keyName(key));

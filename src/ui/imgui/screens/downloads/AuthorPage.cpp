@@ -77,14 +77,14 @@ namespace AuthorPage {
                 Authors::profile(normalized(route), route.authorId, route.authorName, route.authorAvatar);
         float x0 = DownloadsParts::mainX();
         float right = Page::right();
-        if (Page::iconButton("downloads#back", 0xf053, "返回", x0 - 4.0f, Page::TOP - 2.0f + (AVATAR - 28.0f) * 0.5f,
+        if (Page::iconButton("downloads#back", 0xf053, "返回", x0 - 4.0f, Page::top() - 2.0f + (AVATAR - 28.0f) * 0.5f,
                              covered)) {
             DownloadsParts::back();
             return;
         }
         std::string avatar = !profile.avatar.empty() ? profile.avatar : route.authorAvatar;
         float avatarX = x0 + 30.0f;
-        float avatarY = Page::TOP - 2.0f;
+        float avatarY = Page::top() - 2.0f;
         if (!avatar.empty()) {
             DownloadsParts::webImage(avatar, avatarX, avatarY, AVATAR, AVATAR, 14.0f, true);
         } else {
@@ -102,12 +102,12 @@ namespace AuthorPage {
                 ? std::string("在 MC 百科上查看")
                 : std::string("在 ") + Addons::sourceName(route.source) + " 上查看";
         if (!profile.url.empty() &&
-            Page::iconButton("downloads#author#open", 0xf35d, site, linkX, Page::TOP - 6.0f, covered)) {
+            Page::iconButton("downloads#author#open", 0xf35d, site, linkX, Page::top() - 6.0f, covered)) {
             Platform::openUrl(profile.url);
         }
         std::string name = !profile.name.empty() ? profile.name : route.authorName;
         std::string heading = fitEnd(name, linkX - 8.0f - textX, Page::TITLE_SIZE);
-        UiRender::textY(heading, textX, Page::TOP - 4.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
+        UiRender::textY(heading, textX, Page::top() - 4.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
                         Page::TITLE_SIZE);
         float aliasX = textX + UiFont::width(heading, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
         std::string aliases;
@@ -115,7 +115,7 @@ namespace AuthorPage {
             aliases += (aliases.empty() ? "" : "、") + alias;
         }
         if (!aliases.empty() && aliasX < linkX - 8.0f) {
-            UiRender::textY(fitEnd(aliases, linkX - 8.0f - aliasX, UiWidgets::TEXT_CONTROL), aliasX, Page::TOP - 4.0f,
+            UiRender::textY(fitEnd(aliases, linkX - 8.0f - aliasX, UiWidgets::TEXT_CONTROL), aliasX, Page::top() - 4.0f,
                             24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         }
         std::string role = route.author == Authors::Kind::ModrinthOrganization ? std::string("组织")
@@ -124,10 +124,10 @@ namespace AuthorPage {
         std::string bio = !profile.bio.empty() ? profile.bio : role;
         std::string flat = bio;
         std::replace(flat.begin(), flat.end(), '\n', ' ');
-        UiRender::textY(fitEnd(flat, textRight - textX, UiWidgets::TEXT_SMALL), textX, Page::TOP + 20.0f, 16.0f,
+        UiRender::textY(fitEnd(flat, textRight - textX, UiWidgets::TEXT_SMALL), textX, Page::top() + 20.0f, 16.0f,
                         UiTheme::textSecondary(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
         float sx = textX;
-        float statY = Page::TOP + 38.0f;
+        float statY = Page::top() + 38.0f;
         if (profile.status == Status::Ready) {
             sx += stat(0xf1b3, std::to_string(profile.projects.size()) + " 个项目", sx, statY, textRight);
             if (profile.downloads > 0) {
@@ -138,7 +138,7 @@ namespace AuthorPage {
             }
         }
 
-        float tabsY = Page::TOP + TABS_Y;
+        float tabsY = Page::top() + TABS_Y;
         float top = tabsY + DownloadsParts::SEGMENT_H + 12.0f;
         float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
         if (profile.status == Status::Loading) {

@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/shell/ImGuiApp.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/Background.h"
+#include "ui/imgui/screens/theme/ThemeAssets.h"
 #include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/shell/SdlWindow.h"
 #include "app/system/Config.h"
@@ -15,6 +16,13 @@
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
+#include "ui/imgui/screens/theme/ThemeFonts.h"
+#include "ui/imgui/screens/theme/ThemeSounds.h"
+#include "ui/imgui/screens/theme/ThemeRuntime.h"
+#include "ui/imgui/screens/theme/ThemeEffects.h"
+#include "ui/imgui/screens/theme/ThemeImport.h"
+#include "ui/imgui/screens/theme/ThemeShaders.h"
+#include "ui/imgui/theme/ThemeStyle.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Platform.h"
 #include "app/system/Services.h"
@@ -50,7 +58,6 @@
 namespace {
 
     constexpr int ICON_SIZE = 64;
-    constexpr float CORNER_RADIUS = 8.0f;
     constexpr double BACKGROUND_FRAME_MS = 1000.0 / 30.0;
     constexpr double IDLE_FRAME_MS = 100.0;
     constexpr double ROOM_CLOSE_MS = 10000.0;
@@ -431,6 +438,7 @@ namespace ImGuiApp {
         UiGL::load();
         UiFont::init();
         Appearance::load();
+        ThemeShaders::startup();
         MainWindow::init();
         Services::start();
         if (!pendingLaunch.empty()) {
@@ -449,6 +457,9 @@ namespace ImGuiApp {
         int framesSinceRefresh = 0;
 
         auto frame = [&]() {
+            ThemeRuntime::commit();
+            ThemeFonts::sync();
+            ThemeSounds::sync();
             float next = window.displayScale() * Appearance::zoom() / 100.0f;
             if (next != scale) {
                 float layoutW = window.width / scale;
@@ -466,7 +477,7 @@ namespace ImGuiApp {
             }
             MainWindow::setSize(window.width / scale, window.height / scale, window.maximized());
             bool opaque = window.framed || window.maximized() || panel.opaque();
-            MainWindow::cornerRadius = opaque ? 0.0f : CORNER_RADIUS;
+            MainWindow::cornerRadius = opaque ? 0.0f : ThemeStyle::current().windowRadius;
 
             window.makeCurrent();
             window.newFrame();
@@ -477,6 +488,10 @@ namespace ImGuiApp {
             }
             Services::poll();
             Background::poll();
+            ThemeAssets::poll();
+            ThemeShaders::frame();
+            ThemeImport::poll();
+            ThemeEffects::frame();
             Logo::poll();
             Homepage::poll();
             if (std::optional<ShortcutLaunch::Outcome> outcome = ShortcutLaunch::take()) {
@@ -633,8 +648,11 @@ namespace ImGuiApp {
             }
             bool lively = UiState::animating() || Notifications::active() || sinceMs(lastInput) < INPUT_GRACE_MS ||
                     Game::preparing();
+            double themeMs = ThemeRuntime::frameInterval(foreground, window.visible());
             if (lively && foreground) {
                 holdUntil(started, frameMs);
+            } else if (themeMs > 0.0) {
+                sleepUntil(started, std::max(frameMs, themeMs));
             } else {
                 sleepUntil(started, BACKGROUND_FRAME_MS);
                 if (!lively) {
@@ -653,6 +671,9 @@ namespace ImGuiApp {
         UiImages::shutdown();
         Homepage::shutdown();
         Background::shutdown();
+        ThemeAssets::shutdown();
+        ThemeShaders::shutdown();
+        ThemeImport::shutdown();
         Logo::shutdown();
         Services::stop();
         window.shutdownImGui();

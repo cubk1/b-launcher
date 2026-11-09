@@ -28,6 +28,7 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -39,7 +40,37 @@
 namespace Drops {
 
     namespace {
-        enum class Kind { Mod, ResourcePack, ShaderPack, DataPack, Modpack, Unknown };
+        enum class Kind { Mod, ResourcePack, ShaderPack, DataPack, Modpack, Theme, Unknown };
+
+        bool themeEntries(const std::vector<blb::zip_entry>& entries) {
+            for (const blb::zip_entry& entry : entries) {
+                const std::string& path = entry.name;
+                if (path == "theme.json" ||
+                    (path.ends_with("/theme.json") && std::count(path.begin(), path.end(), '/') == 1)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool themeArchive(const std::filesystem::path& file) {
+            static std::map<std::filesystem::path, bool> known;
+            auto found = known.find(file);
+            if (found != known.end()) {
+                return found->second;
+            }
+            bool theme = false;
+            auto zip = blb::zip_reader::open(file);
+            if (zip) {
+                auto entries = zip->entries();
+                theme = entries && themeEntries(*entries);
+            }
+            if (known.size() > 64) {
+                known.clear();
+            }
+            known[file] = theme;
+            return theme;
+        }
 
         struct Item {
             std::filesystem::path file;
@@ -239,6 +270,10 @@ namespace Drops {
                     modpack = true;
                 }
             }
+            if (!modpack && !packMeta && themeEntries(*entries)) {
+                item.kind = Kind::Theme;
+                return item;
+            }
             if (modpack) {
                 auto manifest = blb::modpack::read_modpack(file);
                 if (manifest) {
@@ -402,6 +437,19 @@ namespace Drops {
         }
 
         void act(const std::vector<Item>& found, const std::string& key, POINT point) {
+            bool onlyThemes = !found.empty();
+            for (const Item& item : found) {
+                if (item.kind == Kind::Theme) {
+                    if (handlers.openTheme) {
+                        handlers.openTheme(item.file);
+                    }
+                } else {
+                    onlyThemes = false;
+                }
+            }
+            if (onlyThemes) {
+                return;
+            }
             for (const Item& item : found) {
                 if (item.kind == Kind::Modpack) {
                     openModpack(item);
@@ -531,11 +579,17 @@ namespace Drops {
         int mods = 0;
         int packs = 0;
         int zips = 0;
+        int themes = 0;
         for (const std::filesystem::path& file : dragged) {
             std::string name = nameOf(file);
             mods += Mods::acceptsDrop(name) ? 1 : 0;
             packs += name.ends_with(".mrpack") ? 1 : 0;
-            zips += name.ends_with(".zip") ? 1 : 0;
+            bool zip = name.ends_with(".zip");
+            zips += zip ? 1 : 0;
+            themes += zip && themeArchive(file) ? 1 : 0;
+        }
+        if (themes > 0 && themes == (int) dragged.size()) {
+            return "松开以导入主题";
         }
 #if !defined(_WIN32)
         if (dragged.empty()) {

@@ -44,7 +44,7 @@ namespace ModChanges {
         std::map<std::string, bool> collapsed;
 
         uint32_t warningInk() {
-            return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+            return UiTheme::warningInk();
         }
 
         Layout layoutOf(const std::string& key) {

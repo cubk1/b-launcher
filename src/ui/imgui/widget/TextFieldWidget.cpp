@@ -59,7 +59,7 @@ void TextFieldWidget::paint() {
     if (isEditing) {
         UiRender::outline(boxX, boxY, boxW, boxH, corner, UiTheme::accent());
     } else if (isHovered) {
-        UiRender::outline(boxX, boxY, boxW, boxH, corner, UiTheme::outlineSoft());
+        UiRender::outline(boxX, boxY, boxW, boxH, corner, UiTheme::border(UiTheme::outlineSoft()));
     }
     if (isEditing) {
         InputWidget(NewUi::INPUT_TEXT)
