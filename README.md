@@ -42,9 +42,14 @@ nix run github:cubk1/b-launcher
 # The launcher uses the Java version that the game needs.
 # With programs.nix-ld.enable = true, the launcher can also download Java.
 # Feature switches in .override:
-#   textToSpeechSupport (default true): flite for the narrator of the game.
+#   textToSpeechSupport (default true on Linux): flite for the narrator of the game.
 #   gamemodeSupport (default false): gamemoderun for the wrapper setting of an instance. It also
 #     needs programs.gamemode.enable = true. For example .override { gamemodeSupport = true; }.
+
+# For macOS (aarch64-darwin): the same flake builds bin/b-launcher and "Applications/B Launcher.app".
+# The jdks and additionalPrograms of .override work as on NixOS. textToSpeechSupport and
+# gamemodeSupport are for Linux only, and additionalLibs has no effect.
+nix run github:cubk1/b-launcher
 ```
 
 ## Unix数据目录
