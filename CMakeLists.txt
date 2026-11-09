@@ -332,6 +332,16 @@ endif ()
 if (MSVC)
     set_target_properties(b-launcher PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif ()
+if (APPLE)
+    # The app bundle that Finder and Launchpad run, in <prefix>/Applications. The CI packages the
+    # cross-built binary with the same script.
+    install(CODE "
+        execute_process(
+            COMMAND sh \"${CMAKE_CURRENT_SOURCE_DIR}/cmake/package/macos-app.sh\"
+                    \"$<TARGET_FILE:b-launcher>\" \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/Applications\"
+                    \"${PROJECT_VERSION}\"
+            COMMAND_ERROR_IS_FATAL ANY)")
+endif ()
 if (UNIX AND NOT APPLE)
     include(GNUInstallDirs)
     install(TARGETS b-launcher RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
