@@ -29,6 +29,7 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/theme/ThemeStyle.h"
 #include "ui/imgui/value/Bind.h"
 #include "ui/imgui/widget/IconButtonWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
@@ -662,7 +663,7 @@ namespace LogWindow {
         }
 
         uint32_t amber() {
-            return UiTheme::isLight() ? 0xFFC27803u : 0xFFE8A33Du;
+            return UiTheme::warning();
         }
 
         uint32_t levelColor(GameLog::Level level) {
@@ -699,7 +700,7 @@ namespace LogWindow {
             if (state == Game::State::Preparing) {
                 return UiTheme::accent();
             }
-            return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
+            return UiTheme::success();
         }
 
         void tabs(float x, float limit) {
@@ -929,7 +930,7 @@ namespace LogWindow {
             Rect bar = barBounds();
             UiRender::shadow(bar.x, bar.y, bar.w, bar.h, 10.0f, 10.0f, 3.0f, UiTheme::shadow());
             UiRender::roundRect(bar.x, bar.y, bar.w, bar.h, 10.0f, UiTheme::surfaceRaised());
-            UiRender::outline(bar.x, bar.y, bar.w, bar.h, 10.0f, UiTheme::outlineSoft());
+            UiRender::outline(bar.x, bar.y, bar.w, bar.h, 10.0f, UiTheme::border(UiTheme::outlineSoft()));
             float x = bar.x + BAR_PAD;
             if (searchOpen) {
                 searchPart(x + 4.0f, bar.y);
@@ -986,7 +987,7 @@ namespace LogWindow {
             Rect area{x, y + 2.0f, pillWidth(text), ROW_H - 4.0f};
             UiRender::roundRect(area.x, area.y, area.w, area.h, 5.0f,
                                 action ? UiTheme::accentSoft(hot ? 90 : 50) : UiTheme::surfaceRaised());
-            UiRender::outline(area.x, area.y, area.w, area.h, 5.0f, UiTheme::outlineSoft());
+            UiRender::outline(area.x, area.y, area.w, area.h, 5.0f, UiTheme::border(UiTheme::outlineSoft()));
             UiRender::textY(text, x + 6.0f, y, ROW_H, action ? UiTheme::accentText() : UiTheme::textSecondary(),
                             UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             return area;
@@ -998,7 +999,7 @@ namespace LogWindow {
             float top = listTop();
             float bottom = listBottom();
             UiRender::roundRect(left, top, right - left, bottom - top, 10.0f, UiTheme::surface());
-            UiRender::outline(left, top, right - left, bottom - top, 10.0f, UiTheme::outlineSoft());
+            UiRender::outline(left, top, right - left, bottom - top, 10.0f, UiTheme::border(UiTheme::outlineSoft()));
             float viewTop = top + 4.0f;
             float view = viewHeight();
             float textX = left + 10.0f + GUTTER;
@@ -1134,7 +1135,7 @@ namespace LogWindow {
             Point last = selectionEnd();
             int blockFrom = std::min(anchor.column, caret.column);
             int blockTo = std::max(anchor.column, caret.column);
-            uint32_t selectedInk = (UiTheme::accent() & 0x00FFFFFFu) | (UiTheme::isLight() ? 0x47000000u : 0x66000000u);
+            uint32_t selectedInk = UiTheme::logSelection();
             float flash = std::clamp((float) (1.0 - (ImGui::GetTime() - copiedAt) / FLASH_TIME), 0.0f, 1.0f);
             if (flash > 0.0f) {
                 UiState::keepAnimating();
@@ -1574,6 +1575,7 @@ namespace LogWindow {
             window.setDarkMode(darkChrome);
         }
 #if defined(_WIN32)
+        window.setCornerRadius((int) std::lround(ThemeStyle::current().windowRadius));
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         if (window.preparingResize()) {

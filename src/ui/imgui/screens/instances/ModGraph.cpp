@@ -240,7 +240,7 @@ namespace ModGraph {
         }
 
         uint32_t warningInk() {
-            return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+            return UiTheme::warningInk();
         }
 
         uint32_t withAlpha(uint32_t rgba, float alpha) {
@@ -1018,7 +1018,7 @@ namespace ModGraph {
             uint32_t border = selected                                      ? accent
                     : missing(node)                                         ? withAlpha(UiTheme::danger(), 0.6f)
                     : node.kind == Kind::Added || change != nullptr || root ? withAlpha(accent, 0.6f)
-                                                                            : UiTheme::outlineSoft();
+                                                                            : UiTheme::border(UiTheme::outlineSoft());
             UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : 1.0f);
             if (mod != nullptr && !mod->missing.empty()) {
                 UiRender::circle(nx + w - 6.0f * zoom, ny + 6.0f * zoom, 3.2f * zoom, UiTheme::danger());
@@ -1168,7 +1168,7 @@ namespace ModGraph {
             UiRender::alphaMul = base;
             float solid = std::max(k, flight);
             UiRender::roundRect(x, y, w, h, radius, withAlpha(UiTheme::surfaceRaised(), solid));
-            UiRender::outline(x, y, w, h, radius, withAlpha(UiTheme::outlineSoft(), solid));
+            UiRender::outline(x, y, w, h, radius, withAlpha(UiTheme::border(UiTheme::outlineSoft()), solid));
 
             float iconSize = UiRender::lerp(24.0f, 20.0f * zoom, k);
             float iconX = UiRender::lerp(row.x + 14.0f, nx + 9.0f * zoom, k);
@@ -1468,7 +1468,7 @@ namespace ModGraph {
             UiRender::alphaMul = saved;
             UiRender::roundRect(area.x, area.y, area.w, area.h, radius, UiTheme::surface());
             UiRender::outline(area.x, area.y, area.w, area.h, radius,
-                              UiRender::mix(UiTheme::accent(), UiTheme::outlineSoft(), reveal));
+                              UiRender::mix(UiTheme::accent(), UiTheme::border(UiTheme::outlineSoft()), reveal));
             float content = std::clamp((reveal - 0.35f) / 0.65f, 0.0f, 1.0f);
             if (content <= 0.001f) {
                 return;
@@ -1759,7 +1759,7 @@ namespace ModGraph {
                 UiRender::roundRect(cx, cy, cw, ch, radius, withAlpha(UiTheme::textPrimary(), 0.03f));
             }
             UiRender::outline(cx, cy, cw, ch, radius,
-                              absent ? withAlpha(UiTheme::danger(), 0.45f) : UiTheme::outlineSoft());
+                              absent ? withAlpha(UiTheme::danger(), 0.45f) : UiTheme::border(UiTheme::outlineSoft()));
             if (cluster.hub < 0) {
                 std::string title = (cluster.title.empty() ? std::string("无前置依赖") : cluster.title) + "  " +
                         std::to_string(cluster.members.size());
@@ -1914,7 +1914,7 @@ namespace ModGraph {
         UiRender::alphaMul = savedTools * frame.nodes;
         UiRender::shadow(toolsX, toolsY, toolsW, toolsH, 10.0f, 12.0f, 4.0f, UiTheme::shadow());
         UiRender::roundRect(toolsX, toolsY, toolsW, toolsH, 10.0f, UiTheme::surface());
-        UiRender::outline(toolsX, toolsY, toolsW, toolsH, 10.0f, UiTheme::outlineSoft());
+        UiRender::outline(toolsX, toolsY, toolsW, toolsH, 10.0f, UiTheme::border(UiTheme::outlineSoft()));
         float toolX = toolsX + 4.0f;
         float toolY = toolsY + 4.0f;
         float middleX = fitArea.x - originX + fitArea.w * 0.5f;

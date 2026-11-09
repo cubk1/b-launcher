@@ -1,4 +1,5 @@
 #include "UiSound.h"
+#include "../theme/ThemeStyle.h"
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -26,6 +27,8 @@ namespace UiSound {
 
     namespace {
         std::vector<unsigned char> sounds[KIND_COUNT];
+        std::vector<unsigned char> defaults[KIND_COUNT];
+        bool themed[KIND_COUNT] = {};
         int requested = -1;
         bool requestedOwn = false;
 #if !defined(_WIN32)
@@ -113,6 +116,21 @@ namespace UiSound {
             return false;
         }
 
+        bool wave(const std::vector<unsigned char>& data) {
+            return data.size() >= 12 && std::memcmp(data.data(), "RIFF", 4) == 0 &&
+                    std::memcmp(data.data() + 8, "WAVE", 4) == 0;
+        }
+
+        void activate(Kind kind, const std::vector<unsigned char>& data) {
+#if defined(_WIN32)
+            PlaySoundW(nullptr, nullptr, 0);
+#endif
+            sounds[kind] = data;
+#if !defined(_WIN32)
+            decode(kind);
+#endif
+        }
+
         bool has(const std::string& label, std::initializer_list<const char*> words) {
             for (const char* word : words) {
                 if (label.find(word) != std::string::npos) {
@@ -128,10 +146,42 @@ namespace UiSound {
             return;
         }
         std::vector<unsigned char> data(wav, wav + size);
-        sounds[kind] = scale(data, volume) ? std::move(data) : std::vector<unsigned char>();
-#if !defined(_WIN32)
-        decode(kind);
-#endif
+        defaults[kind] = scale(data, volume) ? std::move(data) : std::vector<unsigned char>();
+        if (!themed[kind]) {
+            activate(kind, defaults[kind]);
+        }
+    }
+
+    bool theme(Kind kind, const unsigned char* wav, unsigned int size, float volume) {
+        if (kind < 0 || kind >= KIND_COUNT) {
+            return false;
+        }
+        std::vector<unsigned char> data(wav, wav + size);
+        if (!wave(data)) {
+            return false;
+        }
+        if (volume != 1.0f) {
+            scale(data, volume);
+        }
+        themed[kind] = true;
+        activate(kind, data);
+        return true;
+    }
+
+    void silence(Kind kind) {
+        if (kind < 0 || kind >= KIND_COUNT) {
+            return;
+        }
+        themed[kind] = true;
+        activate(kind, {});
+    }
+
+    void restore(Kind kind) {
+        if (kind < 0 || kind >= KIND_COUNT || (!themed[kind] && sounds[kind] == defaults[kind])) {
+            return;
+        }
+        themed[kind] = false;
+        activate(kind, defaults[kind]);
     }
 
     void request(Kind kind) {
@@ -149,7 +199,7 @@ namespace UiSound {
         int kind = requested;
         requested = -1;
         requestedOwn = false;
-        if (!enabled || kind < 0 || sounds[kind].empty()) {
+        if (!enabled || !ThemeStyle::sounds() || kind < 0 || sounds[kind].empty()) {
             return;
         }
 #if defined(_WIN32)

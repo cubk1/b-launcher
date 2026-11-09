@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/home/Homepage.h"
+#include "app/system/Customization.h"
 #include "app/system/AsyncTasks.h"
 #include "app/accounts/Accounts.h"
 #include "app/system/About.h"
@@ -106,8 +107,8 @@ namespace Homepage {
         float columnBottom = -1.0f;
 
         float logoFaint() {
-            return Appearance::backgroundImage() ? (UiTheme::isLight() ? 0.34f : 0.28f)
-                                                 : (UiTheme::isLight() ? 0.12f : 0.09f);
+            return UiTheme::scalar(Appearance::backgroundImage() ? UiTheme::LOGO_FAINT_IMAGE
+                                                                 : UiTheme::LOGO_FAINT_PLAIN);
         }
 
         struct View {
@@ -329,8 +330,10 @@ namespace Homepage {
                 return;
             }
             std::string address = kind == SOURCE_PRESET ? std::string(PRESETS[preset()].url)
-                    : kind == SOURCE_ANNOUNCEMENT       ? std::string(ANNOUNCEMENT_URL)
-                                                        : Ui::trim(url());
+                    : kind == SOURCE_ANNOUNCEMENT
+                    ? (Customization::announcement().empty() ? std::string(ANNOUNCEMENT_URL)
+                                                             : Customization::announcement())
+                    : Ui::trim(url());
             if (address != view.location) {
                 view.doc.reset();
                 view.text.clear();
@@ -620,9 +623,9 @@ namespace Homepage {
         }
 
         void drawModal(bool blocked) {
-            float panelX = MainWindow::sidebarWidth();
-            float panelW = MainWindow::width() - panelX;
-            UiRender::roundRect(panelX, 0.0f, panelW, MainWindow::height(), 14.0f, 0x66000000u, 1 | 4);
+            MainWindow::Rect panel = MainWindow::panel();
+            float panelW = panel.w;
+            UiRender::roundRect(panel.x, panel.y, panelW, panel.h, 14.0f, UiTheme::modalScrim(), 1 | 4);
             float w = std::min(420.0f, panelW - 48.0f);
             std::vector<std::string> lines;
             size_t start = 0;
@@ -641,10 +644,10 @@ namespace Homepage {
             }
             const float lineH = 21.0f;
             float h = 20.0f + 24.0f + 8.0f + lines.size() * lineH + 18.0f + Page::FIELD_H + 18.0f;
-            float x = panelX + (panelW - w) * 0.5f;
-            float y = std::max(20.0f, (MainWindow::height() - h) * 0.5f);
+            float x = panel.x + (panelW - w) * 0.5f;
+            float y = std::max(panel.y + 20.0f, panel.y + (panel.h - h) * 0.5f);
             UiRender::roundRect(x, y, w, h, 12.0f, UiTheme::surface());
-            UiRender::outline(x, y, w, h, 12.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
             UiRender::textY(modal.title, x + 20.0f, y + 20.0f, 24.0f, UiTheme::textPrimary(), UiFont::BOLD, 15.0f);
             float ty = y + 20.0f + 24.0f + 8.0f;
             for (const std::string& line : lines) {
@@ -788,7 +791,7 @@ namespace Homepage {
     }
 
     bool launchShown() {
-        return source() == SOURCE_NONE && views.size() <= 1 && HomeWidgets::enabled(HomeWidgets::LAUNCH);
+        return source() == SOURCE_NONE && views.size() <= 1 && HomeWidgets::launchWidget();
     }
 
     bool column(float& top, float& bottom) {
@@ -812,8 +815,9 @@ namespace Homepage {
         }
         bool announcement = source() == SOURCE_ANNOUNCEMENT;
         if (announcement || (views.size() <= 1 && source() == SOURCE_NONE)) {
-            float panelLeft = MainWindow::sidebarWidth();
-            float panelRight = MainWindow::width();
+            MainWindow::Rect panel = MainWindow::panel();
+            float panelLeft = panel.x;
+            float panelRight = panel.x + panel.w;
             float cx = (panelLeft + panelRight) * 0.5f;
             bool covered = blocked || modal.open;
             if (!announcement) {
@@ -822,8 +826,7 @@ namespace Homepage {
                 float columnX = cx - columnW * 0.5f;
                 float floor = listH > 0.0f ? bottom - reserve : bottom;
                 float gap = listH > 0.0f ? QUICK_GAP : 0.0f;
-                bool logo =
-                        !HomeWidgets::enabled(HomeWidgets::LAUNCH) && floor - top - listH - gap >= LOGO_MIN + TOP_PAD;
+                bool logo = !HomeWidgets::launchWidget() && floor - top - listH - gap >= LOGO_MIN + TOP_PAD;
                 if (logo || listH <= 0.0f) {
                     float size = std::clamp(std::min(panelRight - panelLeft, floor - top - listH - gap) * 0.46f,
                                             LOGO_MIN, 360.0f);

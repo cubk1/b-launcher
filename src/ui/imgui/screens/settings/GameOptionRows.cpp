@@ -85,7 +85,7 @@ namespace GameOptionRows {
         if (text.empty()) {
             return;
         }
-        uint32_t color = running ? (UiTheme::isLight() ? 0xFFC27803u : 0xFFE8A33Du) : UiTheme::textMuted();
+        uint32_t color = running ? UiTheme::warning() : UiTheme::textMuted();
         float w = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
         UiRender::textY(text, Page::right() - 2.0f - w, y + 2.0f, 16.0f, color, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
     }

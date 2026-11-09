@@ -21,6 +21,7 @@ namespace Drops {
         std::function<bool()> accepting;
         std::function<void(const std::string& target, const std::vector<std::filesystem::path>& mods, int x, int y)>
                 placed;
+        std::function<void(const std::filesystem::path& file)> openTheme;
     };
 
     // Takes the files dropped on window: a modpack is set up as a new instance, mods, resource packs and shader packs

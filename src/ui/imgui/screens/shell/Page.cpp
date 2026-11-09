@@ -4,6 +4,9 @@
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/theme/ThemeStyle.h"
+#include "ui/imgui/screens/theme/ThemeEffects.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiSound.h"
@@ -58,6 +61,10 @@ namespace Page {
         std::vector<std::string>* collected = nullptr;
 
         float currentLeft = -1.0f;
+    }
+
+    float top() {
+        return MainWindow::contentTop() + 10.0f;
     }
 
     float left() {
@@ -117,14 +124,14 @@ namespace Page {
     void card(float x, float y, float w, float h) {
         cardTop = y;
         cardBottom = y + h;
-        UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::surface());
-        UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::outlineSoft());
+        ThemePaint::fill(ThemePaintSpec::CARD, x, y, w, h, CARD_RADIUS, 0xF, UiTheme::surface());
+        UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::border(UiTheme::outlineSoft()));
     }
 
     void listCard(float x, float y, float w, float rowHeight, int rows) {
         card(x, y, w, rows * rowHeight);
         for (int i = 1; i < rows; i++) {
-            UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * rowHeight, UiTheme::outlineSoft());
+            UiRender::hLine(x + 14.0f, x + w - 14.0f, y + i * rowHeight, UiTheme::rowDivider(UiTheme::outlineSoft()));
         }
     }
 
@@ -251,6 +258,7 @@ namespace Page {
     }
 
     float buttonWidth(const std::string& text, int glyph) {
+        glyph = ThemeStyle::icons() ? glyph : 0;
         float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         return glyph != 0 ? 10.0f + BUTTON_ICON + BUTTON_ICON_GAP + textW + 12.0f : textW + 24.0f;
     }
@@ -261,18 +269,20 @@ namespace Page {
         float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 18.0f);
         uint32_t ink;
         if (primary) {
-            UiRender::roundRect(x, y, w, h, 7.0f, UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
-            ink = UiTheme::onAccent();
+            ThemePaint::primaryFill(x, y, w, h, 7.0f, 0.10f * hover);
+            ink = UiTheme::tokenOr(UiTheme::PRIMARY_TEXT, UiTheme::onAccent());
         } else {
             UiRender::roundRect(x, y, w, h, 7.0f, UiTheme::surfaceRaised());
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, w, h, 7.0f, UiTheme::overlay(Ui::round(14 * hover)));
             }
-            UiRender::outline(x, y, w, h, 7.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, h, 7.0f,
+                              UiTheme::border(UiTheme::tokenOr(UiTheme::BUTTON_OUTLINE, UiTheme::outlineSoft())));
             ink = UiTheme::textPrimary();
         }
+        ThemeEffects::button(id, primary ? "primary" : "button", x, y, w, h, 7.0f, 0xF, ink, hovered);
         float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-        if (glyph != 0) {
+        if (glyph != 0 && ThemeStyle::icons()) {
             float contentW = BUTTON_ICON + BUTTON_ICON_GAP + textW;
             float iconX = x + (w - contentW) * 0.5f;
             UiWidgets::iconBeside(Ui::glyph(glyph), iconX + BUTTON_ICON * 0.5f, text, UiFont::MEDIUM,

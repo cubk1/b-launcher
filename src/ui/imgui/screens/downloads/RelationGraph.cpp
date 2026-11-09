@@ -294,7 +294,7 @@ namespace RelationGraph {
                 UiRender::roundRect(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
                                     UiTheme::surface());
                 UiRender::outline(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
-                                  UiTheme::outlineSoft());
+                                  UiTheme::border(UiTheme::outlineSoft()));
             }
             uint32_t ink = active ? UiTheme::textPrimary() : hovered ? UiTheme::textSecondary() : UiTheme::textMuted();
             UiWidgets::icon(Ui::glyph(options[i].first), segmentX + SEGMENT * 0.5f, y + Page::FIELD_H * 0.5f, ink,

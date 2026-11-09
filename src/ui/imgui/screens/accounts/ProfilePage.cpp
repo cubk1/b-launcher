@@ -62,11 +62,11 @@ namespace ProfilePage {
         float measured = 0.0f;
 
         uint32_t success() {
-            return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
+            return UiTheme::success();
         }
 
         uint32_t warning() {
-            return UiTheme::isLight() ? 0xFFC27803u : 0xFFE8A33Du;
+            return UiTheme::warning();
         }
 
         std::string fit(const std::string& text, float size, float room) {
@@ -103,7 +103,7 @@ namespace ProfilePage {
         }
 
         float bodyTop() {
-            return Page::TOP + 40.0f;
+            return Page::top() + 40.0f;
         }
 
         float bodyBottom() {
@@ -523,7 +523,8 @@ namespace ProfilePage {
 
         bool microsoft(bool covered) {
             const Profiles::Profile& profile = Profiles::of(key);
-            if (Page::iconButton("accounts#profile#reload", 0xf2f1, "重新读取", Page::right() - 28.0f, Page::TOP - 2.0f,
+            if (Page::iconButton("accounts#profile#reload", 0xf2f1, "重新读取", Page::right() - 28.0f,
+                                 Page::top() - 2.0f,
                                  covered || !profile.working.empty() || profile.status == Profiles::Status::Loading)) {
                 Profiles::reload(key);
             }
@@ -771,8 +772,8 @@ namespace ProfilePage {
         bool littleskin(bool covered) {
             const LittleSkin::State& state = LittleSkin::of(key);
             bool loaded = state.status == LittleSkin::Status::Ready || state.status == LittleSkin::Status::Failed;
-            if (Page::iconButton("accounts#profile#reload", 0xf2f1, "重新读取", Page::right() - 28.0f, Page::TOP - 2.0f,
-                                 covered || !loaded || !state.working.empty())) {
+            if (Page::iconButton("accounts#profile#reload", 0xf2f1, "重新读取", Page::right() - 28.0f,
+                                 Page::top() - 2.0f, covered || !loaded || !state.working.empty())) {
                 LittleSkin::reload(key);
             }
             switch (state.status) {
@@ -849,12 +850,13 @@ namespace ProfilePage {
         if (account == nullptr) {
             return false;
         }
-        if (Page::iconButton("accounts#profile#back", 0xf053, "返回", Page::left() - 6.0f, Page::TOP - 2.0f, covered)) {
+        if (Page::iconButton("accounts#profile#back", 0xf053, "返回", Page::left() - 6.0f, Page::top() - 2.0f,
+                             covered)) {
             stopEditing();
             Profiles::forgetName(key);
             return false;
         }
-        Page::title("用户资料", Page::left() + 28.0f, Page::TOP);
+        Page::title("用户资料", Page::left() + 28.0f, Page::top());
         if (account->type == blb::auth::account_type::microsoft) {
             return microsoft(covered);
         }

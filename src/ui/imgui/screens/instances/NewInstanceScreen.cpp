@@ -23,6 +23,7 @@
 #include "ui/imgui/panel/UiSound.h"
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
+#include "ui/imgui/screens/theme/ThemePaint.h"
 #include "ui/imgui/panel/UiWidgets.h"
 #include "ui/imgui/value/Bind.h"
 #include "ui/imgui/value/Values.h"
@@ -171,7 +172,7 @@ namespace NewInstanceScreen {
             float lead = loading ? 24.0f : 0.0f;
             float room = std::max(120.0f, Page::width() - 80.0f) - lead;
             std::vector<std::string> lines = UiFont::wrap(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, room);
-            float y = Page::TOP + 110.0f;
+            float y = Page::top() + 110.0f;
             for (size_t i = 0; i < lines.size(); i++) {
                 float w = UiFont::width(lines[i], UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
                 float shift = i == 0 ? lead : 0.0f;
@@ -246,7 +247,8 @@ namespace NewInstanceScreen {
             for (int i = first; i < last; i++) {
                 float rowY = y0 + i * LIST_ROW;
                 if (i > 0) {
-                    UiRender::hLine(Page::left() + 14.0f, Page::right() - 14.0f, rowY, UiTheme::outlineSoft());
+                    UiRender::hLine(Page::left() + 14.0f, Page::right() - 14.0f, rowY,
+                                    UiTheme::rowDivider(UiTheme::outlineSoft()));
                 }
                 bool hovered = !blocked && NewUi::hit(Page::left(), rowY, Page::width(), LIST_ROW);
                 rowHover(id + "#" + std::to_string(i), Page::left(), rowY, Page::width(), LIST_ROW, hovered,
@@ -447,13 +449,13 @@ namespace NewInstanceScreen {
 
         void versionsStep() {
             bool blocked = NewUi::overlayCoversMouse();
-            Page::title("新建实例", Page::left(), Page::TOP);
+            Page::title("新建实例", Page::left(), Page::top());
             float refreshX = Page::right() - 28.0f;
-            if (Page::iconButton("new#refresh", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#refresh", 0xf2f1, "刷新", refreshX, Page::top() - 2.0f, blocked)) {
                 Catalog::refreshMinecraft();
             }
             float importX = refreshX - 32.0f;
-            if (Page::iconButton("new#import", 0xf56f, "导入整合包", importX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#import", 0xf56f, "导入整合包", importX, Page::top() - 2.0f, blocked)) {
                 std::vector<std::filesystem::path> picked =
                         Platform::pickFiles(Platform::userDirectory(), L"导入整合包", L"整合包", L"*.zip;*.mrpack");
                 if (!picked.empty()) {
@@ -462,13 +464,13 @@ namespace NewInstanceScreen {
             }
             float filterX = importX - 8.0f - 170.0f;
             SelectWidget filter("new#kinds", std::make_shared<KindChoice>());
-            filter.bounds(filterX, Page::TOP + 1.0f, 170.0f, FIELD_H).block(blocked);
+            filter.bounds(filterX, Page::top() + 1.0f, 170.0f, FIELD_H).block(blocked);
             filter.paint();
             const float searchW = 170.0f;
             float searchX = filterX - 8.0f - searchW;
             TextFieldWidget search(searchValue());
-            search.box(searchX, Page::TOP + 1.0f, searchW, FIELD_H)
-                    .bounds(searchX, Page::TOP + 1.0f, searchW, FIELD_H)
+            search.box(searchX, Page::top() + 1.0f, searchW, FIELD_H)
+                    .bounds(searchX, Page::top() + 1.0f, searchW, FIELD_H)
                     .block(blocked);
             search.paint();
             std::string query =
@@ -504,7 +506,7 @@ namespace NewInstanceScreen {
             }
             int rows = ((int) groups.size() + columns - 1) / columns;
             float contentH = 6.0f + rows * tileH + (rows - 1) * TILE_GAP + 8.0f;
-            Page::Scroll body("new#versions", Page::TOP + 40.0f, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("new#versions", Page::top() + 40.0f, MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool listBlocked = outside || blocked;
             float y0 = body.top - body.offset + 6.0f;
@@ -536,10 +538,10 @@ namespace NewInstanceScreen {
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * UiRender::lerp(0.45f, 1.0f, enabled);
             UiRender::shadow(x, y, BUTTON_W, BUTTON_H, 10.0f, 12.0f, 4.0f, UiTheme::shadow());
-            UiRender::roundRect(x, y, BUTTON_W, BUTTON_H, 10.0f,
-                                UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.10f * hover));
+            ThemePaint::primaryFill(x, y, BUTTON_W, BUTTON_H, 10.0f, 0.10f * hover);
             float labelW = UiFont::width(action, UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-            UiRender::textY(action, x + (BUTTON_W - labelW) * 0.5f, y, BUTTON_H, UiTheme::onAccent(), UiFont::MEDIUM,
+            UiRender::textY(action, x + (BUTTON_W - labelW) * 0.5f, y, BUTTON_H,
+                            UiTheme::tokenOr(UiTheme::PRIMARY_TEXT, UiTheme::onAccent()), UiFont::MEDIUM,
                             UiWidgets::TEXT_BODY);
             UiRender::alphaMul = savedAlpha;
 
@@ -591,7 +593,7 @@ namespace NewInstanceScreen {
                 Page::spinner(x + 9.0f, cy, 5.0f, UiTheme::accent());
             } else if (on) {
                 UiRender::roundRect(x, y, 18.0f, 18.0f, 5.0f,
-                                    UiRender::mix(UiTheme::accent(), 0xFFFFFFFFu, 0.12f * hover));
+                                    UiRender::mix(UiTheme::accent(), UiTheme::accentHover(), 0.12f * hover));
                 UiWidgets::icon(Ui::glyph(0xf00c), x + 9.0f, cy, UiTheme::onAccent(), 10.0f);
             } else {
                 UiRender::outline(x, y, 18.0f, 18.0f, 5.0f,
@@ -806,7 +808,7 @@ namespace NewInstanceScreen {
                     : localPack                     ? "返回"
                     : modpack                       ? "返回下载附加件"
                                                     : "重新选择版本";
-            if (Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
                 if (!editing.empty()) {
                     std::string key = editing;
                     reset();
@@ -824,20 +826,20 @@ namespace NewInstanceScreen {
             Page::title(!editing.empty()  ? std::string("修改加载器")
                                 : modpack ? std::string("安装整合包")
                                           : "新建 " + minecraft + " 实例",
-                        Page::left() + 30.0f, Page::TOP);
+                        Page::left() + 30.0f, Page::top());
             if (!editing.empty()) {
                 if (const Instances::Entry* entry = Instances::find(editing)) {
                     float nameX = Page::left() + 30.0f + UiFont::width("修改加载器", UiFont::MEDIUM, Page::TITLE_SIZE) +
                             10.0f;
                     UiRender::textY(UiFont::fitEnd(entry->info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                                    Page::right() - nameX),
-                                    nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    nameX, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
                                     UiWidgets::TEXT_CONTROL);
                 }
             }
 
             float buttonBottom = MainWindow::height() - BUTTON_MARGIN;
-            float bodyTop = Page::TOP + 54.0f;
+            float bodyTop = Page::top() + 54.0f;
             float bodyBottom = buttonBottom - BUTTON_H - 12.0f;
             settings(bodyTop, bodyBottom, 0.0f, blocked || readingLoaders || !loaderReadError.empty());
 
@@ -1041,13 +1043,13 @@ namespace NewInstanceScreen {
 
         void loaderStep() {
             bool blocked = NewUi::overlayCoversMouse();
-            if (Page::iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
                 steps.go(STEP_SETUP);
             }
             std::string label = Installer::loaderName(picking);
-            Page::title(label + " 版本", Page::left() + 30.0f, Page::TOP);
+            Page::title(label + " 版本", Page::left() + 30.0f, Page::top());
             float refreshX = Page::right() - 28.0f;
-            if (Page::iconButton("new#refresh2", 0xf2f1, "刷新", refreshX, Page::TOP - 2.0f, blocked)) {
+            if (Page::iconButton("new#refresh2", 0xf2f1, "刷新", refreshX, Page::top() - 2.0f, blocked)) {
                 Catalog::refreshLoader(picking, minecraft);
             }
 
@@ -1068,7 +1070,7 @@ namespace NewInstanceScreen {
             uint32_t image = Icons::loader(picking);
             const std::string current = chosen.count(picking) != 0 ? chosen.at(picking) : std::string();
             int clicked = list(
-                    "new#loader#" + std::to_string((int) picking), Page::TOP + 40.0f, MainWindow::height() - 14.0f,
+                    "new#loader#" + std::to_string((int) picking), Page::top() + 40.0f, MainWindow::height() - 14.0f,
                     versions.list.size(), [&](int i, float rowY) {
                         const blb::install::loader_version& version = versions.list[i];
                         if (image != 0) {

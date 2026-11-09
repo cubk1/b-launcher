@@ -197,7 +197,8 @@ namespace Compact {
             UiRender::roundRect(x, fieldY, w, FIELD_H, 8.0f, UiTheme::overlay(10));
             UiRender::outline(x, fieldY, w, FIELD_H, 8.0f,
                               focused ? UiTheme::accent()
-                                      : UiRender::mix(UiTheme::outlineSoft(), UiTheme::outline(), ring));
+                                      : UiRender::mix(UiTheme::border(UiTheme::outlineSoft()),
+                                                      UiTheme::border(UiTheme::outline()), ring));
             UiWidgets::icon(Ui::glyph(0xf002), x + INDENT + 6.0f, fieldY + FIELD_H * 0.5f,
                             focused ? UiTheme::textSecondary() : UiTheme::textFaint(), 11.0f);
             float closeX = x + w - 16.0f;
@@ -295,8 +296,7 @@ namespace Compact {
                 float savedAlpha = UiRender::alphaMul;
                 UiRender::alphaMul = savedAlpha * live;
                 UiRender::circle(iconX + ICON - 1.0f, iconY + ICON - 1.0f, 5.5f, UiTheme::surface());
-                UiRender::circle(iconX + ICON - 1.0f, iconY + ICON - 1.0f, 3.5f,
-                                 UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au);
+                UiRender::circle(iconX + ICON - 1.0f, iconY + ICON - 1.0f, 3.5f, UiTheme::success());
                 UiRender::alphaMul = savedAlpha;
             }
 

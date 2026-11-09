@@ -2,6 +2,7 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Textures.h"
+#include "app/system/Features.h"
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -58,7 +59,7 @@ namespace InstanceMods {
         }
 
         uint32_t warningInk() {
-            return UiTheme::isLight() ? 0xFFB36B00u : 0xFFF0B04Cu;
+            return UiTheme::warningInk();
         }
 
         uint32_t tint(uint32_t ink) {
@@ -112,7 +113,7 @@ namespace InstanceMods {
                     UiRender::roundRect(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
                                         UiTheme::surface());
                     UiRender::outline(segmentX + 2.0f, y + 2.0f, SEGMENT - 4.0f, Page::FIELD_H - 4.0f, 5.0f,
-                                      UiTheme::outlineSoft());
+                                      UiTheme::border(UiTheme::outlineSoft()));
                 }
                 uint32_t ink = active ? UiTheme::textPrimary()
                         : hovered     ? UiTheme::textSecondary()
@@ -163,8 +164,10 @@ namespace InstanceMods {
                     "mods#menu",
                     [key, file, homepage, hasChange, change, known, from, hit, modrinthUrl, wiki] {
                         MenuItems items;
-                        items.push_back(ActionMenuItem::make("切换版本", 0xf021,
-                                                             [key, file] { ModVersionPicker::open(key, file); }));
+                        if (Features::enabled(Features::MOD_UPDATES)) {
+                            items.push_back(ActionMenuItem::make("切换版本", 0xf021,
+                                                                 [key, file] { ModVersionPicker::open(key, file); }));
+                        }
                         if (hasChange) {
                             items.push_back(ActionMenuItem::make("撤销更改", 0xf0e2,
                                                                  [key, change] { ModManager::unstage(key, change); }));
@@ -368,12 +371,12 @@ namespace InstanceMods {
         }
 
         ModGraph::Area floatingArea() {
-            return ModGraph::Area{Page::left() - 8.0f, MainWindow::TITLE_HEIGHT + FLOAT_GAP, Page::width() + 16.0f,
+            return ModGraph::Area{Page::left() - 8.0f, MainWindow::contentTop() + FLOAT_GAP, Page::width() + 16.0f,
                                   FLOAT_H};
         }
 
         float barRowY() {
-            return Page::TOP + 40.0f;
+            return Page::top() + 40.0f;
         }
 
         float switchCentreX() {
@@ -387,8 +390,8 @@ namespace InstanceMods {
         bool toolbar(const Instances::Entry& entry, const Mods::List& list, float lift, bool blocked) {
             ModGraph::Area bar = floatingArea();
             float rowY = barRowY();
-            ModGraph::Area dock{Page::left() - 8.0f, Page::TOP - 8.0f, Page::width() + 16.0f,
-                                rowY + Page::FIELD_H + 8.0f - (Page::TOP - 8.0f)};
+            ModGraph::Area dock{Page::left() - 8.0f, Page::top() - 8.0f, Page::width() + 16.0f,
+                                rowY + Page::FIELD_H + 8.0f - (Page::top() - 8.0f)};
             if (lift > 0.001f) {
                 ModGraph::Area back = mix(dock, bar, lift);
                 float saved = UiRender::alphaMul;
@@ -397,21 +400,21 @@ namespace InstanceMods {
                 UiRender::blur(back.x, back.y, back.w, back.h, 12.0f, 8, true);
                 UiRender::roundRect(back.x, back.y, back.w, back.h, 12.0f,
                                     (UiTheme::surface() & 0x00FFFFFFu) | 0xD9000000u);
-                UiRender::outline(back.x, back.y, back.w, back.h, 12.0f, UiTheme::outlineSoft());
+                UiRender::outline(back.x, back.y, back.w, back.h, 12.0f, UiTheme::border(UiTheme::outlineSoft()));
                 UiRender::alphaMul = saved;
             }
             float cy = bar.y + bar.h * 0.5f;
             bool back = Page::iconButton("mods#back", 0xf053, "返回",
                                          UiRender::lerp(Page::left() - 4.0f, bar.x + 6.0f, lift),
-                                         UiRender::lerp(Page::TOP - 2.0f, cy - 14.0f, lift), blocked);
+                                         UiRender::lerp(Page::top() - 2.0f, cy - 14.0f, lift), blocked);
             const char* title = "模组";
             float titleW = UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE);
             float titleX = UiRender::lerp(Page::left() + 30.0f, bar.x + 38.0f, lift);
-            float titleY = UiRender::lerp(Page::TOP, bar.y + (bar.h - 24.0f) * 0.5f, lift);
+            float titleY = UiRender::lerp(Page::top(), bar.y + (bar.h - 24.0f) * 0.5f, lift);
             UiRender::textY(title, titleX, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
 
             float refreshX = UiRender::lerp(Page::right() - 28.0f, bar.x + bar.w - 6.0f - 28.0f, lift);
-            float iconY = UiRender::lerp(Page::TOP - 2.0f, cy - 14.0f, lift);
+            float iconY = UiRender::lerp(Page::top() - 2.0f, cy - 14.0f, lift);
             if (Page::iconButton("mods#refresh", 0xf2f1, "刷新", refreshX, iconY, blocked)) {
                 Mods::scan(entry.key);
             }
@@ -422,7 +425,7 @@ namespace InstanceMods {
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
             float addX = folderX - 8.0f - addW;
-            if (Page::button("mods#add", add, addX, UiRender::lerp(Page::TOP + 1.0f, cy - Page::FIELD_H * 0.5f, lift),
+            if (Page::button("mods#add", add, addX, UiRender::lerp(Page::top() + 1.0f, cy - Page::FIELD_H * 0.5f, lift),
                              addW, false, blocked, 0xf067)) {
                 addMods(entry);
             }
@@ -432,7 +435,8 @@ namespace InstanceMods {
                 float nameX = Page::left() + 30.0f + titleW + 10.0f;
                 UiRender::textY(UiFont::fitEnd(entry.info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                                std::max(0.0f, addX - 12.0f - nameX)),
-                                nameX, Page::TOP, 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                                nameX, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
                 UiRender::alphaMul = saved;
             }
 
@@ -555,9 +559,9 @@ namespace InstanceMods {
             body(key, list, query, top, listBottom, covered || !listReady);
         }
         if (unfold > 0.0f) {
-            float sideW = MainWindow::sidebarWidth();
+            MainWindow::Rect panel = MainWindow::panel();
             ModGraph::Area from{Page::left(), top, Page::width(), listBottom - top};
-            ModGraph::Area to{sideW, 0.0f, MainWindow::width() - sideW, MainWindow::height()};
+            ModGraph::Area to{panel.x, panel.y, panel.w, panel.h};
             ModGraph::Frame frame;
             frame.clip = mix(from, to, expand);
             frame.layout = to;
@@ -572,7 +576,7 @@ namespace InstanceMods {
             ModGraph::Area bar = floatingArea();
             frame.top = bar.y + bar.h + 8.0f;
             frame.bottom = changesH > 0.0f ? MainWindow::height() - listBottom + 8.0f : 0.0f;
-            frame.inputTop = MainWindow::TITLE_HEIGHT;
+            frame.inputTop = MainWindow::contentTop();
             frame.holes.push_back(bar);
             if (changesH > 0.0f) {
                 frame.holes.push_back(ModGraph::Area{Page::left(), listBottom + 10.0f, Page::width(), changesH});

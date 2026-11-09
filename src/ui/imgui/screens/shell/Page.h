@@ -8,7 +8,6 @@ namespace Page {
 
     constexpr float GUTTER = 28.0f;
     constexpr float RIGHT_MARGIN = 28.0f;
-    constexpr float TOP = 54.0f;
     constexpr float ROW_H = 40.0f;
     constexpr float TITLE_SIZE = 18.0f;
     constexpr float CAPTION_H = 26.0f;
@@ -17,6 +16,7 @@ namespace Page {
     constexpr float FIELD_Y = 8.0f;
     constexpr float SWATCH_Y = 12.0f;
 
+    float top();
     float left();
     float right();
     float width();

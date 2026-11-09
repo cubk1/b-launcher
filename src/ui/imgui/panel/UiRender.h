@@ -47,6 +47,8 @@ namespace UiRender {
     void shell(float x, float y, float w, float h, float split, float radius, uint32_t plateRgba, uint32_t mainRgba,
                float outerRadius);
     void shell(float x, float y, float w, float h, float split, float radius, uint32_t plateRgba, uint32_t mainRgba);
+    void shellPanes(const float plate[4], int plateCorners, const float main[4], int mainCorners, float inner,
+                    float outer, uint32_t plateRgba, uint32_t mainRgba);
     void cliIcon(float cx, float cy, float size, int kind, uint32_t rgba);
     void checkMark(float cx, float cy, float size, float thickness, uint32_t rgba);
     void outlineFade(float x, float y, float w, float h, float radius, uint32_t rgba, float thickness, float fadeEnd);

@@ -33,7 +33,8 @@ void ShortcutWidget::paint() {
     uint32_t fill = UiRender::over(UiTheme::overlay(Ui::round(18 * lit)), UiTheme::surfaceSunken());
     UiRender::roundRect(x, y, w, h, 5.0f, fill);
     UiRender::outline(x, y, w, h, 5.0f,
-                      capturing ? UiTheme::accent() : UiRender::over(UiTheme::overlay(10), UiTheme::surfaceSunken()),
+                      capturing ? UiTheme::accent()
+                                : UiTheme::border(UiRender::over(UiTheme::overlay(10), UiTheme::surfaceSunken())),
                       0xF, 0.5f);
     std::vector<int> keys = value->get();
     std::string text;

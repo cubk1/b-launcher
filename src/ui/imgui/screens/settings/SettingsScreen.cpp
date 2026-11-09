@@ -2,6 +2,8 @@
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
+#include "ui/imgui/screens/shell/ShellLayout.h"
+#include "ui/imgui/screens/theme/ThemeRuntime.h"
 #include "ui/imgui/screens/shell/Background.h"
 #include "ui/imgui/screens/shell/Compact.h"
 #include "ui/imgui/screens/shell/Dialog.h"
@@ -12,6 +14,8 @@
 #include "app/downloads/DownloadSources.h"
 #include "app/downloads/ModNames.h"
 #include "app/system/DiskScan.h"
+#include "app/system/Customization.h"
+#include "app/system/Features.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "app/system/Updates.h"
@@ -30,6 +34,7 @@
 #include "ui/imgui/screens/home/QuickActions.h"
 #include "ui/imgui/screens/settings/GameOptionRows.h"
 #include "ui/imgui/screens/settings/KeyBindEditor.h"
+#include "ui/imgui/screens/settings/ThemeManager.h"
 #include "ui/imgui/screens/settings/ToolboxTab.h"
 #include "ui/imgui/screens/shell/Textures.h"
 #include "app/system/Network.h"
@@ -279,8 +284,9 @@ namespace SettingsScreen {
         }
 
         void backgroundFileRow(float y, bool blocked) {
-            imageFileRow({"settings#background", "背景图片文件", "默认图片", "恢复默认图片", Background::path(),
-                          Background::preparing(), Platform::pickImage, Background::setPath},
+            imageFileRow({"settings#background", "背景图片文件", Background::themeImage() ? "主题图片" : "默认图片",
+                          "恢复默认图片", Background::path(), Background::preparing(), Platform::pickImage,
+                          Background::setPath},
                          y, blocked);
         }
 
@@ -291,12 +297,7 @@ namespace SettingsScreen {
         }
 
         int lookCount() {
-#if defined(_WIN32)
-            int count = 7;
-#else
-            int count = 6;
-#endif
-            return Appearance::backgroundImage() ? count + 1 : count;
+            return Appearance::backgroundImage() ? 7 : 6;
         }
 
         int windowCount() {
@@ -339,72 +340,28 @@ namespace SettingsScreen {
                     [](bool on) { Appearance::setSystemFrame(on); }, y, blocked);
         }
 
-#if defined(_WIN32)
-        void uiStyleRow(float y, bool blocked) {
-            const std::string label = "界面风格";
-            Page::label(label, y);
-            float labelEnd = mainX() + 16.0f + UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
-            auto uiStyle = std::make_shared<ModeBinding>(
-                    "settings#uiStyle", [] { return std::string(UiStyles::current().label); },
-                    [](const std::string& option) {
-                        for (const UiStyles::Style& candidate : UiStyles::all()) {
-                            if (option == candidate.label) {
-                                UiStyles::set(candidate.key);
-                            }
-                        }
-                    },
-                    [] {
-                        std::vector<std::string> options;
-                        for (const UiStyles::Style& candidate : UiStyles::all()) {
-                            options.push_back(candidate.label);
-                        }
-                        return options;
-                    });
-            select("settings#uiStyle", uiStyle, y, blocked);
-            if (&UiStyles::current() != &UiStyles::running()) {
-                std::string unshown;
-                restartControls("settings#restart", Page::controlRight() - SELECT_W - 8.0f, labelEnd, y, blocked,
-                                unshown);
-            }
-        }
-#endif
-
         void lookRows(float y, bool blocked) {
-#if defined(_WIN32)
-            uiStyleRow(y, blocked);
-            y += Page::ROW_H;
-#endif
-
-            Page::label("主题", y);
-            auto theme = std::make_shared<ModeBinding>(
-                    "settings#theme", [] { return std::string(Appearance::theme().label); },
-                    [](const std::string& option) {
-                        for (const Appearance::Theme& candidate : Appearance::themes()) {
-                            if (option == candidate.label) {
-                                Appearance::setTheme(candidate.key);
-                            }
-                        }
-                    },
-                    [] {
-                        std::vector<std::string> options;
-                        for (const Appearance::Theme& candidate : Appearance::themes()) {
-                            options.push_back(candidate.label);
-                        }
-                        return options;
-                    });
-            float themeX = Page::controlRight() - SELECT_W;
-            select("settings#theme", theme, y, blocked);
+            Page::label("主题色", y);
             auto accent = std::make_shared<ColorBinding>(
                     "settings#accent", [] { return Appearance::accent(); },
                     [](uint32_t argb) { Appearance::setAccent(argb); });
             accent->resetTo(Appearance::defaultAccent());
-            float swatchX = themeX - 12.0f - 15.0f;
+            std::string picker = ThemeRuntime::accentPicker();
+            accent->opaque = true;
+            accent->hueOnly = picker == "hue";
+            bool locked = picker == "none";
+            float swatchX = Page::controlRight() - 15.0f;
+            float savedAlpha = UiRender::alphaMul;
+            if (locked) {
+                UiRender::alphaMul = savedAlpha * 0.45f;
+            }
             SwatchWidget swatch(accent);
             swatch.swatchAt(swatchX, y + Page::SWATCH_Y)
-                    .picker(swatchX - 214.0f - 12.0f, y - 120.0f)
+                    .picker(swatchX - 214.0f - 12.0f, y + (accent->hueOnly ? 7.0f : -120.0f))
                     .hoverRing()
-                    .block(blocked);
+                    .block(blocked || locked);
             swatch.paint();
+            UiRender::alphaMul = savedAlpha;
             y += Page::ROW_H;
 
             Page::label("界面缩放", y);
@@ -516,7 +473,7 @@ namespace SettingsScreen {
         }
 
         void cardPage(const std::string& id, int rows, bool covered, const std::function<void(float, bool)>& paint) {
-            Page::Scroll body(id, Page::TOP, MainWindow::height() - 14.0f, rows * Page::ROW_H);
+            Page::Scroll body(id, Page::top(), MainWindow::height() - 14.0f, rows * Page::ROW_H);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -540,6 +497,8 @@ namespace SettingsScreen {
         constexpr int SECTION_JAVA = 10;
         constexpr int SECTION_TOOLS = 11;
         constexpr int SECTION_ABOUT = 12;
+        constexpr int SECTION_THEMES = 13;
+        constexpr int SECTION_FEATURES = 14;
         PageTransition sections(SECTION_LAUNCH);
 
         constexpr int GROUP_NONE = -1;
@@ -567,14 +526,108 @@ namespace SettingsScreen {
                 {SECTION_PATCH, 0xf462, "补丁", GROUP_GAME},
                 {SECTION_FOLDERS, 0xf07b, "游戏目录", GROUP_GAME},
                 {SECTION_LOOK, 0xf53f, "外观", GROUP_LAUNCHER},
+                {SECTION_THEMES, 0xf1fc, "主题", GROUP_LAUNCHER},
                 {SECTION_WINDOW, 0xf2d0, "窗口", GROUP_LAUNCHER},
                 {SECTION_HOME, 0xf015, "主页", GROUP_LAUNCHER},
                 {SECTION_NETWORK, 0xf019, "下载与网络", GROUP_LAUNCHER},
                 {SECTION_RESET, 0xf2f1, "引导与重置", GROUP_LAUNCHER},
+                {SECTION_FEATURES, 0xf070, "功能隐藏", GROUP_LAUNCHER},
                 {SECTION_JAVA, 0xf0f4, "Java 管理", GROUP_NONE},
                 {SECTION_TOOLS, 0xf0ad, "工具箱", GROUP_NONE},
                 {SECTION_ABOUT, 0xf05a, "关于", GROUP_NONE},
         };
+
+        Features::Feature featureOf(int section) {
+            switch (section) {
+                case SECTION_LAUNCH: return Features::SECTION_LAUNCH;
+                case SECTION_OPTIONS: return Features::SECTION_OPTIONS;
+                case SECTION_KEYS: return Features::SECTION_KEYS;
+                case SECTION_PATCH: return Features::SECTION_PATCH;
+                case SECTION_FOLDERS: return Features::SECTION_FOLDERS;
+                case SECTION_LOOK: return Features::SECTION_LOOK;
+                case SECTION_THEMES: return Features::THEMES;
+                case SECTION_WINDOW: return Features::SECTION_WINDOW;
+                case SECTION_HOME: return Features::SECTION_HOME;
+                case SECTION_NETWORK: return Features::SECTION_NETWORK;
+                case SECTION_RESET: return Features::SECTION_RESET;
+                case SECTION_JAVA: return Features::JAVA;
+                case SECTION_TOOLS: return Features::TOOLBOX;
+                default: return Features::FEATURE_COUNT;
+            }
+        }
+
+        bool tabShown(int section) {
+            Features::Feature feature = featureOf(section);
+            return feature == Features::FEATURE_COUNT || Features::enabled(feature);
+        }
+
+        std::vector<const Tab*> shownTabs() {
+            std::vector<const Tab*> out;
+            for (const Tab& tab : TABS) {
+                if (tabShown(tab.section)) {
+                    out.push_back(&tab);
+                }
+            }
+            return out;
+        }
+
+        void featuresSection(bool covered) {
+            const char* const captions[3] = {"页面", "功能", "设置分区"};
+            std::vector<const Features::Info*> groups[3];
+            for (const Features::Info& info : Features::all()) {
+                groups[info.group].push_back(&info);
+            }
+            float contentH = Page::CAPTION_H + Page::ROW_H;
+            for (const auto& group : groups) {
+                contentH += Page::CAPTION_H + (float) group.size() * Page::ROW_H + Page::GAP;
+            }
+            Page::Scroll body("settings#features", Page::top(), MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            for (int g = 0; g < 3; g++) {
+                Page::caption(captions[g], y);
+                y += Page::CAPTION_H;
+                Page::card(y, (int) groups[g].size());
+                for (const Features::Info* info : groups[g]) {
+                    Page::label(info->label, y);
+                    Features::Feature id = info->id;
+                    if (Features::locked(id)) {
+                        std::string tag = "已锁定";
+                        float w = UiFont::width(tag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+                        Page::tag(tag, Page::controlRight() - w, y, UiTheme::surfaceRaised(), UiTheme::textMuted());
+                    } else {
+                        toggle(
+                                std::string("settings#feature#") + info->key, [id] { return !Features::hidden(id); },
+                                [id](bool on) { Features::setHidden(id, !on); }, y, blocked);
+                    }
+                    y += Page::ROW_H;
+                }
+                y += Page::GAP;
+            }
+            Page::caption("定制版", y);
+            y += Page::CAPTION_H;
+            Page::card(y, 1);
+            Page::label("导出定制版", y);
+            std::string text = "选择定制包文件夹";
+            float w = Page::buttonWidth(text, 0xf07c);
+            if (Page::button("settings#makePack", text, Page::controlRight() - w, y + Page::FIELD_Y, w, false, blocked,
+                             0xf07c)) {
+                if (std::optional<std::filesystem::path> folder = Platform::pickFolder(std::filesystem::path())) {
+                    std::filesystem::path suggested = Platform::desktopDirectory() / "b-launcher-custom.exe";
+                    if (std::optional<std::filesystem::path> target =
+                                Platform::pickSaveFile(suggested, L"导出定制版")) {
+                        std::string error;
+                        if (Customization::makePack(*folder, *target, error) == 0) {
+                            Notices::add(Notices::Kind::Done, "已导出定制版", 3000);
+                        } else {
+                            Notices::add(Notices::Kind::Failed, "导出定制版失败：" + error, 5000);
+                        }
+                    }
+                }
+            }
+            body.end();
+        }
 
         int groupOf(int section) {
             for (const Tab& tab : TABS) {
@@ -639,15 +692,22 @@ namespace SettingsScreen {
                 {SECTION_FOLDERS, "实例列表", nullptr},
 #if defined(_WIN32)
                 {SECTION_FOLDERS, "搜索硬盘上的 .minecraft", "扫描 游戏目录"},
-                {SECTION_LOOK, "界面风格", "EXUI"},
 #endif
-                {SECTION_LOOK, "主题", "强调色 颜色 深色 浅色"},
+                {SECTION_LOOK, "主题色", "强调色 颜色 主色"},
                 {SECTION_LOOK, "界面缩放", "缩放 大小"},
                 {SECTION_LOOK, "模组名称", "中文名 原名"},
                 {SECTION_LOOK, "账户头像", "皮肤 上半身 头部"},
                 {SECTION_LOOK, "背景图片", nullptr},
                 {SECTION_LOOK, "背景图片文件", nullptr},
                 {SECTION_LOOK, "界面音效", "声音"},
+#if defined(_WIN32)
+                {SECTION_THEMES, nullptr, "忘却的旋律 界面风格 EXUI"},
+#endif
+                {SECTION_THEMES, "布局", "侧栏 顶栏 启动栏"},
+                {SECTION_THEMES, "主题动画", "动态 渐变"},
+                {SECTION_THEMES, "动画帧率", "FPS 帧数"},
+                {SECTION_THEMES, "主题字体大小", "字号 字体"},
+                {SECTION_THEMES, "自定义着色器", "GLSL shader 着色器"},
                 {SECTION_WINDOW, "紧凑模式", "托盘 迷你 小窗 Ctrl+M"},
                 {SECTION_WINDOW, "记住窗口大小", nullptr},
                 {SECTION_WINDOW, "允许多个启动器同时开启", "多开 单实例"},
@@ -750,7 +810,7 @@ namespace SettingsScreen {
 
         void searchField(bool covered) {
             float x = Page::left();
-            float y = Page::TOP;
+            float y = Page::top();
             bool filled = !typedSearch().empty();
             float clearX = x + SIDE_W - 14.0f;
             bool clearOver = filled && !covered && NewUi::hit(clearX - 10.0f, y, 20.0f, SEARCH_H);
@@ -790,7 +850,7 @@ namespace SettingsScreen {
 
         void emptyState(int glyph, const std::string& text) {
             float cx = Page::columnLeft() + Page::columnWidth() * 0.5f;
-            float cy = Page::TOP + (MainWindow::height() - 14.0f - Page::TOP) * 0.38f;
+            float cy = Page::top() + (MainWindow::height() - 14.0f - Page::top()) * 0.38f;
             UiWidgets::icon(Ui::glyph(glyph), cx, cy - 16.0f, UiTheme::textFaint(), 22.0f);
             Page::centredText(
                     UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::columnWidth() - 32.0f), cx,
@@ -804,7 +864,7 @@ namespace SettingsScreen {
                 return;
             }
             int count = (int) hits.size();
-            Page::Scroll body("settings#results", Page::TOP, MainWindow::height() - 14.0f, count * Page::ROW_H);
+            Page::Scroll body("settings#results", Page::top(), MainWindow::height() - 14.0f, count * Page::ROW_H);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -838,12 +898,13 @@ namespace SettingsScreen {
 
         void rail(bool covered) {
             searchField(covered);
-            float y = Page::TOP + SEARCH_H + 10.0f;
+            float y = Page::top() + SEARCH_H + 10.0f;
             int open = groupOf(sections.page);
-            size_t count = std::size(TABS);
+            std::vector<const Tab*> tabs = shownTabs();
+            size_t count = tabs.size();
             size_t i = 0;
             while (i < count) {
-                const Tab& first = TABS[i];
+                const Tab& first = *tabs[i];
                 if (first.group == GROUP_NONE) {
                     tabItem(first, y, covered);
                     y += NAV_STEP;
@@ -851,7 +912,7 @@ namespace SettingsScreen {
                     continue;
                 }
                 size_t end = i;
-                while (end < count && TABS[end].group == first.group) {
+                while (end < count && tabs[end]->group == first.group) {
                     end++;
                 }
                 std::string key = "settings#group#" + std::to_string(first.group);
@@ -870,7 +931,7 @@ namespace SettingsScreen {
                     float savedAlpha = UiRender::alphaMul;
                     UiRender::alphaMul = savedAlpha * shown;
                     for (size_t k = i; k < end; k++) {
-                        tabItem(TABS[k], y + (float) (k - i) * NAV_STEP, covered || shown < 0.999f);
+                        tabItem(*tabs[k], y + (float) (k - i) * NAV_STEP, covered || shown < 0.999f);
                     }
                     UiRender::alphaMul = savedAlpha;
                     UiRender::unscissor();
@@ -1123,7 +1184,7 @@ namespace SettingsScreen {
             const Instances::Source* found = Instances::source(source);
             std::string title = found != nullptr ? found->label : std::string("游戏目录");
             float contentH = Page::CAPTION_H + GameOptionRows::COUNT * Page::ROW_H;
-            Page::Scroll body("settings#optionsPage", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#optionsPage", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1144,7 +1205,7 @@ namespace SettingsScreen {
             if (foundCount > 0) {
                 contentH += Page::GAP + Page::CAPTION_H + foundCount * Page::ROW_H;
             }
-            Page::Scroll body("settings#folders", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#folders", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1177,7 +1238,7 @@ namespace SettingsScreen {
             const Instances::Source* found = Instances::source(source);
             std::string note = (found != nullptr ? found->label : std::string("游戏目录")) +
                     " 里共用的按键，版本独立的实例在实例设置里修改";
-            KeyBindEditor::draw("settings#keys", shared, false, note, Page::TOP, covered);
+            KeyBindEditor::draw("settings#keys", shared, false, note, Page::top(), covered);
         }
 
         class SavedServers final : public Choice {
@@ -1441,7 +1502,7 @@ namespace SettingsScreen {
 
         void networkSection(bool covered) {
             float contentH = 2 * Page::CAPTION_H + 6 * Page::ROW_H + Page::GAP;
-            Page::Scroll body("settings#network", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#network", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1489,26 +1550,26 @@ namespace SettingsScreen {
             bool loading = javas.status == Catalog::Status::Loading;
             std::string count = loading && javas.list.empty() ? std::string("正在查找…")
                                                               : "共 " + std::to_string(javas.list.size()) + " 个";
-            UiRender::textY(count, mainX() + 2.0f, Page::TOP, NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
+            UiRender::textY(count, mainX() + 2.0f, Page::top(), NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             float refreshX = Page::right() - 28.0f;
-            if (Page::iconButton("settings#java#refresh", 0xf2f1, "重新查找", refreshX, Page::TOP + 1.0f,
-                           covered || loading)) {
+            if (Page::iconButton("settings#java#refresh", 0xf2f1, "重新查找", refreshX, Page::top() + 1.0f,
+                                 covered || loading)) {
                 Catalog::refreshJava();
             }
 #if defined(_WIN32)
             float searchX = refreshX - 32.0f;
             bool diskRunning = DiskScan::status().state == DiskScan::State::Running;
             if (diskRunning) {
-                Page::spinner(searchX + 14.0f, Page::TOP + 15.0f, 6.0f, UiTheme::accent());
-            } else if (Page::iconButton("settings#java#disks", 0xf0a0, "全盘搜索", searchX, Page::TOP + 1.0f,
+                Page::spinner(searchX + 14.0f, Page::top() + 15.0f, 6.0f, UiTheme::accent());
+            } else if (Page::iconButton("settings#java#disks", 0xf0a0, "全盘搜索", searchX, Page::top() + 1.0f,
                                         covered || !DiskScan::anySelected())) {
                 startScan(DiskScan::Kind::Java, "settings#java#disks#bar");
             }
             float drivesX = searchX - 4.0f - DRIVE_W;
             bool javaScanning = scanning(DiskScan::Kind::Java);
             if (!javaScanning) {
-                driveSelect("settings#java#drives", drivesX, Page::TOP + 4.0f, covered || diskRunning);
+                driveSelect("settings#java#drives", drivesX, Page::top() + 4.0f, covered || diskRunning);
             }
 #else
             float drivesX = refreshX;
@@ -1517,7 +1578,7 @@ namespace SettingsScreen {
             std::string add = "添加";
             float addW = Page::buttonWidth(add, 0xf067);
             float addX = drivesX - 8.0f - addW;
-            if (Page::button("settings#java#add", add, addX, Page::TOP + 4.0f, addW, false, covered, 0xf067)) {
+            if (Page::button("settings#java#add", add, addX, Page::top() + 4.0f, addW, false, covered, 0xf067)) {
                 if (std::optional<std::filesystem::path> picked = Platform::pickJava(std::filesystem::path())) {
                     Catalog::addJava(*picked);
                 }
@@ -1526,24 +1587,26 @@ namespace SettingsScreen {
             bool canDownload = JavaDownloads::available();
             float downloadW = canDownload ? Page::buttonWidth(download, 0xf019) : 0.0f;
             float downloadX = canDownload ? addX - 8.0f - downloadW : addX;
-            if (canDownload && Page::button("settings#java#download", download, downloadX, Page::TOP + 4.0f, downloadW, true, covered,
-                             0xf019)) {
+            if (canDownload &&
+                Page::button("settings#java#download", download, downloadX, Page::top() + 4.0f, downloadW, true,
+                             covered, 0xf019)) {
                 DownloadsScreen::openJava();
             }
             if (javaScanning) {
                 float barX = drivesX + 8.0f;
-                scanBar("settings#java#disks#bar", barX, Page::TOP + (NAV_ITEM_H - SCAN_BAR_H) * 0.5f, DRIVE_W - 16.0f);
+                scanBar("settings#java#disks#bar", barX, Page::top() + (NAV_ITEM_H - SCAN_BAR_H) * 0.5f,
+                        DRIVE_W - 16.0f);
                 const std::string& step = DiskScan::status().step;
                 float stepW = UiFont::width(step, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
                 float stepX = downloadX - 12.0f - stepW;
                 float countEnd = mainX() + 2.0f + UiFont::width(count, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + 12.0f;
                 if (stepX >= countEnd) {
-                    UiRender::textY(step, stepX, Page::TOP, NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                    UiRender::textY(step, stepX, Page::top(), NAV_ITEM_H, UiTheme::textMuted(), UiFont::MEDIUM,
                                     UiWidgets::TEXT_SMALL);
                 }
             }
 
-            float top = Page::TOP + 40.0f;
+            float top = Page::top() + 40.0f;
             float bottom = MainWindow::height() - 14.0f;
             if (javas.list.empty()) {
 #if defined(_WIN32)
@@ -1629,7 +1692,7 @@ namespace SettingsScreen {
 
         void quietButton(float x, float y, float w, const std::string& text, bool spinning) {
             UiRender::roundRect(x, y, w, Page::FIELD_H, 7.0f, UiTheme::surfaceRaised());
-            UiRender::outline(x, y, w, Page::FIELD_H, 7.0f, UiTheme::outlineSoft());
+            UiRender::outline(x, y, w, Page::FIELD_H, 7.0f, UiTheme::border(UiTheme::outlineSoft()));
             float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             float left = x + (w - (12.0f + 6.0f + textW)) * 0.5f;
             float cy = y + Page::FIELD_H * 0.5f;
@@ -1717,6 +1780,13 @@ namespace SettingsScreen {
             x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
             x += Page::tag(About::versionLabel(), x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
                      UiTheme::accentText());
+            if (Customization::active() && !Customization::by().empty()) {
+                std::string made = "由 " + Customization::by() + " 定制" +
+                        (Customization::version().empty() ? std::string() : " " + Customization::version());
+                x += 6.0f +
+                        Page::tag(made, x + 6.0f, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::surfaceRaised(),
+                                  UiTheme::textSecondary());
+            }
             tagline(textX, titleY + 26.0f, blocked);
             updateControl(y, x, blocked);
         }
@@ -1899,7 +1969,7 @@ namespace SettingsScreen {
         void patchTab(bool covered) {
             int skins = skinCount();
             float contentH = 6 * Page::CAPTION_H + (1 + skins + 3 + 2 + 1 + 1) * Page::ROW_H + 5 * Page::GAP;
-            Page::Scroll body("settings#patch", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#patch", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1922,7 +1992,7 @@ namespace SettingsScreen {
             aboutFrame = frame;
             float contentH = HERO_H + Page::GAP + 3 * Page::CAPTION_H +
                     (PROJECT_COUNT + THANKS_COUNT + CREDIT_COUNT) * Page::ROW_H + 2 * Page::GAP;
-            Page::Scroll body("settings#about", Page::TOP, MainWindow::height() - 14.0f, contentH);
+            Page::Scroll body("settings#about", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
@@ -1946,6 +2016,8 @@ namespace SettingsScreen {
                 case SECTION_PATCH: patchTab(covered); break;
                 case SECTION_FOLDERS: foldersSection(covered); break;
                 case SECTION_LOOK: cardPage("settings#look", lookCount(), covered, lookRows); break;
+                case SECTION_THEMES: ThemeManager::draw(mainX(), mainW(), covered); break;
+                case SECTION_FEATURES: featuresSection(covered); break;
                 case SECTION_WINDOW: cardPage("settings#window", windowCount(), covered, windowSettingRows); break;
                 case SECTION_HOME: cardPage("settings#home", homepageCount(), covered, homepageRows); break;
                 case SECTION_NETWORK: networkSection(covered); break;
@@ -1992,6 +2064,10 @@ namespace SettingsScreen {
         }
     }
 
+    void showThemes() {
+        sections.go(SECTION_THEMES);
+    }
+
     void reset() {
         if (NewUi::textEditing == SEARCH_OWNER) {
             NewUi::cancelTextEdit();
@@ -2008,6 +2084,12 @@ namespace SettingsScreen {
         if (io.KeyCtrl && !io.KeyAlt && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_F, false) && !NewUi::popupOpen &&
             UiOverlays::isEmpty() && NewUi::textEditing != SEARCH_OWNER) {
             NewUi::beginTextEdit(searchValue());
+        }
+        if (!tabShown(sections.page)) {
+            std::vector<const Tab*> tabs = shownTabs();
+            if (!tabs.empty()) {
+                sections.page = tabs.front()->section;
+            }
         }
         rail(covered);
         std::string query = Ui::trim(typedSearch());

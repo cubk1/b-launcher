@@ -72,7 +72,7 @@ namespace MultiplayerScreen {
         double shakeAt = -10.0;
 
         uint32_t onlineColor() {
-            return UiTheme::isLight() ? 0xFF2F9E5Cu : 0xFF5CC98Au;
+            return UiTheme::success();
         }
 
         float paragraph(const std::string& text, float x, float y, float w, uint32_t color, bool centred) {
@@ -343,7 +343,7 @@ namespace MultiplayerScreen {
                 float lit = UiState::motion("multiplayer#box#" + std::to_string(i), active ? 1.0f : 0.0f, 18.0f);
                 UiRender::roundRect(boxX, boxesY, BOX_W, BOX_H, 10.0f, UiTheme::surfaceRaised());
                 UiRender::outline(boxX, boxesY, BOX_W, BOX_H, 10.0f,
-                                  UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), lit));
+                                  UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::accent(), lit));
                 if (i < filled) {
                     std::string digit(1, code[(size_t) i]);
                     float digitW = UiFont::width(digit, UiFont::MEDIUM, BOX_TEXT);
@@ -401,7 +401,7 @@ namespace MultiplayerScreen {
             float lit = UiState::motion("multiplayer#portField", focused ? 1.0f : 0.0f, 18.0f);
             UiRender::roundRect(fieldX, fieldY, fieldW, BOX_H, 10.0f, UiTheme::surfaceRaised());
             UiRender::outline(fieldX, fieldY, fieldW, BOX_H, 10.0f,
-                              UiRender::mix(UiTheme::outlineSoft(), UiTheme::accent(), lit));
+                              UiRender::mix(UiTheme::border(UiTheme::outlineSoft()), UiTheme::accent(), lit));
             float textX = fieldX + 16.0f;
             if (port.empty() && !focused) {
                 UiRender::textY("例如 51234", textX, fieldY, BOX_H, UiTheme::textFaint(), UiFont::MEDIUM, BOX_TEXT);
@@ -435,7 +435,7 @@ namespace MultiplayerScreen {
             }
             float cardH = 2 * OPTION_H;
             float total = 24.0f + 22.0f + cardH;
-            float y = std::max(Page::TOP, middle - total * 0.5f);
+            float y = std::max(Page::top(), middle - total * 0.5f);
             Page::centredText("联机", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 22.0f;
             float x = cx - WELCOME_W * 0.5f;
@@ -470,7 +470,7 @@ namespace MultiplayerScreen {
             int rows = (int) worlds.size();
             float listH = rows > 1 ? 18.0f + rows * Page::ROW_H : 0.0f;
             float total = 28.0f + 18.0f + 24.0f + 10.0f + textH + listH + 22.0f + LINE_H + 22.0f + Page::FIELD_H;
-            float y = std::max(Page::TOP, middle - total * 0.5f);
+            float y = std::max(Page::top(), middle - total * 0.5f);
 
             UiRender::circle(cx, y + 14.0f, 14.0f, UiTheme::accentSoft(36));
             UiWidgets::icon(Ui::glyph(0xf6ff), cx, y + 14.0f, UiTheme::accentText(), 12.0f);
@@ -734,7 +734,7 @@ namespace MultiplayerScreen {
         }
 
         void roomView(const Multiplayer::State& state, bool covered) {
-            Page::title("联机", Page::left(), Page::TOP);
+            Page::title("联机", Page::left(), Page::top());
             bool hosting = state.role == Role::Host;
             bool failed = state.stage == Stage::Failed;
             bool closing = state.stage == Stage::Closing;
@@ -742,7 +742,7 @@ namespace MultiplayerScreen {
             int members = std::max(1, (int) state.members.size());
             float lower = failed ? errorHeight(state) : members * Page::ROW_H;
             float content = 2 * Page::CAPTION_H + roomRows(state) * Page::ROW_H + Page::GAP + lower;
-            Page::Scroll body("multiplayer#body", Page::TOP + 40.0f, buttonTop - 14.0f, content);
+            Page::Scroll body("multiplayer#body", Page::top() + 40.0f, buttonTop - 14.0f, content);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;

@@ -2,11 +2,14 @@
 #include "UiGL.h"
 #include "IconShader.inl"
 #include "../panel/UiRender.h"
+#include "../theme/ThemeStyle.h"
 
 #include "imgui.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <deque>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -20,6 +23,7 @@ namespace ShaderUtil {
     std::vector<Prim> bloomQueue;
 
     static std::vector<Prim> pendingPrims;
+    static std::vector<float> pendingExtra;
     static bool captureValid = false;
     static int captureFrame = -1;
     static void* captureContext = nullptr;
@@ -62,6 +66,8 @@ namespace ShaderUtil {
     static bool shellFailed;
     static Shader cornerMaskShader;
     static bool cornerMaskFailed;
+    static Shader paintShader;
+    static bool paintFailed;
 
     static GLuint captureTextureId;
     static int captureWidth;
@@ -76,6 +82,7 @@ namespace ShaderUtil {
     static float dualOffset;
     static GLuint shapeTexture;
 
+    static std::string lastLog;
     static float mvpFloats[16];
     static int fbWidth;
     static int fbHeight;
@@ -93,6 +100,7 @@ namespace ShaderUtil {
             GetShaderInfoLog(shader, length, nullptr, &log[0]);
             DeleteShader(shader);
             fprintf(stderr, "[ShaderUtil] Compile failed: %s\n", log.c_str());
+            lastLog = log.c_str();
             return 0;
         }
         return shader;
@@ -121,6 +129,7 @@ namespace ShaderUtil {
             std::string log(length > 1 ? length : 1, '\0');
             GetProgramInfoLog(program, length, nullptr, &log[0]);
             fprintf(stderr, "[ShaderUtil] Link failed: %s\n", log.c_str());
+            lastLog = log.c_str();
             DeleteProgram(program);
             DeleteShader(vs);
             DeleteShader(fs);
@@ -187,6 +196,85 @@ void main() {
     vec2 corner = corners[gl_VertexID];
     gl_Position = u_proj * vec4(u_rect.xy + corner * u_rect.zw, 0.0, 1.0);
     v_uv = corner;
+}
+)GLSL";
+
+    static const char* POS_VERT = R"GLSL(#version 150 core
+
+uniform mat4 u_proj;
+uniform vec4 u_rect;
+
+out vec2 v_pos;
+
+void main() {
+    vec2 corners[6] = vec2[6](
+        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
+        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
+    );
+    vec2 pos = u_rect.xy + corners[gl_VertexID] * u_rect.zw;
+    gl_Position = u_proj * vec4(pos, 0.0, 1.0);
+    v_pos = pos;
+}
+)GLSL";
+
+    static const char* CUSTOM_PRELUDE = R"GLSL(#version 150 core
+
+uniform float u_time;
+uniform vec2 u_size;
+uniform vec2 u_mouse;
+uniform vec4 u_accent;
+uniform vec4 u_tokens[8];
+uniform sampler2D u_texture0;
+uniform sampler2D u_texture1;
+uniform sampler2D u_texture2;
+uniform sampler2D u_texture3;
+uniform sampler2D u_backdropTexture;
+uniform float u_hasBackdrop;
+uniform vec4 u_backdropMap;
+uniform float u_scale;
+uniform vec4 u_shape;
+
+in vec2 v_pos;
+out vec4 fragColor;
+
+vec4 backdrop(vec2 uv) {
+    if (u_hasBackdrop < 0.5) {
+        return vec4(0.0);
+    }
+    vec2 pos = u_shape.xy + uv * u_shape.zw;
+    return texture(u_backdropTexture, vec2(pos.x * u_backdropMap.x + u_backdropMap.z,
+                                           pos.y * u_backdropMap.y + u_backdropMap.w));
+}
+#line 0
+)GLSL";
+
+    static const char* CUSTOM_POSTLUDE = R"GLSL(
+uniform vec4 u_shapeRadii;
+uniform vec4 u_clip;
+uniform vec4 u_clipRadii;
+uniform float u_opacity;
+uniform float u_cover;
+
+float blb_coverage(vec4 rect, vec4 radii) {
+    vec2 extent = rect.zw * 0.5;
+    float dist = blb_sdRoundBox(v_pos - rect.xy - extent, extent, radii);
+    float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 1e-5);
+    return clamp(0.5 - dist / aa, 0.0, 1.0);
+}
+
+void main() {
+    vec2 local = v_pos - u_shape.xy;
+    vec4 color = effect(local / max(u_shape.zw, vec2(1e-5)), local);
+    float cover = 1.0;
+    if (u_cover > 0.5) {
+        cover = blb_coverage(u_shape, u_shapeRadii);
+        if (u_clip.z > 0.0) {
+            cover *= blb_coverage(u_clip, u_clipRadii);
+        }
+    }
+    float alpha = clamp(color.a, 0.0, 1.0) * cover * u_opacity;
+    if (u_cover > 0.5 && alpha < 0.001) discard;
+    fragColor = vec4(color.rgb, alpha);
 }
 )GLSL";
 
@@ -314,6 +402,9 @@ uniform float u_blurRadius;
 uniform float u_gamma;
 uniform vec4  u_tint;
 uniform float u_direct;
+uniform vec4  u_rect;
+uniform vec4  u_hole;
+uniform vec4  u_holeRadii;
 
 in vec2 v_uv;
 out vec4 fragColor;
@@ -343,7 +434,8 @@ vec4 sampleBlurred(vec2 uv, float radius, float gamma) {
     return sum / max(norm, 1e-5);
 }
 
-)GLSL", ROUND_BOX_CORNERS, R"GLSL(
+)GLSL",
+                                    ROUND_BOX_CORNERS, R"GLSL(
 void main() {
     vec2 halfSize = u_rectSize * 0.5;
     vec2 local = v_uv * u_rectSize - halfSize;
@@ -352,6 +444,13 @@ void main() {
     float dist = sdRoundBox(local, halfSize, cr);
     float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 1e-5);
     float maskAlpha = clamp(0.5 - dist / aa, 0.0, 1.0);
+    if (u_hole.z > 0.0) {
+        vec2 holeExtent = u_hole.zw * 0.5;
+        vec2 pos = u_rect.xy + v_uv * u_rect.zw;
+        float holeDist = sdRoundBox(pos - u_hole.xy - holeExtent, holeExtent, u_holeRadii);
+        float holeAa = max(length(vec2(dFdx(holeDist), dFdy(holeDist))), 1e-5);
+        maskAlpha *= 1.0 - clamp(0.5 - holeDist / holeAa, 0.0, 1.0);
+    }
     if (maskAlpha < 0.001) discard;
 
     vec2 screenUV = gl_FragCoord.xy / u_screenSize;
@@ -362,7 +461,7 @@ void main() {
 )GLSL"};
         if (!compileShader(blurShader, RECT_VERT, frag,
                            {"u_proj", "u_rect", "u_screenSize", "u_rectSize", "u_radius", "u_corner", "u_blurRadius",
-                            "u_gamma", "u_tint", "u_direct"})) {
+                            "u_gamma", "u_tint", "u_direct", "u_hole", "u_holeRadii"})) {
             blurFailed = true;
             return false;
         }
@@ -980,23 +1079,7 @@ void main() {
         if (shellFailed) {
             return false;
         }
-        const char* vert = R"GLSL(#version 150 core
-
-uniform mat4 u_proj;
-uniform vec4 u_rect;
-
-out vec2 v_pos;
-
-void main() {
-    vec2 corners[6] = vec2[6](
-        vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0),
-        vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0)
-    );
-    vec2 pos = u_rect.xy + corners[gl_VertexID] * u_rect.zw;
-    gl_Position = u_proj * vec4(pos, 0.0, 1.0);
-    v_pos = pos;
-}
-)GLSL";
+        const char* vert = POS_VERT;
         const char* const frag[] = {R"GLSL(#version 150 core
 
 uniform vec4 u_plate;
@@ -1030,6 +1113,125 @@ void main() {
                            {"u_proj", "u_rect", "u_plate", "u_plateRadii", "u_plateColor", "u_main", "u_mainRadii",
                             "u_mainColor"})) {
             shellFailed = true;
+            return false;
+        }
+        return true;
+    }
+
+    static bool ensurePaintShader() {
+        if (paintShader.program != 0) {
+            return true;
+        }
+        if (paintFailed) {
+            return false;
+        }
+        const char* const frag[] = {R"GLSL(#version 150 core
+
+uniform vec4 u_shape;
+uniform vec4 u_shapeRadii;
+uniform vec4 u_clip;
+uniform vec4 u_clipRadii;
+uniform vec4 u_hole;
+uniform vec4 u_holeRadii;
+uniform int u_kind;
+uniform float u_opacity;
+uniform float u_dither;
+uniform int u_count;
+uniform vec4 u_colors[8];
+uniform float u_stops[8];
+uniform vec4 u_axis;
+uniform float u_shift;
+uniform float u_cycle;
+uniform vec4 u_frame;
+uniform vec4 u_uv;
+uniform float u_tile;
+uniform float u_bounded;
+uniform vec4 u_tint;
+uniform int u_blend;
+uniform sampler2D u_texture;
+
+in vec2 v_pos;
+out vec4 fragColor;
+
+)GLSL",
+                                    ROUND_BOX_CORNERS, R"GLSL(
+float coverage(vec4 rect, vec4 radii) {
+    vec2 extent = rect.zw * 0.5;
+    float dist = sdRoundBox(v_pos - rect.xy - extent, extent, radii);
+    float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 1e-5);
+    return clamp(0.5 - dist / aa, 0.0, 1.0);
+}
+
+vec4 ramp(float t) {
+    t = u_cycle > 0.5 ? fract(t - u_shift) : clamp(t, 0.0, 1.0);
+    vec4 color = u_colors[0];
+    for (int i = 1; i < 8; i++) {
+        if (i >= u_count) {
+            break;
+        }
+        float from = u_stops[i - 1];
+        float span = max(u_stops[i] - from, 1e-5);
+        color = mix(color, u_colors[i], clamp((t - from) / span, 0.0, 1.0));
+    }
+    return color;
+}
+
+vec4 sampleImage() {
+    vec2 uv = (v_pos - u_frame.xy) / max(u_frame.zw, vec2(1e-5)) * u_uv.xy + u_uv.zw;
+    float inside = 1.0;
+    if (u_tile < 0.5) {
+        if (u_bounded > 0.5) {
+            inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+        }
+        vec2 halfTexel = 0.5 / vec2(textureSize(u_texture, 0));
+        uv = clamp(uv, halfTexel, 1.0 - halfTexel);
+    }
+    vec4 texel = texture(u_texture, uv) * u_tint;
+    return vec4(texel.rgb * texel.a, texel.a) * inside;
+}
+
+void main() {
+    float cover = coverage(u_shape, u_shapeRadii);
+    if (u_clip.z > 0.0) {
+        cover *= coverage(u_clip, u_clipRadii);
+    }
+    if (u_hole.z > 0.0) {
+        cover *= 1.0 - coverage(u_hole, u_holeRadii);
+    }
+    if (cover < 0.001) discard;
+    vec4 color;
+    if (u_kind == 1) {
+        vec2 axis = u_axis.zw - u_axis.xy;
+        color = ramp(dot(v_pos - u_axis.xy, axis) / max(dot(axis, axis), 1e-5));
+    } else if (u_kind == 2) {
+        color = ramp(length(v_pos - u_axis.xy) / max(u_axis.z, 1e-5));
+    } else if (u_kind == 3) {
+        color = sampleImage();
+    } else {
+        color = u_colors[0];
+    }
+    float alpha = color.a * cover * u_opacity;
+    if (alpha < 0.001) discard;
+    vec3 rgb = color.rgb / max(color.a, 1e-5);
+    if (u_dither > 0.5) {
+        float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+        rgb += (noise - 0.5) / 255.0;
+    }
+    if (u_blend == 1) {
+        fragColor = vec4(mix(vec3(1.0), rgb, alpha), 1.0);
+    } else if (u_blend == 2 || u_blend == 3) {
+        fragColor = vec4(rgb * alpha, alpha);
+    } else {
+        fragColor = vec4(rgb, alpha);
+    }
+}
+)GLSL"};
+        if (!compileShader(paintShader, POS_VERT, frag,
+                           {"u_proj",   "u_rect",      "u_shape",   "u_shapeRadii", "u_clip",   "u_clipRadii",
+                            "u_hole",   "u_holeRadii", "u_kind",    "u_opacity",    "u_dither", "u_count",
+                            "u_colors", "u_stops",     "u_axis",    "u_shift",      "u_cycle",  "u_frame",
+                            "u_uv",     "u_tile",      "u_bounded", "u_tint",       "u_blend",  "u_texture"})) {
+            paintFailed = true;
             return false;
         }
         return true;
@@ -1339,7 +1541,22 @@ void main() {
         defaultBlend();
     }
 
-    static void drawGaussian(const Prim& p, int frame) {
+    static void blurHole(const Shader& s, const Prim& p, const float* extra) {
+        if (p.i[2] != 2) {
+            return;
+        }
+        const float* hole = extra + (int) p.f[7];
+        Uniform4f(s["u_hole"], hole[0], hole[1], hole[2], hole[3]);
+        Uniform4f(s["u_holeRadii"], hole[7], hole[5], hole[6], hole[4]);
+    }
+
+    static void clearHole(const Shader& s, const Prim& p) {
+        if (p.i[2] == 2) {
+            Uniform4f(s["u_hole"], 0.0f, 0.0f, 0.0f, 0.0f);
+        }
+    }
+
+    static void drawGaussian(const Prim& p, int frame, const float* extra) {
         if (!ensureBlurShader()) {
             return;
         }
@@ -1366,16 +1583,17 @@ void main() {
         Uniform1f(s["u_gamma"], p.f[6]);
         uniformColor(s["u_tint"], tint);
         Uniform1f(s["u_direct"], 0.0f);
+        blurHole(s, p, extra);
         DrawArrays(UGL_TRIANGLES, 0, 6);
+        clearHole(s, p);
     }
 
-    static void drawKawase(const Prim& p, int frame) {
+    static void drawKawase(const Prim& p, int frame, const float* extra) {
         if (!ensureDualKawase() || !ensureBlurShader()) {
             Prim fallback = p;
             fallback.kind = BLUR;
             fallback.f[6] = 6.0f;
-            fallback.i[2] = 0;
-            drawGaussian(fallback, frame);
+            drawGaussian(fallback, frame, extra);
             return;
         }
         if (p.i[1] != 0) {
@@ -1396,10 +1614,16 @@ void main() {
         Uniform2f(s["u_screenSize"], (float) captureWidth, (float) captureHeight);
         Uniform2f(s["u_rectSize"], p.f[2], p.f[3]);
         Uniform1f(s["u_radius"], p.f[4]);
-        uniformCorners(s["u_corner"], p.i[0]);
+        if (p.i[2] != 0) {
+            Uniform4f(s["u_corner"], p.f[10], p.f[9], p.f[8], p.f[11]);
+        } else {
+            uniformCorners(s["u_corner"], p.i[0]);
+        }
         uniformColor(s["u_tint"], p.c[0]);
         Uniform1f(s["u_direct"], 1.0f);
+        blurHole(s, p, extra);
         DrawArrays(UGL_TRIANGLES, 0, 6);
+        clearHole(s, p);
         Uniform1f(s["u_direct"], 0.0f);
     }
 
@@ -1510,60 +1734,384 @@ void main() {
         DrawArrays(UGL_TRIANGLES, 0, 6);
     }
 
+    static float cornerRadius(int codes, int corner, float inner, float outer) {
+        int code = (codes >> (corner * 2)) & 3;
+        return code == 1 ? inner : code == 2 ? outer : 0.0f;
+    }
+
+    static void shellFallback(const float* rect, int codes, float inner, float outer, uint32_t rgba) {
+        float radius = std::max(inner, outer);
+        float scale = radius > 0.0f ? 1.0f / radius : 0.0f;
+        Prim pane = {};
+        pane.kind = ROUND_RECT;
+        pane.f[0] = rect[0];
+        pane.f[1] = rect[1];
+        pane.f[2] = rect[2];
+        pane.f[3] = rect[3];
+        pane.f[4] = radius;
+        pane.f[6] = cornerRadius(codes, 0, inner, outer) * scale;
+        pane.f[7] = cornerRadius(codes, 1, inner, outer) * scale;
+        pane.f[8] = cornerRadius(codes, 2, inner, outer) * scale;
+        pane.f[9] = cornerRadius(codes, 3, inner, outer) * scale;
+        pane.c[0] = rgba;
+        pane.c[1] = rgba;
+        drawRoundRect(pane);
+    }
+
     static void drawShell(const Prim& p) {
-        float x = p.f[0];
-        float y = p.f[1];
-        float width = p.f[2];
-        float height = p.f[3];
-        float split = p.f[4];
-        float radius = p.f[5];
-        float outer = p.f[6];
+        const float* plate = p.f;
+        const float* main = p.f + 4;
+        float inner = p.f[8];
+        float outer = p.f[9];
+        int plateCodes = p.i[0];
+        int mainCodes = p.i[1];
         uint32_t plateRgba = p.c[0];
         uint32_t mainRgba = p.c[1];
         if (!ensureShellShader()) {
-            Prim plate = {};
-            plate.kind = ROUND_RECT;
-            plate.f[0] = x;
-            plate.f[1] = y;
-            plate.f[2] = split;
-            plate.f[3] = height;
-            plate.f[4] = radius;
-            plate.f[5] = 0.0f;
-            plate.f[6] = 1.0f;
-            plate.f[7] = 0.0f;
-            plate.f[8] = 1.0f;
-            plate.f[9] = 0.0f;
-            plate.c[0] = plateRgba;
-            plate.c[1] = plateRgba;
-            drawRoundRect(plate);
-            Prim main = {};
-            main.kind = ROUND_RECT;
-            main.f[0] = x + split;
-            main.f[1] = y;
-            main.f[2] = width - split;
-            main.f[3] = height;
-            main.f[4] = radius;
-            main.f[5] = 0.0f;
-            main.f[6] = 1.0f;
-            main.f[7] = 1.0f;
-            main.f[8] = 1.0f;
-            main.f[9] = 1.0f;
-            main.c[0] = mainRgba;
-            main.c[1] = mainRgba;
-            drawRoundRect(main);
+            shellFallback(plate, plateCodes, inner, outer, plateRgba);
+            shellFallback(main, mainCodes, inner, outer, mainRgba);
             return;
         }
+        float x = std::min(plate[0], main[0]);
+        float y = std::min(plate[1], main[1]);
+        float right = std::max(plate[0] + plate[2], main[0] + main[2]);
+        float bottom = std::max(plate[1] + plate[3], main[1] + main[3]);
         defaultBlend();
         use(shellShader);
         const Shader& s = shellShader;
-        Uniform4f(s["u_rect"], x - 1.0f, y - 1.0f, width + 2.0f, height + 2.0f);
-        Uniform4f(s["u_plate"], x, y, split + radius * 2.0f, height);
-        Uniform4f(s["u_plateRadii"], 0.0f, 0.0f, outer, outer);
+        Uniform4f(s["u_rect"], x - 1.0f, y - 1.0f, right - x + 2.0f, bottom - y + 2.0f);
+        Uniform4f(s["u_plate"], plate[0], plate[1], plate[2], plate[3]);
+        Uniform4f(s["u_plateRadii"], cornerRadius(plateCodes, 3, inner, outer),
+                  cornerRadius(plateCodes, 1, inner, outer), cornerRadius(plateCodes, 2, inner, outer),
+                  cornerRadius(plateCodes, 0, inner, outer));
         uniformColor(s["u_plateColor"], plateRgba);
-        Uniform4f(s["u_main"], x + split, y, width - split, height);
-        Uniform4f(s["u_mainRadii"], outer, outer, radius, radius);
+        Uniform4f(s["u_main"], main[0], main[1], main[2], main[3]);
+        Uniform4f(s["u_mainRadii"], cornerRadius(mainCodes, 3, inner, outer), cornerRadius(mainCodes, 1, inner, outer),
+                  cornerRadius(mainCodes, 2, inner, outer), cornerRadius(mainCodes, 0, inner, outer));
         uniformColor(s["u_mainColor"], mainRgba);
         DrawArrays(UGL_TRIANGLES, 0, 6);
+    }
+
+    static void paintBlend(int blend) {
+        Enable(UGL_BLEND);
+        BlendEquation(UGL_FUNC_ADD);
+        if (blend == BLEND_MULTIPLY) {
+            BlendFuncSeparate(UGL_DST_COLOR, UGL_ZERO, UGL_ZERO, UGL_ONE);
+        } else if (blend == BLEND_SCREEN) {
+            BlendFuncSeparate(UGL_ONE, UGL_ONE_MINUS_SRC_COLOR, UGL_ZERO, UGL_ONE);
+        } else if (blend == BLEND_ADD) {
+            BlendFuncSeparate(UGL_ONE, UGL_ONE, UGL_ZERO, UGL_ONE);
+        } else {
+            defaultBlend();
+        }
+    }
+
+    static void uniformShape(GLint rect, GLint radii, const float* v) {
+        Uniform4f(rect, v[0], v[1], v[2], v[3]);
+        Uniform4f(radii, v[7], v[5], v[6], v[4]);
+    }
+
+    static void drawPaint(const Prim& p, const float* extra) {
+        if (!ensurePaintShader()) {
+            return;
+        }
+        const float* r = extra + p.i[0];
+        int kind = (int) r[24];
+        paintBlend(p.i[1]);
+        use(paintShader);
+        const Shader& s = paintShader;
+        Uniform4f(s["u_rect"], p.f[0], p.f[1], p.f[2], p.f[3]);
+        uniformShape(s["u_shape"], s["u_shapeRadii"], r);
+        uniformShape(s["u_clip"], s["u_clipRadii"], r + 8);
+        uniformShape(s["u_hole"], s["u_holeRadii"], r + 16);
+        Uniform1i(s["u_kind"], kind);
+        Uniform1f(s["u_opacity"], r[25]);
+        Uniform1f(s["u_dither"], r[26]);
+        Uniform1i(s["u_count"], (int) r[27]);
+        Uniform4fv(s["u_colors"], PAINT_STOPS, r + 28);
+        Uniform1fv(s["u_stops"], PAINT_STOPS, r + 60);
+        Uniform4f(s["u_axis"], r[68], r[69], r[70], r[71]);
+        Uniform1f(s["u_shift"], r[72]);
+        Uniform1f(s["u_cycle"], r[73]);
+        Uniform1f(s["u_tile"], r[74]);
+        Uniform1f(s["u_bounded"], r[75]);
+        Uniform4f(s["u_frame"], r[76], r[77], r[78], r[79]);
+        Uniform4f(s["u_uv"], r[80], r[81], r[82], r[83]);
+        Uniform4f(s["u_tint"], r[84], r[85], r[86], r[87]);
+        Uniform1i(s["u_blend"], p.i[1]);
+        Uniform1i(s["u_texture"], 4);
+        ActiveTexture(UGL_TEXTURE4);
+        BindTexture(UGL_TEXTURE_2D, kind == PAINT_IMAGE ? p.tex : 0);
+        ActiveTexture(UGL_TEXTURE0);
+        DrawArrays(UGL_TRIANGLES, 0, 6);
+        if (kind == PAINT_IMAGE) {
+            ActiveTexture(UGL_TEXTURE4);
+            BindTexture(UGL_TEXTURE_2D, 0);
+            ActiveTexture(UGL_TEXTURE0);
+        }
+        if (p.i[1] != BLEND_NORMAL) {
+            defaultBlend();
+        }
+    }
+
+    struct CustomProgram {
+        std::string key;
+        std::string source;
+        Shader shader;
+        bool tried = false;
+        CustomInfo info;
+        GLuint queries[3] = {};
+        bool waiting[3] = {};
+        int head = 0;
+        int finishSamples = 0;
+        GLuint fbo = 0;
+        GLuint texture = 0;
+        int targetW = 0;
+        int targetH = 0;
+    };
+
+    static std::deque<CustomProgram> customPrograms;
+
+    static bool ensureCustom(CustomProgram& program) {
+        if (program.shader.program != 0) {
+            return true;
+        }
+        if (program.tried) {
+            return false;
+        }
+        program.tried = true;
+        lastLog.clear();
+        std::string roundBox = ROUND_BOX_CORNERS;
+        size_t at = roundBox.find("sdRoundBox");
+        if (at != std::string::npos) {
+            roundBox.replace(at, 10, "blb_sdRoundBox");
+        }
+        std::string post = roundBox + CUSTOM_POSTLUDE;
+        const char* frag[] = {CUSTOM_PRELUDE, program.source.c_str(), post.c_str()};
+        if (!compileShader(
+                    program.shader, &POS_VERT, 1, frag, 3,
+                    {"u_proj",        "u_rect",        "u_time",     "u_size",     "u_mouse",      "u_accent",
+                     "u_tokens",      "u_texture0",    "u_texture1", "u_texture2", "u_texture3",   "u_backdropTexture",
+                     "u_hasBackdrop", "u_backdropMap", "u_scale",    "u_shape",    "u_shapeRadii", "u_clip",
+                     "u_clipRadii",   "u_opacity",     "u_cover"})) {
+            program.info.failed = true;
+            program.info.log = lastLog.empty() ? std::string("compile failed") : lastLog;
+            return false;
+        }
+        program.info.compiled = true;
+        return true;
+    }
+
+    static void sampleCustom(CustomProgram& program, float ms) {
+        program.info.gpuMs = program.info.samples == 0 ? ms : program.info.gpuMs * 0.8f + ms * 0.2f;
+        program.info.samples++;
+    }
+
+    template <typename Draw>
+    static void timed(CustomProgram& program, Draw draw) {
+        if (GenQueries != nullptr && BeginQuery != nullptr && EndQuery != nullptr && GetQueryObjectiv != nullptr &&
+            GetQueryObjectui64v != nullptr) {
+            if (program.queries[0] == 0) {
+                GenQueries(3, program.queries);
+            }
+            for (int k = 0; k < 3; k++) {
+                if (!program.waiting[k]) {
+                    continue;
+                }
+                GLint ready = 0;
+                GetQueryObjectiv(program.queries[k], UGL_QUERY_RESULT_AVAILABLE, &ready);
+                if (ready != 0) {
+                    GLuint64 nanos = 0;
+                    GetQueryObjectui64v(program.queries[k], UGL_QUERY_RESULT, &nanos);
+                    sampleCustom(program, (float) ((double) nanos / 1.0e6));
+                    program.waiting[k] = false;
+                }
+            }
+            int slot = program.head;
+            if (!program.waiting[slot]) {
+                BeginQuery(UGL_TIME_ELAPSED, program.queries[slot]);
+                draw();
+                EndQuery(UGL_TIME_ELAPSED);
+                program.waiting[slot] = true;
+                program.head = (slot + 1) % 3;
+                return;
+            }
+            draw();
+            return;
+        }
+        if (Finish != nullptr && program.finishSamples < 20) {
+            Finish();
+            auto start = std::chrono::steady_clock::now();
+            draw();
+            Finish();
+            sampleCustom(program,
+                         std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count());
+            program.finishSamples++;
+            return;
+        }
+        draw();
+    }
+
+    static void ensureCustomTarget(CustomProgram& program, int w, int h) {
+        if (program.fbo != 0 && program.targetW == w && program.targetH == h) {
+            return;
+        }
+        GLint previous = 0;
+        GetIntegerv(UGL_DRAW_FRAMEBUFFER_BINDING, &previous);
+        if (program.texture != 0) {
+            DeleteTextures(1, &program.texture);
+            DeleteFramebuffers(1, &program.fbo);
+        }
+        program.texture = createGlowTexture(w, h);
+        GenFramebuffers(1, &program.fbo);
+        BindFramebuffer(UGL_FRAMEBUFFER, program.fbo);
+        FramebufferTexture2D(UGL_FRAMEBUFFER, UGL_COLOR_ATTACHMENT0, UGL_TEXTURE_2D, program.texture, 0);
+        BindFramebuffer(UGL_DRAW_FRAMEBUFFER, (GLuint) previous);
+        program.targetW = w;
+        program.targetH = h;
+    }
+
+    static void drawCustom(const Prim& p, const float* extra, const Header* header) {
+        int slot = p.i[1];
+        if (slot < 0 || slot >= (int) customPrograms.size()) {
+            return;
+        }
+        CustomProgram& program = customPrograms[(size_t) slot];
+        if (!ensureCustom(program)) {
+            return;
+        }
+        const float* r = extra + p.i[0];
+        const float* shape = r;
+        const float* clip = r + 8;
+        bool backdrop = r[18] > 0.5f;
+        bool half = r[19] > 0.5f;
+        const float* textures = r + 54;
+        if (backdrop) {
+            captureScreen(header->frame);
+        }
+        const Shader& s = program.shader;
+        UseProgram(s.program);
+        BindVertexArray(contextVertexArray());
+        Uniform1f(s["u_time"], r[16]);
+        Uniform2f(s["u_size"], shape[2], shape[3]);
+        Uniform2f(s["u_mouse"], r[20], r[21]);
+        Uniform4fv(s["u_tokens"], 8, r + 22);
+        Uniform4f(s["u_accent"], r[22 + 20], r[22 + 21], r[22 + 22], r[22 + 23]);
+        Uniform4f(s["u_shape"], shape[0], shape[1], shape[2], shape[3]);
+        Uniform4f(s["u_shapeRadii"], shape[7], shape[5], shape[6], shape[4]);
+        Uniform4f(s["u_clip"], clip[0], clip[1], clip[2], clip[3]);
+        Uniform4f(s["u_clipRadii"], clip[7], clip[5], clip[6], clip[4]);
+        Uniform1f(s["u_opacity"], r[17]);
+        const char* names[4] = {"u_texture0", "u_texture1", "u_texture2", "u_texture3"};
+        for (int k = 0; k < 4; k++) {
+            ActiveTexture(UGL_TEXTURE4 + k);
+            BindTexture(UGL_TEXTURE_2D, (GLuint) textures[k]);
+            Uniform1i(s[names[k]], 4 + k);
+        }
+        float unit = header->unit > 0.0f ? header->unit : 1.0f;
+        Uniform1f(s["u_hasBackdrop"], backdrop ? 1.0f : 0.0f);
+        if (backdrop) {
+            ActiveTexture(UGL_TEXTURE1);
+            BindTexture(UGL_TEXTURE_2D, captureTextureId);
+            Uniform1i(s["u_backdropTexture"], 1);
+            Uniform4f(s["u_backdropMap"], unit * header->fbScaleX / (float) fbWidth,
+                      -unit * header->fbScaleY / (float) fbHeight,
+                      -header->displayPosX * header->fbScaleX / (float) fbWidth,
+                      1.0f + header->displayPosY * header->fbScaleY / (float) fbHeight);
+        }
+        ActiveTexture(UGL_TEXTURE0);
+        if (!half) {
+            UniformMatrix4fv(s["u_proj"], 1, UGL_FALSE, mvpFloats);
+            Uniform4f(s["u_rect"], p.f[0], p.f[1], p.f[2], p.f[3]);
+            Uniform1f(s["u_cover"], 1.0f);
+            Uniform1f(s["u_scale"], 1.0f);
+            defaultBlend();
+            timed(program, [] { DrawArrays(UGL_TRIANGLES, 0, 6); });
+        } else {
+            int w = std::max(1, (int) std::ceil(shape[2] * unit * header->fbScaleX * 0.5f));
+            int h = std::max(1, (int) std::ceil(shape[3] * unit * header->fbScaleY * 0.5f));
+            GLint previousFbo = 0;
+            GLint previousRead = 0;
+            GLint viewport[4];
+            GLint scissorBox[4];
+            GetIntegerv(UGL_DRAW_FRAMEBUFFER_BINDING, &previousFbo);
+            GetIntegerv(UGL_READ_FRAMEBUFFER_BINDING, &previousRead);
+            GetIntegerv(UGL_VIEWPORT, viewport);
+            GetIntegerv(UGL_SCISSOR_BOX, scissorBox);
+            bool scissor = IsEnabled(UGL_SCISSOR_TEST) != 0;
+            ensureCustomTarget(program, w, h);
+            UseProgram(s.program);
+            BindFramebuffer(UGL_FRAMEBUFFER, program.fbo);
+            Viewport(0, 0, w, h);
+            Disable(UGL_SCISSOR_TEST);
+            Disable(UGL_BLEND);
+            float left = shape[0];
+            float right = shape[0] + shape[2];
+            float top = shape[1];
+            float bottom = shape[1] + shape[3];
+            float ortho[16] = {2.0f / (right - left),
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               2.0f / (top - bottom),
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               0.0f,
+                               -1.0f,
+                               0.0f,
+                               (right + left) / (left - right),
+                               (top + bottom) / (bottom - top),
+                               0.0f,
+                               1.0f};
+            UniformMatrix4fv(s["u_proj"], 1, UGL_FALSE, ortho);
+            Uniform4f(s["u_rect"], shape[0], shape[1], shape[2], shape[3]);
+            Uniform1f(s["u_cover"], 0.0f);
+            Uniform1f(s["u_scale"], 0.5f);
+            timed(program, [] { DrawArrays(UGL_TRIANGLES, 0, 6); });
+            BindFramebuffer(UGL_DRAW_FRAMEBUFFER, (GLuint) previousFbo);
+            BindFramebuffer(UGL_READ_FRAMEBUFFER, (GLuint) previousRead);
+            Viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+            if (scissor) {
+                Enable(UGL_SCISSOR_TEST);
+                Scissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+            }
+            defaultBlend();
+            float record[88] = {};
+            std::copy(shape, shape + 8, record);
+            std::copy(clip, clip + 8, record + 8);
+            record[24] = (float) PAINT_IMAGE;
+            record[25] = 1.0f;
+            record[27] = 1.0f;
+            record[76] = shape[0];
+            record[77] = shape[1];
+            record[78] = shape[2];
+            record[79] = shape[3];
+            record[80] = 1.0f;
+            record[81] = -1.0f;
+            record[82] = 0.0f;
+            record[83] = 1.0f;
+            record[84] = 1.0f;
+            record[85] = 1.0f;
+            record[86] = 1.0f;
+            record[87] = 1.0f;
+            Prim composite = p;
+            composite.kind = PAINT;
+            composite.i[0] = 0;
+            composite.i[1] = BLEND_NORMAL;
+            composite.tex = program.texture;
+            drawPaint(composite, record);
+        }
+        for (int k = 0; k < 4; k++) {
+            ActiveTexture(UGL_TEXTURE4 + k);
+            BindTexture(UGL_TEXTURE_2D, 0);
+        }
+        if (backdrop) {
+            ActiveTexture(UGL_TEXTURE1);
+            BindTexture(UGL_TEXTURE_2D, 0);
+        }
+        ActiveTexture(UGL_TEXTURE0);
     }
 
     static void execute(const ImDrawList*, const ImDrawCmd* cmd) {
@@ -1572,6 +2120,7 @@ void main() {
         }
         const Header* header = (const Header*) cmd->UserCallbackData;
         const Prim* prims = (const Prim*) (header + 1);
+        const float* extra = (const float*) (prims + header->count);
         float unit = header->unit > 0.0f ? header->unit : 1.0f;
         float L = header->displayPosX / unit;
         float R = (header->displayPosX + header->displaySizeX) / unit;
@@ -1608,8 +2157,8 @@ void main() {
                 case RING: drawRing(p); break;
                 case SHADOW: drawShadow(p); break;
                 case BLOOM: drawBloom(p); break;
-                case KAWASE: drawKawase(p, header->frame); break;
-                case BLUR: drawGaussian(p, header->frame); break;
+                case KAWASE: drawKawase(p, header->frame, extra); break;
+                case BLUR: drawGaussian(p, header->frame, extra); break;
                 case PICKER: drawPicker(p); break;
                 case ROUND_TEXTURE: drawRoundTexture(p); break;
                 case ROUND_TEX: drawRoundTex(p); break;
@@ -1617,6 +2166,8 @@ void main() {
                 case ARC: drawArc(p); break;
                 case ICON: drawIcon(p); break;
                 case SHELL: drawShell(p); break;
+                case PAINT: drawPaint(p, extra); break;
+                case CUSTOM: drawCustom(p, extra, header); break;
                 default: break;
             }
         }
@@ -1637,6 +2188,7 @@ void main() {
     void flush(ImDrawList* drawList) {
         if (pendingPrims.empty() || drawList == nullptr) {
             pendingPrims.clear();
+            pendingExtra.clear();
             return;
         }
         ImGuiIO& io = ImGui::GetIO();
@@ -1651,12 +2203,19 @@ void main() {
         header.unit = UiRender::unit();
         header.frame = ImGui::GetFrameCount();
         header.count = (int) pendingPrims.size();
-        std::vector<unsigned char> payload(sizeof(Header) + sizeof(Prim) * pendingPrims.size());
+        header.extra = (int) pendingExtra.size();
+        size_t primBytes = sizeof(Prim) * pendingPrims.size();
+        std::vector<unsigned char> payload(sizeof(Header) + primBytes + sizeof(float) * pendingExtra.size());
         std::memcpy(payload.data(), &header, sizeof(Header));
-        std::memcpy(payload.data() + sizeof(Header), pendingPrims.data(), sizeof(Prim) * pendingPrims.size());
+        std::memcpy(payload.data() + sizeof(Header), pendingPrims.data(), primBytes);
+        if (!pendingExtra.empty()) {
+            std::memcpy(payload.data() + sizeof(Header) + primBytes, pendingExtra.data(),
+                        sizeof(float) * pendingExtra.size());
+        }
         drawList->AddCallback(execute, payload.data(), payload.size());
         drawList->AddCallback(ImDrawCallback_ResetRenderState, nullptr);
         pendingPrims.clear();
+        pendingExtra.clear();
     }
 
     static Prim make(int kind) {
@@ -1664,6 +2223,10 @@ void main() {
         std::memset(&p, 0, sizeof(p));
         p.kind = kind;
         return p;
+    }
+
+    static float styled(float radius, float width, float height) {
+        return ThemeStyle::radius(radius, width, height, UiRender::transformW(1.0f));
     }
 
     static Prim makeRect(int kind, float x, float y, float width, float height) {
@@ -1697,7 +2260,7 @@ void main() {
     void roundRectRadii(float x, float y, float width, float height, float radius, uint32_t rgba, uint32_t rgbaB,
                         float gradient, float topLeft, float topRight, float bottomLeft, float bottomRight) {
         Prim p = makeRect(ROUND_RECT, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = gradient;
         p.f[6] = topLeft;
         p.f[7] = topRight;
@@ -1727,7 +2290,7 @@ void main() {
     void roundRectRing(float x, float y, float width, float height, float radius, float thickness, uint32_t rgbaTop,
                        uint32_t rgbaBottom, int cornerMask, float fadeEnd, bool horizontal, float dash, float gap) {
         Prim p = makeRect(RING, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = thickness;
         p.f[6] = fadeEnd;
         p.f[7] = horizontal ? 1.0f : 0.0f;
@@ -1742,7 +2305,7 @@ void main() {
     void roundRectShadow(float x, float y, float width, float height, float radius, float spread, float offsetY,
                          uint32_t rgba) {
         Prim p = makeRect(SHADOW, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = spread;
         p.f[6] = offsetY;
         p.c[0] = rgba;
@@ -1752,7 +2315,7 @@ void main() {
     void roundRectBloom(float x, float y, float width, float height, float radius, float spread, float intensity,
                         uint32_t rgba) {
         Prim p = makeRect(BLOOM, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = spread;
         p.f[6] = intensity;
         p.c[0] = rgba;
@@ -1762,7 +2325,7 @@ void main() {
     void kawaseBlur(float x, float y, float w, float h, float cornerRadius, float strength, uint32_t tintRgba,
                     int cornerMask, bool recapture) {
         Prim p = makeRect(KAWASE, x, y, w, h);
-        p.f[4] = cornerRadius;
+        p.f[4] = styled(cornerRadius, w, h);
         p.f[5] = strength;
         p.c[0] = tintRgba;
         p.i[0] = cornerMask;
@@ -1781,7 +2344,7 @@ void main() {
     void blur(float x, float y, float w, float h, float cornerRadius, float blurRadius, uint32_t tintRgba,
               int cornerMask, float gamma) {
         Prim p = makeRect(BLUR, x, y, w, h);
-        p.f[4] = cornerRadius;
+        p.f[4] = styled(cornerRadius, w, h);
         p.f[5] = blurRadius;
         p.f[6] = gamma;
         p.c[0] = tintRgba;
@@ -1796,7 +2359,7 @@ void main() {
     void pickerSurface(float x, float y, float width, float height, float radius, float hue, float sat, float val,
                        int mode, float alpha) {
         Prim p = makeRect(PICKER, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = hue;
         p.f[6] = sat;
         p.f[7] = val;
@@ -1808,7 +2371,7 @@ void main() {
     void roundTexture(uint32_t texture, float x, float y, float width, float height, float radius, int cornerMask,
                       float alpha, float fadeWidth, uint32_t fadeRgba, float uvScaleX, float uvScaleY) {
         Prim p = makeRect(ROUND_TEXTURE, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = alpha;
         p.f[6] = fadeWidth;
         p.f[7] = uvScaleX;
@@ -1827,7 +2390,7 @@ void main() {
     void roundTex(float x, float y, float width, float height, float radius, uint32_t texture, float u0, float v0,
                   float u1, float v1, uint32_t tintRgba, int cornerMask) {
         Prim p = makeRect(ROUND_TEX, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = u0;
         p.f[6] = v0;
         p.f[7] = u1;
@@ -1870,6 +2433,22 @@ void main() {
         submit(p);
     }
 
+    static void submitShell(const float plate[4], int plateCorners, const float main[4], int mainCorners, float inner,
+                            float outer, uint32_t plateRgba, uint32_t mainRgba) {
+        Prim p = make(SHELL);
+        for (int k = 0; k < 4; k++) {
+            p.f[k] = plate[k];
+            p.f[4 + k] = main[k];
+        }
+        p.f[8] = inner;
+        p.f[9] = outer;
+        p.i[0] = plateCorners;
+        p.i[1] = mainCorners;
+        p.c[0] = plateRgba;
+        p.c[1] = mainRgba;
+        submit(p);
+    }
+
     void shell(float x, float y, float width, float height, float split, float radius, uint32_t plateRgba,
                uint32_t mainRgba) {
         shell(x, y, width, height, split, radius, plateRgba, mainRgba, radius);
@@ -1877,12 +2456,162 @@ void main() {
 
     void shell(float x, float y, float width, float height, float split, float radius, uint32_t plateRgba,
                uint32_t mainRgba, float outerRadius) {
-        Prim p = makeRect(SHELL, x, y, width, height);
-        p.f[4] = split;
-        p.f[5] = radius;
-        p.f[6] = outerRadius;
-        p.c[0] = plateRgba;
-        p.c[1] = mainRgba;
+        float inner = styled(radius, width - split, height);
+        float outer = styled(outerRadius, width, height);
+        float plate[4] = {x, y, split + inner * 2.0f, height};
+        float main[4] = {x + split, y, width - split, height};
+        submitShell(plate, SHELL_OUTER << 0 | SHELL_OUTER << 4, main,
+                    SHELL_INNER << 0 | SHELL_OUTER << 2 | SHELL_INNER << 4 | SHELL_OUTER << 6, inner, outer, plateRgba,
+                    mainRgba);
+    }
+
+    void shellPanes(const float plate[4], int plateCorners, const float main[4], int mainCorners, float inner,
+                    float outer, uint32_t plateRgba, uint32_t mainRgba) {
+        float width = std::max(plate[0] + plate[2], main[0] + main[2]) - std::min(plate[0], main[0]);
+        float height = std::max(plate[1] + plate[3], main[1] + main[3]) - std::min(plate[1], main[1]);
+        submitShell(plate, plateCorners, main, mainCorners, styled(inner, main[2], main[3]),
+                    styled(outer, width, height), plateRgba, mainRgba);
+    }
+
+    float styledRadius(float radius, float width, float height) {
+        return styled(radius, width, height);
+    }
+
+    Shape roundShape(float x, float y, float width, float height, float radius, int cornerMask) {
+        float r = styled(radius, width, height);
+        return {{x, y, width, height},
+                {(cornerMask & 1) != 0 ? r : 0.0f, (cornerMask & 2) != 0 ? r : 0.0f, (cornerMask & 4) != 0 ? r : 0.0f,
+                 (cornerMask & 8) != 0 ? r : 0.0f}};
+    }
+
+    Shape paneShape(const float rect[4], int codes, float inner, float outer) {
+        return {{rect[0], rect[1], rect[2], rect[3]},
+                {cornerRadius(codes, 0, inner, outer), cornerRadius(codes, 1, inner, outer),
+                 cornerRadius(codes, 2, inner, outer), cornerRadius(codes, 3, inner, outer)}};
+    }
+
+    static void putShape(const Shape* shape) {
+        if (shape == nullptr) {
+            pendingExtra.insert(pendingExtra.end(), 8, 0.0f);
+            return;
+        }
+        pendingExtra.insert(pendingExtra.end(), shape->rect, shape->rect + 4);
+        pendingExtra.insert(pendingExtra.end(), shape->radii, shape->radii + 4);
+    }
+
+    void paint(const Shape& shape, const Shape* clip, const Shape* hole, const Paint& paint) {
+        float left = shape.rect[0];
+        float top = shape.rect[1];
+        float right = left + shape.rect[2];
+        float bottom = top + shape.rect[3];
+        if (clip != nullptr) {
+            left = std::max(left, clip->rect[0]);
+            top = std::max(top, clip->rect[1]);
+            right = std::min(right, clip->rect[0] + clip->rect[2]);
+            bottom = std::min(bottom, clip->rect[1] + clip->rect[3]);
+        }
+        if (right <= left || bottom <= top || paint.opacity <= 0.0f) {
+            return;
+        }
+        Prim p = makeRect(PAINT, left - 1.0f, top - 1.0f, right - left + 2.0f, bottom - top + 2.0f);
+        p.i[0] = (int) pendingExtra.size();
+        p.i[1] = paint.blend;
+        p.tex = paint.texture;
+        putShape(&shape);
+        putShape(clip);
+        putShape(hole);
+        int count = std::clamp(paint.count, 1, PAINT_STOPS);
+        pendingExtra.insert(
+                pendingExtra.end(),
+                {(float) paint.kind, std::min(1.0f, paint.opacity), paint.dither ? 1.0f : 0.0f, (float) count});
+        for (int k = 0; k < PAINT_STOPS; k++) {
+            uint32_t c = paint.colors[std::min(k, count - 1)];
+            float a = ca(c);
+            pendingExtra.insert(pendingExtra.end(), {cr(c) * a, cg(c) * a, cb(c) * a, a});
+        }
+        for (int k = 0; k < PAINT_STOPS; k++) {
+            pendingExtra.push_back(paint.stops[std::min(k, count - 1)]);
+        }
+        pendingExtra.insert(pendingExtra.end(), paint.axis, paint.axis + 4);
+        pendingExtra.insert(
+                pendingExtra.end(),
+                {paint.shift, paint.cycle ? 1.0f : 0.0f, paint.tile ? 1.0f : 0.0f, paint.bounded ? 1.0f : 0.0f});
+        pendingExtra.insert(pendingExtra.end(), paint.frame, paint.frame + 4);
+        pendingExtra.insert(pendingExtra.end(), paint.uv, paint.uv + 4);
+        pendingExtra.insert(pendingExtra.end(), {cr(paint.tint), cg(paint.tint), cb(paint.tint), ca(paint.tint)});
+        submit(p);
+    }
+
+    int customSlot(const std::string& key, const std::string& source) {
+        for (size_t i = 0; i < customPrograms.size(); i++) {
+            if (customPrograms[i].key == key) {
+                return (int) i;
+            }
+        }
+        CustomProgram program;
+        program.key = key;
+        program.source = source;
+        customPrograms.push_back(std::move(program));
+        return (int) customPrograms.size() - 1;
+    }
+
+    const CustomInfo& customInfo(int slot) {
+        static const CustomInfo none;
+        return slot >= 0 && slot < (int) customPrograms.size() ? customPrograms[(size_t) slot].info : none;
+    }
+
+    void custom(const Shape& shape, const Shape* clip, const Custom& custom) {
+        float left = shape.rect[0];
+        float top = shape.rect[1];
+        float right = left + shape.rect[2];
+        float bottom = top + shape.rect[3];
+        if (clip != nullptr) {
+            left = std::max(left, clip->rect[0]);
+            top = std::max(top, clip->rect[1]);
+            right = std::min(right, clip->rect[0] + clip->rect[2]);
+            bottom = std::min(bottom, clip->rect[1] + clip->rect[3]);
+        }
+        if (right <= left || bottom <= top || custom.opacity <= 0.0f || custom.slot < 0) {
+            return;
+        }
+        Prim p = makeRect(CUSTOM, left - 1.0f, top - 1.0f, right - left + 2.0f, bottom - top + 2.0f);
+        p.i[0] = (int) pendingExtra.size();
+        p.i[1] = custom.slot;
+        putShape(&shape);
+        putShape(clip);
+        pendingExtra.insert(pendingExtra.end(),
+                            {custom.time, std::min(1.0f, custom.opacity), custom.backdrop ? 1.0f : 0.0f,
+                             custom.halfRes ? 1.0f : 0.0f, custom.mouse[0], custom.mouse[1]});
+        for (uint32_t token : custom.tokens) {
+            pendingExtra.insert(pendingExtra.end(), {cr(token), cg(token), cb(token), ca(token)});
+        }
+        for (uint32_t texture : custom.textures) {
+            pendingExtra.push_back((float) texture);
+        }
+        submit(p);
+    }
+
+    bool paintBroken() {
+        return paintFailed;
+    }
+
+    void kawaseBlur(const Shape& shape, const Shape* hole, float strength, uint32_t tintRgba, bool recapture) {
+        Prim p = makeRect(KAWASE, shape.rect[0], shape.rect[1], shape.rect[2], shape.rect[3]);
+        p.f[4] = 1.0f;
+        p.f[5] = strength;
+        p.f[8] = shape.radii[0];
+        p.f[9] = shape.radii[1];
+        p.f[10] = shape.radii[2];
+        p.f[11] = shape.radii[3];
+        p.c[0] = tintRgba;
+        p.i[0] = 0xF;
+        p.i[1] = recapture ? 1 : 0;
+        p.i[2] = 1;
+        if (hole != nullptr) {
+            p.i[2] = 2;
+            p.f[7] = (float) pendingExtra.size();
+            putShape(hole);
+        }
         submit(p);
     }
 
@@ -1931,7 +2660,7 @@ void main() {
             return;
         }
         Prim p = makeRect(BLUR, x, y, w, h);
-        p.f[4] = cornerRadius;
+        p.f[4] = styled(cornerRadius, w, h);
         p.f[5] = blurRadius;
         p.f[6] = gamma;
         p.c[0] = tintRgba;
@@ -1957,10 +2686,10 @@ void main() {
         p.f[4] = 1.0f;
         p.f[5] = blurRadius;
         p.f[6] = gamma;
-        p.f[8] = topLeft;
-        p.f[9] = topRight;
-        p.f[10] = bottomLeft;
-        p.f[11] = bottomRight;
+        p.f[8] = styled(topLeft, w, h);
+        p.f[9] = styled(topRight, w, h);
+        p.f[10] = styled(bottomLeft, w, h);
+        p.f[11] = styled(bottomRight, w, h);
         p.c[0] = tintRgba;
         p.i[0] = 0xF;
         p.i[2] = 1;
@@ -1980,7 +2709,7 @@ void main() {
             return;
         }
         Prim p = makeRect(BLOOM, x, y, width, height);
-        p.f[4] = radius;
+        p.f[4] = styled(radius, width, height);
         p.f[5] = spread;
         p.f[6] = intensity;
         p.c[0] = rgba;

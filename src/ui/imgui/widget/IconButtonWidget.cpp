@@ -5,6 +5,7 @@
 #include "../panel/UiState.h"
 #include "../panel/UiTheme.h"
 #include "../panel/UiWidgets.h"
+#include "../screens/theme/ThemeEffects.h"
 
 IconButtonWidget::IconButtonWidget(const std::string& id, const std::string& glyph, uint32_t color, uint32_t hoverColor)
     : Widget(id),
@@ -27,5 +28,6 @@ void IconButtonWidget::paint() {
     if (lit > 0.001f) {
         UiRender::roundRect(x, y, w, h, 6.0f, UiTheme::overlay(Ui::round(16 * lit)));
     }
+    ThemeEffects::button(id, "icon", x, y, w, h, 6.0f, 0xF, hoverColor, isHovered);
     UiWidgets::icon(glyph, x + w * 0.5f, y + h * 0.5f, UiRender::mix(color, hoverColor, lit), 11.0f);
 }
