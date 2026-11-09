@@ -82,7 +82,7 @@ namespace JavaPage {
             major.bounds(refreshX - 8.0f - SELECT_W, Page::top() + 4.0f, SELECT_W, FIELD_H).block(covered || loading);
             major.paint();
 
-            float top = Page::TOP + 40.0f;
+            float top = Page::top() + 40.0f;
             float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
             std::vector<const JavaDownloads::Package*> shown;
             for (const JavaDownloads::Package& package : list.packages) {

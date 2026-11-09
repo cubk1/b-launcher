@@ -3,6 +3,7 @@
 #include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/DownloadsParts.h"
 #include "ui/imgui/screens/downloads/JavaPage.h"
+#include "ui/imgui/screens/downloads/ThemeCatalogPage.h"
 #include "ui/imgui/screens/downloads/Prerequisites.h"
 #include "ui/imgui/screens/downloads/ProjectPage.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
@@ -141,9 +142,11 @@ namespace DownloadsScreen {
         Source source = Source::Modrinth;
         constexpr int AGGREGATE_PAGE = 2;
         constexpr int JAVA_PAGE = 3;
+        constexpr int THEMES_PAGE = 4;
         PageTransition sourceViews(AGGREGATE_PAGE);
         bool aggregate = true;
         bool java = false;
+        bool themes = false;
         Source browsing = Source::Modrinth;
         Source aggregateSource = Source::Modrinth;
         std::string asking;
@@ -963,8 +966,9 @@ namespace DownloadsScreen {
         }
 
         void enterAggregate() {
-            if (java) {
+            if (java || themes) {
                 java = false;
+                themes = false;
                 if (aggregate) {
                     sourceViews.go(AGGREGATE_PAGE);
                     return;
@@ -990,8 +994,9 @@ namespace DownloadsScreen {
         }
 
         void switchSource(Source next) {
-            if (java) {
+            if (java || themes) {
                 java = false;
+                themes = false;
                 if (!aggregate && next == source) {
                     sourceViews.go((int) source);
                     return;
@@ -1035,13 +1040,21 @@ namespace DownloadsScreen {
         void enterJava() {
             stopEditing();
             java = true;
+            themes = false;
             sourceViews.go(JAVA_PAGE);
+        }
+
+        void enterThemes() {
+            stopEditing();
+            java = false;
+            themes = true;
+            sourceViews.go(THEMES_PAGE);
         }
 
         bool sourceRow(Source each, float y, bool blocked) {
             std::string id = std::string("downloads#source#") + Addons::sourceName(each);
             float x = Page::left();
-            bool active = !java && !aggregate && source == each;
+            bool active = !java && !themes && !aggregate && source == each;
             bool hovered = !blocked && NewUi::hit(x, y, SIDE_W, NAV_ITEM_H);
             float r = UiState::motion(id, active ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
             if (r > 0.001f) {
@@ -1064,9 +1077,9 @@ namespace DownloadsScreen {
         void side(bool covered) {
             float y = Page::top();
             NavItemWidget search("downloads#aggregate", Ui::glyph(0xf002), "搜索");
-            search.selected(aggregate && !java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            search.selected(aggregate && !java && !themes).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             search.paint();
-            if (search.pressed && (java || !aggregate || views.page != VIEW_RESULTS)) {
+            if (search.pressed && (java || themes || !aggregate || views.page != VIEW_RESULTS)) {
                 enterAggregate();
             }
             y += NAV_STEP;
@@ -1083,7 +1096,14 @@ namespace DownloadsScreen {
                 enterJava();
             }
             y += NAV_STEP;
-            if (aggregate || java) {
+            NavItemWidget launcherThemes("downloads#themes", Ui::glyph(0xf1fc), "启动器主题");
+            launcherThemes.selected(themes).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            launcherThemes.paint();
+            if (launcherThemes.pressed && !themes) {
+                enterThemes();
+            }
+            y += NAV_STEP;
+            if (aggregate || java || themes) {
                 return;
             }
             y += 4.0f;
@@ -1808,7 +1828,7 @@ namespace DownloadsScreen {
             float barX = mainX();
             float barW = mainW();
             float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
-            searchBar(barX, Page::TOP, barW, covered);
+            searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
                 return;
             }
@@ -1996,6 +2016,8 @@ namespace DownloadsScreen {
         views.begin();
         if (java) {
             JavaPage::draw(mainX(), covered);
+        } else if (themes) {
+            ThemeCatalogPage::draw(mainX(), covered);
         } else if (!routes.empty()) {
             drawRoute(covered);
         } else if (aggregate) {

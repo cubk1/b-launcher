@@ -1,7 +1,7 @@
 #include "ui/imgui/screens/downloads/AuthorPage.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "app/downloads/Projects.h"
 #include "app/system/Platform.h"
-#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 
