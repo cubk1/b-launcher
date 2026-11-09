@@ -2,6 +2,7 @@
 #include "app/downloads/Recent.h"
 #include "app/system/AsyncTasks.h"
 #include "app/instances/Instances.h"
+#include "app/instances/Mods.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
@@ -447,6 +448,34 @@ namespace ProjectInstaller {
             return names;
         }
 
+        std::vector<std::filesystem::path> superseded(const std::vector<blb::net::download_task>& files,
+                                                      const std::filesystem::path& folder) {
+            std::set<std::string> ids;
+            for (const blb::net::download_task& file : files) {
+                auto info = blb::modpack::read_mod(file.target);
+                if (info && !info->id.empty()) {
+                    ids.insert(info->id);
+                }
+            }
+            std::vector<std::filesystem::path> out;
+            if (ids.empty()) {
+                return out;
+            }
+            for (const blb::modpack::mod_info& mod : blb::modpack::scan_mods(folder)) {
+                if (mod.id.empty() || ids.count(mod.id) == 0) {
+                    continue;
+                }
+                bool fresh = std::any_of(files.begin(), files.end(), [&](const blb::net::download_task& file) {
+                    std::error_code error;
+                    return std::filesystem::equivalent(file.target, mod.file, error);
+                });
+                if (!fresh) {
+                    out.push_back(mod.file);
+                }
+            }
+            return out;
+        }
+
         void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text, const std::string& problem) {
             Transfers::finish(task->transfer, ok ? Transfers::State::Done : Transfers::State::Failed,
                               ok ? std::string() : problem);
@@ -694,7 +723,7 @@ namespace ProjectInstaller {
         std::string instanceName = entry->info.id;
         Addons::Version chosen = version;
         run(task,
-            [task, target, gameVersion, loader, chosen, kind, title, instanceName,
+            [task, target, gameVersion, loader, chosen, kind, title, instanceName, instanceKey,
              picked](blb::cancellation_token token) -> Continuation {
                 std::vector<blb::net::download_task> files;
                 std::vector<std::wstring> names;
@@ -755,14 +784,31 @@ namespace ProjectInstaller {
                 if (token.is_cancelled()) {
                     return nullptr;
                 }
-                return [task, problem, title, instanceName, dependencies] {
+                std::vector<std::filesystem::path> outdated;
+                if (problem.empty() && kind == Addons::Kind::Mod) {
+                    outdated = superseded(files, target);
+                }
+                return [task, problem, title, instanceName, instanceKey, kind, dependencies, outdated] {
                     if (!problem.empty()) {
                         finish(task, false, "无法安装 " + title + "：" + problem, problem);
                         return;
                     }
+                    size_t replaced = 0;
+                    for (const std::filesystem::path& old : outdated) {
+                        if (Platform::recycle(old)) {
+                            replaced++;
+                        } else {
+                            Notices::add(Notices::Kind::Failed, "无法移除旧版本 " + blb::path_to_utf8(old.filename()),
+                                         5000);
+                        }
+                    }
+                    if (kind == Addons::Kind::Mod) {
+                        Mods::scan(instanceKey);
+                    }
                     std::string extra =
                             dependencies > 0 ? "（含 " + std::to_string(dependencies) + " 个前置）" : std::string();
-                    finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra, {});
+                    std::string moved = replaced > 0 ? "，旧版本已移到回收站" : std::string();
+                    finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra + moved, {});
                 };
             });
     }

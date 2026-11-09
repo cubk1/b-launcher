@@ -14,6 +14,7 @@
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Instances.h"
+#include "app/instances/ModManager.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "app/downloads/ModNames.h"
 #include "app/downloads/Modrinth.h"
@@ -2196,8 +2197,13 @@ namespace DownloadsParts {
             UiWidgets::check(right - doneW - 12.0f, centreY, UiTheme::accent(), 9.0f);
             return;
         }
-        std::string text = saveAs ? "另存为" : kind == Kind::Datapack ? "下载" : "安装";
-        int glyph = saveAs ? 0xf0c7 : 0xf019;
+        bool replace = false;
+        if (!saveAs && kind == Kind::Mod && Instances::find(owner) != nullptr) {
+            ModManager::prepare(owner);
+            replace = Prerequisites::installed(owner, version.source, version.projectId, nullptr);
+        }
+        std::string text = saveAs ? "另存为" : kind == Kind::Datapack ? "下载" : replace ? "替换" : "安装";
+        int glyph = saveAs ? 0xf0c7 : replace ? 0xf2f1 : 0xf019;
         float w = Page::buttonWidth(text, glyph);
         float x = right - w;
         std::string id = std::string("downloads#install#") + (primary ? "head#" : "") + version.id;
