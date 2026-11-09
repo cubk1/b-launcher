@@ -94,7 +94,7 @@ namespace Platform {
             return S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode) && st.st_uid == getuid();
         }
 
-        // The Nix package runs this program through a wrapper that sets BLB_NIXOS_*, and the wrapper
+        // The Nix package runs this program through a wrapper that sets BLB_NIX_*, and the wrapper
         // puts its own path in BLB_EXECUTABLE. A shortcut must run the wrapper, not this program.
         // A /nix/store path breaks after an update and garbage collection, so a shortcut uses
         // the profile link on PATH (e.g. /run/current-system/sw/bin) that points to the same file.

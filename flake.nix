@@ -46,17 +46,18 @@
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
             inputsFrom = [ b-launcher.unwrapped ];
+            # The jdks and programs that the package wrapper adds to PATH, for ./build/b-launcher.
             packages = [
               pkgs.git
               pkgs.gdb
-            ];
+            ]
+            ++ b-launcher.jdks
+            ++ b-launcher.runtimePrograms;
             env = {
               # The default value of the CMake option BLB_SYSTEM_LIBS.
               BLB_SYSTEM_LIBS = "ON";
-              # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
-              BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
-              BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
-              BLB_NIXOS_PATH = b-launcher.nixosPath;
+              # The value that the package wrapper gives to the launcher.
+              BLB_NIX_LIBRARY_PATH = b-launcher.nixosLibraryPath;
             };
           };
         }
