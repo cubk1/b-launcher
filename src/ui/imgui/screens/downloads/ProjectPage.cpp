@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/downloads/ProjectPage.h"
 #include "ui/imgui/screens/downloads/DependencyView.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/PackTree.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
 #include "app/downloads/Mcmod.h"
@@ -1324,7 +1325,7 @@ namespace ProjectPage {
         route.tab = DownloadsParts::segments("project", route.tab, items, mainX(), tabsY, covered,
                                              mainW() - (switchW > 0.0f ? switchW + 12.0f : 0.0f));
         float top = tabsY + DownloadsParts::SEGMENT_H + 12.0f;
-        float bottom = MainWindow::height() - 14.0f;
+        float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
         switch (route.tab) {
             case VERSIONS: versionsTab(route, st, versions, top, bottom, covered); break;
             case CHANGELOG: changelogTab(route, st, versions, top, bottom, covered); break;

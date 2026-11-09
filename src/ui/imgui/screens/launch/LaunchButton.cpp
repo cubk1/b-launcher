@@ -111,7 +111,6 @@ namespace LaunchButton {
             }
         }
 
-        constexpr float GAP = 12.0f;
         constexpr float MENU_W = 220.0f;
         constexpr float MENU_ROW = 32.0f;
 
@@ -274,6 +273,10 @@ namespace LaunchButton {
         }
         UiSound::request(UiSound::PULSE);
         Game::launch(key);
+    }
+
+    float besideX(float buttonX) {
+        return buttonX - GAP - SIZE - (SIZE + GAP) * UiState::getOrDefault("launch#more", 0.0f);
     }
 
     void drawStatus(float right, float bottom) {

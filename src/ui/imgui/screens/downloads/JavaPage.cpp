@@ -1,4 +1,5 @@
 #include "ui/imgui/screens/downloads/JavaPage.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "app/instances/Covers.h"
 #include "app/launch/JavaDownloads.h"
 #include "ui/imgui/panel/NewUi.h"
@@ -82,7 +83,7 @@ namespace JavaPage {
             major.paint();
 
             float top = Page::TOP + 40.0f;
-            float bottom = MainWindow::height() - 14.0f;
+            float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
             std::vector<const JavaDownloads::Package*> shown;
             for (const JavaDownloads::Package& package : list.packages) {
                 if (javaMajor == 0 || package.major == javaMajor) {
