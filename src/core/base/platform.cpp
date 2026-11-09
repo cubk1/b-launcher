@@ -394,16 +394,13 @@ runs_generic_binaries ()
   return name.find ("stub-ld") == std::string::npos;
 }
 
-const nixos_paths &
-packaged_nixos_paths ()
+const std::string &
+nixos_library_path ()
 {
-  static const nixos_paths none;
-  static const nixos_paths paths {
-    environment ("BLB_NIXOS_JAVA").value_or (""),
-    environment ("BLB_NIXOS_LIBRARY_PATH").value_or (""),
-    environment ("BLB_NIXOS_PATH").value_or ("")
-  };
-  return is_nixos () ? paths : none;
+  static const std::string path
+      = is_nixos () ? environment ("BLB_NIX_LIBRARY_PATH").value_or ("")
+                    : std::string ();
+  return path;
 }
 
 }
