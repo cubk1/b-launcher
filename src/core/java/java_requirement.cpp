@@ -119,30 +119,16 @@ select_java (std::span<const java_installation> installs,
 {
   const java_installation *best = nullptr;
   auto host = current_platform ().arch;
-  std::vector<std::filesystem::path> packaged;
-  for (auto home : split (packaged_nixos_paths ().java_homes, ':'))
-    if (!home.empty ())
-      packaged.push_back (fs::real_path (path_from_utf8 (home)));
   auto score = [&] (const java_installation &j) {
     int exact = j.major == requirement.preferred_major ? 0 : 1;
     int native = j.arch == host ? 0 : 1;
     int distance = std::abs (j.major - requirement.preferred_major);
     int below = j.major < requirement.preferred_major ? 1 : 0;
-    // On NixOS, for the same version, use the Java that the user gave: first the jdks of
-    // the package, then JAVA_HOME, then PATH.
-    int environment_source
-        = !is_nixos () ? 0
-          : std::find (packaged.begin (), packaged.end (), fs::real_path (j.home))
-                  != packaged.end ()
-              ? 0
-          : j.source == java_source::java_home ? 1
-          : j.source == java_source::path      ? 2
-                                               : 3;
     int source = j.source == java_source::managed
                          || j.source == java_source::minecraft_runtime
                      ? 0
                      : 1;
-    return std::make_tuple (exact, native, below, distance, environment_source, source);
+    return std::make_tuple (exact, native, below, distance, source);
   };
   for (const auto &j : installs)
     {

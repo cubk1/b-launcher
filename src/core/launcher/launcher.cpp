@@ -407,10 +407,8 @@ game_launcher::prepare (const launch_settings &settings,
               }
         }
     }
-  const auto &nixos = packaged_nixos_paths ();
   prepend_list (out.command.environment, "LD_LIBRARY_PATH",
-                nixos.library_path);
-  prepend_list (out.command.environment, "PATH", nixos.program_path);
+                nixos_library_path ());
   out.timings.total = since (started);
   s_log.info ("prepared {} in {} ms (resolve {}, auth {}, integrity {}, "
               "java {}, natives {})",
