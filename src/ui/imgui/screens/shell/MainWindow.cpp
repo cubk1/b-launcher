@@ -24,6 +24,7 @@
 #include "app/system/Customization.h"
 #include "app/system/Features.h"
 #include "ui/imgui/screens/shell/Icons.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/instances/InstancePage.h"
 #include "app/instances/Instances.h"
 #include "ui/imgui/screens/launch/LaunchButton.h"
@@ -969,7 +970,6 @@ namespace MainWindow {
     static const Destination DESTINATIONS[] = {
             {"nav#new", 0xf067, "新建实例", PAGE_NEW_INSTANCE},
             {"nav#downloads", 0xf019, "下载附加件", PAGE_DOWNLOADS},
-            {"nav#transfers", 0xf0ae, "下载列表", PAGE_TRANSFERS},
             {"nav#accounts", 0xf007, "账户", PAGE_ACCOUNTS},
             {"nav#multiplayer", 0xf6ff, "联机", PAGE_MULTIPLAYER},
             {"nav#settings", 0xf013, "选项", PAGE_SETTINGS},
@@ -1480,13 +1480,20 @@ namespace MainWindow {
 
     static void home() {
         bool floating = !Homepage::launchShown() && !launchColumn;
+        float reserve = floating ? LaunchButton::SIZE + 22.0f : DownloadButton::inset();
         float top = contentTop() + setupBanner(contentTop());
-        Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, floating ? LaunchButton::SIZE + 22.0f : 0.0f,
-                       NewUi::overlayCoversMouse());
+        Homepage::draw(Page::left(), top, Page::right(), height() - 14.0f, reserve, NewUi::overlayCoversMouse());
         if (floating) {
             float buttonX = width() - Page::RIGHT_MARGIN - LaunchButton::SIZE;
-            LaunchButton::drawStatus(buttonX - 14.0f, height() - LAUNCH_MARGIN);
-            LaunchButton::draw(buttonX, height() - LAUNCH_MARGIN - LaunchButton::SIZE);
+            float buttonY = height() - LAUNCH_MARGIN - LaunchButton::SIZE;
+            float downloadX = LaunchButton::besideX(buttonX);
+            LaunchButton::draw(buttonX, buttonY);
+            DownloadButton::draw(downloadX, buttonY);
+            float statusRight = UiRender::lerp(buttonX - 14.0f, downloadX - 14.0f, DownloadButton::shown());
+            LaunchButton::drawStatus(statusRight, height() - LAUNCH_MARGIN);
+        } else {
+            DownloadButton::draw(width() - DownloadButton::MARGIN - DownloadButton::SIZE,
+                                 height() - DownloadButton::MARGIN - DownloadButton::SIZE);
         }
         if (Customization::active()) {
             homeExtras(floating);
@@ -1507,6 +1514,8 @@ namespace MainWindow {
             AccountsScreen::draw();
         } else if (pages.page == PAGE_DOWNLOADS) {
             DownloadsScreen::draw();
+            DownloadButton::draw(width() - DownloadButton::MARGIN - DownloadButton::SIZE,
+                                 height() - DownloadButton::MARGIN - DownloadButton::SIZE);
         } else if (pages.page == PAGE_TRANSFERS) {
             TransfersScreen::draw();
         } else if (pages.page == PAGE_MULTIPLAYER) {
@@ -1592,6 +1601,9 @@ namespace MainWindow {
         bool underTitle = Onboarding::drawing() || (pages.page == PAGE_HOME && HomeWidgets::alignBottom());
         bool floating = pages.page == PAGE_HOME && !Homepage::launchShown() && !launchColumn;
         float inset = floating ? LAUNCH_MARGIN + LaunchButton::SIZE : 0.0f;
+        if (!floating && DownloadButton::shown() > 0.5f && (pages.page == PAGE_HOME || pages.page == PAGE_DOWNLOADS)) {
+            inset = DownloadButton::MARGIN + DownloadButton::SIZE;
+        }
         float columnTop = 0.0f;
         float columnBottom = 0.0f;
         if (pages.page == PAGE_HOME && !underTitle && !floating && Homepage::column(columnTop, columnBottom) &&

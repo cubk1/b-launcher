@@ -9,6 +9,7 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
       # The 关于 page shows the short git hash. A dirty tree shows the hash of HEAD, as a CMake build does.
@@ -46,17 +47,18 @@
           #   cmake --build build --target b-launcher
           default = pkgs.mkShell {
             inputsFrom = [ b-launcher.unwrapped ];
+            # The jdks and programs that the package wrapper adds to PATH, for ./build/b-launcher.
             packages = [
               pkgs.git
-              pkgs.gdb
-            ];
+            ]
+            ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.gdb
+            ++ b-launcher.jdks
+            ++ b-launcher.runtimePrograms;
             env = {
               # The default value of the CMake option BLB_SYSTEM_LIBS.
               BLB_SYSTEM_LIBS = "ON";
-              # The values that the package wrapper gives to the launcher, for ./build/b-launcher.
-              BLB_NIXOS_JAVA = b-launcher.nixosJavaHomes;
-              BLB_NIXOS_LIBRARY_PATH = b-launcher.nixosLibraryPath;
-              BLB_NIXOS_PATH = b-launcher.nixosPath;
+              # The value that the package wrapper gives to the launcher.
+              BLB_NIX_LIBRARY_PATH = b-launcher.nixosLibraryPath;
             };
           };
         }
