@@ -244,16 +244,10 @@ embed_tree(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedThemes.cpp HEADE
 
 add_library(duktape STATIC third_party/duktape/duktape.c)
 target_include_directories(duktape PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/duktape)
-file(GLOB_RECURSE MCU_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/material-color-utilities/cpp/*.cc)
-add_library(mcu STATIC ${MCU_SOURCES})
-target_include_directories(mcu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/material-color-utilities)
-target_compile_definitions(mcu PRIVATE _USE_MATH_DEFINES)
 if (MSVC)
     target_compile_options(duktape PRIVATE /w)
-    target_compile_options(mcu PRIVATE /w)
 else ()
     target_compile_options(duktape PRIVATE -w)
-    target_compile_options(mcu PRIVATE -w)
 endif ()
 
 if (WIN32)
@@ -319,7 +313,7 @@ add_custom_target(git_commit
         BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/generated/GitCommit.h
         VERBATIM)
 add_dependencies(b-launcher git_commit)
-target_link_libraries(b-launcher PRIVATE duktape mcu)
+target_link_libraries(b-launcher PRIVATE duktape)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if (NOT BLB_UPDATE_CHECK)
     target_compile_definitions(b-launcher PRIVATE BLB_NO_UPDATE_CHECK)

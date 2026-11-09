@@ -3,7 +3,7 @@
 #include "app/system/SystemColors.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/screens/shell/ShellLayout.h"
-#include "ui/imgui/screens/theme/Swatches.h"
+#include "ui/imgui/screens/theme/ImageSample.h"
 #include "ui/imgui/screens/theme/ThemeScript.h"
 #include "ui/imgui/theme/ThemePaintSpec.h"
 #include "ui/imgui/theme/ThemeStyle.h"
@@ -19,7 +19,7 @@
 struct ThemeInputs {
     uint32_t accent = 0xFF4F7DFFu;
     SystemColors::State system;
-    Swatches image;
+    ImageSample image;
     nlohmann::json settings = nlohmann::json::object();
     double time = 0.0;
 };

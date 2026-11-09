@@ -3,7 +3,7 @@
 #include "app/system/EmbeddedIcons.h"
 #include "app/system/Pixels.h"
 #include "ui/imgui/screens/shell/Icons.h"
-#include "ui/imgui/screens/theme/Swatches.h"
+#include "ui/imgui/screens/theme/ImageSample.h"
 #include "ui/imgui/screens/theme/ThemeRuntime.h"
 #include "ui/imgui/screens/theme/ThemeStore.h"
 #include "ui/imgui/theme/ThemePaintSpec.h"
@@ -72,7 +72,7 @@ namespace Background {
             Image panel;
             Image wholeSidebar;
             Image wholePanel;
-            Swatches swatches;
+            ImageSample sample;
         };
 
         std::string chosen;
@@ -344,8 +344,7 @@ namespace Background {
                 std::shared_ptr<const Pixels> pixels =
                         Pixels::decode(EmbeddedIcons::backgroundPanel, EmbeddedIcons::backgroundPanelSize);
                 if (pixels && pixels->width > 0 && pixels->height > 0) {
-                    result.swatches =
-                            Swatches::of(Swatches::thumbnail(pixels->rgba.data(), pixels->width, pixels->height));
+                    result.sample = ImageSample::of(pixels->rgba.data(), pixels->width, pixels->height);
                     result.ok = true;
                 }
                 Image stitched;
@@ -382,7 +381,7 @@ namespace Background {
                 result.wholeSidebar = std::move(strong);
                 result.wholePanel = std::move(light);
             }
-            result.swatches = Swatches::of(Swatches::thumbnail(image.rgba.data(), image.width, image.height));
+            result.sample = ImageSample::of(image.rgba.data(), image.width, image.height);
             result.ok = true;
         }
 
@@ -444,7 +443,7 @@ namespace Background {
                 }
                 return;
             }
-            ThemeRuntime::setImageSwatches(result.swatches);
+            ThemeRuntime::setImageSample(result.sample);
             if (!builtIn(key)) {
                 GLuint nextSidebar =
                         UiImages::upload(result.sidebar.rgba.data(), result.sidebar.width, result.sidebar.height);

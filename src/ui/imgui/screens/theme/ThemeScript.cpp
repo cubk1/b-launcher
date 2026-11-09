@@ -1,5 +1,4 @@
 #include "ui/imgui/screens/theme/ThemeScript.h"
-#include "ui/imgui/screens/theme/MaterialYou.h"
 
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
@@ -158,34 +157,6 @@ namespace {
         duk_put_prop_string(ctx, -2, key);
     }
 
-    duk_ret_t colorHct(duk_context* ctx) {
-        return pushColor(
-                ctx,
-                MaterialYou::hct(duk_require_number(ctx, 0), duk_require_number(ctx, 1), duk_require_number(ctx, 2)));
-    }
-
-    duk_ret_t colorToHct(duk_context* ctx) {
-        double h = 0.0;
-        double c = 0.0;
-        double t = 0.0;
-        MaterialYou::toHct(colorArg(ctx, 0), h, c, t);
-        duk_push_object(ctx);
-        putNumber(ctx, "h", h);
-        putNumber(ctx, "c", c);
-        putNumber(ctx, "t", t);
-        return 1;
-    }
-
-    duk_ret_t colorTone(duk_context* ctx) {
-        return pushColor(
-                ctx,
-                MaterialYou::tone(duk_require_number(ctx, 0), duk_require_number(ctx, 1), duk_require_number(ctx, 2)));
-    }
-
-    duk_ret_t colorHarmonize(duk_context* ctx) {
-        return pushColor(ctx, MaterialYou::harmonize(colorArg(ctx, 0), colorArg(ctx, 1)));
-    }
-
     duk_ret_t colorOklch(duk_context* ctx) {
         return pushColor(ctx,
                          ColorMath::fromOklch((float) duk_require_number(ctx, 0), (float) duk_require_number(ctx, 1),
@@ -265,10 +236,6 @@ namespace {
             {"scale", colorScale, 2},
             {"alpha", colorAlpha, 2},
             {"ink", colorInk, 1},
-            {"hct", colorHct, 3},
-            {"toHct", colorToHct, 1},
-            {"tone", colorTone, 3},
-            {"harmonize", colorHarmonize, 2},
             {"oklch", colorOklch, DUK_VARARGS},
             {"toOklch", colorToOklch, 1},
             {"hsl", colorHsl, DUK_VARARGS},

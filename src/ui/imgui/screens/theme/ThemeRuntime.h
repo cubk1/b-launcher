@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ui/imgui/screens/theme/Swatches.h"
+#include "ui/imgui/screens/theme/ImageSample.h"
 #include "ui/imgui/screens/theme/ThemeResolver.h"
 
 #include <nlohmann/json.hpp>
@@ -16,7 +16,7 @@ namespace ThemeRuntime {
     const std::string& current();
     void setUserAccent(uint32_t argb);
     uint32_t userAccent();
-    void setImageSwatches(const Swatches& swatches);
+    void setImageSample(const ImageSample& sample);
     const std::vector<ThemeSetting>& settings();
     nlohmann::json settingValues();
     void setSetting(const std::string& id, const nlohmann::json& value);
