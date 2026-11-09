@@ -58,16 +58,9 @@ bool is_nixos ();
 // False on NixOS without nix-ld: the ELF loader is missing or is the stub-ld program.
 bool runs_generic_binaries ();
 
-// Lists that the wrapper from nix/package.nix sets in BLB_NIXOS_JAVA, BLB_NIXOS_LIBRARY_PATH
-// and BLB_NIXOS_PATH, separated by ':'. All empty when not on NixOS.
-struct nixos_paths
-{
-  std::string java_homes;
-  // For LD_LIBRARY_PATH of the game: the GPU driver and the libraries that the game opens.
-  std::string library_path;
-  // For PATH of the game: xrandr for LWJGL 2 and lspci for OSHI.
-  std::string program_path;
-};
-const nixos_paths &packaged_nixos_paths ();
+// The list that the wrapper from nix/package.nix sets in BLB_NIX_LIBRARY_PATH, separated by ':'.
+// For LD_LIBRARY_PATH of the game only, not of the launcher: the GPU driver and the libraries
+// that the game opens. Empty when not on NixOS.
+const std::string &nixos_library_path ();
 
 }

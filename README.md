@@ -24,14 +24,19 @@ nix run github:cubk1/b-launcher
 # or add the github:cubk1/b-launcher flake and put b-launcher.packages.${system}.default in your package list.
 # The launcher finds Java in JAVA_HOME and PATH, for example environment.systemPackages = [ pkgs.jdk21 ].
 # To give more JDKs to the launcher, use .override { jdks = [ pkgs.jdk8 pkgs.jdk21 ]; } on the package.
+# The wrapper puts them in PATH of the launcher, before the PATH of the system.
 # additionalLibs and additionalPrograms in .override add libraries and programs for the game.
-# The launcher uses the Java version that the game needs. For the same version, it uses jdks first,
-# then JAVA_HOME, then PATH.
+# The launcher uses the Java version that the game needs.
 # With programs.nix-ld.enable = true, the launcher can also download Java.
 # Feature switches in .override:
-#   textToSpeechSupport (default true): flite for the narrator of the game.
+#   textToSpeechSupport (default true on Linux): flite for the narrator of the game.
 #   gamemodeSupport (default false): gamemoderun for the wrapper setting of an instance. It also
 #     needs programs.gamemode.enable = true. For example .override { gamemodeSupport = true; }.
+
+# For macOS (aarch64-darwin): the same flake builds bin/b-launcher and "Applications/B Launcher.app".
+# The jdks and additionalPrograms of .override work as on NixOS. textToSpeechSupport and
+# gamemodeSupport are for Linux only, and additionalLibs has no effect.
+nix run github:cubk1/b-launcher
 ```
 
 ## Unix数据目录

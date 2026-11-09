@@ -6,6 +6,7 @@
   cmake,
   ninja,
   pkg-config,
+  makeBinaryWrapper,
   python3,
   curl,
   zlib,
@@ -70,7 +71,8 @@ stdenv.mkDerivation (finalAttrs: {
     ninja
     pkg-config
     (python3.withPackages (ps: [ ps.fonttools ]))
-  ];
+  ]
+  ++ lib.optional stdenv.hostPlatform.isDarwin makeBinaryWrapper;
 
   buildInputs = [
     curl
@@ -81,8 +83,9 @@ stdenv.mkDerivation (finalAttrs: {
     simdjson
     finalAttrs.passthru.sdl3'
     freetype
-    fontconfig
-  ];
+  ]
+  # Other builds open fontconfig with dlopen, and macOS uses CoreText.
+  ++ lib.optional stdenv.hostPlatform.isLinux fontconfig;
 
   cmakeFlags = [
     (lib.cmakeBool "FETCHCONTENT_FULLY_DISCONNECTED" true)
@@ -92,6 +95,13 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.cmakeBool "BLB_UPDATE_CHECK" false)
     (lib.cmakeFeature "BLB_GIT_COMMIT" gitCommit)
   ];
+
+  # CMakeLists.txt installs the app bundle to Applications, which is what Finder and Launchpad
+  # run. A wrapper script, not a symlink, because the bundle is found from the executable path.
+  postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
+    mkdir -p $out/bin
+    makeWrapper "$out/Applications/B Launcher.app/Contents/MacOS/b-launcher" $out/bin/b-launcher
+  '';
 
   passthru = {
     # The default sdl3 links every backend (SDL_DEPS_SHARED is off) and hardcodes zenity, which
@@ -104,12 +114,17 @@ stdenv.mkDerivation (finalAttrs: {
     libdecor' = libdecor.overrideAttrs (old: {
       mesonFlags = old.mesonFlags ++ [ (lib.mesonEnable "gtk" false) ];
     });
-    sdl3' = sdl3.override {
-      libdecor = finalAttrs.passthru.libdecor';
-      zenity = writeShellScriptBin "zenity" ''exec zenity "$@"'';
-      pipewireSupport = false;
-      jackSupport = false;
-    };
+    # On macOS, the sdl3 of Nixpkgs is already small, and its binary cache has it.
+    sdl3' =
+      if stdenv.hostPlatform.isLinux then
+        sdl3.override {
+          libdecor = finalAttrs.passthru.libdecor';
+          zenity = writeShellScriptBin "zenity" ''exec zenity "$@"'';
+          pipewireSupport = false;
+          jackSupport = false;
+        }
+      else
+        sdl3;
   };
 
   meta = {
@@ -117,6 +132,6 @@ stdenv.mkDerivation (finalAttrs: {
     homepage = "https://github.com/cubk1/b-launcher";
     license = lib.licenses.mit;
     mainProgram = "b-launcher";
-    platforms = lib.platforms.linux;
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 })
