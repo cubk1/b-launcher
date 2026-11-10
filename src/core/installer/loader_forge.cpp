@@ -68,7 +68,12 @@ tail_lines (const std::string &text, std::size_t count)
 class forge_job final : public loader_job
 {
 public:
-  using loader_job::loader_job;
+  forge_job (loader_request request, bool server)
+      : loader_job (std::move (request))
+      , m_server (server)
+      , m_side (server ? "server" : "client")
+  {
+  }
 
   result<void>
   prepare (loader_context &ctx) override
@@ -78,9 +83,22 @@ public:
     if (!fs::safe_relative (source.artifact.path ()))
       return make_error (errc::parse, "invalid installer artifact path");
     m_installer_path = ctx.layout ().library (source.artifact.path ());
-    BLB_TRY (download_file (
-        ctx, source.url, m_installer_path,
-        sformat ("{}-installer", loader_name (m_request.type))));
+    if (m_server)
+      {
+        m_installer_path = ctx.temp_dir / "installer.jar";
+        for (const auto &root : ctx.installer->import_sources ())
+          {
+            auto cached = root / "libraries"
+                          / path_from_utf8 (source.artifact.path ());
+            if (fs::stat (cached).exists
+                && fs::copy_file (cached, m_installer_path))
+              break;
+          }
+      }
+    if (!fs::stat (m_installer_path).exists)
+      BLB_TRY (download_file (
+          ctx, source.url, m_installer_path,
+          sformat ("{}-installer", loader_name (m_request.type))));
     BLB_TRY_ASSIGN (auto zip, zip_reader::open (m_installer_path));
     BLB_TRY_ASSIGN (auto profile_text, zip.read ("install_profile.json"));
     BLB_TRY_ASSIGN (m_profile, meta::detail::parse_json (profile_text));
@@ -92,9 +110,19 @@ public:
   result<void>
   finalize (loader_context &ctx) override
   {
-    if (m_legacy)
-      return ok ();
-    return run_processors (ctx);
+    if (!m_legacy)
+      BLB_TRY (run_processors (ctx));
+    if (m_server)
+      return finish_server (ctx);
+    return ok ();
+  }
+
+  std::optional<server_launch>
+  server () const override
+  {
+    if (!m_server)
+      return std::nullopt;
+    return m_launch;
   }
 
   std::optional<loader_patch>
@@ -211,12 +239,38 @@ private:
       return make_error (errc::parse, "invalid forge install path");
     BLB_TRY (
         zip.extract (file_path, ctx.layout ().library (artifact->path ())));
+    std::set<std::string> server_libraries;
+    if (m_server)
+      {
+        if (!fs::safe_component (file_path))
+          return make_error (errc::parse, "invalid forge install path");
+        BLB_TRY (zip.extract (file_path, ctx.layout ().root ()
+                                             / path_from_utf8 (file_path)));
+        m_launch.windows = { "-jar", file_path };
+        m_launch.unix = m_launch.windows;
+        BLB_TRY (download_server_jar (
+            ctx, ctx.layout ().root ()
+                     / path_from_utf8 ("minecraft_server." + ctx.minecraft
+                                       + ".jar")));
+        if (auto *libs
+            = meta::detail::member (m_profile["versionInfo"], "libraries");
+            libs && libs->is_array ())
+          for (const auto &entry : *libs)
+            if (entry.is_object () && entry.value ("serverreq", false))
+              server_libraries.insert (
+                  meta::detail::string_of (entry, "name"));
+      }
     std::vector<meta::library> remote;
     for (auto &lib : m_version.libraries)
       {
         if (lib.artifact.group == artifact->group
             && lib.artifact.name == artifact->name)
           continue;
+        if (!server_libraries.empty ()
+            && !server_libraries.contains (lib.name))
+          continue;
+        if (m_server)
+          lib.client_required.reset ();
         if (lib.url.empty () && lib.artifact.group == "net.minecraftforge")
           lib.url = "https://maven.minecraftforge.net/";
         remote.push_back (lib);
@@ -265,7 +319,7 @@ private:
             for (const auto &s : *sides)
               p.sides.push_back (s.get<std::string> ());
           if (!p.sides.empty ()
-              && std::find (p.sides.begin (), p.sides.end (), "client")
+              && std::find (p.sides.begin (), p.sides.end (), m_side)
                      == p.sides.end ())
             continue;
           m_processors.push_back (std::move (p));
@@ -274,8 +328,17 @@ private:
     if (auto *data = meta::detail::member (m_profile, "data");
         data && data->is_object ())
       for (auto it = data->begin (); it != data->end (); ++it)
-        m_zip_data.emplace (it.key (),
-                            meta::detail::string_of (*it, "client"));
+        m_zip_data.emplace (it.key (), meta::detail::string_of (*it, m_side));
+    if (m_server)
+      {
+        auto jar_path = meta::detail::string_of (
+            m_profile, "serverJarPath",
+            "{ROOT}/minecraft_server.{MINECRAFT_VERSION}.jar");
+        m_server_jar = path_from_utf8 (server_token (ctx, jar_path));
+        if (!fs::is_inside (ctx.layout ().root (), m_server_jar))
+          return make_error (errc::parse, "invalid server jar path");
+        BLB_TRY (download_server_jar (ctx, m_server_jar));
+      }
     s_log.info ("{} {}: {} libraries, {} processors",
                 loader_name (m_request.type), m_request.version, all.size (),
                 m_processors.size ());
@@ -300,9 +363,11 @@ private:
   {
     const auto &layout = ctx.layout ();
     m_data.clear ();
-    m_data["SIDE"] = "client";
+    m_data["SIDE"] = m_side;
     m_data["MINECRAFT_JAR"]
-        = path_to_utf8 (layout.version_jar (ctx.vanilla->jar_id ()));
+        = m_server
+              ? path_to_utf8 (m_server_jar)
+              : path_to_utf8 (layout.version_jar (ctx.vanilla->jar_id ()));
     m_data["MINECRAFT_VERSION"] = ctx.minecraft;
     m_data["ROOT"] = path_to_utf8 (layout.root ());
     m_data["INSTALLER"] = path_to_utf8 (m_installer_path);
@@ -404,10 +469,10 @@ private:
       }
     if (!p.mojmaps_output.empty ())
       {
-        auto it = ctx.vanilla->downloads.find ("client_mappings");
+        auto it = ctx.vanilla->downloads.find (m_side + "_mappings");
         if (it == ctx.vanilla->downloads.end ())
           return make_error (errc::not_found,
-                             "version has no client mappings");
+                             sformat ("version has no {} mappings", m_side));
         return download_file (ctx, it->second.url,
                               path_from_utf8 (p.mojmaps_output), "mojmaps",
                               it->second.sha1, it->second.size);
@@ -527,6 +592,93 @@ private:
     return graph.run (ctx.token, ctx.sink);
   }
 
+  std::string
+  server_token (loader_context &ctx, std::string text) const
+  {
+    auto replace = [&text] (std::string_view key, const std::string &value) {
+      for (auto at = text.find (key); at != std::string::npos;
+           at = text.find (key, at + value.size ()))
+        text.replace (at, key.size (), value);
+    };
+    replace ("{LIBRARY_DIR}", path_to_utf8 (ctx.layout ().libraries ()));
+    replace ("{MINECRAFT_VERSION}", ctx.minecraft);
+    replace ("{ROOT}", path_to_utf8 (ctx.layout ().root ()));
+    return text;
+  }
+
+  result<void>
+  download_server_jar (loader_context &ctx,
+                       const std::filesystem::path &target) const
+  {
+    auto it = ctx.vanilla->downloads.find ("server");
+    if (it == ctx.vanilla->downloads.end () || it->second.url.empty ())
+      return make_error (errc::not_found,
+                         sformat ("{} has no server", ctx.minecraft));
+    return download_file (ctx, it->second.url, target, "minecraft-server",
+                          it->second.sha1, it->second.size);
+  }
+
+  std::vector<std::string>
+  script_arguments (zip_reader &zip, std::string_view name,
+                    std::string_view rest) const
+  {
+    auto text = zip.read (name);
+    if (!text)
+      return {};
+    for (auto line : split (*text, '\n'))
+      {
+        line = trim (line);
+        if (line.starts_with ("exec "))
+          line = trim (line.substr (5));
+        if (!line.starts_with ("java "))
+          continue;
+        std::vector<std::string> out;
+        for (auto part : split (line.substr (5), ' '))
+          {
+            part = trim (part);
+            if (!part.empty () && part != rest)
+              out.emplace_back (part);
+          }
+        return out;
+      }
+    return {};
+  }
+
+  result<void>
+  finish_server (loader_context &ctx)
+  {
+    if (m_legacy)
+      return ok ();
+    auto path = meta::detail::string_of (m_profile, "path");
+    if (!path.empty ())
+      {
+        auto artifact = meta::maven_artifact::parse (path);
+        if (!artifact || !fs::safe_relative (artifact->path ()))
+          return make_error (errc::parse, "invalid forge server path");
+        auto name
+            = path_to_utf8 (path_from_utf8 (artifact->path ()).filename ());
+        BLB_TRY (
+            fs::copy_file (ctx.layout ().library (artifact->path ()),
+                           ctx.layout ().root () / path_from_utf8 (name)));
+        m_launch.windows = { "-jar", name };
+        m_launch.unix = m_launch.windows;
+        return ok ();
+      }
+    BLB_TRY_ASSIGN (auto zip, zip_reader::open (m_installer_path));
+    m_launch.windows = script_arguments (zip, "data/run.bat", "%*");
+    m_launch.unix = script_arguments (zip, "data/run.sh", "\"$@\"");
+    if (m_launch.windows.empty () || m_launch.unix.empty ())
+      return make_error (errc::parse, "installer has no server scripts");
+    m_launch.user_jvm_args = true;
+    for (auto *args : { &m_launch.windows, &m_launch.unix })
+      std::erase (*args, std::string ("@user_jvm_args.txt"));
+    return ok ();
+  }
+
+  bool m_server = false;
+  std::string m_side;
+  std::filesystem::path m_server_jar;
+  server_launch m_launch;
   std::filesystem::path m_installer_path;
   json m_profile;
   bool m_legacy = false;
@@ -540,9 +692,9 @@ private:
 }
 
 std::unique_ptr<loader_job>
-make_forge_job (loader_request request)
+make_forge_job (loader_request request, bool server)
 {
-  return std::make_unique<forge_job> (std::move (request));
+  return std::make_unique<forge_job> (std::move (request), server);
 }
 
 }

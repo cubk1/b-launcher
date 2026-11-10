@@ -165,6 +165,7 @@ namespace ForgottenMelody {
                         for (const Part& part : PARTS) {
                             if (part.id == id) {
                                 Exports::options(key).*part.member = Checked(id);
+                                Exports::options(key).pick_files = false;
                                 Exports::save(key);
                             }
                         }

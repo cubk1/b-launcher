@@ -1,10 +1,13 @@
 #include "ui/imgui/screens/settings/ToolboxTab.h"
 #include "app/system/CustomDownload.h"
+#include "app/system/Features.h"
 #include "app/system/Notices.h"
 #if defined(_WIN32)
 #include "app/system/PclThemes.h"
 #endif
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/settings/LauncherBuilderPage.h"
+#include "ui/imgui/screens/settings/ServerBuilderPage.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -13,6 +16,7 @@
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiInput.h"
+#include "ui/imgui/panel/UiPageTransition.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
@@ -33,6 +37,10 @@ namespace ToolboxTab {
     namespace blb = b_launcher_base;
 
     namespace {
+        constexpr int VIEW_HOME = 0;
+        constexpr int VIEW_BUILDER = 1;
+        constexpr int VIEW_SERVER = 2;
+        PageTransition views(VIEW_HOME);
         const char* const URL_OWNER = "settings#tools#url";
         const char* const FOLDER_OWNER = "settings#tools#folder";
         const char* const NAME_OWNER = "settings#tools#name";
@@ -246,16 +254,34 @@ namespace ToolboxTab {
             ensureFolderDefault();
             const int downloadRows = 3;
             const float buttonBlockH = Page::ROW_H + 4.0f;
+            const bool server = Features::enabled(Features::SERVER_BUILD);
+            const int makeRows = server ? 2 : 1;
 #if defined(_WIN32)
-            float contentH =
-                    2.0f * Page::CAPTION_H + downloadRows * Page::ROW_H + buttonBlockH + Page::ROW_H + Page::GAP;
+            float contentH = 3.0f * Page::CAPTION_H + (makeRows + downloadRows) * Page::ROW_H + buttonBlockH +
+                    Page::ROW_H + 2.0f * Page::GAP;
 #else
-            float contentH = Page::CAPTION_H + downloadRows * Page::ROW_H + buttonBlockH;
+            float contentH =
+                    2.0f * Page::CAPTION_H + (makeRows + downloadRows) * Page::ROW_H + buttonBlockH + Page::GAP;
 #endif
             Page::Scroll body("settings#tools#home", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
+
+            Page::caption("生成", y);
+            y += Page::CAPTION_H;
+            Page::card(y, makeRows);
+            if (Page::navRow("settings#tools#builder", "生成自定义启动器", "", y, blocked,
+                             Page::rowCorners(0, makeRows), 0xf552)) {
+                views.go(VIEW_BUILDER);
+            }
+            if (server &&
+                Page::navRow("settings#tools#server", "生成服务端", "", y + Page::ROW_H, blocked,
+                             Page::rowCorners(1, makeRows), 0xf233)) {
+                ServerBuilderPage::enter();
+                views.go(VIEW_SERVER);
+            }
+            y += makeRows * Page::ROW_H + Page::GAP;
 
             Page::caption("自定义下载", y);
             y += Page::CAPTION_H;
@@ -293,6 +319,26 @@ namespace ToolboxTab {
     }
 
     void draw(bool covered) {
-        drawHome(covered);
+        views.begin();
+        if (views.page == VIEW_SERVER && !Features::enabled(Features::SERVER_BUILD)) {
+            views.page = VIEW_HOME;
+        }
+        if (views.page == VIEW_BUILDER) {
+            if (LauncherBuilderPage::draw(covered)) {
+                views.go(VIEW_HOME);
+            }
+        } else if (views.page == VIEW_SERVER) {
+            if (ServerBuilderPage::draw(covered)) {
+                views.go(VIEW_HOME);
+            }
+        } else {
+            drawHome(covered);
+        }
+        views.end();
+    }
+
+    void openBuilder() {
+        views.page = VIEW_BUILDER;
+        views.mix = 1.0f;
     }
 }

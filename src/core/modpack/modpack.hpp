@@ -5,9 +5,11 @@
 #include <core/base/progress.hpp>
 #include <core/installer/game_installer.hpp>
 #include <core/installer/loader.hpp>
+#include <core/network/mirror_provider.hpp>
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -85,6 +87,8 @@ struct export_options
   bool modrinth_only = false;
   std::vector<std::string> include;
   std::vector<std::string> exclude;
+  bool pick_files = false;
+  std::map<std::string, bool> picks;
   std::vector<std::pair<std::filesystem::path, std::string>> extra_files;
   curseforge_settings curseforge;
 };
@@ -113,7 +117,21 @@ result<export_report> export_modpack (
     progress_sink *sink = nullptr, cancellation_token token = {});
 std::vector<std::string>
 collect_export_files (const std::filesystem::path &game_directory,
-                      const export_options &options);
+                      const export_options &options,
+                      std::string_view instance_id = {});
+bool export_hidden (std::string_view relative, std::string_view instance_id);
+bool pick_state (const std::map<std::string, bool> &picks,
+                 std::string_view path);
+bool picks_below (const std::map<std::string, bool> &picks,
+                  std::string_view path);
+std::vector<std::string>
+collect_picked_files (const std::filesystem::path &game_directory,
+                      const std::map<std::string, bool> &picks,
+                      std::string_view instance_id);
+result<std::vector<std::string>>
+detect_client_only (const std::filesystem::path &game_directory,
+                    const net::mirror_provider &mirror,
+                    cancellation_token token = {});
 std::string serialize_export_options (const export_options &options);
 result<export_options> parse_export_options (std::string_view json);
 

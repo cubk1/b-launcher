@@ -52,6 +52,7 @@ struct mod_info
   std::string icon;
   std::vector<mod_dependency> dependencies;
   std::vector<std::string> provides;
+  std::string environment;
   std::string problem;
 };
 

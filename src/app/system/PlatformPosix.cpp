@@ -446,10 +446,10 @@ namespace Platform {
                 nullptr, nullptr, types, 1);
     }
 
-    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial) {
+    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial, const wchar_t* title) {
         std::error_code error;
         bool exists = !initial.empty() && std::filesystem::exists(initial, error);
-        return pickOne(SDL_FILEDIALOG_OPENFOLDER, "选择游戏目录", exists ? initial : std::filesystem::path(), {});
+        return pickOne(SDL_FILEDIALOG_OPENFOLDER, narrow(title), exists ? initial : std::filesystem::path(), {});
     }
 
     std::optional<std::filesystem::path> pickJava(const std::filesystem::path& initial) {

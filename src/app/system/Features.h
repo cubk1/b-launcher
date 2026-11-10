@@ -19,6 +19,7 @@ namespace Features {
         JAVA,
         UPDATE_CHECK,
         THEMES,
+        SERVER_BUILD,
         SECTION_LAUNCH,
         SECTION_OPTIONS,
         SECTION_KEYS,

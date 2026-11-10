@@ -3,4 +3,5 @@
 namespace ToolboxTab {
 
     void draw(bool covered);
+    void openBuilder();
 }

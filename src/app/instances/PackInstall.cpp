@@ -13,7 +13,6 @@
 #include <core/modpack/modpack.hpp>
 
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 
@@ -35,18 +34,11 @@ namespace PackInstall {
         }
 
         void install(const std::string& name) {
-            std::optional<std::string> data = Customization::read(Customization::modpack());
-            if (!data) {
+            std::filesystem::path folder = blb::launcher_data_directory() / "customize";
+            std::filesystem::path file = folder / std::filesystem::path(Customization::modpack()).filename();
+            if (!Customization::extract(Customization::modpack(), file)) {
                 Notices::add(Notices::Kind::Failed, "定制包里缺少整合包 " + Customization::modpack(), 5000);
                 return;
-            }
-            std::error_code ec;
-            std::filesystem::path folder = blb::launcher_data_directory() / "customize";
-            std::filesystem::create_directories(folder, ec);
-            std::filesystem::path file = folder / std::filesystem::path(Customization::modpack()).filename();
-            {
-                std::ofstream out(file, std::ios::binary | std::ios::trunc);
-                out.write(data->data(), (std::streamsize) data->size());
             }
             auto manifest = blb::modpack::read_modpack(file);
             if (!manifest) {

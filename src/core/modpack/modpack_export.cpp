@@ -7,6 +7,7 @@
 #include <core/base/zip.hpp>
 #include <core/meta/version.hpp>
 #include <core/modpack/modpack.hpp>
+#include <core/modpack/mods.hpp>
 
 #include "core/modpack/modpack_impl.hpp"
 
@@ -63,50 +64,145 @@ env_value (const std::string &side)
   return "required";
 }
 
+void
+walk_picked (const std::filesystem::path &root, const std::string &relative,
+             bool inherited, const std::map<std::string, bool> &picks,
+             std::string_view instance_id, std::vector<std::string> &out)
+{
+  auto dir = relative.empty () ? root : root / path_from_utf8 (relative);
+  for (const auto &[name, st] : fs::list_directory (dir))
+    {
+      auto child = relative.empty () ? name : relative + "/" + name;
+      if (st.is_link || export_hidden (child, instance_id))
+        continue;
+      auto rule = picks.find (child);
+      bool on = rule != picks.end () ? rule->second : inherited;
+      if (st.is_directory)
+        {
+          if (on || picks_below (picks, child))
+            walk_picked (root, child, on, picks, instance_id, out);
+        }
+      else if (on)
+        out.push_back (child);
+    }
+}
+
+}
+
+bool
+export_hidden (std::string_view relative, std::string_view instance_id)
+{
+  if (relative.find ('/') != std::string_view::npos)
+    return false;
+  auto lower = to_lower (relative);
+  for (std::string_view name :
+       { "logs", "crash-reports", ".fabric", ".mixin.out", "debug",
+         ".blb-cache", "blb-instance.json", "versions", "libraries", "assets",
+         "runtime", "webcache2", "pcl", "pcl.ini", "launch.args",
+         "log4j2.xml" })
+    if (lower == name)
+      return true;
+  if (lower.starts_with ("natives") || lower.starts_with ("launcher_")
+      || lower.starts_with ("hs_err_pid"))
+    return true;
+  if (!instance_id.empty ())
+    {
+      auto id = to_lower (instance_id);
+      if (lower == id + ".json" || lower == id + ".jar"
+          || lower == id + "-natives")
+        return true;
+    }
+  return false;
+}
+
+bool
+pick_state (const std::map<std::string, bool> &picks, std::string_view path)
+{
+  std::string current (path);
+  while (true)
+    {
+      if (auto it = picks.find (current); it != picks.end ())
+        return it->second;
+      auto slash = current.rfind ('/');
+      if (slash == std::string::npos)
+        break;
+      current.resize (slash);
+    }
+  return false;
+}
+
+bool
+picks_below (const std::map<std::string, bool> &picks, std::string_view path)
+{
+  std::string prefix = std::string (path) + "/";
+  auto it = picks.lower_bound (prefix);
+  return it != picks.end () && it->first.starts_with (prefix);
+}
+
+std::vector<std::string>
+collect_picked_files (const std::filesystem::path &game_directory,
+                      const std::map<std::string, bool> &picks,
+                      std::string_view instance_id)
+{
+  std::vector<std::string> out;
+  walk_picked (game_directory, "", false, picks, instance_id, out);
+  return out;
 }
 
 std::vector<std::string>
 collect_export_files (const std::filesystem::path &game_directory,
-                      const export_options &options)
+                      const export_options &options,
+                      std::string_view instance_id)
 {
   std::set<std::string> picked;
-  auto add_if_exists = [&] (const std::string &relative) {
-    if (fs::stat (game_directory / path_from_utf8 (relative)).exists)
-      picked.insert (relative);
-  };
-  auto add_tree = [&] (const std::string &relative) {
-    std::vector<std::string> found;
-    if (fs::stat (game_directory / path_from_utf8 (relative)).is_directory)
-      walk (game_directory, relative, found);
-    picked.insert (found.begin (), found.end ());
-  };
-  if (options.game_settings)
-    for (auto name : { "options.txt", "optionsof.txt", "optionsshaders.txt",
-                       "optionsviveprofiles.txt" })
-      add_if_exists (name);
-  if (options.personal_data)
-    for (auto name : { "hotbar.nbt", "command_history.txt" })
-      add_if_exists (name);
-  if (options.mods || options.disabled_mods)
-    for (const auto &[name, st] : fs::list_directory (game_directory / "mods"))
-      {
-        if (st.is_directory)
-          continue;
-        bool disabled = to_lower (name).ends_with (".disabled");
-        if ((disabled && options.disabled_mods) || (!disabled && options.mods))
-          picked.insert ("mods/" + name);
-      }
-  if (options.mod_settings)
-    for (auto dir : { "config", "defaultconfigs" })
-      add_tree (dir);
-  if (options.saves)
-    add_tree ("saves");
-  if (options.servers)
-    add_if_exists ("servers.dat");
-  if (options.resource_packs)
-    add_tree ("resourcepacks");
-  if (options.shader_packs)
-    add_tree ("shaderpacks");
+  if (options.pick_files)
+    {
+      auto files
+          = collect_picked_files (game_directory, options.picks, instance_id);
+      picked.insert (files.begin (), files.end ());
+    }
+  else
+    {
+      auto add_if_exists = [&] (const std::string &relative) {
+        if (fs::stat (game_directory / path_from_utf8 (relative)).exists)
+          picked.insert (relative);
+      };
+      auto add_tree = [&] (const std::string &relative) {
+        std::vector<std::string> found;
+        if (fs::stat (game_directory / path_from_utf8 (relative)).is_directory)
+          walk (game_directory, relative, found);
+        picked.insert (found.begin (), found.end ());
+      };
+      if (options.game_settings)
+        for (auto name : { "options.txt", "optionsof.txt",
+                           "optionsshaders.txt", "optionsviveprofiles.txt" })
+          add_if_exists (name);
+      if (options.personal_data)
+        for (auto name : { "hotbar.nbt", "command_history.txt" })
+          add_if_exists (name);
+      if (options.mods || options.disabled_mods)
+        for (const auto &[name, st] :
+             fs::list_directory (game_directory / "mods"))
+          {
+            if (st.is_directory)
+              continue;
+            bool disabled = to_lower (name).ends_with (".disabled");
+            if ((disabled && options.disabled_mods)
+                || (!disabled && options.mods))
+              picked.insert ("mods/" + name);
+          }
+      if (options.mod_settings)
+        for (auto dir : { "config", "defaultconfigs" })
+          add_tree (dir);
+      if (options.saves)
+        add_tree ("saves");
+      if (options.servers)
+        add_if_exists ("servers.dat");
+      if (options.resource_packs)
+        add_tree ("resourcepacks");
+      if (options.shader_packs)
+        add_tree ("shaderpacks");
+    }
   if (!options.include.empty ())
     {
       std::vector<std::string> all;
@@ -170,7 +266,7 @@ export_modpack (const install::game_installer &installer,
         break;
       }
 
-  auto files = collect_export_files (game_directory, options);
+  auto files = collect_export_files (game_directory, options, instance_id);
   BLB_TRY (token.check ());
   std::vector<std::size_t> candidates;
   if (!options.bundle_files)
@@ -314,6 +410,59 @@ export_modpack (const install::game_installer &installer,
   return report;
 }
 
+result<std::vector<std::string>>
+detect_client_only (const std::filesystem::path &game_directory,
+                    const net::mirror_provider &mirror,
+                    cancellation_token token)
+{
+  static const std::set<std::string> known = {
+    "sodium",     "iris",        "oculus",        "embeddium",
+    "rubidium",   "modmenu",     "entityculling", "lambdynlights",
+    "continuity", "indium",      "sodium-extra",  "reeses-sodium-options",
+    "zoomify",    "ok_zoomer",   "betterf3",      "notenoughanimations",
+    "cullleaves", "controlling", "mousetweaks",   "fpsreducer",
+    "chat_heads"
+  };
+  auto mods = scan_mods (game_directory / "mods");
+  std::set<std::string> client;
+  std::vector<std::string> sha1s;
+  std::map<std::string, std::string> by_hash;
+  for (const auto &mod : mods)
+    {
+      BLB_TRY (token.check ());
+      auto relative = "mods/" + mod.file_name;
+      if (to_lower (mod.environment) == "client"
+          || known.contains (to_lower (mod.id)))
+        {
+          client.insert (relative);
+          continue;
+        }
+      if (auto digest = digest_file (mod.file))
+        {
+          auto sha1 = to_hex (digest->sha1);
+          by_hash[sha1] = relative;
+          sha1s.push_back (sha1);
+        }
+    }
+  if (!sha1s.empty ())
+    {
+      auto found = detail::lookup_modrinth (sha1s, mirror, token);
+      if (!found)
+        {
+          if (token.is_cancelled ())
+            return found.err ();
+          s_log.warn ("modrinth side lookup failed: {}", found.err ().message);
+        }
+      else
+        for (const auto &[sha1, file] : *found)
+          if (file.server_side == "unsupported"
+              && file.client_side != "unsupported")
+            if (auto it = by_hash.find (sha1); it != by_hash.end ())
+              client.insert (it->second);
+    }
+  return std::vector<std::string> (client.begin (), client.end ());
+}
+
 std::string
 serialize_export_options (const export_options &o)
 {
@@ -321,6 +470,9 @@ serialize_export_options (const export_options &o)
   for (const auto &[source, name] : o.extra_files)
     extra.push_back (
         { { "source", path_to_utf8 (source) }, { "path", name } });
+  json picks = json::object ();
+  for (const auto &[path, on] : o.picks)
+    picks[path] = on;
   json doc = { { "name", o.name },
                { "version", o.version },
                { "author", o.author },
@@ -338,6 +490,8 @@ serialize_export_options (const export_options &o)
                { "modrinthOnly", o.modrinth_only },
                { "include", o.include },
                { "exclude", o.exclude },
+               { "pickFiles", o.pick_files },
+               { "picks", std::move (picks) },
                { "extraFiles", std::move (extra) } };
   return doc.dump (2);
 }
@@ -365,6 +519,11 @@ try
   o.shader_packs = doc.value ("shaderPacks", o.shader_packs);
   o.bundle_files = doc.value ("bundleFiles", o.bundle_files);
   o.modrinth_only = doc.value ("modrinthOnly", o.modrinth_only);
+  o.pick_files = doc.value ("pickFiles", o.pick_files);
+  if (auto it = doc.find ("picks"); it != doc.end () && it->is_object ())
+    for (auto entry = it->begin (); entry != it->end (); ++entry)
+      if (entry->is_boolean () && fs::safe_relative (entry.key ()))
+        o.picks[entry.key ()] = entry->get<bool> ();
   for (const char *key : { "include", "exclude" })
     if (auto it = doc.find (key); it != doc.end () && it->is_array ())
       for (const auto &v : *it)

@@ -7,6 +7,10 @@
 #include <string>
 #include <vector>
 
+namespace b_launcher_base {
+    class zip_writer;
+}
+
 namespace Customization {
 
     struct Server {
@@ -33,6 +37,7 @@ namespace Customization {
     const std::string& version();
     const std::filesystem::path& origin();
     std::optional<std::string> read(const std::string& path);
+    bool extract(const std::string& path, const std::filesystem::path& target);
     std::vector<std::string> files(const std::string& prefix);
     const std::vector<std::string>& problems();
 
@@ -43,6 +48,7 @@ namespace Customization {
     std::string brandTitle();
     std::string logo();
     std::string icon();
+    std::string iconImage();
 
     std::string homepageType();
     std::string homepageValue();
@@ -69,4 +75,10 @@ namespace Customization {
     bool updatesDisabled();
 
     int makePack(const std::filesystem::path& source, const std::filesystem::path& output, std::string& error);
+    const char* programExtension();
+    bool copyProgram(const std::filesystem::path& output, const std::string& ico, std::string& error);
+    bool writeProgram(const std::filesystem::path& pack, const std::filesystem::path& output, const std::string& ico,
+                      std::string& error);
+    bool addProgram(b_launcher_base::zip_writer& zip, const std::string& prefix, const std::string& name,
+                    const std::filesystem::path& pack, const std::string& ico, std::string& error);
 }

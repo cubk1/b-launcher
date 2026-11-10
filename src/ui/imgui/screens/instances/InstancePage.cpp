@@ -9,6 +9,7 @@
 #include "ui/imgui/screens/instances/InstanceExport.h"
 #include "ui/imgui/screens/instances/InstanceMods.h"
 #include "ui/imgui/screens/instances/InstanceScreenshots.h"
+#include "app/instances/Exports.h"
 #include "app/instances/Screenshots.h"
 #include "ui/imgui/screens/instances/InstanceShortcut.h"
 #include "app/instances/InstanceSettings.h"
@@ -976,6 +977,8 @@ namespace InstancePage {
             index++;
             if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid,
                              Page::rowCorners(index, count), 0xf56e)) {
+                Exports::tree(entry.key).refresh();
+                InstanceExport::reset();
                 sections.go(SECTION_EXPORT);
             }
         }

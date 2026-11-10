@@ -68,12 +68,13 @@ public:
 
   result<void> add_buffer (std::string_view name, std::string_view data);
   result<void> add_file (std::string_view name,
-                         const std::filesystem::path &source);
+                         const std::filesystem::path &source,
+                         bool executable = false);
   result<void> close ();
 
 private:
   result<void> open_entry (std::string_view name, std::int64_t size,
-                           std::int64_t modified);
+                           std::int64_t modified, bool executable = false);
 
   void *m_handle = nullptr;
 };

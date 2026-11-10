@@ -45,6 +45,13 @@ struct loader_context
   }
 };
 
+struct server_launch
+{
+  std::vector<std::string> windows;
+  std::vector<std::string> unix;
+  bool user_jvm_args = false;
+};
+
 struct loader_patch
 {
   loader_type type = loader_type::fabric;
@@ -67,6 +74,12 @@ public:
   virtual result<void> finalize (loader_context &ctx) = 0;
   virtual std::optional<loader_patch> patch () const = 0;
 
+  virtual std::optional<server_launch>
+  server () const
+  {
+    return std::nullopt;
+  }
+
   const loader_request &
   request () const noexcept
   {
@@ -81,7 +94,8 @@ protected:
 };
 
 std::unique_ptr<loader_job> make_fabric_job (loader_request request);
-std::unique_ptr<loader_job> make_forge_job (loader_request request);
+std::unique_ptr<loader_job> make_forge_job (loader_request request,
+                                            bool server = false);
 std::unique_ptr<loader_job> make_liteloader_job (loader_request request);
 std::unique_ptr<loader_job> make_optifine_job (loader_request request);
 std::unique_ptr<loader_job> make_mod_job (loader_request request);

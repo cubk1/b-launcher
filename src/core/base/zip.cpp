@@ -279,7 +279,7 @@ zip_writer::should_store (std::string_view name) noexcept
 
 result<void>
 zip_writer::open_entry (std::string_view name, std::int64_t size,
-                        std::int64_t modified)
+                        std::int64_t modified, bool executable)
 {
   if (!m_handle)
     return make_error (errc::zip, "zip writer is closed");
@@ -288,6 +288,12 @@ zip_writer::open_entry (std::string_view name, std::int64_t size,
   info.filename = entry_name.c_str ();
   info.modified_date = static_cast<time_t> (modified);
   info.version_madeby = MZ_VERSION_MADEBY;
+  if (executable)
+    {
+      info.version_madeby
+          = (MZ_HOST_SYSTEM_UNIX << 8) | MZ_VERSION_MADEBY_ZIP_VERSION;
+      info.external_fa = 0100755u << 16;
+    }
   info.flag = MZ_ZIP_FLAG_UTF8;
   info.compression_method = should_store (name) ? MZ_COMPRESS_METHOD_STORE
                                                 : MZ_COMPRESS_METHOD_DEFLATE;
@@ -322,13 +328,13 @@ zip_writer::add_buffer (std::string_view name, std::string_view data)
 
 result<void>
 zip_writer::add_file (std::string_view name,
-                      const std::filesystem::path &source)
+                      const std::filesystem::path &source, bool executable)
 {
   BLB_TRY_ASSIGN (auto file,
                   fs::native_file::open (source, fs::native_file::mode::read));
   BLB_TRY_ASSIGN (auto size, file.size ());
   BLB_TRY (open_entry (name, static_cast<std::int64_t> (size),
-                       std::time (nullptr)));
+                       std::time (nullptr), executable));
   std::string buffer (1 << 20, '\0');
   for (;;)
     {

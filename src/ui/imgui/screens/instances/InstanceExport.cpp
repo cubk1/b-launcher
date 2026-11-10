@@ -1,11 +1,14 @@
 #include "ui/imgui/screens/instances/InstanceExport.h"
 #include "app/instances/Exports.h"
+#include "ui/imgui/screens/instances/FileTreeView.h"
+#include "ui/imgui/screens/settings/LauncherBuilderPage.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiPageTransition.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
@@ -22,6 +25,15 @@ namespace InstanceExport {
     using Options = Exports::Options;
 
     namespace {
+        constexpr int VIEW_EXPORT = 0;
+        constexpr int VIEW_LAUNCHER = 1;
+        PageTransition views(VIEW_EXPORT);
+
+        std::string launcherName() {
+            const LauncherBuilder::Project& custom = LauncherBuilder::project();
+            return !custom.windowTitle.empty() ? custom.windowTitle : custom.brandTitle;
+        }
+
         constexpr float WIDE_FIELD = 300.0f;
 
         void textRow(const std::string& key, const char* field, const char* label, const char* placeholder, float w,
@@ -59,6 +71,19 @@ namespace InstanceExport {
             widget.paint();
         }
 
+        void flagRow(const std::string& key, const char* field, const char* label, bool (*read)(const std::string&),
+                     void (*write)(const std::string&, bool), float rowY, bool blocked) {
+            Page::label(label, rowY);
+            std::string id = std::string("export#") + field + "#" + key;
+            auto flag = std::make_shared<FlagBinding>(
+                    id, [key, read] { return read(key); }, [key, write](bool on) { write(key, on); });
+            ToggleWidget widget(id, flag, true);
+            widget.bounds(Page::controlRight() - 30.0f, rowY + (Page::ROW_H - 18.0f) * 0.5f, 30.0f, 18.0f)
+                    .hitArea(Page::left(), rowY, Page::width(), Page::ROW_H)
+                    .block(blocked);
+            widget.paint();
+        }
+
         void exportButton(const Instances::Entry& entry, bool blocked) {
             float y = MainWindow::height() - 28.0f - Page::FIELD_H;
             bool running = Exports::running();
@@ -82,15 +107,32 @@ namespace InstanceExport {
                 if (mine) {
                     Exports::cancel();
                 } else {
-                    Exports::start(entry.key);
+                    std::optional<LauncherBuilder::ThemeFiles> launcher;
+                    if (Exports::withLauncher(entry.key)) {
+                        launcher = LauncherBuilderPage::themeFiles();
+                    }
+                    Exports::start(entry.key, std::move(launcher));
                 }
             }
         }
     }
 
+    void reset() {
+        views.page = VIEW_EXPORT;
+        views.mix = 1.0f;
+    }
+
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
+        views.begin();
+        if (views.page == VIEW_LAUNCHER) {
+            if (LauncherBuilderPage::draw(covered, true)) {
+                views.go(VIEW_EXPORT);
+            }
+            views.end();
+            return false;
+        }
         bool back = Page::iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "导出整合包";
         Page::title(title, Page::left() + 30.0f, Page::top());
@@ -98,11 +140,13 @@ namespace InstanceExport {
         UiRender::textY(UiFont::fitEnd(entry.info.id, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, Page::right() - nameX),
                         nameX, Page::top(), 24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
         Exports::options(key);
+        FileTree::Tree& tree = Exports::tree(key);
 
         const int packCount = 4;
-        const int contentCount = 8;
-        const int fileCount = 1;
-        float contentH = 3 * Page::CAPTION_H + (packCount + contentCount + fileCount) * Page::ROW_H + 2 * Page::GAP;
+        const bool launcher = Exports::withLauncher(key);
+        const int optionCount = launcher ? 4 : 2;
+        float treeH = FileTreeView::height(tree);
+        float contentH = 3 * Page::CAPTION_H + (packCount + optionCount) * Page::ROW_H + treeH + 2 * Page::GAP;
         float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
         Page::Scroll body("export#body#" + key, Page::top() + 40.0f, buttonTop - 14.0f, contentH);
         bool outside = body.begin();
@@ -120,30 +164,33 @@ namespace InstanceExport {
         }
         y += Page::CAPTION_H + packCount * Page::ROW_H + Page::GAP;
 
-        if (Page::shown(y, Page::CAPTION_H + contentCount * Page::ROW_H)) {
-            Page::caption("包含的内容", y);
-            float rowY = y + Page::CAPTION_H;
-            Page::card(rowY, contentCount);
-            toggleRow(key, "mods", "模组", &Options::mods, rowY, blocked);
-            toggleRow(key, "disabledMods", "已禁用的模组", &Options::disabled_mods, rowY + Page::ROW_H, blocked);
-            toggleRow(key, "modSettings", "模组配置文件", &Options::mod_settings, rowY + 2 * Page::ROW_H, blocked);
-            toggleRow(key, "gameSettings", "游戏选项", &Options::game_settings, rowY + 3 * Page::ROW_H, blocked);
-            toggleRow(key, "resourcePacks", "资源包", &Options::resource_packs, rowY + 4 * Page::ROW_H, blocked);
-            toggleRow(key, "shaderPacks", "光影包", &Options::shader_packs, rowY + 5 * Page::ROW_H, blocked);
-            toggleRow(key, "saves", "存档", &Options::saves, rowY + 6 * Page::ROW_H, blocked);
-            toggleRow(key, "servers", "服务器列表", &Options::servers, rowY + 7 * Page::ROW_H, blocked);
+        Page::caption("文件", y);
+        if (FileTreeView::draw("export#tree#" + key, tree, Exports::options(key).picks, Page::left(),
+                               y + Page::CAPTION_H, Page::width(), blocked, FileTreeView::purpose)) {
+            Exports::save(key);
         }
-        y += Page::CAPTION_H + contentCount * Page::ROW_H + Page::GAP;
+        y += Page::CAPTION_H + treeH + Page::GAP;
 
-        if (Page::shown(y, Page::CAPTION_H + fileCount * Page::ROW_H)) {
-            Page::caption("文件", y);
+        if (Page::shown(y, Page::CAPTION_H + optionCount * Page::ROW_H)) {
+            Page::caption("选项", y);
             float rowY = y + Page::CAPTION_H;
-            Page::card(rowY, fileCount);
+            Page::card(rowY, optionCount);
             toggleRow(key, "bundle", "全部打包进整合包", &Options::bundle_files, rowY, blocked);
+            flagRow(key, "launcher", "附带自定义启动器", Exports::withLauncher, Exports::setWithLauncher,
+                    rowY + Page::ROW_H, blocked);
+            if (launcher) {
+                flagRow(key, "single", "单实例模式", Exports::single, Exports::setSingle, rowY + 2 * Page::ROW_H,
+                        blocked);
+                if (Page::navRow("export#builder", "自定义启动器设置", launcherName(), rowY + 3 * Page::ROW_H, blocked,
+                                 Page::rowCorners(3, 4), 0xf552)) {
+                    views.go(VIEW_LAUNCHER);
+                }
+            }
         }
         body.end();
 
         exportButton(entry, covered);
+        views.end();
         return back;
     }
 }
