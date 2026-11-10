@@ -74,6 +74,18 @@ public:
         return 0.0f;
     }
 
+    virtual bool optionMark(const std::string& option) {
+        (void) option;
+        return false;
+    }
+
+    virtual void paintOptionMark(const std::string& option, float x, float y, float size) {
+        (void) option;
+        (void) x;
+        (void) y;
+        (void) size;
+    }
+
     virtual std::string optionDetail(const std::string& option) {
         (void) option;
         return std::string();

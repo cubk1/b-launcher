@@ -13,7 +13,7 @@ namespace Features {
         const std::vector<Info>& table() {
             static const std::vector<Info> list = {
                     {NEW_INSTANCE, "newInstance", "新建实例", GROUP_PAGES},
-                    {DOWNLOADS, "downloads", "下载附加件", GROUP_PAGES},
+                    {DOWNLOADS, "downloads", "下载中心", GROUP_PAGES},
                     {TRANSFERS, "transfers", "下载列表", GROUP_PAGES},
                     {ACCOUNTS, "accounts", "账户", GROUP_PAGES},
                     {MULTIPLAYER, "multiplayer", "联机", GROUP_PAGES},

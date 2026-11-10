@@ -7,11 +7,11 @@
 #include "ui/imgui/screens/downloads/Prerequisites.h"
 #include "ui/imgui/screens/downloads/ProjectPage.h"
 #include "ui/imgui/screens/downloads/SourceMarks.h"
+#include "app/downloads/Aggregate.h"
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/Projects.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Catalog.h"
-#include "app/downloads/Aggregate.h"
 #include "app/system/Config.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "app/instances/Instances.h"
@@ -59,7 +59,7 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace DownloadsScreen {
@@ -81,18 +81,18 @@ namespace DownloadsScreen {
         constexpr float FILTER_H = FILTER_PAD * 2 + Page::FIELD_H * 2 + GAP;
         constexpr float RESULT_H = 56.0f;
         constexpr float RESULT_ICON = 36.0f;
-        constexpr float LOADER_ICON = 16.0f;
-        constexpr float LOADER_BADGE = 10.0f;
-        constexpr size_t LOADER_SLOTS = 4;
         constexpr float CARD_RADIUS = 12.0f;
-        constexpr size_t LOADERS_SHOWN = 3;
-        constexpr double TYPING_PAUSE = 0.4;
         constexpr float SEARCH_H = NAV_ITEM_H;
         constexpr float SEARCH_RADIUS = 8.0f;
         constexpr float SEARCH_INSET = 3.0f;
         constexpr float FOUND_H = 76.0f;
         constexpr float FOUND_ICON = 40.0f;
         constexpr float STEP_H = 30.0f;
+        constexpr double TYPING_PAUSE = 0.4;
+        constexpr int AGGREGATE_PAGE = 0;
+        constexpr int CATALOG_PAGE = 1;
+        constexpr int JAVA_PAGE = 2;
+        constexpr int THEMES_PAGE = 3;
 
         float mainW() {
             return Page::right() - mainX();
@@ -100,6 +100,7 @@ namespace DownloadsScreen {
 
         const char* const NAME_OWNER = "downloads#name";
         const char* const ASK_OWNER = "downloads#ask";
+        const char* const SOURCES_OWNER = "downloads#sources";
         const char* const FOUND_SCROLL = "downloads#aggregate#results";
         const char* const ANY_INSTANCE = "不指定实例";
         const char* const ANY_VERSION = "全部版本";
@@ -126,48 +127,41 @@ namespace DownloadsScreen {
         constexpr int VIEW_RESULTS = 0;
         PageTransition views(VIEW_RESULTS);
 
+        enum class Side { Aggregate, Catalog, Java, Themes };
+        Side side = Side::Aggregate;
+
         Addons::Query query;
         std::string typed;
+        std::string asking;
+        std::string asked;
         double typedAt = 0.0;
         std::string target;
         std::string skippedTarget;
         bool pickedTarget = false;
         bool started = false;
         bool followed = false;
-        Addons::Results shown;
+        ProjectBrowser::Merged shown;
+        std::vector<std::string> chosen = {"Modrinth", "CurseForge"};
+        bool sourcesRestored = false;
         std::vector<Route> routes;
         std::string versionFilter;
         std::string loaderFilter;
         std::set<std::string> folded;
-        bool allLoaders = false;
-        Source source = Source::Modrinth;
-        constexpr int AGGREGATE_PAGE = 2;
-        constexpr int JAVA_PAGE = 3;
-        constexpr int THEMES_PAGE = 4;
-        PageTransition sourceViews(AGGREGATE_PAGE);
-        bool aggregate = true;
-        bool java = false;
-        bool themes = false;
-        Source browsing = Source::Modrinth;
-        Source aggregateSource = Source::Modrinth;
-        std::string asking;
-        std::string asked;
 
+        PageTransition sourceViews(AGGREGATE_PAGE);
         struct Tab {
             bool ready = false;
             std::string target;
             Addons::Query query;
             std::string typed;
-            Addons::Results shown;
+            ProjectBrowser::Merged shown;
             std::vector<Route> routes;
             std::string versionFilter;
             std::string loaderFilter;
             std::set<std::string> folded;
-            bool allLoaders = false;
+            std::vector<std::string> chosen;
         };
-        Tab tabs[2];
-        Tab aggregateTab;
-        std::map<std::pair<int, int>, Tab> kindTabs;
+        std::map<int, Tab> kindTabs;
 
         std::string fitEnd(const std::string& text, float available, float size) {
             return UiFont::fitEnd(text, UiFont::MEDIUM, size, available);
@@ -194,6 +188,10 @@ namespace DownloadsScreen {
             return std::find(list.begin(), list.end(), value) != list.end();
         }
 
+        bool containsSource(const std::vector<Source>& list, Source value) {
+            return std::find(list.begin(), list.end(), value) != list.end();
+        }
+
         void flip(std::vector<std::string>& list, const std::string& value) {
             auto at = std::find(list.begin(), list.end(), value);
             if (at != list.end()) {
@@ -201,6 +199,138 @@ namespace DownloadsScreen {
             } else {
                 list.push_back(value);
             }
+        }
+
+        Source sourceOf(const std::string& name) {
+            return name == "CurseForge" ? Source::CurseForge : Source::Modrinth;
+        }
+
+        std::vector<std::string> sourceOptions() {
+            std::vector<std::string> out;
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                if (ProjectBrowser::supports(each, query.kind)) {
+                    out.push_back(Addons::sourceName(each));
+                }
+            }
+            return out;
+        }
+
+        const char* kindKey(Kind kind) {
+            switch (kind) {
+                case Kind::Modpack: return "modpack";
+                case Kind::ResourcePack: return "resourcepack";
+                case Kind::Shader: return "shader";
+                case Kind::Datapack: return "datapack";
+                case Kind::World: return "world";
+                default: return "mod";
+            }
+        }
+
+        bool sourceOff(Kind kind, const std::string& name) {
+            const nlohmann::json& doc = Config::data();
+            auto all = doc.find("browseSources");
+            if (all == doc.end() || !all->is_object()) {
+                return false;
+            }
+            auto mine = all->find(kindKey(kind));
+            if (mine == all->end() || !mine->is_array()) {
+                return false;
+            }
+            for (const nlohmann::json& each : *mine) {
+                if (each.is_string() && each.get<std::string>() == name) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void restoreSources() {
+            sourcesRestored = true;
+            chosen.clear();
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                std::string name = Addons::sourceName(each);
+                if (ProjectBrowser::supports(each, query.kind) && !sourceOff(query.kind, name)) {
+                    chosen.push_back(name);
+                }
+            }
+        }
+
+        void rememberSources() {
+            nlohmann::json off = nlohmann::json::array();
+            for (const std::string& option : sourceOptions()) {
+                if (!contains(chosen, option)) {
+                    off.push_back(option);
+                }
+            }
+            nlohmann::json& all = Config::data()["browseSources"];
+            if (!all.is_object()) {
+                all = nlohmann::json::object();
+            }
+            if (off.empty()) {
+                all.erase(kindKey(query.kind));
+            } else {
+                all[kindKey(query.kind)] = off;
+            }
+            Config::save();
+        }
+
+        std::vector<std::string>& chosenNames() {
+            if (!sourcesRestored) {
+                restoreSources();
+            }
+            return chosen;
+        }
+
+        std::vector<Source> chosenSources() {
+            std::vector<Source> out;
+            for (const std::string& name : chosenNames()) {
+                Source each = sourceOf(name);
+                if (ProjectBrowser::supports(each, query.kind) && !containsSource(out, each)) {
+                    out.push_back(each);
+                }
+            }
+            if (out.empty() && !ProjectBrowser::supports(Source::Modrinth, query.kind)) {
+                out.push_back(Source::CurseForge);
+            }
+            return out;
+        }
+
+        std::vector<Addons::Source> loaderSources() {
+            std::vector<Source> out;
+            for (Source each : chosenSources()) {
+                if (ProjectBrowser::hasLoaders(each, query.kind)) {
+                    out.push_back(each);
+                }
+            }
+            return out;
+        }
+
+        std::vector<std::string> loaderTags() {
+            return ProjectBrowser::loaderTagsOf(loaderSources(), query.kind);
+        }
+
+        bool hasLoaders() {
+            return !loaderSources().empty();
+        }
+
+        Addons::Query queryFor(Source from, const Addons::Query& base) {
+            Addons::Query out = base;
+            out.categories.clear();
+            out.curseCategories.clear();
+            std::string prefix = from == Source::CurseForge ? "cf:" : "mr:";
+            for (const std::string& key : base.categories) {
+                if (key.starts_with(prefix)) {
+                    (from == Source::CurseForge ? out.curseCategories : out.categories).push_back(key.substr(3));
+                }
+            }
+            const std::vector<std::string>& tags = ProjectBrowser::loaderTags(from, base.kind);
+            out.loaders.clear();
+            for (const std::string& loader : base.loaders) {
+                if (std::find(tags.begin(), tags.end(), loader) != tags.end()) {
+                    out.loaders.push_back(loader);
+                }
+            }
+            return out;
         }
 
         void message(const std::string& text, uint32_t color, float top, float bottom, bool loading) {
@@ -238,20 +368,8 @@ namespace DownloadsScreen {
                 Page::spinner(cx, cy, 7.0f, UiTheme::accent());
                 return;
             }
-            float shown = UiState::motion("downloads#ring#" + id, fraction, 10.0f);
-            Page::progressRing(cx, cy, shown);
-        }
-
-        bool hasLoaders(Kind kind) {
-            return ProjectBrowser::hasLoaders(source, kind);
-        }
-
-        std::string categoryLabel(const std::string& name) {
-            return source == Source::Modrinth ? Modrinth::label(name) : name;
-        }
-
-        const std::vector<std::string>& loaderTags(Kind kind) {
-            return ProjectBrowser::loaderTags(source, kind);
+            float shownRing = UiState::motion("downloads#ring#" + id, fraction, 10.0f);
+            Page::progressRing(cx, cy, shownRing);
         }
 
         void saveTarget() {
@@ -288,9 +406,9 @@ namespace DownloadsScreen {
         void enterWith(const std::string& key) {
             pickedTarget = false;
             skippedTarget = suits(key) ? std::string() : key;
-            std::string chosen = skippedTarget.empty() ? key : std::string();
-            if (chosen != target || !followed) {
-                chooseTarget(chosen);
+            std::string chosenKey = skippedTarget.empty() ? key : std::string();
+            if (chosenKey != target || !followed) {
+                chooseTarget(chosenKey);
             }
         }
 
@@ -415,24 +533,30 @@ namespace DownloadsScreen {
         std::shared_ptr<ModeBinding> loaderChoice() {
             auto choice = std::make_shared<ModeBinding>(
                     "downloads#loaderFilter",
-                    [] { return loaderFilter.empty() ? std::string(ANY_LOADER) : Modrinth::label(loaderFilter); },
+                    [] {
+                        return query.loaders.size() == 1 ? Modrinth::label(query.loaders.front())
+                                                         : std::string(ANY_LOADER);
+                    },
                     [](const std::string& option) {
+                        query.loaders.clear();
                         loaderFilter.clear();
-                        for (const std::string& tag : loaderTags(query.kind)) {
+                        for (const std::string& tag : loaderTags()) {
                             if (Modrinth::label(tag) == option) {
+                                query.loaders.push_back(tag);
                                 loaderFilter = tag;
                             }
                         }
+                        query.page = 0;
                     },
                     [] {
                         std::vector<std::string> labels = {ANY_LOADER};
-                        for (const std::string& tag : loaderTags(query.kind)) {
+                        for (const std::string& tag : loaderTags()) {
                             labels.push_back(Modrinth::label(tag));
                         }
                         return labels;
                     });
             choice->icon(ANY_LOADER, 0xf12e);
-            for (const std::string& tag : loaderTags(query.kind)) {
+            for (const std::string& tag : loaderTags()) {
                 if (uint32_t image = loaderImage(tag)) {
                     choice->image(Modrinth::label(tag), image);
                 } else {
@@ -455,9 +579,9 @@ namespace DownloadsScreen {
             return 0;
         }
 
-        std::shared_ptr<ModeBinding> sortChoice() {
+        std::shared_ptr<Choice> sortChoice() {
             using ProjectBrowser::SortOption;
-            const auto* sorts = &ProjectBrowser::sorts(source);
+            const auto* sorts = &ProjectBrowser::sorts();
             auto choice = std::make_shared<ModeBinding>(
                     "downloads#sort",
                     [sorts] {
@@ -489,6 +613,102 @@ namespace DownloadsScreen {
             return choice;
         }
 
+        const char* const SORT_BUTTON = "downloads#sortButton";
+
+        // The order of the results, as the icon of the one in use: the popup keeps the list, this its only face.
+        void sortButton(float x, float y, float size, bool blocked) {
+            bool open = NewUi::popupOpen && NewUi::popupSource == SORT_BUTTON;
+            bool hovered = !blocked && NewUi::hit(x, y, size, size);
+            float lit = UiState::motion(std::string(SORT_BUTTON) + "#hover", hovered ? 1.0f : (open ? 1.0f : 0.0f),
+                                        18.0f);
+            if (lit > 0.001f) {
+                UiRender::roundRect(x, y, size, size, 5.0f, UiTheme::overlay(Ui::round(22 * lit)));
+            }
+            int glyph = 0xf002;
+            for (const ProjectBrowser::SortOption& option : ProjectBrowser::sorts()) {
+                if (option.sort == query.sort) {
+                    glyph = sortGlyph(option.sort);
+                }
+            }
+            UiWidgets::icon(Ui::glyph(glyph), x + size * 0.5f,
+                            y + size * 0.5f, UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), lit), 10.0f);
+            if (hovered && !open) {
+                std::string hint = "排序方式：";
+                for (const ProjectBrowser::SortOption& option : ProjectBrowser::sorts()) {
+                    if (option.sort == query.sort) {
+                        hint += option.label;
+                    }
+                }
+                Page::tooltip(hint, x, y, size, size);
+            }
+            if (open) {
+                NewUi::popupAnchorX = x;
+                NewUi::popupAnchorY = y + size;
+                NewUi::popupWidth = 120.0f;
+            }
+            if (blocked || !NewUi::click(x, y, size, size)) {
+                return;
+            }
+            UiSound::request(UiSound::TICK);
+            NewUi::openChoice(sortChoice(), x + size - 120.0f, y + size + 4.0f, 120.0f, SORT_BUTTON);
+        }
+
+        class SourceChoice : public Choice {
+        public:
+            SourceChoice() : Choice(SOURCES_OWNER) {}
+
+            std::vector<std::string> options() override {
+                return sourceOptions();
+            }
+
+            bool multi() override {
+                return true;
+            }
+
+            bool selected(const std::string& option) override {
+                return contains(chosenNames(), option);
+            }
+
+            void choose(const std::string& option) override {
+                flip(chosenNames(), option);
+                rememberSources();
+                query.page = 0;
+            }
+
+            bool optionMark(const std::string&) override {
+                return true;
+            }
+
+            void paintOptionMark(const std::string& option, float x, float y, float size) override {
+                Source each = sourceOf(option);
+                SourceMarks::draw(each, x, y, size, SourceMarks::brand(each));
+            }
+
+            std::string label() override {
+                std::vector<std::string> options = sourceOptions();
+                std::vector<std::string> picked;
+                for (const std::string& option : options) {
+                    if (contains(chosenNames(), option)) {
+                        picked.push_back(option);
+                    }
+                }
+                if (picked.empty()) {
+                    return "未选来源";
+                }
+                if (options.size() == 1) {
+                    return options.front();
+                }
+                if (picked.size() == options.size()) {
+                    return "全部来源";
+                }
+                return picked.size() == 1 ? picked.front() : std::to_string(picked.size()) + " 个来源";
+            }
+        };
+
+        std::shared_ptr<Choice> sourceChoice() {
+            return std::make_shared<SourceChoice>();
+        }
+
         std::shared_ptr<TextBinding> nameValue() {
             static std::shared_ptr<TextBinding> value = [] {
                 auto binding = std::make_shared<TextBinding>(
@@ -500,7 +720,7 @@ namespace DownloadsScreen {
                                 query.page = 0;
                             }
                         },
-                        "名称");
+                        "搜索名称");
                 binding->limit = 100;
                 return binding;
             }();
@@ -512,28 +732,48 @@ namespace DownloadsScreen {
             float x = mainX() + FILTER_PAD;
             float w = mainW() - FILTER_PAD * 2;
             float rowY = y + FILTER_PAD;
+            bool loaders = hasLoaders();
+            constexpr float PREFERRED_CELL = 200.0f;
+            constexpr float LEAST_CELL = 132.0f;
+            constexpr float LEAST_NAME = 140.0f;
+            float counterW = UiFont::width("共 99999 个", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + GAP;
+            float sortW = Page::FIELD_H;
+            int filters = loaders ? 3 : 2;
+            float cell = std::min(PREFERRED_CELL, (w - counterW - GAP * (float) filters) / (float) filters);
+            if (ProjectBrowser::usesInstance(query.kind)) {
+                cell = std::min(cell, (w - LEAST_NAME - GAP * 2.0f - sortW));
+            }
+            cell = std::max(cell, 1.0f);
+
             float nameX = x;
             if (ProjectBrowser::usesInstance(query.kind)) {
-                float instanceW = 160.0f;
-                instancePicker(x, rowY, instanceW, blocked);
-                nameX += instanceW + GAP;
+                instancePicker(nameX, rowY, cell, blocked);
+                nameX += cell + GAP;
             }
+            float fieldW = std::max(0.0f, x + w - sortW - GAP - nameX);
             TextFieldWidget field(nameValue());
-            field.box(nameX, rowY, x + w - nameX, Page::FIELD_H)
-                    .bounds(nameX, rowY, x + w - nameX, Page::FIELD_H)
-                    .block(blocked);
+            field.box(nameX, rowY, fieldW, Page::FIELD_H).bounds(nameX, rowY, fieldW, Page::FIELD_H).block(blocked);
             field.paint();
+            sortButton(x + w - sortW, rowY, sortW, blocked);
 
             rowY += Page::FIELD_H + GAP;
-            float versionW = 120.0f;
-            select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), x, rowY, versionW,
+            float cellX = x;
+            select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), cellX, rowY, cell,
                    blocked);
-            select("downloads#sort", sortChoice(), x + versionW + GAP, rowY, 110.0f, blocked);
+            cellX += cell + GAP;
+            if (loaders) {
+                select("downloads#loader", loaderChoice(), cellX, rowY, cell, blocked);
+                cellX += cell + GAP;
+            }
+            select(SOURCES_OWNER, sourceChoice(), cellX, rowY, cell, blocked);
+            cellX += cell + GAP;
             if (counted) {
                 std::string found = "共 " + std::to_string(total) + " 个";
                 float foundW = UiFont::width(found, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(found, x + w - foundW, rowY, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
+                if (x + w - foundW >= cellX) {
+                    UiRender::textY(found, x + w - foundW, rowY, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                }
             }
         }
 
@@ -735,156 +975,110 @@ namespace DownloadsScreen {
             return "类别";
         }
 
-        float loaderGroup(float y, bool blocked) {
-            if (!hasLoaders(query.kind)) {
-                return 0.0f;
-            }
-            {
-                const auto& tags = loaderTags(query.kind);
-                bool more = tags.size() > LOADERS_SHOWN + 1;
-                std::vector<Filter> rows;
-                for (size_t i = 0; i < tags.size(); i++) {
-                    if (more && !allLoaders && i >= LOADERS_SHOWN && !contains(query.loaders, tags[i])) {
-                        continue;
-                    }
-                    std::string tag = tags[i];
-                    rows.push_back(Filter{"downloads#loader#" + tag, Modrinth::label(tag), 0xf12e, loaderImage(tag),
-                                          contains(query.loaders, tag), [tag] {
-                                              bool picked = contains(query.loaders, tag);
-                                              query.loaders.clear();
-                                              if (!picked) {
-                                                  query.loaders.push_back(tag);
-                                              }
-                                              query.page = 0;
-                                          }});
+        bool chosenHere(const std::vector<std::string>& keys) {
+            for (const std::string& key : keys) {
+                if (contains(query.categories, key)) {
+                    return true;
                 }
-                std::function<void(float)> toggleMore;
-                if (more) {
-                    toggleMore = [blocked](float rowY) {
-                        bool hovered = !blocked && NewUi::hit(Page::left(), rowY, SIDE_W, FILTER_ROW);
-                        uint32_t ink = hovered ? UiTheme::textPrimary() : UiTheme::textMuted();
-                        std::string text = allLoaders ? "收起" : "显示更多";
-                        UiWidgets::iconBeside(Ui::glyph(allLoaders ? 0xf077 : 0xf078), Page::left() + 17.0f, text,
-                                              UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, rowY, FILTER_ROW, ink, 9.0f);
-                        UiRender::textY(text, Page::left() + 32.0f, rowY, FILTER_ROW, ink, UiFont::MEDIUM,
-                                        UiWidgets::TEXT_CONTROL);
-                        if (!blocked && NewUi::click(Page::left(), rowY, SIDE_W, FILTER_ROW)) {
-                            UiSound::request(UiSound::TICK);
-                            allLoaders = !allLoaders;
-                        }
-                    };
-                }
-                return group("loader", "加载器", rows, y, blocked, toggleMore, more ? FILTER_ROW : 0.0f);
             }
+            return false;
         }
 
-        float curseGroups(float y, bool blocked) {
-            float start = y;
-            y += loaderGroup(y, blocked);
+        void flipKeys(const std::vector<std::string>& keys) {
+            bool on = chosenHere(keys);
+            for (const std::string& key : keys) {
+                auto at = std::find(query.categories.begin(), query.categories.end(), key);
+                if (on) {
+                    if (at != query.categories.end()) {
+                        query.categories.erase(at);
+                    }
+                } else if (at == query.categories.end()) {
+                    query.categories.push_back(key);
+                }
+            }
+            query.page = 0;
+        }
+
+        std::string tagOf(const ProjectBrowser::MergedCategory& category) {
+            for (const std::string& key : category.keys) {
+                if (key.starts_with("mr:")) {
+                    return key.substr(3);
+                }
+            }
+            return std::string();
+        }
+
+        float categoryGroup(float y, const std::string& header, bool blocked) {
             std::vector<Filter> rows;
-            for (const Addons::Category& category : Addons::categories(source, query.kind)) {
-                std::string id = category.id;
-                rows.push_back(Filter{"downloads#cf#category#" + id, category.name, 0xf02b,
-                                      Textures::of(Addons::icon(category.iconUrl)), contains(query.categories, id),
-                                      [id] {
-                                          flip(query.categories, id);
-                                          query.page = 0;
-                                      }});
+            for (const ProjectBrowser::MergedCategory& category : ProjectBrowser::categories(chosenSources(), query.kind)) {
+                std::string headerOf = category.header.empty() ? std::string("categories") : category.header;
+                if (headerOf != header) {
+                    continue;
+                }
+                std::string name = tagOf(category);
+                std::vector<std::string> keys = category.keys;
+                rows.push_back(Filter{"downloads#category#" + category.label, category.label,
+                                      categoryGlyph(name.empty() ? category.label : name), 0,
+                                      chosenHere(keys), [keys] { flipKeys(keys); }});
             }
             if (rows.empty()) {
-                Page::spinner(Page::left() + 17.0f, y + 13.0f, 6.0f, UiTheme::accent());
-                y += FILTER_ROW;
-            } else {
-                y += group("cf#categories", "类别", rows, y, blocked);
+                return 0.0f;
             }
-            return y - start;
+            return group(header, headerTitle(header), rows, y, blocked);
         }
 
-        float modrinthGroups(float y, bool blocked) {
+        float catalogGroups(float y, bool blocked) {
+            const std::vector<ProjectBrowser::MergedCategory>& categories =
+                    ProjectBrowser::categories(chosenSources(), query.kind);
             float start = y;
-            y += loaderGroup(y, blocked);
-
-            const std::vector<Addons::Category>& categories = Addons::categories(source, query.kind);
             for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
-                std::vector<Filter> rows;
-                for (const Addons::Category& category : categories) {
-                    if (category.header != header) {
-                        continue;
-                    }
-                    std::string name = category.name;
-                    rows.push_back(Filter{"downloads#category#" + name, categoryLabel(name), categoryGlyph(name), 0,
-                                          contains(query.categories, name), [name] {
-                                              flip(query.categories, name);
-                                              query.page = 0;
-                                          }});
-                }
-                if (!rows.empty()) {
-                    y += group(header, headerTitle(header), rows, y, blocked);
-                }
+                y += categoryGroup(y, header, blocked);
             }
             if (categories.empty()) {
                 Page::spinner(Page::left() + 17.0f, y + 13.0f, 6.0f, UiTheme::accent());
                 y += FILTER_ROW;
+                return y - start;
             }
-
-            if (query.kind == Kind::Mod || query.kind == Kind::Modpack) {
-                std::vector<Filter> rows = {
-                        {"downloads#env#client", "客户端", 0xf108, 0, query.client,
+            if (containsSource(chosenSources(), Source::Modrinth)) {
+                if (query.kind == Kind::Mod || query.kind == Kind::Modpack) {
+                    std::vector<Filter> rows = {
+                            {"downloads#env#client", "客户端", 0xf108, 0, query.client,
+                             [] {
+                                 query.client = !query.client;
+                                 query.page = 0;
+                             }},
+                            {"downloads#env#server", "服务端", 0xf233, 0, query.server,
+                             [] {
+                                 query.server = !query.server;
+                                 query.page = 0;
+                             }},
+                    };
+                    y += group("environment", "环境", rows, y, blocked);
+                }
+                std::vector<Filter> other = {
+                        {"downloads#opensource", "仅开源", 0xf121, 0, query.openSource,
                          [] {
-                             query.client = !query.client;
-                             query.page = 0;
-                         }},
-                        {"downloads#env#server", "服务端", 0xf233, 0, query.server,
-                         [] {
-                             query.server = !query.server;
+                             query.openSource = !query.openSource;
                              query.page = 0;
                          }},
                 };
-                y += group("environment", "环境", rows, y, blocked);
+                y += group("other", "其他", other, y, blocked);
             }
-            std::vector<Filter> other = {
-                    {"downloads#opensource", "仅开源", 0xf121, 0, query.openSource,
-                     [] {
-                         query.openSource = !query.openSource;
-                         query.page = 0;
-                     }},
-            };
-            y += group("other", "其他", other, y, blocked);
             return y - start;
         }
 
-        float filterGroups(float y, bool blocked) {
-            return source == Source::CurseForge ? curseGroups(y, blocked) : modrinthGroups(y, blocked);
-        }
-
-        float loaderHeight() {
-            if (!hasLoaders(query.kind)) {
-                return 0.0f;
-            }
-            {
-                const auto& tags = loaderTags(query.kind);
-                bool more = tags.size() > LOADERS_SHOWN + 1;
+        float filterHeight() {
+            const std::vector<ProjectBrowser::MergedCategory>& categories =
+                    ProjectBrowser::categories(chosenSources(), query.kind);
+            float h = 0.0f;
+            for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
                 size_t rows = 0;
-                for (size_t i = 0; i < tags.size(); i++) {
-                    if (!more || allLoaders || i < LOADERS_SHOWN || contains(query.loaders, tags[i])) {
+                for (const ProjectBrowser::MergedCategory& category : categories) {
+                    std::string headerOf = category.header.empty() ? std::string("categories") : category.header;
+                    if (headerOf == header) {
                         rows++;
                     }
                 }
-                return groupHeight("loader", rows, more ? FILTER_ROW : 0.0f);
-            }
-        }
-
-        float filterHeight() {
-            if (source == Source::CurseForge) {
-                size_t rows = Addons::categories(source, query.kind).size();
-                return loaderHeight() + (rows > 0 ? groupHeight("cf#categories", rows) : FILTER_ROW);
-            }
-            float h = loaderHeight();
-            const std::vector<Addons::Category>& categories = Addons::categories(source, query.kind);
-            for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
-                size_t rows = (size_t) std::count_if(
-                        categories.begin(), categories.end(),
-                        [header](const Addons::Category& category) { return category.header == header; });
                 if (rows > 0) {
                     h += groupHeight(header, rows);
                 }
@@ -892,10 +1086,12 @@ namespace DownloadsScreen {
             if (categories.empty()) {
                 h += FILTER_ROW;
             }
-            if (query.kind == Kind::Mod || query.kind == Kind::Modpack) {
-                h += groupHeight("environment", 2);
+            if (containsSource(chosenSources(), Source::Modrinth)) {
+                if (query.kind == Kind::Mod || query.kind == Kind::Modpack) {
+                    h += groupHeight("environment", 2);
+                }
+                h += groupHeight("other", 1);
             }
-            h += groupHeight("other", 1);
             return h;
         }
 
@@ -903,32 +1099,41 @@ namespace DownloadsScreen {
         void resume(const Tab& in);
         void stopEditing();
 
+        void resetKind() {
+            query.text.clear();
+            query.page = 0;
+            query.categories.clear();
+            query.loaders.clear();
+            query.gameVersion.clear();
+            query.client = false;
+            query.server = false;
+            query.openSource = false;
+            query.sort = Addons::Sort::Relevance;
+            restoreSources();
+            typed.clear();
+            shown = ProjectBrowser::Merged();
+            folded.clear();
+            retarget();
+            followInstance();
+        }
+
         void switchKind(Kind kind) {
-            if (query.kind != kind) {
-                stopEditing();
-                keep(kindTabs[{(int) source, (int) query.kind}]);
-                auto saved = kindTabs.find({(int) source, (int) kind});
-                if (saved != kindTabs.end() && saved->second.ready) {
-                    resume(saved->second);
-                } else {
-                    query.kind = kind;
-                    query.text.clear();
-                    query.page = 0;
-                    query.categories.clear();
-                    query.loaders.clear();
-                    query.gameVersion.clear();
-                    query.client = false;
-                    query.server = false;
-                    typed.clear();
-                    shown = Addons::Results();
-                    folded.clear();
-                    allLoaders = false;
-                    retarget();
-                    followInstance();
-                }
-            }
             routes.clear();
             views.go(VIEW_RESULTS);
+            if (side == Side::Catalog && query.kind == kind) {
+                return;
+            }
+            stopEditing();
+            keep(kindTabs[(int) query.kind]);
+            side = Side::Catalog;
+            sourceViews.go(CATALOG_PAGE);
+            auto saved = kindTabs.find((int) kind);
+            if (saved != kindTabs.end() && saved->second.ready) {
+                resume(saved->second);
+            } else {
+                query.kind = kind;
+                resetKind();
+            }
         }
 
         void keep(Tab& out) {
@@ -941,7 +1146,7 @@ namespace DownloadsScreen {
             out.versionFilter = versionFilter;
             out.loaderFilter = loaderFilter;
             out.folded = folded;
-            out.allLoaders = allLoaders;
+            out.chosen = chosenNames();
         }
 
         void resume(const Tab& in) {
@@ -952,11 +1157,11 @@ namespace DownloadsScreen {
             versionFilter = in.versionFilter;
             loaderFilter = in.loaderFilter;
             folded = in.folded;
-            allLoaders = in.allLoaders;
+            chosen = in.chosen;
             views.page = (int) routes.size();
             if (in.target != target && ProjectBrowser::usesInstance(query.kind)) {
                 followInstance();
-                shown = Addons::Results();
+                shown = ProjectBrowser::Merged();
             }
         }
 
@@ -967,172 +1172,80 @@ namespace DownloadsScreen {
         }
 
         void enterAggregate() {
-            if (java || themes) {
-                java = false;
-                themes = false;
-                if (aggregate) {
-                    sourceViews.go(AGGREGATE_PAGE);
-                    return;
-                }
-            }
-            if (aggregate) {
-                routes.clear();
-                views.go(VIEW_RESULTS);
-                return;
-            }
             stopEditing();
-            keep(tabs[(int) source]);
-            browsing = source;
-            aggregate = true;
-            if (aggregateTab.ready) {
-                source = aggregateSource;
-                resume(aggregateTab);
-            } else {
-                views.page = VIEW_RESULTS;
+            if (side == Side::Catalog) {
+                keep(kindTabs[(int) query.kind]);
             }
-            views.mix = 1.0f;
+            side = Side::Aggregate;
+            routes.clear();
+            views.go(VIEW_RESULTS);
             sourceViews.go(AGGREGATE_PAGE);
-        }
-
-        void switchSource(Source next) {
-            if (java || themes) {
-                java = false;
-                themes = false;
-                if (!aggregate && next == source) {
-                    sourceViews.go((int) source);
-                    return;
-                }
-            }
-            if (!aggregate && next == source) {
-                routes.clear();
-                views.go(VIEW_RESULTS);
-                return;
-            }
-            stopEditing();
-            Kind kind = query.kind == Kind::World && next != Source::CurseForge ? Kind::Mod : query.kind;
-            if (aggregate) {
-                keep(aggregateTab);
-                aggregateSource = source;
-                aggregate = false;
-                kind = Kind::Mod;
-            } else {
-                keep(tabs[(int) source]);
-            }
-            source = next;
-            Tab& in = tabs[(int) next];
-            if (in.ready) {
-                resume(in);
-            } else {
-                query = Addons::Query();
-                query.kind = kind;
-                query.sort = next == Source::CurseForge ? Addons::Sort::Popularity : Addons::Sort::Relevance;
-                typed.clear();
-                shown = Addons::Results();
-                routes.clear();
-                folded.clear();
-                allLoaders = false;
-                followInstance();
-                views.page = VIEW_RESULTS;
-            }
-            views.mix = 1.0f;
-            sourceViews.go((int) next);
         }
 
         void enterJava() {
             stopEditing();
-            java = true;
-            themes = false;
+            keep(kindTabs[(int) query.kind]);
+            side = Side::Java;
+            routes.clear();
+            views.go(VIEW_RESULTS);
             sourceViews.go(JAVA_PAGE);
         }
 
         void enterThemes() {
             stopEditing();
-            java = false;
-            themes = true;
+            keep(kindTabs[(int) query.kind]);
+            side = Side::Themes;
+            routes.clear();
+            views.go(VIEW_RESULTS);
             sourceViews.go(THEMES_PAGE);
         }
 
-        bool sourceRow(Source each, float y, bool blocked) {
-            std::string id = std::string("downloads#source#") + Addons::sourceName(each);
-            float x = Page::left();
-            bool active = !java && !themes && !aggregate && source == each;
-            bool hovered = !blocked && NewUi::hit(x, y, SIDE_W, NAV_ITEM_H);
-            float r = UiState::motion(id, active ? 1.0f : (hovered ? 0.48f : 0.0f), 16.0f);
-            if (r > 0.001f) {
-                UiRender::roundRect(x, y, SIDE_W, NAV_ITEM_H, 8.0f,
-                                    UiRender::mix(UiTheme::clear(), UiTheme::navHover(), r));
-            }
-            const float mark = 14.0f;
-            SourceMarks::draw(each, x + 16.0f - mark * 0.5f, y + (NAV_ITEM_H - mark) * 0.5f, mark,
-                              UiRender::mix(UiTheme::textMuted(), UiTheme::accent(), r));
-            UiRender::textY(Addons::sourceName(each), x + 31.0f, y, NAV_ITEM_H,
-                            UiRender::mix(UiTheme::textMuted(), UiTheme::textPrimary(), r), UiFont::MEDIUM,
-                            UiWidgets::TEXT_BODY);
-            if (!blocked && NewUi::click(x, y, SIDE_W, NAV_ITEM_H)) {
-                UiSound::request(UiSound::TICK);
-                return true;
-            }
-            return false;
-        }
-
-        void side(bool covered) {
+        void sidePanel(bool covered) {
             float y = Page::top();
-            NavItemWidget search("downloads#aggregate", Ui::glyph(0xf002), "搜索");
-            search.selected(aggregate && !java && !themes).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
-            search.paint();
-            if (search.pressed && (java || themes || !aggregate || views.page != VIEW_RESULTS)) {
+            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "搜索");
+            aggregate.selected(side == Side::Aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            aggregate.paint();
+            if (aggregate.pressed && (side != Side::Aggregate || views.page != VIEW_RESULTS)) {
                 enterAggregate();
             }
             y += NAV_STEP;
-            for (Source each : {Source::Modrinth, Source::CurseForge}) {
-                if (sourceRow(each, y, covered)) {
-                    switchSource(each);
+            for (const KindInfo& info : KINDS) {
+                NavItemWidget item(std::string("downloads#kind#") + info.label, Ui::glyph(info.glyph), info.label);
+                bool active = side == Side::Catalog && query.kind == info.kind;
+                item.selected(active).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+                item.paint();
+                if (item.pressed && (!active || views.page != VIEW_RESULTS)) {
+                    switchKind(info.kind);
                 }
                 y += NAV_STEP;
             }
             NavItemWidget runtime("downloads#java", Ui::glyph(0xf0f4), "Java");
-            runtime.selected(java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            runtime.selected(side == Side::Java).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             runtime.paint();
-            if (runtime.pressed && !java) {
+            if (runtime.pressed && side != Side::Java) {
                 enterJava();
             }
             y += NAV_STEP;
             NavItemWidget launcherThemes("downloads#themes", Ui::glyph(0xf1fc), "启动器主题");
-            launcherThemes.selected(themes).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
+            launcherThemes.selected(side == Side::Themes).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             launcherThemes.paint();
-            if (launcherThemes.pressed && !themes) {
+            if (launcherThemes.pressed && side != Side::Themes) {
                 enterThemes();
             }
             y += NAV_STEP;
-            if (aggregate || java || themes) {
+            if (side != Side::Catalog) {
                 return;
-            }
-            y += 4.0f;
-            UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
-            y += 9.0f;
-            for (const KindInfo& info : KINDS) {
-                if (info.kind == Kind::World && source != Source::CurseForge) {
-                    continue;
-                }
-                NavItemWidget item(std::string("downloads#kind#") + info.label, Ui::glyph(info.glyph), info.label);
-                item.selected(query.kind == info.kind).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
-                item.paint();
-                if (item.pressed && (query.kind != info.kind || views.page != VIEW_RESULTS)) {
-                    switchKind(info.kind);
-                }
-                y += NAV_STEP;
             }
             y += 4.0f;
             UiRender::hLine(Page::left() + 4.0f, Page::left() + SIDE_W - 4.0f, y, UiTheme::divider());
             float top = y + 6.0f;
             float bottom = MainWindow::height() - 14.0f;
-            Page::Scroll body("downloads#filters#" + std::to_string((int) source) + "#" +
-                                      std::to_string((int) query.kind),
-                              top, bottom, filterHeight(), Page::left(), SIDE_W);
+            Page::Scroll body("downloads#filters#" + std::to_string((int) query.kind), top, bottom, filterHeight(),
+                              Page::left(), SIDE_W);
             bool outside = body.begin();
             shownTop = top;
             shownBottom = bottom;
-            filterGroups(body.top - body.offset, outside || covered);
+            catalogGroups(body.top - body.offset, outside || covered);
             body.end();
         }
 
@@ -1144,271 +1257,21 @@ namespace DownloadsScreen {
             views.go((int) routes.size());
         }
 
-        void openProject(const Addons::Hit& hit) {
+        void openFound(const ProjectBrowser::Found& found, Kind kind) {
             versionFilter = query.gameVersion;
             loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
             Route route;
-            route.source = source;
-            route.kind = query.kind;
-            route.hit = hit;
+            route.source = found.source;
+            route.kind = kind;
+            route.hit = found.hit;
             pushRoute(route);
         }
 
-        bool authorLink(const Addons::Hit& hit, Source from, float right, float y, float h, bool blocked) {
-            if (hit.author.empty()) {
-                return false;
-            }
-            std::string name = fitEnd(hit.author, 140.0f, UiWidgets::TEXT_SMALL);
-            float w = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            float x = right - w;
-            bool usable = !hit.authorId.empty();
-            bool hovered = usable && !blocked && NewUi::hit(x - 2.0f, y, w + 4.0f, h);
-            uint32_t ink = hovered ? UiTheme::accentText() : UiTheme::textMuted();
-            UiRender::textY(name, x, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            if (hovered) {
-                UiRender::hLine(x, x + w, y + h * 0.5f + 7.0f, ink);
-                UiCursor::hand();
-                if (NewUi::click(x - 2.0f, y, w + 4.0f, h)) {
-                    UiSound::request(UiSound::PAGE);
-                    DownloadsParts::openAuthor(from == Source::Modrinth ? Authors::Kind::ModrinthUser
-                                                                        : Authors::Kind::CurseForge,
-                                               hit.authorId, hit.author, std::string(), from);
-                }
-            }
-            return true;
-        }
-
-        bool projectRow(const std::string& id, const Addons::Hit& hit, Kind kind, Source from, float x, float y,
-                        float w, int index, int count, bool blocked) {
-            bool hovered = !blocked && NewUi::hit(x, y, w, RESULT_H);
-            float hover = UiState::motion("downloads#hit#" + id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
-            if (hover > 0.001f) {
-                UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
-                                    Page::rowCorners(index, count));
-            }
-            projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON, kind);
-            float textX = x + 12.0f + RESULT_ICON + 12.0f;
-            float right = x + w - 14.0f;
-            float titleY = hit.description.empty() && hit.author.empty() ? y + (RESULT_H - 20.0f) * 0.5f : y + 9.0f;
-            float titleCentre = titleY + 10.0f;
-
-            float limit = right;
-            if (hit.downloads > 0) {
-                std::string downloads = Addons::count(hit.downloads);
-                float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-                float downloadsX = right - downloadsW;
-                UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
-                UiWidgets::iconBeside(Ui::glyph(0xf019), downloadsX - 9.0f, downloads, UiFont::MEDIUM,
-                                      UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
-                limit = downloadsX - 22.0f;
-            }
-
-            std::string chinese = ModNames::applies(kind) ? ModNames::zh(hit.title) : std::string();
-            bool original = chinese.empty() || ModNames::original();
-            std::string title = fitEnd(original ? hit.title : chinese, limit - textX, UiWidgets::TEXT_BODY);
-            UiRender::textY(title, textX, titleY, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
-            float tagX = textX + UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
-            if (!chinese.empty() && tagX < limit) {
-                std::string other = fitEnd(original ? chinese : hit.title, limit - tagX, UiWidgets::TEXT_SMALL);
-                UiRender::textY(other, tagX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_SMALL);
-                tagX += UiFont::width(other, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 8.0f;
-            }
-            for (const std::string& category : hit.categories) {
-                float tagW = tag(from == Source::Modrinth ? Modrinth::label(category) : category, tagX, titleCentre,
-                                 limit, UiTheme::surfaceRaised(), UiTheme::textSecondary());
-                if (tagW == 0.0f) {
-                    break;
-                }
-                tagX += tagW + 4.0f;
-            }
-            for (const std::string& loader : hit.loaders) {
-                float tagW = tag(Modrinth::label(loader), tagX, titleCentre, limit, UiTheme::accentSoft(40),
-                                 UiTheme::accentText());
-                if (tagW == 0.0f) {
-                    break;
-                }
-                tagX += tagW + 4.0f;
-            }
-            float descriptionRight = right;
-            if (authorLink(hit, from, right, y + 30.0f, 16.0f, blocked)) {
-                descriptionRight -=
-                        std::min(140.0f, UiFont::width(hit.author, UiFont::MEDIUM, UiWidgets::TEXT_SMALL)) + 16.0f;
-            }
-            UiRender::textY(fitEnd(hit.description, descriptionRight - textX, UiWidgets::TEXT_SMALL), textX, y + 30.0f,
-                            16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            if (!blocked && NewUi::click(x, y, w, RESULT_H)) {
-                UiSound::request(UiSound::PAGE);
-                return true;
-            }
-            return false;
-        }
-
-        void resultRow(const Addons::Hit& hit, float x, float y, float w, int index, int count, bool blocked) {
-            if (projectRow(hit.id, hit, query.kind, source, x, y, w, index, count, blocked)) {
-                openProject(hit);
-            }
-        }
-
-        void pages(float y, int total, bool blocked) {
-            int count = std::max(1, (total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
-            int page = std::min(query.page, count - 1);
-            std::vector<int> numbers;
-            if (count <= 7) {
-                for (int i = 0; i < count; i++) {
-                    numbers.push_back(i);
-                }
-            } else {
-                int from = std::max(1, std::min(page - 1, count - 4));
-                int to = std::min(count - 2, std::max(page + 1, 3));
-                numbers.push_back(0);
-                if (from > 1) {
-                    numbers.push_back(-1);
-                }
-                for (int i = from; i <= to; i++) {
-                    numbers.push_back(i);
-                }
-                if (to < count - 2) {
-                    numbers.push_back(-1);
-                }
-                numbers.push_back(count - 1);
-            }
-            const float cell = 28.0f;
-            const float gapW = 18.0f;
-            auto cellW = [&](int number) {
-                if (number < 0) {
-                    return gapW;
-                }
-                return std::max(cell,
-                                UiFont::width(std::to_string(number + 1), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) +
-                                        16.0f);
-            };
-            float totalW = cell * 2.0f;
-            for (int number : numbers) {
-                totalW += cellW(number);
-            }
-            float x = mainX() + (mainW() - totalW) * 0.5f;
-            float cy = y + cell * 0.5f;
-
-            auto arrow = [&](const char* id, int glyph, int to, bool usable) {
-                bool hovered = usable && !blocked && NewUi::hit(x, y, cell, cell);
-                float hover = UiState::motion(std::string("downloads#pages#") + id, hovered ? 1.0f : 0.0f, 20.0f);
-                if (hover > 0.001f) {
-                    UiRender::roundRect(x, y, cell, cell, cell * 0.5f, UiTheme::overlay(Ui::round(14 * hover)));
-                }
-                UiWidgets::icon(Ui::glyph(glyph), x + cell * 0.5f, cy,
-                                usable ? UiTheme::textSecondary() : UiTheme::textFaint(), 10.0f);
-                if (usable && !blocked && NewUi::click(x, y, cell, cell)) {
-                    query.page = to;
-                }
-                x += cell;
-            };
-
-            arrow("prev", 0xf053, page - 1, page > 0);
-            for (int number : numbers) {
-                float w = cellW(number);
-                if (number < 0) {
-                    UiWidgets::icon(Ui::glyph(0xf141), x + w * 0.5f, cy, UiTheme::textFaint(), 9.0f);
-                    x += w;
-                    continue;
-                }
-                bool current = number == page;
-                bool hovered = !current && !blocked && NewUi::hit(x, y, w, cell);
-                float hover =
-                        UiState::motion("downloads#pages#" + std::to_string(number), hovered ? 1.0f : 0.0f, 20.0f);
-                if (current) {
-                    UiRender::roundRect(x, y, w, cell, cell * 0.5f, UiTheme::accentSoft(56));
-                } else if (hover > 0.001f) {
-                    UiRender::roundRect(x, y, w, cell, cell * 0.5f, UiTheme::overlay(Ui::round(14 * hover)));
-                }
-                std::string label = std::to_string(number + 1);
-                float labelW = UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(label, x + (w - labelW) * 0.5f, y, cell,
-                                current ? UiTheme::accentText() : UiTheme::textSecondary(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
-                if (!current && !blocked && NewUi::click(x, y, w, cell)) {
-                    query.page = number;
-                }
-                x += w;
-            }
-            arrow("next", 0xf054, page + 1, page + 1 < count);
-        }
-
-        void resultsView(bool covered) {
-            followTyping();
-            Addons::Query effective = query;
-            bool translating = false;
-            if (ModNames::applies(query.kind)) {
-                ModNames::Rewrite rewrite = ModNames::rewrite(query.text);
-                translating = rewrite.waiting;
-                effective.text = rewrite.text;
-            }
-            float y = Page::top();
-            float listTop = y + FILTER_H + 10.0f;
-            const float pagesH = 28.0f;
-            float pagesY = MainWindow::height() - 12.0f - pagesH - DownloadButton::inset();
-            float listBottom = pagesY - 8.0f;
-            static const Addons::Results waiting;
-            const Addons::Results& results = translating ? waiting : Addons::search(source, effective);
-            static const Addons::Results* shownFrom = nullptr;
-            static bool shownReady = false;
-            bool named = results.status != Addons::Status::Ready || !ModNames::applies(query.kind) ||
-                    ModNames::original() || ModNames::resolved(results.hits);
-            bool ready = results.status == Addons::Status::Ready && named;
-            if (ready && (shownFrom != &results || !shownReady)) {
-                shown = results;
-            }
-            shownFrom = &results;
-            shownReady = ready;
-            bool loading = results.status == Addons::Status::Loading || !named;
-            filters(y, shown.total, !shown.hits.empty() || ready, covered);
-
-            if (results.status == Addons::Status::Failed) {
-                message("搜索失败：" + results.error, UiTheme::danger(), listTop, listBottom, false);
-                std::string retry = "重试";
-                float w = Page::buttonWidth(retry);
-                if (Page::button("downloads#retry", retry, mainX() + (mainW() - w) * 0.5f,
-                                 (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
-                    Addons::refresh(source, effective);
-                }
-                return;
-            }
-            if (shown.hits.empty()) {
-                if (loading) {
-                    message(std::string("正在搜索 ") + Addons::sourceName(source), UiTheme::textMuted(), listTop,
-                            listBottom, true);
-                } else {
-                    message("没有找到符合条件的内容", UiTheme::textMuted(), listTop, listBottom, false);
-                }
-                return;
-            }
-            bool stale = loading || results.status == Addons::Status::Failed;
-            float contentH = shown.hits.size() * RESULT_H;
-            Page::Scroll body("downloads#results#" + std::to_string((int) source) + "#" +
-                                      std::to_string((int) query.kind),
-                              listTop, listBottom, contentH, mainX(), mainW());
-            bool outside = body.begin();
-            bool blocked = outside || covered || stale;
-            float rowsY = body.top - body.offset;
-            float saved = UiRender::alphaMul;
-            if (stale) {
-                UiRender::alphaMul = saved * 0.5f;
-            }
-            Page::listCard(mainX(), rowsY, mainW(), RESULT_H, (int) shown.hits.size());
-            for (size_t i = 0; i < shown.hits.size(); i++) {
-                float rowY = rowsY + i * RESULT_H;
-                if (rowY + RESULT_H < listTop || rowY > listBottom) {
-                    continue;
-                }
-                resultRow(shown.hits[i], mainX(), rowY, mainW(), (int) i, (int) shown.hits.size(), blocked);
-            }
-            UiRender::alphaMul = saved;
-            body.end();
-            if (loading) {
-                Page::spinner(mainX() + mainW() * 0.5f, (listTop + listBottom) * 0.5f, 9.0f, UiTheme::accent());
-            }
-            pages(pagesY, shown.total, covered || loading);
+        void openProject(const ProjectBrowser::MergedHit& merged) {
+            ProjectBrowser::Found found;
+            found.source = merged.primary;
+            found.hit = merged.hit;
+            openFound(found, query.kind);
         }
 
         std::optional<Kind> kindOf(const std::string& type) {
@@ -1510,6 +1373,31 @@ namespace DownloadsScreen {
             return label;
         }
 
+        void guide(float top) {
+            constexpr float MARK = 30.0f;
+            constexpr float MARK_GAP = 24.0f;
+            constexpr float GROUP_GAP = 20.0f;
+            constexpr float BODY_SIZE = 15.0f;
+            constexpr float LINE = 24.0f;
+            constexpr float FADED = 0.35f;
+            float cx = mainX() + mainW() * 0.5f;
+            float height = MARK + GROUP_GAP + LINE;
+            float y = std::max(top + 16.0f, (MainWindow::height() - height) * 0.5f);
+
+            float markX = cx - (3.0f * MARK + 2.0f * MARK_GAP) * 0.5f;
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * FADED;
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                SourceMarks::draw(each, markX, y, MARK, SourceMarks::brand(each));
+                markX += MARK + MARK_GAP;
+            }
+            SourceMarks::mcmodColored(markX, y, MARK, 1.0f);
+            UiRender::alphaMul = savedAlpha;
+
+            Page::centredText("输入任何关键字进行跨站搜索", cx, y + MARK + GROUP_GAP, LINE, UiTheme::textSecondary(),
+                              BODY_SIZE);
+        }
+
         void searchBar(float x, float y, float w, bool blocked) {
             const float inner = SEARCH_H - SEARCH_INSET * 2.0f;
             float innerY = y + SEARCH_INSET;
@@ -1576,12 +1464,6 @@ namespace DownloadsScreen {
                 Platform::openUrl(link.url);
                 return;
             }
-            source = link.source;
-            query = Addons::Query();
-            query.kind = *kind;
-            followInstance();
-            folded.clear();
-            allLoaders = false;
             Addons::Hit hit;
             hit.id = link.id;
             hit.slug = link.slug;
@@ -1591,7 +1473,10 @@ namespace DownloadsScreen {
             hit.pageUrl = link.url;
             hit.loaders = item.loaders;
             hit.downloads = link.downloads;
-            openProject(hit);
+            ProjectBrowser::Found found;
+            found.source = link.source;
+            found.hit = hit;
+            openFound(found, *kind);
         }
 
         void openItem(const Aggregate::Item& item) {
@@ -1611,7 +1496,7 @@ namespace DownloadsScreen {
 
         std::string loaderNames(const std::vector<std::string>& loaders) {
             std::string out;
-            for (size_t i = 0; i < loaders.size() && i < LOADERS_SHOWN; i++) {
+            for (size_t i = 0; i < loaders.size() && i < 3; i++) {
                 out += (out.empty() ? "" : " / ") + Modrinth::label(loaders[i]);
             }
             return out;
@@ -1831,6 +1716,9 @@ namespace DownloadsScreen {
             float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
             searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
+                if (Ui::trim(asking).empty()) {
+                    guide(Page::top() + SEARCH_H + 4.0f);
+                }
                 return;
             }
             float toolsY = Page::top() + SEARCH_H + 6.0f;
@@ -1878,6 +1766,309 @@ namespace DownloadsScreen {
                 foundRow(results.items[i], i, results.items.size(), mainX(), rowY, mainW(), blocked);
             }
             body.end();
+        }
+
+        bool authorLink(const Addons::Hit& hit, Source from, float right, float y, float h, bool blocked) {
+            if (hit.author.empty()) {
+                return false;
+            }
+            std::string name = fitEnd(hit.author, 140.0f, UiWidgets::TEXT_SMALL);
+            float w = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float x = right - w;
+            bool usable = !hit.authorId.empty();
+            bool hovered = usable && !blocked && NewUi::hit(x - 2.0f, y, w + 4.0f, h);
+            uint32_t ink = hovered ? UiTheme::accentText() : UiTheme::textMuted();
+            UiRender::textY(name, x, y, h, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (hovered) {
+                UiRender::hLine(x, x + w, y + h * 0.5f + 7.0f, ink);
+                UiCursor::hand();
+                if (NewUi::click(x - 2.0f, y, w + 4.0f, h)) {
+                    UiSound::request(UiSound::PAGE);
+                    DownloadsParts::openAuthor(from == Source::Modrinth ? Authors::Kind::ModrinthUser
+                                                                        : Authors::Kind::CurseForge,
+                                               hit.authorId, hit.author, std::string(), from);
+                }
+            }
+            return true;
+        }
+
+        bool sourceMarks(const ProjectBrowser::MergedHit& merged, Kind kind, float right, float y, bool blocked) {
+            const float mark = 11.0f;
+            bool over = false;
+            float x = right;
+            for (size_t i = merged.found.size(); i-- > 0;) {
+                const ProjectBrowser::Found& found = merged.found[i];
+                x -= mark;
+                float markX = x;
+                x -= 8.0f;
+                bool hovered = !blocked && NewUi::hit(markX - 3.0f, y, mark + 6.0f, 16.0f);
+                uint32_t ink = hovered ? UiTheme::textPrimary() : UiTheme::textFaint();
+                SourceMarks::draw(found.source, markX, y + 2.5f, mark, ink);
+                if (!hovered) {
+                    continue;
+                }
+                over = true;
+                UiCursor::hand();
+                Page::tooltip(Addons::sourceName(found.source), markX - 3.0f, y, mark + 6.0f, 16.0f);
+                if (NewUi::click(markX - 3.0f, y, mark + 6.0f, 16.0f)) {
+                    UiSound::request(UiSound::PAGE);
+                    openFound(found, kind);
+                }
+            }
+            return over;
+        }
+
+        bool projectRow(const std::string& id, const Addons::Hit& hit, Kind kind, Source from, float x, float y,
+                        float w, int index, int count, bool blocked,
+                        const ProjectBrowser::MergedHit* merged = nullptr) {
+            bool hovered = !blocked && NewUi::hit(x, y, w, RESULT_H);
+            float hover = UiState::motion("downloads#hit#" + id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            if (hover > 0.001f) {
+                UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
+                                    Page::rowCorners(index, count));
+            }
+            projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON, kind);
+            float textX = x + 12.0f + RESULT_ICON + 12.0f;
+            float right = x + w - 14.0f;
+            float titleY = hit.description.empty() && hit.author.empty() ? y + (RESULT_H - 20.0f) * 0.5f : y + 9.0f;
+            float titleCentre = titleY + 10.0f;
+
+            float limit = right;
+            if (hit.downloads > 0) {
+                std::string downloads = Addons::count(hit.downloads);
+                float downloadsW = UiFont::width(downloads, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                float downloadsX = right - downloadsW;
+                UiRender::textY(downloads, downloadsX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                UiWidgets::iconBeside(Ui::glyph(0xf019), downloadsX - 9.0f, downloads, UiFont::MEDIUM,
+                                      UiWidgets::TEXT_SMALL, titleY, 20.0f, UiTheme::textFaint(), 9.0f);
+                limit = downloadsX - 22.0f;
+            }
+
+            std::string chinese = ModNames::applies(kind) ? ModNames::zh(hit.title) : std::string();
+            bool original = chinese.empty() || ModNames::original();
+            std::string title = fitEnd(original ? hit.title : chinese, limit - textX, UiWidgets::TEXT_BODY);
+            UiRender::textY(title, textX, titleY, 20.0f, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_BODY);
+            float tagX = textX + UiFont::width(title, UiFont::MEDIUM, UiWidgets::TEXT_BODY) + 8.0f;
+            if (!chinese.empty() && tagX < limit) {
+                std::string other = fitEnd(original ? chinese : hit.title, limit - tagX, UiWidgets::TEXT_SMALL);
+                UiRender::textY(other, tagX, titleY, 20.0f, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                tagX += UiFont::width(other, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 8.0f;
+            }
+            for (const std::string& category : hit.categories) {
+                float tagW = tag(from == Source::Modrinth ? Modrinth::label(category) : category, tagX, titleCentre,
+                                 limit, UiTheme::surfaceRaised(), UiTheme::textSecondary());
+                if (tagW == 0.0f) {
+                    break;
+                }
+                tagX += tagW + 4.0f;
+            }
+            for (const std::string& loader : hit.loaders) {
+                float tagW = tag(Modrinth::label(loader), tagX, titleCentre, limit, UiTheme::accentSoft(40),
+                                 UiTheme::accentText());
+                if (tagW == 0.0f) {
+                    break;
+                }
+                tagX += tagW + 4.0f;
+            }
+            float descriptionRight = right;
+            if (authorLink(hit, from, right, y + 30.0f, 16.0f, blocked)) {
+                descriptionRight -=
+                        std::min(140.0f, UiFont::width(hit.author, UiFont::MEDIUM, UiWidgets::TEXT_SMALL)) + 16.0f;
+            }
+            bool overMark = merged != nullptr && sourceMarks(*merged, kind, descriptionRight - 6.0f, y + 30.0f, blocked);
+            if (overMark) {
+                descriptionRight -= 6.0f + (float) merged->found.size() * 19.0f;
+            }
+            UiRender::textY(fitEnd(hit.description, descriptionRight - textX, UiWidgets::TEXT_SMALL), textX, y + 30.0f,
+                            16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (!blocked && !overMark && NewUi::click(x, y, w, RESULT_H)) {
+                UiSound::request(UiSound::PAGE);
+                return true;
+            }
+            return false;
+        }
+
+        void pages(float y, int count, bool blocked) {
+            count = std::max(1, count);
+            int page = std::min(query.page, count - 1);
+            std::vector<int> numbers;
+            if (count <= 7) {
+                for (int i = 0; i < count; i++) {
+                    numbers.push_back(i);
+                }
+            } else {
+                int from = std::max(1, std::min(page - 1, count - 4));
+                int to = std::min(count - 2, std::max(page + 1, 3));
+                numbers.push_back(0);
+                if (from > 1) {
+                    numbers.push_back(-1);
+                }
+                for (int i = from; i <= to; i++) {
+                    numbers.push_back(i);
+                }
+                if (to < count - 2) {
+                    numbers.push_back(-1);
+                }
+                numbers.push_back(count - 1);
+            }
+            const float cell = 28.0f;
+            const float gapW = 18.0f;
+            auto cellW = [&](int number) {
+                if (number < 0) {
+                    return gapW;
+                }
+                return std::max(cell,
+                                UiFont::width(std::to_string(number + 1), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) +
+                                        16.0f);
+            };
+            float totalW = cell * 2.0f;
+            for (int number : numbers) {
+                totalW += cellW(number);
+            }
+            float x = mainX() + (mainW() - totalW) * 0.5f;
+            float cy = y + cell * 0.5f;
+
+            auto arrow = [&](const char* id, int glyph, int to, bool usable) {
+                bool hovered = usable && !blocked && NewUi::hit(x, y, cell, cell);
+                float hover = UiState::motion(std::string("downloads#pages#") + id, hovered ? 1.0f : 0.0f, 20.0f);
+                if (hover > 0.001f) {
+                    UiRender::roundRect(x, y, cell, cell, cell * 0.5f, UiTheme::overlay(Ui::round(14 * hover)));
+                }
+                UiWidgets::icon(Ui::glyph(glyph), x + cell * 0.5f, cy,
+                                usable ? UiTheme::textSecondary() : UiTheme::textFaint(), 10.0f);
+                if (usable && !blocked && NewUi::click(x, y, cell, cell)) {
+                    query.page = to;
+                }
+                x += cell;
+            };
+
+            arrow("prev", 0xf053, page - 1, page > 0);
+            for (int number : numbers) {
+                float w = cellW(number);
+                if (number < 0) {
+                    UiWidgets::icon(Ui::glyph(0xf141), x + w * 0.5f, cy, UiTheme::textFaint(), 9.0f);
+                    x += w;
+                    continue;
+                }
+                bool current = number == page;
+                bool hovered = !current && !blocked && NewUi::hit(x, y, w, cell);
+                float hover =
+                        UiState::motion("downloads#pages#" + std::to_string(number), hovered ? 1.0f : 0.0f, 20.0f);
+                if (current) {
+                    UiRender::roundRect(x, y, w, cell, cell * 0.5f, UiTheme::accentSoft(56));
+                } else if (hover > 0.001f) {
+                    UiRender::roundRect(x, y, w, cell, cell * 0.5f, UiTheme::overlay(Ui::round(14 * hover)));
+                }
+                std::string label = std::to_string(number + 1);
+                float labelW = UiFont::width(label, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(label, x + (w - labelW) * 0.5f, y, cell,
+                                current ? UiTheme::accentText() : UiTheme::textSecondary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                if (!current && !blocked && NewUi::click(x, y, w, cell)) {
+                    query.page = number;
+                }
+                x += w;
+            }
+            arrow("next", 0xf054, page + 1, page + 1 < count);
+        }
+
+        void resultsView(bool covered) {
+            followTyping();
+            std::vector<Source> sources = chosenSources();
+            Addons::Query base = query;
+            bool translating = false;
+            if (ModNames::applies(query.kind)) {
+                ModNames::Rewrite rewrite = ModNames::rewrite(query.text);
+                translating = rewrite.waiting;
+                base.text = rewrite.text;
+            }
+            float y = Page::top();
+            float listTop = y + FILTER_H + 10.0f;
+            const float pagesH = 28.0f;
+            float pagesY = MainWindow::height() - 12.0f - pagesH - DownloadButton::inset();
+            float listBottom = pagesY - 8.0f;
+
+            ProjectBrowser::Merged merged;
+            if (!sources.empty()) {
+                std::vector<std::pair<Source, const Addons::Results*>> lists;
+                for (Source from : sources) {
+                    lists.push_back({from, &Addons::search(from, queryFor(from, base))});
+                }
+                merged = ProjectBrowser::merge(lists);
+            }
+            bool named = true;
+            if (merged.status == Addons::Status::Ready && ModNames::applies(query.kind) && !ModNames::original()) {
+                std::vector<Addons::Hit> hits;
+                for (const ProjectBrowser::MergedHit& row : merged.hits) {
+                    hits.push_back(row.hit);
+                }
+                named = ModNames::resolved(hits);
+            }
+            bool ready = merged.status == Addons::Status::Ready && named && !translating;
+            if (ready) {
+                shown = merged;
+            }
+            bool loading = merged.status != Addons::Status::Failed && (merged.status != Addons::Status::Ready ||
+                                                                     !named || translating);
+
+            filters(y, shown.total, !shown.hits.empty() || ready, covered);
+
+            if (sources.empty()) {
+                message("请在上方选择至少一个来源", UiTheme::textMuted(), listTop, listBottom, false);
+                return;
+            }
+            if (merged.status == Addons::Status::Failed) {
+                message("搜索失败：" + merged.error, UiTheme::danger(), listTop, listBottom, false);
+                std::string retry = "重试";
+                float w = Page::buttonWidth(retry);
+                if (Page::button("downloads#retry", retry, mainX() + (mainW() - w) * 0.5f,
+                                 (listTop + listBottom) * 0.5f + 20.0f, w, false, covered)) {
+                    for (Source from : sources) {
+                        Addons::refresh(from, queryFor(from, base));
+                    }
+                }
+                return;
+            }
+            if (shown.hits.empty()) {
+                if (loading) {
+                    message("正在搜索", UiTheme::textMuted(), listTop, listBottom, true);
+                } else {
+                    message("没有找到符合条件的内容", UiTheme::textMuted(), listTop, listBottom, false);
+                }
+                return;
+            }
+            bool stale = loading || merged.status == Addons::Status::Failed;
+            float contentH = (float) shown.hits.size() * RESULT_H;
+            Page::Scroll body("downloads#results#" + std::to_string((int) query.kind), listTop, listBottom, contentH,
+                              mainX(), mainW());
+            bool outside = body.begin();
+            bool blocked = outside || covered || stale;
+            float rowsY = body.top - body.offset;
+            float saved = UiRender::alphaMul;
+            if (stale) {
+                UiRender::alphaMul = saved * 0.5f;
+            }
+            Page::listCard(mainX(), rowsY, mainW(), RESULT_H, (int) shown.hits.size());
+            for (size_t i = 0; i < shown.hits.size(); i++) {
+                float rowY = rowsY + (float) i * RESULT_H;
+                if (rowY + RESULT_H < listTop || rowY > listBottom) {
+                    continue;
+                }
+                const ProjectBrowser::MergedHit& row = shown.hits[i];
+                std::string id = std::to_string(i) + "#" + row.hit.id;
+                if (projectRow(id, row.hit, query.kind, row.primary, mainX(), rowY, mainW(), (int) i,
+                               (int) shown.hits.size(), blocked, &row)) {
+                    openProject(row);
+                }
+            }
+            UiRender::alphaMul = saved;
+            body.end();
+            if (loading) {
+                Page::spinner(mainX() + mainW() * 0.5f, (listTop + listBottom) * 0.5f, 9.0f, UiTheme::accent());
+            }
+            pages(pagesY, shown.pages, covered || loading);
         }
 
         std::string pendingSlug;
@@ -2012,16 +2203,16 @@ namespace DownloadsScreen {
         }
         bool covered = NewUi::overlayCoversMouse();
         followPending();
-        side(covered);
+        sidePanel(covered);
         sourceViews.begin();
         views.begin();
-        if (java) {
+        if (side == Side::Java) {
             JavaPage::draw(mainX(), covered);
-        } else if (themes) {
+        } else if (side == Side::Themes) {
             ThemeCatalogPage::draw(mainX(), covered);
         } else if (!routes.empty()) {
             drawRoute(covered);
-        } else if (aggregate) {
+        } else if (side == Side::Aggregate) {
             aggregateView(covered);
         } else {
             resultsView(covered);
@@ -2040,7 +2231,7 @@ namespace DownloadsScreen {
     }
 
     void openJava() {
-        if (!java) {
+        if (side != Side::Java) {
             enterJava();
         }
         MainWindow::showDownloads();
@@ -2048,26 +2239,17 @@ namespace DownloadsScreen {
 
     void open(Addons::Kind kind) {
         openFor(Instances::selected());
-        if (aggregate) {
-            switchSource(browsing);
-        }
         switchKind(kind);
         MainWindow::showDownloads();
     }
 
     void showProject(const std::string& instanceKey, Source from, Kind kind, const Addons::Hit& hit) {
-        if (aggregate || source != from) {
-            switchSource(from);
-        }
         switchKind(kind);
         openFor(instanceKey);
-        versionFilter = query.gameVersion;
-        loaderFilter = query.loaders.size() == 1 ? query.loaders.front() : std::string();
-        Route route;
-        route.source = from;
-        route.kind = kind;
-        route.hit = hit;
-        pushRoute(route);
+        ProjectBrowser::Found found;
+        found.source = from;
+        found.hit = hit;
+        openFound(found, kind);
         MainWindow::showDownloads();
     }
 }

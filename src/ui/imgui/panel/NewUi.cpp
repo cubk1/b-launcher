@@ -987,7 +987,8 @@ namespace NewUi {
         float widest = measuredWidest;
         bool anyOptionIcon =
                 choice->anchorGlyphs() || std::any_of(all.begin(), all.end(), [&](const std::string& option) {
-                    return !choice->optionIcon(option).empty() || choice->optionImage(option) != 0;
+                    return !choice->optionIcon(option).empty() || choice->optionImage(option) != 0 ||
+                            choice->optionMark(option);
                 });
         if (anyOptionIcon) {
             widest += 18;
@@ -1211,6 +1212,9 @@ namespace NewUi {
                                                       : (selected ? UiTheme::textPrimary() : UiTheme::textMuted());
         if (popupChoice != nullptr && popupChoice->anchorGlyphs()) {
             UiWidgets::anchorGlyph(option, optionTextX + 6, ry + 16, optionColor);
+            optionTextX += 18;
+        } else if (popupChoice != nullptr && popupChoice->optionMark(option)) {
+            popupChoice->paintOptionMark(option, optionTextX - 1, ry + 9, 14.0f);
             optionTextX += 18;
         } else if (optionImage != 0) {
             float imageRadius = popupChoice->optionImageRadius(option);
