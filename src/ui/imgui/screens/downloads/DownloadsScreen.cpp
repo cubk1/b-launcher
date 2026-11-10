@@ -142,6 +142,7 @@ namespace DownloadsScreen {
         bool followed = false;
         ProjectBrowser::Merged shown;
         std::vector<std::string> chosen = {"Modrinth", "CurseForge"};
+        bool sourcesRestored = false;
         std::vector<Route> routes;
         std::string versionFilter;
         std::string loaderFilter;
@@ -214,9 +215,75 @@ namespace DownloadsScreen {
             return out;
         }
 
+        const char* kindKey(Kind kind) {
+            switch (kind) {
+                case Kind::Modpack: return "modpack";
+                case Kind::ResourcePack: return "resourcepack";
+                case Kind::Shader: return "shader";
+                case Kind::Datapack: return "datapack";
+                case Kind::World: return "world";
+                default: return "mod";
+            }
+        }
+
+        bool sourceOff(Kind kind, const std::string& name) {
+            const nlohmann::json& doc = Config::data();
+            auto all = doc.find("browseSources");
+            if (all == doc.end() || !all->is_object()) {
+                return false;
+            }
+            auto mine = all->find(kindKey(kind));
+            if (mine == all->end() || !mine->is_array()) {
+                return false;
+            }
+            for (const nlohmann::json& each : *mine) {
+                if (each.is_string() && each.get<std::string>() == name) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void restoreSources() {
+            sourcesRestored = true;
+            chosen.clear();
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                std::string name = Addons::sourceName(each);
+                if (ProjectBrowser::supports(each, query.kind) && !sourceOff(query.kind, name)) {
+                    chosen.push_back(name);
+                }
+            }
+        }
+
+        void rememberSources() {
+            nlohmann::json off = nlohmann::json::array();
+            for (const std::string& option : sourceOptions()) {
+                if (!contains(chosen, option)) {
+                    off.push_back(option);
+                }
+            }
+            nlohmann::json& all = Config::data()["browseSources"];
+            if (!all.is_object()) {
+                all = nlohmann::json::object();
+            }
+            if (off.empty()) {
+                all.erase(kindKey(query.kind));
+            } else {
+                all[kindKey(query.kind)] = off;
+            }
+            Config::save();
+        }
+
+        std::vector<std::string>& chosenNames() {
+            if (!sourcesRestored) {
+                restoreSources();
+            }
+            return chosen;
+        }
+
         std::vector<Source> chosenSources() {
             std::vector<Source> out;
-            for (const std::string& name : chosen) {
+            for (const std::string& name : chosenNames()) {
                 Source each = sourceOf(name);
                 if (ProjectBrowser::supports(each, query.kind) && !containsSource(out, each)) {
                     out.push_back(each);
@@ -599,19 +666,29 @@ namespace DownloadsScreen {
             }
 
             bool selected(const std::string& option) override {
-                return contains(chosen, option);
+                return contains(chosenNames(), option);
             }
 
             void choose(const std::string& option) override {
-                flip(chosen, option);
+                flip(chosenNames(), option);
+                rememberSources();
                 query.page = 0;
+            }
+
+            bool optionMark(const std::string&) override {
+                return true;
+            }
+
+            void paintOptionMark(const std::string& option, float x, float y, float size) override {
+                Source each = sourceOf(option);
+                SourceMarks::draw(each, x, y, size, SourceMarks::brand(each));
             }
 
             std::string label() override {
                 std::vector<std::string> options = sourceOptions();
                 std::vector<std::string> picked;
                 for (const std::string& option : options) {
-                    if (contains(chosen, option)) {
+                    if (contains(chosenNames(), option)) {
                         picked.push_back(option);
                     }
                 }
@@ -1032,12 +1109,7 @@ namespace DownloadsScreen {
             query.server = false;
             query.openSource = false;
             query.sort = Addons::Sort::Relevance;
-            chosen.clear();
-            for (Source each : {Source::Modrinth, Source::CurseForge}) {
-                if (ProjectBrowser::supports(each, query.kind)) {
-                    chosen.push_back(Addons::sourceName(each));
-                }
-            }
+            restoreSources();
             typed.clear();
             shown = ProjectBrowser::Merged();
             folded.clear();
@@ -1074,7 +1146,7 @@ namespace DownloadsScreen {
             out.versionFilter = versionFilter;
             out.loaderFilter = loaderFilter;
             out.folded = folded;
-            out.chosen = chosen;
+            out.chosen = chosenNames();
         }
 
         void resume(const Tab& in) {
@@ -1130,7 +1202,7 @@ namespace DownloadsScreen {
 
         void sidePanel(bool covered) {
             float y = Page::top();
-            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "聚合搜索");
+            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "搜索");
             aggregate.selected(side == Side::Aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             aggregate.paint();
             if (aggregate.pressed && (side != Side::Aggregate || views.page != VIEW_RESULTS)) {
@@ -1301,49 +1373,29 @@ namespace DownloadsScreen {
             return label;
         }
 
-        void guide(float top, float bottom) {
-            constexpr float TITLE_H = 32.0f;
-            constexpr float TITLE_SIZE = 24.0f;
+        void guide(float top) {
+            constexpr float MARK = 30.0f;
+            constexpr float MARK_GAP = 24.0f;
+            constexpr float GROUP_GAP = 20.0f;
             constexpr float BODY_SIZE = 15.0f;
             constexpr float LINE = 24.0f;
-            constexpr float MARK = 16.0f;
-            constexpr float MARK_H = 20.0f;
-            constexpr float GAP = 8.0f;
-            constexpr float GROUP_GAP = 30.0f;
-            float width = std::max(200.0f, std::min(520.0f, mainW() - 40.0f));
-            std::vector<std::string> body =
-                    UiFont::wrap("输入关键词，一键跨站检索所有相关内容。", UiFont::MEDIUM, BODY_SIZE, width);
-            float marksW = 0.0f;
-            for (Source each : {Source::Modrinth, Source::CurseForge}) {
-                marksW += MARK + 7.0f + UiFont::width(Addons::sourceName(each), UiFont::MEDIUM, BODY_SIZE) + 22.0f;
-            }
-            marksW += MARK + 7.0f + UiFont::width("MC百科", UiFont::MEDIUM, BODY_SIZE);
+            constexpr float FADED = 0.35f;
             float cx = mainX() + mainW() * 0.5f;
-            float height = TITLE_H + GAP + (float) body.size() * LINE + GROUP_GAP + MARK_H;
-            float y = std::max(top + 16.0f, top + (bottom - top - height) * 0.5f);
+            float height = MARK + GROUP_GAP + LINE;
+            float y = std::max(top + 16.0f, (MainWindow::height() - height) * 0.5f);
 
-            float titleW = UiFont::width("B-API™聚合搜索", UiFont::BOLD, TITLE_SIZE);
-            UiRender::textY("B-API™聚合搜索", cx - titleW * 0.5f, y, TITLE_H, UiTheme::textPrimary(), UiFont::BOLD,
-                            TITLE_SIZE);
-            y += TITLE_H + GAP;
-            for (const std::string& line : body) {
-                Page::centredText(line, cx, y, LINE, UiTheme::textSecondary(), BODY_SIZE);
-                y += LINE;
-            }
-            y += GROUP_GAP;
-
-            float markX = cx - marksW * 0.5f;
-            float markY = y + (MARK_H - MARK) * 0.5f;
+            float markX = cx - (3.0f * MARK + 2.0f * MARK_GAP) * 0.5f;
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * FADED;
             for (Source each : {Source::Modrinth, Source::CurseForge}) {
-                SourceMarks::draw(each, markX, markY, MARK, SourceMarks::brand(each));
-                markX += MARK + 7.0f;
-                std::string name = Addons::sourceName(each);
-                UiRender::textY(name, markX, y, MARK_H, UiTheme::textMuted(), UiFont::MEDIUM, BODY_SIZE);
-                markX += UiFont::width(name, UiFont::MEDIUM, BODY_SIZE) + 22.0f;
+                SourceMarks::draw(each, markX, y, MARK, SourceMarks::brand(each));
+                markX += MARK + MARK_GAP;
             }
-            SourceMarks::mcmodColored(markX, markY, MARK, 1.0f);
-            UiRender::textY("MC百科", markX + MARK + 7.0f, y, MARK_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                            BODY_SIZE);
+            SourceMarks::mcmodColored(markX, y, MARK, 1.0f);
+            UiRender::alphaMul = savedAlpha;
+
+            Page::centredText("输入任何关键字进行跨站搜索", cx, y + MARK + GROUP_GAP, LINE, UiTheme::textSecondary(),
+                              BODY_SIZE);
         }
 
         void searchBar(float x, float y, float w, bool blocked) {
@@ -1665,7 +1717,7 @@ namespace DownloadsScreen {
             searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
                 if (Ui::trim(asking).empty()) {
-                    guide(Page::top() + SEARCH_H + 4.0f, bottom);
+                    guide(Page::top() + SEARCH_H + 4.0f);
                 }
                 return;
             }
