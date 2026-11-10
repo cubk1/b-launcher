@@ -656,18 +656,24 @@ namespace DownloadsScreen {
             float w = mainW() - FILTER_PAD * 2;
             float rowY = y + FILTER_PAD;
             bool loaders = hasLoaders();
-            // The filters keep the width of the four of the mods page, the widest case; the version and the loader
-            // share one of them, and a kind with fewer filters leaves the room at the right empty.
-            float counterW = UiFont::width("共 99999 个", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            constexpr int COLUMNS = 4;
-            float cell = (w - counterW - GAP * (float) COLUMNS) / (float) COLUMNS;
+            constexpr float PREFERRED_CELL = 200.0f;
+            constexpr float LEAST_CELL = 132.0f;
+            constexpr float LEAST_NAME = 140.0f;
+            float counterW = UiFont::width("共 99999 个", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL) + GAP;
             float sortW = Page::FIELD_H;
+            int filters = loaders ? 3 : 2;
+            float cell = std::min(PREFERRED_CELL, (w - counterW - GAP * (float) filters) / (float) filters);
+            if (ProjectBrowser::usesInstance(query.kind)) {
+                cell = std::min(cell, (w - LEAST_NAME - GAP * 2.0f - sortW));
+            }
+            cell = std::max(cell, 1.0f);
+
             float nameX = x;
             if (ProjectBrowser::usesInstance(query.kind)) {
                 instancePicker(nameX, rowY, cell, blocked);
                 nameX += cell + GAP;
             }
-            float fieldW = x + w - sortW - GAP - nameX;
+            float fieldW = std::max(0.0f, x + w - sortW - GAP - nameX);
             TextFieldWidget field(nameValue());
             field.box(nameX, rowY, fieldW, Page::FIELD_H).bounds(nameX, rowY, fieldW, Page::FIELD_H).block(blocked);
             field.paint();
@@ -675,22 +681,22 @@ namespace DownloadsScreen {
 
             rowY += Page::FIELD_H + GAP;
             float cellX = x;
-            if (loaders) {
-                float half = (cell - GAP) * 0.5f;
-                select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), cellX, rowY,
-                       half, blocked);
-                select("downloads#loader", loaderChoice(), cellX + half + GAP, rowY, half, blocked);
-            } else {
-                select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), cellX, rowY,
-                       cell, blocked);
-            }
+            select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), cellX, rowY, cell,
+                   blocked);
             cellX += cell + GAP;
+            if (loaders) {
+                select("downloads#loader", loaderChoice(), cellX, rowY, cell, blocked);
+                cellX += cell + GAP;
+            }
             select(SOURCES_OWNER, sourceChoice(), cellX, rowY, cell, blocked);
+            cellX += cell + GAP;
             if (counted) {
                 std::string found = "共 " + std::to_string(total) + " 个";
                 float foundW = UiFont::width(found, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-                UiRender::textY(found, x + w - foundW, rowY, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                                UiWidgets::TEXT_CONTROL);
+                if (x + w - foundW >= cellX) {
+                    UiRender::textY(found, x + w - foundW, rowY, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                }
             }
         }
 
