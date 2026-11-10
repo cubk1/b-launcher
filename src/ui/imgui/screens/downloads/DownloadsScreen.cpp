@@ -1301,6 +1301,51 @@ namespace DownloadsScreen {
             return label;
         }
 
+        void guide(float top, float bottom) {
+            constexpr float TITLE_H = 32.0f;
+            constexpr float TITLE_SIZE = 24.0f;
+            constexpr float BODY_SIZE = 15.0f;
+            constexpr float LINE = 24.0f;
+            constexpr float MARK = 16.0f;
+            constexpr float MARK_H = 20.0f;
+            constexpr float GAP = 8.0f;
+            constexpr float GROUP_GAP = 30.0f;
+            float width = std::max(200.0f, std::min(520.0f, mainW() - 40.0f));
+            std::vector<std::string> body =
+                    UiFont::wrap("输入关键词，一键跨站检索所有相关模组。", UiFont::MEDIUM, BODY_SIZE, width);
+            float marksW = 0.0f;
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                marksW += MARK + 7.0f + UiFont::width(Addons::sourceName(each), UiFont::MEDIUM, BODY_SIZE) + 22.0f;
+            }
+            marksW += MARK + 7.0f + UiFont::width("MC百科", UiFont::MEDIUM, BODY_SIZE);
+            float cx = mainX() + mainW() * 0.5f;
+            float height = TITLE_H + GAP + (float) body.size() * LINE + GROUP_GAP + MARK_H;
+            float y = std::max(top + 16.0f, top + (bottom - top - height) * 0.5f);
+
+            float titleW = UiFont::width("B-API™聚合搜索", UiFont::BOLD, TITLE_SIZE);
+            UiRender::textY("B-API™聚合搜索", cx - titleW * 0.5f, y, TITLE_H, UiTheme::textPrimary(), UiFont::BOLD,
+                            TITLE_SIZE);
+            y += TITLE_H + GAP;
+            for (const std::string& line : body) {
+                Page::centredText(line, cx, y, LINE, UiTheme::textSecondary(), BODY_SIZE);
+                y += LINE;
+            }
+            y += GROUP_GAP;
+
+            float markX = cx - marksW * 0.5f;
+            float markY = y + (MARK_H - MARK) * 0.5f;
+            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                SourceMarks::draw(each, markX, markY, MARK, SourceMarks::brand(each));
+                markX += MARK + 7.0f;
+                std::string name = Addons::sourceName(each);
+                UiRender::textY(name, markX, y, MARK_H, UiTheme::textMuted(), UiFont::MEDIUM, BODY_SIZE);
+                markX += UiFont::width(name, UiFont::MEDIUM, BODY_SIZE) + 22.0f;
+            }
+            SourceMarks::mcmodColored(markX, markY, MARK, 1.0f);
+            UiRender::textY("MC百科", markX + MARK + 7.0f, y, MARK_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            BODY_SIZE);
+        }
+
         void searchBar(float x, float y, float w, bool blocked) {
             const float inner = SEARCH_H - SEARCH_INSET * 2.0f;
             float innerY = y + SEARCH_INSET;
@@ -1619,6 +1664,9 @@ namespace DownloadsScreen {
             float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
             searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
+                if (Ui::trim(asking).empty()) {
+                    guide(Page::top() + SEARCH_H + 4.0f, bottom);
+                }
                 return;
             }
             float toolsY = Page::top() + SEARCH_H + 6.0f;
