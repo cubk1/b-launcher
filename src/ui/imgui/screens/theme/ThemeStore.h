@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace ThemeStore {
@@ -40,5 +41,6 @@ namespace ThemeStore {
     bool validId(std::string_view id);
     bool builtIn(const std::string& id);
     std::optional<std::string> duplicate(const std::string& id);
+    std::vector<std::pair<std::string, std::string>> files(const std::string& id);
     bool remove(const std::string& id);
 }

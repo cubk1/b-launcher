@@ -608,23 +608,8 @@ namespace SettingsScreen {
             Page::caption("定制版", y);
             y += Page::CAPTION_H;
             Page::card(y, 1);
-            Page::label("导出定制版", y);
-            std::string text = "选择定制包文件夹";
-            float w = Page::buttonWidth(text, 0xf07c);
-            if (Page::button("settings#makePack", text, Page::controlRight() - w, y + Page::FIELD_Y, w, false, blocked,
-                             0xf07c)) {
-                if (std::optional<std::filesystem::path> folder = Platform::pickFolder(std::filesystem::path())) {
-                    std::filesystem::path suggested = Platform::desktopDirectory() / "b-launcher-custom.exe";
-                    if (std::optional<std::filesystem::path> target =
-                                Platform::pickSaveFile(suggested, L"导出定制版")) {
-                        std::string error;
-                        if (Customization::makePack(*folder, *target, error) == 0) {
-                            Notices::add(Notices::Kind::Done, "已导出定制版", 3000);
-                        } else {
-                            Notices::add(Notices::Kind::Failed, "导出定制版失败：" + error, 5000);
-                        }
-                    }
-                }
+            if (Page::navRow("settings#makePack", "定制启动器", "", y, blocked, Page::rowCorners(0, 1), 0xf552)) {
+                showLauncherBuilder();
             }
             body.end();
         }
@@ -2097,12 +2082,16 @@ namespace SettingsScreen {
         sections.go(SECTION_THEMES);
     }
 
+    void showLauncherBuilder() {
+        ToolboxTab::openBuilder();
+        sections.go(SECTION_TOOLS);
+    }
+
     void reset() {
         if (NewUi::textEditing == SEARCH_OWNER) {
             NewUi::cancelTextEdit();
         }
         searchText.clear();
-        sections.page = SECTION_LAUNCH;
         sections.mix = 1.0f;
     }
 

@@ -585,7 +585,7 @@ namespace Platform {
         return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
     }
 
-    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial) {
+    std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial, const wchar_t* title) {
         ComApartment com;
         std::optional<std::filesystem::path> picked;
         IFileOpenDialog* dialog = nullptr;
@@ -593,7 +593,7 @@ namespace Platform {
             DWORD options = 0;
             dialog->GetOptions(&options);
             dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-            dialog->SetTitle(L"选择游戏目录");
+            dialog->SetTitle(title);
             std::error_code error;
             if (!initial.empty() && std::filesystem::exists(initial, error)) {
                 setDialogFolder(dialog, initial);

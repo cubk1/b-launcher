@@ -225,6 +225,61 @@ namespace ThemeStore {
         return next;
     }
 
+    std::vector<std::pair<std::string, std::string>> files(const std::string& id) {
+        std::vector<std::pair<std::string, std::string>> out;
+        const Entry* entry = find(id);
+        if (entry == nullptr || (entry->builtIn && !entry->packed)) {
+            return out;
+        }
+        if (entry->packed) {
+            std::string prefix = "themes/" + id + "/";
+            for (const std::string& name : Customization::files(prefix)) {
+                if (std::optional<std::string> data = Customization::read(name)) {
+                    out.emplace_back(name.substr(prefix.size()), std::move(*data));
+                }
+            }
+            return out;
+        }
+        if (!entry->zip.empty()) {
+            auto reader = blb::zip_reader::open(entry->zip);
+            if (!reader) {
+                return out;
+            }
+            auto names = reader->entries();
+            if (!names) {
+                return out;
+            }
+            for (const blb::zip_entry& item : *names) {
+                const std::string& prefix = entry->prefix;
+                if (item.directory || item.size > MAX_ENTRY || item.name.size() <= prefix.size() ||
+                    item.name.compare(0, prefix.size(), prefix) != 0) {
+                    continue;
+                }
+                std::string relative = item.name.substr(prefix.size());
+                if (!blb::fs::safe_relative(relative)) {
+                    continue;
+                }
+                if (auto data = reader->read(item.name)) {
+                    out.emplace_back(relative, std::move(*data));
+                }
+            }
+            return out;
+        }
+        std::filesystem::path root = folder() / id;
+        std::error_code ec;
+        for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file(ec) || it->file_size(ec) > MAX_ENTRY) {
+                continue;
+            }
+            std::string relative = blb::path_to_utf8(std::filesystem::relative(it->path(), root, ec));
+            std::replace(relative.begin(), relative.end(), '\\', '/');
+            if (auto data = blb::fs::read_file(it->path())) {
+                out.emplace_back(relative, std::move(*data));
+            }
+        }
+        return out;
+    }
+
     bool remove(const std::string& id) {
         const Entry* entry = find(id);
         if (entry == nullptr || entry->builtIn || !validId(id)) {

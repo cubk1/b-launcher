@@ -1,7 +1,11 @@
 #pragma once
 
+#include "app/instances/FileTree.h"
+#include "app/system/LauncherBuilder.h"
+
 #include <core/modpack/modpack.hpp>
 
+#include <optional>
 #include <string>
 
 // Modpacks written from an instance, one at a time in the background.
@@ -13,8 +17,13 @@ namespace Exports {
     Options& options(const std::string& instanceKey);
     // Keeps the options of an instance for the next run.
     void save(const std::string& instanceKey);
+    FileTree::Tree& tree(const std::string& instanceKey);
+    bool withLauncher(const std::string& instanceKey);
+    void setWithLauncher(const std::string& instanceKey, bool on);
+    bool single(const std::string& instanceKey);
+    void setSingle(const std::string& instanceKey, bool on);
     // Asks where to write the instance's pack and starts writing it, unless one is written already.
-    void start(const std::string& instanceKey);
+    void start(const std::string& instanceKey, std::optional<LauncherBuilder::ThemeFiles> launcher = std::nullopt);
     void cancel();
     bool running();
     // The instance whose pack is written, and how far that has come.

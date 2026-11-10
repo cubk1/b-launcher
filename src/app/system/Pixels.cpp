@@ -26,7 +26,10 @@ namespace {
         out += tagged;
         bigEndian(out, (uint32_t) crc32(0, (const Bytef*) tagged.data(), (uInt) tagged.size()));
     }
+}
+#endif
 
+namespace {
     uint32_t little(const unsigned char* p, int bytes) {
         uint32_t value = 0;
         for (int i = bytes - 1; i >= 0; i--) {
@@ -88,7 +91,6 @@ namespace {
         return pixels;
     }
 }
-#endif
 
 #if !defined(_WIN32)
 std::string Pixels::encodePng(const Pixels& pixels) {
@@ -127,11 +129,7 @@ std::shared_ptr<const Pixels> Pixels::decode(const void* data, size_t size) {
     unsigned char* decoded =
             stbi_load_from_memory((const unsigned char*) data, (int) size, &width, &height, &channels, 4);
     if (decoded == nullptr) {
-#if !defined(_WIN32)
         return decodeIco((const unsigned char*) data, size);
-#else
-        return nullptr;
-#endif
     }
     auto pixels = std::make_shared<Pixels>();
     pixels->width = width;

@@ -1,6 +1,8 @@
 #include "ui/imgui/screens/shell/Logo.h"
 #include "app/system/Config.h"
+#include "app/system/Customization.h"
 #include "app/system/EmbeddedIcons.h"
+#include "app/system/IconFile.h"
 #include "app/system/Notices.h"
 
 #include "ui/imgui/gl/UiGL.h"
@@ -35,6 +37,7 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -172,6 +175,22 @@ namespace Logo {
         int customHeight = 0;
         Pixels customImage;
         int revision = 0;
+        Pixels packImage;
+        bool packRead = false;
+
+        const Pixels& packIcon() {
+            if (!packRead) {
+                packRead = true;
+                std::string name = Customization::iconImage();
+                std::optional<std::string> data = name.empty() ? std::nullopt : Customization::read(name);
+                if (data) {
+                    if (std::shared_ptr<const Pixels> decoded = Pixels::decode(data->data(), data->size())) {
+                        packImage = *decoded;
+                    }
+                }
+            }
+            return packImage;
+        }
         bool working = false;
         std::thread worker;
         std::mutex lock;
@@ -426,6 +445,10 @@ namespace Logo {
     }
 
     std::vector<unsigned char> iconPixels(int size, bool custom) {
+        const Pixels& pack = packIcon();
+        if (size > 0 && !pack.rgba.empty()) {
+            return IconFile::square(pack.rgba, pack.width, pack.height, size);
+        }
         if (!custom || size <= 0 || customImage.rgba.empty()) {
             return pixels(size);
         }

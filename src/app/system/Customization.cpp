@@ -4,6 +4,7 @@
 #include <core/base/fs.hpp>
 #include <core/base/hash.hpp>
 #include <core/base/platform.hpp>
+#include <core/base/process.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
 
@@ -45,7 +46,6 @@ namespace Customization {
         struct State {
             bool active = false;
             std::filesystem::path origin;
-            std::string bytes;
             std::unique_ptr<blb::zip_reader> zip;
             std::vector<std::string> names;
             std::vector<std::string> problems;
@@ -57,6 +57,7 @@ namespace Customization {
             std::string brandTitle;
             std::string logo;
             std::string icon;
+            std::string iconImage;
             std::string homepageType;
             std::string homepageValue;
             bool homepageLocked = false;
@@ -184,6 +185,7 @@ namespace Customization {
                 state.brandTitle = text(*branding, "brandTitle");
                 state.logo = text(*branding, "logo");
                 state.icon = text(*branding, "icon");
+                state.iconImage = text(*branding, "iconImage");
             }
             auto home = doc.find("homepage");
             if (home != doc.end() && home->is_object()) {
@@ -254,13 +256,8 @@ namespace Customization {
             state.updatesDisabled = updates != doc.end() && updates->is_boolean() && !updates->get<bool>();
         }
 
-        bool open(std::string bytes, const std::filesystem::path& origin) {
-            auto zip = blb::zip_reader::open_memory(std::move(bytes));
-            if (!zip) {
-                state.problems.push_back("无法打开定制包");
-                return false;
-            }
-            auto config = zip->read("customize.json");
+        bool adopt(blb::zip_reader zip, const std::filesystem::path& origin) {
+            auto config = zip.read("customize.json");
             if (!config) {
                 state.problems.push_back("定制包里没有 customize.json");
                 return false;
@@ -270,7 +267,7 @@ namespace Customization {
                 state.problems.push_back("customize.json 不是有效的 JSON");
                 return false;
             }
-            auto entries = zip->entries();
+            auto entries = zip.entries();
             if (entries) {
                 for (const blb::zip_entry& entry : *entries) {
                     if (!entry.directory && blb::fs::safe_relative(entry.name)) {
@@ -278,11 +275,36 @@ namespace Customization {
                     }
                 }
             }
-            state.zip = std::make_unique<blb::zip_reader>(std::move(*zip));
+            state.zip = std::make_unique<blb::zip_reader>(std::move(zip));
             state.origin = origin;
             state.active = true;
             parse(doc);
             return true;
+        }
+
+        bool openFile(const std::filesystem::path& file) {
+            auto zip = blb::zip_reader::open(file);
+            if (!zip) {
+                state.problems.push_back("无法打开定制包");
+                return false;
+            }
+            return adopt(std::move(*zip), file);
+        }
+
+        bool openAppended(const std::filesystem::path& exe) {
+            if (auto zip = blb::zip_reader::open(exe)) {
+                return adopt(std::move(*zip), exe);
+            }
+            std::optional<std::string> bytes = appended(exe);
+            if (!bytes) {
+                return false;
+            }
+            auto zip = blb::zip_reader::open_memory(std::move(*bytes));
+            if (!zip) {
+                state.problems.push_back("无法打开定制包");
+                return false;
+            }
+            return adopt(std::move(*zip), exe);
         }
 
         std::filesystem::path besideFile(const std::filesystem::path& exe) {
@@ -295,11 +317,18 @@ namespace Customization {
             return exe.parent_path() / "customize.blbpack";
         }
 
-        bool collect(const std::filesystem::path& source, std::string& bytes, std::string& error) {
+        std::filesystem::path tempFile(const std::string& suffix) {
             std::error_code ec;
+            return std::filesystem::temp_directory_path(ec) / ("blbpack-" + blb::random_bytes_hex(6) + suffix);
+        }
+
+        bool collect(const std::filesystem::path& source, std::filesystem::path& pack, bool& temporary,
+                     std::string& error) {
+            std::error_code ec;
+            temporary = false;
+            pack = source;
             if (std::filesystem::is_directory(source, ec)) {
-                std::filesystem::path temp =
-                        std::filesystem::temp_directory_path(ec) / ("blbpack-" + blb::random_bytes_hex(6) + ".zip");
+                std::filesystem::path temp = tempFile(".zip");
                 auto writer = blb::zip_writer::create(temp);
                 if (!writer) {
                     error = "无法创建临时文件";
@@ -319,29 +348,49 @@ namespace Customization {
                 }
                 if (!writer->close()) {
                     error = "无法写入定制包";
+                    std::filesystem::remove(temp, ec);
                     return false;
                 }
-                auto data = blb::fs::read_file(temp);
-                std::filesystem::remove(temp, ec);
-                if (!data) {
-                    error = "无法读取定制包";
-                    return false;
-                }
-                bytes = std::move(*data);
-            } else {
-                auto data = blb::fs::read_file(source);
-                if (!data) {
-                    error = "无法读取 " + blb::path_to_utf8(source);
-                    return false;
-                }
-                bytes = std::move(*data);
+                pack = temp;
+                temporary = true;
             }
-            auto zip = blb::zip_reader::open_memory(bytes);
+            auto zip = blb::zip_reader::open(pack);
             if (!zip || !zip->contains("customize.json")) {
                 error = "定制包里没有 customize.json";
+                if (temporary) {
+                    std::filesystem::remove(pack, ec);
+                }
                 return false;
             }
             return true;
+        }
+
+        bool copyBytes(std::ifstream& in, std::ofstream& out, std::uint64_t count, blb::sha256* sum) {
+            std::string buffer(1 << 20, '\0');
+            while (count > 0) {
+                std::streamsize chunk = (std::streamsize) std::min<std::uint64_t>(count, buffer.size());
+                in.read(buffer.data(), chunk);
+                if (in.gcount() != chunk) {
+                    return false;
+                }
+                if (sum != nullptr) {
+                    sum->update(buffer.data(), (size_t) chunk);
+                }
+                out.write(buffer.data(), chunk);
+                if (!out) {
+                    return false;
+                }
+                count -= (std::uint64_t) chunk;
+            }
+            return true;
+        }
+
+        bool upxPacked(const std::filesystem::path& exe) {
+            std::ifstream in(exe, std::ios::binary);
+            std::string head(4096, '\0');
+            in.read(head.data(), (std::streamsize) head.size());
+            head.resize((size_t) std::max<std::streamsize>(in.gcount(), 0));
+            return head.find("UPX!") != std::string::npos;
         }
 
 #if defined(_WIN32)
@@ -459,18 +508,15 @@ namespace Customization {
         if (exe.empty()) {
             return;
         }
-        if (std::optional<std::string> bytes = appended(exe)) {
-            if (open(std::move(*bytes), exe)) {
-                return;
-            }
+        std::uint64_t offset = 0;
+        std::uint64_t length = 0;
+        if (trailerOf(exe, offset, length, nullptr) && openAppended(exe)) {
+            return;
         }
         std::filesystem::path beside = besideFile(exe);
         std::error_code ec;
         if (std::filesystem::is_regular_file(beside, ec)) {
-            auto bytes = blb::fs::read_file(beside);
-            if (bytes) {
-                open(std::move(*bytes), beside);
-            }
+            openFile(beside);
         }
     }
 
@@ -527,6 +573,8 @@ namespace Customization {
             put("homepagePreset", state.homepageValue, state.homepageLocked);
         } else if (state.homepageType == "announcement") {
             put("homepage", "announcement", state.homepageLocked);
+        } else if (state.homepageType == "none") {
+            put("homepage", "none", state.homepageLocked);
         }
         if (changed) {
             Config::save();
@@ -622,6 +670,13 @@ namespace Customization {
         return *data;
     }
 
+    bool extract(const std::string& path, const std::filesystem::path& target) {
+        if (!state.active || !blb::fs::safe_relative(path)) {
+            return false;
+        }
+        return (bool) state.zip->extract(path, target);
+    }
+
     std::vector<std::string> files(const std::string& prefix) {
         std::vector<std::string> out;
         for (const std::string& name : state.names) {
@@ -658,6 +713,10 @@ namespace Customization {
 
     std::string icon() {
         return state.icon;
+    }
+
+    std::string iconImage() {
+        return state.iconImage;
     }
 
     std::string homepageType() {
@@ -756,64 +815,187 @@ namespace Customization {
         return state.active && state.updatesDisabled;
     }
 
-    int makePack(const std::filesystem::path& source, const std::filesystem::path& output, std::string& error) {
+    const char* programExtension() {
+#if defined(_WIN32)
+        return ".exe";
+#elif defined(__APPLE__)
+        return ".zip";
+#else
+        return "";
+#endif
+    }
+
+    bool copyProgram(const std::filesystem::path& output, const std::string& ico, std::string& error) {
         std::filesystem::path exe = selfPath();
-        auto program = blb::fs::read_file(exe);
-        if (!program) {
+        std::error_code ec;
+        std::uint64_t size = (std::uint64_t) std::filesystem::file_size(exe, ec);
+        if (ec) {
             error = "无法读取启动器程序";
-            return 1;
+            return false;
         }
         std::uint64_t offset = 0;
         std::uint64_t length = 0;
         if (trailerOf(exe, offset, length, nullptr)) {
-            program->resize((size_t) offset);
-        }
-        std::string pack;
-        if (!collect(source, pack, error)) {
-            return 1;
+            size = offset;
         }
         {
+            std::ifstream in(exe, std::ios::binary);
             std::ofstream out(output, std::ios::binary | std::ios::trunc);
-            out.write(program->data(), (std::streamsize) program->size());
-            if (!out) {
+            if (!in || !out || !copyBytes(in, out, size, nullptr)) {
                 error = "无法写入 " + blb::path_to_utf8(output);
-                return 1;
+                return false;
             }
         }
 #if defined(_WIN32)
-        auto zip = blb::zip_reader::open_memory(pack);
-        nlohmann::json doc;
-        if (zip) {
-            auto config = zip->read("customize.json");
-            doc = config ? nlohmann::json::parse(*config, nullptr, false, true) : nlohmann::json();
+        if (!ico.empty() && !upxPacked(exe) && !replaceIcon(output, ico, error)) {
+            return false;
         }
-        auto branding = doc.is_object() ? doc.find("branding") : doc.end();
-        std::string iconPath = doc.is_object() && branding != doc.end() && branding->is_object()
-                ? text(*branding, "icon")
-                : std::string();
-        bool packed = program->find("UPX!") != std::string::npos && program->find("UPX!") < 4096;
-        if (!iconPath.empty() && zip && !packed) {
-            auto ico = zip->read(iconPath);
-            std::string iconError;
-            if (ico && !replaceIcon(output, *ico, iconError)) {
-                error = iconError;
-                return 1;
+#else
+        (void) ico;
+        (void) blb::fs::set_executable(output);
+#endif
+        return true;
+    }
+
+    bool writeProgram(const std::filesystem::path& pack, const std::filesystem::path& output, const std::string& ico,
+                      std::string& error) {
+        std::error_code ec;
+        std::uint64_t packSize = (std::uint64_t) std::filesystem::file_size(pack, ec);
+        if (ec || packSize == 0) {
+            error = "无法读取定制包";
+            return false;
+        }
+        std::filesystem::path partial = blb::fs::temp_sibling(output);
+        auto fail = [&](const std::string& message) {
+            if (error.empty()) {
+                error = message;
+            }
+            std::filesystem::remove(partial, ec);
+            return false;
+        };
+#if defined(__APPLE__)
+        {
+            auto writer = blb::zip_writer::create(partial);
+            if (!writer || !addProgram(*writer, std::string(), blb::path_to_utf8(output.stem()), pack, ico, error) ||
+                !writer->close()) {
+                return fail("无法写入 " + blb::path_to_utf8(output));
+            }
+        }
+#else
+        if (!copyProgram(partial, ico, error)) {
+            return fail("无法写入 " + blb::path_to_utf8(output));
+        }
+        std::uint64_t base = (std::uint64_t) std::filesystem::file_size(partial, ec);
+        blb::sha256 sum;
+        {
+            std::ifstream in(pack, std::ios::binary);
+            std::ofstream out(partial, std::ios::binary | std::ios::app);
+            if (!in || !out || !copyBytes(in, out, packSize, &sum)) {
+                out.close();
+                return fail("无法写入 " + blb::path_to_utf8(output));
+            }
+            blb::sha256_digest digest = sum.finish();
+            std::string trailer(MAGIC, MAGIC + 8);
+            writeU64(trailer, base);
+            writeU64(trailer, packSize);
+            trailer.append((const char*) digest.data(), digest.size());
+            out.write(trailer.data(), (std::streamsize) trailer.size());
+            out.close();
+            if (!out) {
+                return fail("无法写入 " + blb::path_to_utf8(output));
             }
         }
 #endif
-        blb::sha256_digest sum = blb::sha256::digest(pack.data(), pack.size());
-        auto size = std::filesystem::file_size(output);
-        std::string trailer(MAGIC, MAGIC + 8);
-        writeU64(trailer, (std::uint64_t) size);
-        writeU64(trailer, (std::uint64_t) pack.size());
-        trailer.append((const char*) sum.data(), sum.size());
-        std::ofstream out(output, std::ios::binary | std::ios::app);
-        out.write(pack.data(), (std::streamsize) pack.size());
-        out.write(trailer.data(), (std::streamsize) trailer.size());
-        if (!out) {
-            error = "无法写入 " + blb::path_to_utf8(output);
+        if (!blb::fs::rename_file(partial, output)) {
+            return fail("无法写入 " + blb::path_to_utf8(output));
+        }
+        return true;
+    }
+
+    bool addProgram(blb::zip_writer& zip, const std::string& prefix, const std::string& name,
+                    const std::filesystem::path& pack, const std::string& ico, std::string& error) {
+        std::error_code ec;
+#if defined(__APPLE__)
+        (void) ico;
+        std::filesystem::path app = selfPath().parent_path().parent_path().parent_path();
+        if (app.extension() != ".app") {
+            error = "找不到启动器的 .app";
+            return false;
+        }
+        std::filesystem::path staging = tempFile("");
+        std::filesystem::path copy = staging / blb::path_from_utf8(name + ".app");
+        std::filesystem::create_directories(staging, ec);
+        std::filesystem::copy(app, copy, std::filesystem::copy_options::recursive, ec);
+        if (!ec) {
+            std::filesystem::copy_file(pack, copy / "Contents" / "Resources" / "customize.blbpack",
+                                       std::filesystem::copy_options::overwrite_existing, ec);
+        }
+        if (ec) {
+            std::filesystem::remove_all(staging, ec);
+            error = "无法复制启动器";
+            return false;
+        }
+        blb::process_options sign;
+        sign.args = {"codesign", "--force", "--deep", "--sign", "-", blb::path_to_utf8(copy)};
+        (void) blb::run_process(sign);
+        bool ok = true;
+        for (std::filesystem::recursive_directory_iterator it(staging, ec), end; ok && !ec && it != end;
+             it.increment(ec)) {
+            if (!it->is_regular_file(ec)) {
+                continue;
+            }
+            std::string entry = blb::path_to_utf8(std::filesystem::relative(it->path(), staging, ec));
+            auto perms = std::filesystem::status(it->path(), ec).permissions();
+            bool executable = (perms & std::filesystem::perms::owner_exec) != std::filesystem::perms::none;
+            ok = (bool) zip.add_file(prefix + entry, it->path(), executable);
+        }
+        std::filesystem::remove_all(staging, ec);
+        if (!ok) {
+            error = "无法写入启动器";
+        }
+        return ok;
+#else
+        std::filesystem::path program = tempFile(programExtension());
+        bool ok = copyProgram(program, ico, error);
+#if defined(_WIN32)
+        ok = ok && (bool) zip.add_file(prefix + name + programExtension(), program);
+#else
+        ok = ok && (bool) zip.add_file(prefix + name, program, true);
+#endif
+        ok = ok && (bool) zip.add_file(prefix + "customize.blbpack", pack);
+        std::filesystem::remove(program, ec);
+        if (!ok && error.empty()) {
+            error = "无法写入启动器";
+        }
+        return ok;
+#endif
+    }
+
+    int makePack(const std::filesystem::path& source, const std::filesystem::path& output, std::string& error) {
+        std::filesystem::path pack;
+        bool temporary = false;
+        if (!collect(source, pack, temporary, error)) {
             return 1;
         }
-        return 0;
+        std::string ico;
+        if (auto zip = blb::zip_reader::open(pack)) {
+            auto config = zip->read("customize.json");
+            nlohmann::json doc = config ? nlohmann::json::parse(*config, nullptr, false, true) : nlohmann::json();
+            auto branding = doc.is_object() ? doc.find("branding") : doc.end();
+            if (doc.is_object() && branding != doc.end() && branding->is_object()) {
+                std::string iconPath = text(*branding, "icon");
+                if (!iconPath.empty() && blb::fs::safe_relative(iconPath)) {
+                    if (auto data = zip->read(iconPath)) {
+                        ico = std::move(*data);
+                    }
+                }
+            }
+        }
+        bool ok = writeProgram(pack, output, ico, error);
+        if (temporary) {
+            std::error_code ec;
+            std::filesystem::remove(pack, ec);
+        }
+        return ok ? 0 : 1;
     }
 }

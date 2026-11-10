@@ -25,6 +25,7 @@ namespace Features {
                     {JAVA, "java", "Java 管理", GROUP_ACTIONS},
                     {UPDATE_CHECK, "updateCheck", "启动器更新检查", GROUP_ACTIONS},
                     {THEMES, "themes", "主题管理", GROUP_ACTIONS},
+                    {SERVER_BUILD, "serverBuild", "生成服务端", GROUP_ACTIONS},
                     {SECTION_LAUNCH, "section.launch", "全局启动项", GROUP_SETTINGS},
                     {SECTION_OPTIONS, "section.options", "全局游戏选项", GROUP_SETTINGS},
                     {SECTION_KEYS, "section.keys", "按键绑定", GROUP_SETTINGS},

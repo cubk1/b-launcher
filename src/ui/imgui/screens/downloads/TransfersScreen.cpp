@@ -89,6 +89,7 @@ namespace TransfersScreen {
                 case Kind::Java: return 0xf7b6;
                 case Kind::File: return 0xf15b;
                 case Kind::Theme: return 0xf1fc;
+                case Kind::Server: return 0xf233;
                 default: return 0xf1b2;
             }
         }

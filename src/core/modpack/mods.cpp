@@ -302,6 +302,7 @@ manifest_value (zip_reader &zip, std::string_view key)
 void
 read_fabric (mod_info &mod, const json &doc)
 {
+  mod.environment = text_of (doc, "environment");
   mod.id = text_of (doc, "id");
   mod.version = text_of (doc, "version");
   mod.name = text_of (doc, "name");
@@ -360,6 +361,8 @@ read_quilt (mod_info &mod, const json &doc)
   auto loader = doc.find ("quilt_loader");
   if (loader == doc.end ())
     return;
+  if (auto minecraft = doc.find ("minecraft"); minecraft != doc.end ())
+    mod.environment = text_of (*minecraft, "environment");
   mod.id = text_of (*loader, "id");
   mod.version = text_of (*loader, "version");
   if (auto meta = loader->find ("metadata"); meta != loader->end ())
