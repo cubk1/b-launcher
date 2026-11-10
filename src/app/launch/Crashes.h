@@ -46,6 +46,13 @@ namespace Crashes {
     std::shared_ptr<const Report> examine(Launch launch, std::string output);
     std::string exitText(int code);
     std::string fileName(const Report& report);
+    enum class Upload { None, Running, Done, Failed };
+
+    bool autoUpload();
+    void setAutoUpload(bool on);
+    void share(std::shared_ptr<const Report> report);
+    Upload uploadOf(const std::shared_ptr<const Report>& report);
+    std::string linkOf(const std::shared_ptr<const Report>& report);
     void ask(std::shared_ptr<const Report> report, const std::string& key);
     bool asking();
     void save(std::shared_ptr<const Report> report, const std::filesystem::path& target);

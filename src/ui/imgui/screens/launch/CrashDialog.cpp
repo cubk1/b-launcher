@@ -3,6 +3,7 @@
 #include "app/launch/AskAi.h"
 #include "app/launch/Crashes.h"
 #include "app/launch/GameLog.h"
+#include "app/system/Notices.h"
 #include "app/system/Platform.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/shell/Dialog.h"
@@ -12,6 +13,8 @@
 
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/panel/NewUi.h"
+#include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
@@ -19,8 +22,11 @@
 
 #include <core/base/strings.hpp>
 
+#include <qrcodegen.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,7 +37,6 @@ namespace CrashDialog {
 
     namespace {
         const char* const DIALOG = "crash";
-        const char* const HINT = "请不要给别人发送这个窗口，点击“导出崩溃信息”，使用导出的文件去求助。";
         constexpr float WIDTH = 520.0f;
         constexpr float PAD = 24.0f;
         constexpr float LINE_H = 20.0f;
@@ -42,6 +47,7 @@ namespace CrashDialog {
         constexpr float EDGE = 12.0f;
         constexpr float BUTTON_GAP = 10.0f;
         constexpr float GROUP_GAP = 24.0f;
+        constexpr float CODE_BOX = 100.0f;
 
         std::shared_ptr<const Crashes::Report> shown;
 
@@ -128,12 +134,126 @@ namespace CrashDialog {
             }
         }
 
-        float header(float left, float top, float inner, bool draw) {
+        float header(float left, float top, bool draw) {
             if (draw) {
                 UiRender::textY("游戏崩溃了", left, top, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 Page::TITLE_SIZE);
             }
-            return lines(wrapped(HINT, inner, 3), left, top + 26.0f, UiTheme::textMuted(), draw) + SECTION_GAP;
+            return top + 24.0f + SECTION_GAP;
+        }
+
+        struct Code {
+            std::string text;
+            int size = 0;
+            std::vector<uint8_t> dark;
+        };
+
+        const Code& codeOf(const std::string& text) {
+            static Code cached;
+            if (cached.text == text) {
+                return cached;
+            }
+            cached = Code{text, 0, {}};
+            std::vector<uint8_t> temp(qrcodegen_BUFFER_LEN_MAX);
+            std::vector<uint8_t> qr(qrcodegen_BUFFER_LEN_MAX);
+            if (!qrcodegen_encodeText(text.c_str(), temp.data(), qr.data(), qrcodegen_Ecc_MEDIUM, qrcodegen_VERSION_MIN,
+                                      qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true)) {
+                return cached;
+            }
+            cached.size = qrcodegen_getSize(qr.data());
+            cached.dark.resize((size_t) cached.size * cached.size);
+            for (int y = 0; y < cached.size; y++) {
+                for (int x = 0; x < cached.size; x++) {
+                    cached.dark[(size_t) y * cached.size + x] = qrcodegen_getModule(qr.data(), x, y) ? 1 : 0;
+                }
+            }
+            return cached;
+        }
+
+        void drawCode(const std::string& text, float x, float y) {
+            const Code& code = codeOf(text);
+            UiRender::roundRect(x, y, CODE_BOX, CODE_BOX, 8.0f, UiRender::color(255, 255, 255));
+            if (code.size == 0) {
+                return;
+            }
+            float module = std::floor(CODE_BOX / (float) (code.size + 8));
+            float origin = std::floor((CODE_BOX - module * (float) code.size) * 0.5f);
+            uint32_t ink = UiRender::color(0, 0, 0);
+            for (int row = 0; row < code.size; row++) {
+                int run = -1;
+                for (int col = 0; col <= code.size; col++) {
+                    bool dark = col < code.size && code.dark[(size_t) row * code.size + col] != 0;
+                    if (dark && run < 0) {
+                        run = col;
+                    } else if (!dark && run >= 0) {
+                        UiRender::rect(x + origin + (float) run * module, y + origin + (float) row * module,
+                                       (float) (col - run) * module, module, ink);
+                        run = -1;
+                    }
+                }
+            }
+        }
+
+        float logLink(const std::shared_ptr<const Crashes::Report>& report, float left, float top, float inner,
+                      bool draw) {
+            Crashes::Upload state = Crashes::uploadOf(report);
+            if (state == Crashes::Upload::None) {
+                return top;
+            }
+            if (!draw) {
+                return top + CODE_BOX + SECTION_GAP;
+            }
+            std::string link = Crashes::linkOf(report);
+            if (state == Crashes::Upload::Done) {
+                drawCode(link, left, top);
+            } else {
+                UiRender::roundRect(left, top, CODE_BOX, CODE_BOX, 8.0f, UiTheme::surfaceRaised());
+                if (state == Crashes::Upload::Running) {
+                    Page::spinner(left + CODE_BOX * 0.5f, top + CODE_BOX * 0.5f, 8.0f, UiTheme::accent());
+                } else {
+                    UiWidgets::icon(Ui::glyph(0xf071), left + CODE_BOX * 0.5f, top + CODE_BOX * 0.5f,
+                                    UiTheme::textFaint(), 16.0f);
+                }
+            }
+            float textX = left + CODE_BOX + 16.0f;
+            float textW = std::max(0.0f, left + inner - textX);
+            float y = top + (CODE_BOX - (18.0f + LINE_H + 10.0f + Page::FIELD_H)) * 0.5f;
+            UiRender::textY("日志链接", textX, y, 18.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            y += 18.0f;
+            if (state == Crashes::Upload::Done) {
+                std::string shown = UiFont::fitEnd(link, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, textW);
+                float shownW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                bool hovered = NewUi::hit(textX, y, shownW, LINE_H);
+                uint32_t ink = hovered ? UiTheme::accent() : UiTheme::accentText();
+                UiRender::textY(shown, textX, y, LINE_H, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                if (hovered) {
+                    UiRender::hLine(textX, textX + shownW, y + LINE_H - 2.0f, ink);
+                    UiCursor::hand();
+                }
+                if (NewUi::click(textX, y, shownW, LINE_H)) {
+                    Platform::openUrl(link);
+                }
+            } else {
+                std::string note = state == Crashes::Upload::Running ? "正在上传到 mclo.gs…" : "无法上传到 mclo.gs";
+                UiRender::textY(note, textX, y, LINE_H, UiTheme::textSecondary(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+            }
+            y += LINE_H + 10.0f;
+            if (state == Crashes::Upload::Done) {
+                std::string copy = "复制链接";
+                if (Page::button("crash#copyLink", copy, textX, y, Page::buttonWidth(copy, 0xf0c5), false, false,
+                                 0xf0c5) &&
+                    Platform::setClipboardText(link)) {
+                    Notices::add(Notices::Kind::Done, "已复制日志链接", 2000);
+                }
+            } else if (state == Crashes::Upload::Failed) {
+                std::string retry = "重新上传";
+                if (Page::button("crash#retryLink", retry, textX, y, Page::buttonWidth(retry, 0xf2f1), false, false,
+                                 0xf2f1)) {
+                    Crashes::share(report);
+                }
+            }
+            return top + CODE_BOX + SECTION_GAP;
         }
 
         float causes(const Crashes::Report& report, size_t detailLines, float left, float top, float inner, bool draw) {
@@ -244,8 +364,9 @@ namespace CrashDialog {
                     bool draw) {
             float left = x + PAD;
             float inner = w - 2.0f * PAD;
-            float top = header(left, y + PAD, inner, draw);
+            float top = header(left, y + PAD, draw);
             top = causes(*report, detailLines, left, top, inner, draw);
+            top = logLink(report, left, top, inner, draw);
             return buttons(report, left, top, inner, draw) + PAD - y;
         }
 

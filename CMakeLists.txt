@@ -242,6 +242,9 @@ embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedAgent.cpp HEADE
 embed_tree(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedThemes.cpp HEADER ui/imgui/screens/theme/EmbeddedThemes.h
         NAMESPACE EmbeddedThemes ROOT assets/themes)
 
+add_library(qrcodegen STATIC third_party/qrcodegen/qrcodegen.c)
+target_include_directories(qrcodegen PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/qrcodegen)
+
 add_library(duktape STATIC third_party/duktape/duktape.c)
 target_include_directories(duktape PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/duktape)
 if (MSVC)
@@ -313,7 +316,7 @@ add_custom_target(git_commit
         BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/generated/GitCommit.h
         VERBATIM)
 add_dependencies(b-launcher git_commit)
-target_link_libraries(b-launcher PRIVATE duktape)
+target_link_libraries(b-launcher PRIVATE duktape qrcodegen)
 target_include_directories(b-launcher PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if (NOT BLB_UPDATE_CHECK)
     target_compile_definitions(b-launcher PRIVATE BLB_NO_UPDATE_CHECK)

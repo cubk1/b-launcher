@@ -45,6 +45,7 @@ namespace LauncherBuilder {
                                         "patches",
                                         "offlineLaunch",
                                         "showLogs",
+                                        "crashUpload",
                                         "logWrapLines",
                                         "logMergeRepeats",
                                         "allowMultipleInstances",
