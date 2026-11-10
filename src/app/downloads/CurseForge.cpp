@@ -170,6 +170,10 @@ namespace CurseForge {
             for (const std::string& category : query.categories) {
                 out += category + ",";
             }
+            out += "\n";
+            for (const std::string& category : query.curseCategories) {
+                out += category + ",";
+            }
             return out + "\n" + std::to_string((int) query.sort) + "\n" + std::to_string(query.page);
         }
 
@@ -239,6 +243,11 @@ namespace CurseForge {
             }
             json ids = json::array();
             for (const std::string& category : query.categories) {
+                if (numeric(category)) {
+                    ids.push_back(std::stoll(category));
+                }
+            }
+            for (const std::string& category : query.curseCategories) {
                 if (numeric(category)) {
                     ids.push_back(std::stoll(category));
                 }

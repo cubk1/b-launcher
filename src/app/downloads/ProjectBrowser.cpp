@@ -1,8 +1,11 @@
 #include "app/downloads/ProjectBrowser.h"
+#include "app/downloads/Modrinth.h"
 #include "app/downloads/ProjectInstaller.h"
 #include "app/instances/Instances.h"
 
 #include <algorithm>
+#include <map>
+#include <string>
 
 namespace ProjectBrowser {
 
@@ -35,6 +38,33 @@ namespace ProjectBrowser {
                 start++;
             }
             return name.substr(start);
+        }
+
+        // Lowercase letters and digits only: spaces, punctuation and CJK drop out, so names compare across platforms.
+        std::string normalised(const std::string& text) {
+            std::string out;
+            for (char c : text) {
+                if (c >= 'A' && c <= 'Z') {
+                    out += (char) (c - 'A' + 'a');
+                } else if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                    out += c;
+                }
+            }
+            return out;
+        }
+
+        void appendUnique(std::vector<std::string>& into, const std::vector<std::string>& values) {
+            for (const std::string& value : values) {
+                if (std::find(into.begin(), into.end(), value) == into.end()) {
+                    into.push_back(value);
+                }
+            }
+        }
+
+        bool sameProject(const Addons::Hit& a, const Addons::Hit& b) {
+            std::string name = normalised(a.title);
+            std::string slug = normalised(a.slug);
+            return (!name.empty() && name == normalised(b.title)) || (!slug.empty() && slug == normalised(b.slug));
         }
     }
 
@@ -129,5 +159,167 @@ namespace ProjectBrowser {
     std::string shortName(const Addons::Version& version, const std::string& prefix, const std::string& title) {
         std::string name = dropStart(dropStart(version.name, prefix), title);
         return !name.empty() ? name : version.number.empty() ? version.name : version.number;
+    }
+
+    bool supports(Addons::Source source, Addons::Kind kind) {
+        return source != Addons::Source::Modrinth || kind != Addons::Kind::World;
+    }
+
+    std::vector<std::string> loaderTagsOf(const std::vector<Addons::Source>& sources, Addons::Kind kind) {
+        std::vector<std::string> out;
+        for (Addons::Source source : sources) {
+            appendUnique(out, loaderTags(source, kind));
+        }
+        return out;
+    }
+
+    const std::vector<SortOption>& sorts() {
+        using Addons::Sort;
+        static const std::vector<SortOption> common = {
+                {Sort::Relevance, "相关度"}, {Sort::Downloads, "下载量"}, {Sort::Updated, "最近更新"},
+                {Sort::Newest, "最新发布"},
+        };
+        return common;
+    }
+
+    Merged merge(const std::vector<std::pair<Addons::Source, const Addons::Results*>>& lists) {
+        Merged out;
+        int counted = 0;
+        int failed = 0;
+        bool ready = false;
+        std::string firstError;
+        for (const auto& entry : lists) {
+            const Addons::Results* results = entry.second;
+            if (results == nullptr) {
+                continue;
+            }
+            counted++;
+            ready = ready || results->status == Addons::Status::Ready;
+            out.total += results->total;
+            out.pages = std::max(out.pages, (results->total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
+            if (results->status == Addons::Status::Failed) {
+                failed++;
+                out.failed.push_back(entry.first);
+                if (firstError.empty() && !results->error.empty()) {
+                    firstError = results->error;
+                }
+            }
+        }
+        if (ready) {
+            out.status = Addons::Status::Ready;
+        } else if (counted > 0 && counted == failed) {
+            out.status = Addons::Status::Failed;
+            out.error = firstError;
+        }
+
+        // By rank, one hit of every source in turn, so each page holds them all.
+        size_t ranks = 0;
+        for (const auto& entry : lists) {
+            if (entry.second != nullptr) {
+                ranks = std::max(ranks, entry.second->hits.size());
+            }
+        }
+        for (size_t rank = 0; rank < ranks; rank++) {
+            for (const auto& entry : lists) {
+                Addons::Source source = entry.first;
+                const Addons::Results* results = entry.second;
+                if (results == nullptr || rank >= results->hits.size()) {
+                    continue;
+                }
+                const Addons::Hit& hit = results->hits[rank];
+                MergedHit* same = nullptr;
+                for (MergedHit& row : out.hits) {
+                    if (std::any_of(row.found.begin(), row.found.end(),
+                                    [&hit](const Found& found) { return sameProject(found.hit, hit); })) {
+                        same = &row;
+                        break;
+                    }
+                }
+                if (same == nullptr) {
+                    MergedHit row;
+                    row.hit = hit;
+                    row.primary = source;
+                    row.found.push_back(Found{source, hit});
+                    out.hits.push_back(std::move(row));
+                    continue;
+                }
+                if (std::none_of(same->found.begin(), same->found.end(),
+                                 [source](const Found& found) { return found.source == source; })) {
+                    same->found.push_back(Found{source, hit});
+                }
+                std::vector<std::string> loaders = same->hit.loaders;
+                appendUnique(loaders, hit.loaders);
+                if (hit.downloads > same->hit.downloads) {
+                    same->hit = hit;
+                    same->primary = source;
+                }
+                // Loaders of either platform count for the row; its categories stay those of the platform it is shown from.
+                same->hit.loaders = std::move(loaders);
+            }
+        }
+        return out;
+    }
+
+    const std::vector<MergedCategory>& categories(const std::vector<Addons::Source>& sources, Addons::Kind kind) {
+        using Addons::Source;
+        static const std::vector<MergedCategory> none;
+        // The lists are loaded once, so a complete answer is kept for good; while they arrive it is rebuilt instead.
+        static std::map<std::string, std::pair<bool, std::vector<MergedCategory>>> cache;
+        std::string key = std::to_string((int) kind);
+        bool complete = true;
+        for (Source source : sources) {
+            key += source == Source::CurseForge ? "/cf" : "/mr";
+            complete = complete && (!supports(source, kind) || !Addons::categories(source, kind).empty());
+        }
+        auto cached = cache.find(key);
+        if (cached != cache.end() && cached->second.first) {
+            return cached->second.second;
+        }
+        // Modrinth first, so its grouping and labels win, then the CurseForge rows it does not have.
+        std::vector<MergedCategory> out;
+        std::vector<std::string> names;
+        for (Source source : {Source::Modrinth, Source::CurseForge}) {
+            if (std::find(sources.begin(), sources.end(), source) == sources.end()) {
+                continue;
+            }
+            bool curse = source == Source::CurseForge;
+            std::string prefix = curse ? "cf:" : "mr:";
+            for (const Addons::Category& category : Addons::categories(source, kind)) {
+                std::string name = normalised(category.name.empty() ? category.id : category.name);
+                size_t at = names.size();
+                if (!name.empty()) {
+                    for (size_t i = 0; i < names.size(); i++) {
+                        if (names[i] == name) {
+                            at = i;
+                            break;
+                        }
+                    }
+                }
+                if (at == names.size()) {
+                    MergedCategory row;
+                    row.label = curse ? category.name : Modrinth::label(category.id);
+                    row.header = curse ? std::string() : category.header;
+                    row.keys.push_back(prefix + category.id);
+                    row.iconUrl = category.iconUrl;
+                    out.push_back(std::move(row));
+                    names.push_back(std::move(name));
+                    continue;
+                }
+                MergedCategory& row = out[at];
+                if (std::find(row.keys.begin(), row.keys.end(), prefix + category.id) == row.keys.end()) {
+                    row.keys.push_back(prefix + category.id);
+                }
+                if (row.iconUrl.empty()) {
+                    row.iconUrl = category.iconUrl;
+                }
+            }
+        }
+        if (out.empty()) {
+            return none;
+        }
+        auto& kept = cache[key];
+        kept.first = complete;
+        kept.second = std::move(out);
+        return kept.second;
     }
 }
