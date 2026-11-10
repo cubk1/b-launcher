@@ -1704,55 +1704,69 @@ namespace SettingsScreen {
         constexpr float HERO_H = 72.0f;
         constexpr float LOGO = 32.0f;
 
-        void quietButton(float x, float y, float w, const std::string& text, bool spinning) {
-            UiRender::roundRect(x, y, w, Page::FIELD_H, 7.0f, UiTheme::surfaceRaised());
-            UiRender::outline(x, y, w, Page::FIELD_H, 7.0f, UiTheme::border(UiTheme::outlineSoft()));
-            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            float left = x + (w - (12.0f + 6.0f + textW)) * 0.5f;
-            float cy = y + Page::FIELD_H * 0.5f;
-            if (spinning) {
-                Page::spinner(left + 6.0f, cy, 5.0f, UiTheme::accent());
-            } else {
-                UiWidgets::check(left + 6.0f, cy, UiTheme::accent(), 8.0f);
-            }
-            UiRender::textY(text, left + 18.0f, y, Page::FIELD_H, UiTheme::textMuted(), UiFont::MEDIUM,
-                            UiWidgets::TEXT_CONTROL);
-        }
-
-        void updateControl(float y, float leftEnd, bool blocked) {
+        float updateControl(float y, bool blocked) {
+            float right = Page::controlRight();
             if (!Updates::enabled()) {
-                return;
+                return right;
             }
             Updates::State state = Updates::state();
-            float by = y + (HERO_H - Page::FIELD_H) * 0.5f;
-            float right = mainX() + mainW() - 20.0f;
             if (state == Updates::State::Checking || state == Updates::State::Latest) {
-                std::string text = state == Updates::State::Checking ? "正在检查" : "已是最新版本";
-                float w = Page::buttonWidth(text, 0xf00c);
-                quietButton(right - w, by, w, text, state == Updates::State::Checking);
-                return;
+                bool checking = state == Updates::State::Checking;
+                std::string text = checking ? "正在检查" : "已是最新版本";
+                float textX = right - UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(text, textX, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_CONTROL);
+                float cy = y + Page::ROW_H * 0.5f;
+                if (checking) {
+                    Page::spinner(textX - 11.0f, cy, 5.0f, UiTheme::accent());
+                } else {
+                    UiWidgets::check(textX - 11.0f, cy, UiTheme::accent(), 8.0f);
+                }
+                return textX - 20.0f;
             }
             bool available = state == Updates::State::Available;
             std::string label = available ? "下载 v" + Updates::latest() : std::string("检查更新");
             int glyph = available ? 0xf019 : 0xf2f1;
             float w = Page::buttonWidth(label, glyph);
             float x = right - w;
-            if (Page::button("settings#update", label, x, by, w, available, blocked, glyph)) {
+            if (Page::button("settings#update", label, x, y + Page::FIELD_Y, w, available, blocked, glyph)) {
                 if (available) {
                     Updates::openDownload();
                 } else {
                     Updates::check(false, true);
                 }
             }
-            if (state != Updates::State::Failed) {
-                return;
+            if (state == Updates::State::Failed) {
+                std::string status = "检查失败";
+                x -= 12.0f + UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                UiRender::textY(status, x, y, Page::ROW_H, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             }
-            std::string status = "检查失败";
-            float statusW = UiFont::width(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            float statusX = x - 12.0f - statusW;
-            if (statusX >= leftEnd + 12.0f) {
-                UiRender::textY(status, statusX, y, HERO_H, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            return x;
+        }
+
+        void versionRow(float y, bool blocked) {
+            Page::label("版本", y);
+            float right = updateControl(y, blocked);
+            if (Updates::enabled()) {
+                right -= 14.0f;
             }
+            std::string version = About::versionLabel();
+            float w = UiFont::width(version, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(version, right - w, y, Page::ROW_H, UiTheme::textSecondary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+        }
+
+        bool customized() {
+            return Customization::active() && !Customization::by().empty();
+        }
+
+        void customRow(float y) {
+            Page::label("定制者", y);
+            std::string made = Customization::by() +
+                    (Customization::version().empty() ? std::string() : " " + Customization::version());
+            float w = UiFont::width(made, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(made, Page::controlRight() - w, y, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
         }
 
         void tagline(float x, float y, bool blocked) {
@@ -1789,23 +1803,11 @@ namespace SettingsScreen {
             const std::string name = About::BRAND;
             float textX = mainX() + 20.0f + LOGO + 14.0f;
             float titleY = y + (HERO_H - 24.0f - 2.0f - 16.0f) * 0.5f;
-            float x = textX;
-            UiRender::textY(name, x, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
-            x += UiFont::width(name, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            x += Page::tag(About::versionLabel(), x, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::accentSoft(40),
-                     UiTheme::accentText());
-            if (Customization::active() && !Customization::by().empty()) {
-                std::string made = "由 " + Customization::by() + " 定制" +
-                        (Customization::version().empty() ? std::string() : " " + Customization::version());
-                x += 6.0f +
-                        Page::tag(made, x + 6.0f, titleY + 12.0f - Page::ROW_H * 0.5f, UiTheme::surfaceRaised(),
-                                  UiTheme::textSecondary());
-            }
+            UiRender::textY(name, textX, titleY, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             tagline(textX, titleY + 26.0f, blocked);
-            updateControl(y, x, blocked);
         }
 
-        void linkRows(const char* prefix, const Link* links, int count, float y, bool blocked) {
+        void linkRows(const char* prefix, const Link* links, int count, float y, bool blocked, int above = 0) {
             for (int i = 0; i < count; i++) {
                 const Link& link = links[i];
                 float rowY = y + i * Page::ROW_H;
@@ -1814,7 +1816,7 @@ namespace SettingsScreen {
                 }
                 std::string id = std::string(prefix) + link.name;
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
-                Page::rowHover(id, rowY, hovered, Page::rowCorners(i, count));
+                Page::rowHover(id, rowY, hovered, Page::rowCorners(i + above, count + above));
                 Page::label(link.name, rowY);
                 float amount = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
                 float linkX = Page::controlRight() - 6.0f;
@@ -2004,8 +2006,10 @@ namespace SettingsScreen {
                 Updates::check(false, false);
             }
             aboutFrame = frame;
+            int above = customized() ? 2 : 1;
+            int projectRows = above + PROJECT_COUNT;
             float contentH = HERO_H + Page::GAP + 3 * Page::CAPTION_H +
-                    (PROJECT_COUNT + THANKS_COUNT + CREDIT_COUNT) * Page::ROW_H + 2 * Page::GAP;
+                    (projectRows + THANKS_COUNT + CREDIT_COUNT) * Page::ROW_H + 2 * Page::GAP;
             Page::Scroll body("settings#about", Page::top(), MainWindow::height() - 14.0f, contentH);
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -2015,7 +2019,18 @@ namespace SettingsScreen {
                 hero(y, blocked);
             }
             y += HERO_H + Page::GAP;
-            y = linkCard("项目", "settings#project#", About::PROJECT, PROJECT_COUNT, y, blocked);
+            if (Page::shown(y, Page::CAPTION_H + projectRows * Page::ROW_H)) {
+                Page::caption("项目", y);
+                float rowY = y + Page::CAPTION_H;
+                Page::card(rowY, projectRows);
+                versionRow(rowY, blocked);
+                if (above > 1) {
+                    customRow(rowY + Page::ROW_H);
+                }
+                linkRows("settings#project#", About::PROJECT, PROJECT_COUNT, rowY + above * Page::ROW_H, blocked,
+                         above);
+            }
+            y += Page::CAPTION_H + projectRows * Page::ROW_H + Page::GAP;
             y = linkCard("鸣谢", "settings#thanks#", About::THANKS, THANKS_COUNT, y, blocked);
             linkCard("开源组件", "settings#credit#", About::CREDITS, CREDIT_COUNT, y, blocked);
             body.end();
