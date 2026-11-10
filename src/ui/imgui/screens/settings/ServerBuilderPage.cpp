@@ -2,6 +2,7 @@
 #include "app/instances/Instances.h"
 #include "app/instances/ServerBuilds.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/downloads/DownloadsParts.h"
 #include "ui/imgui/screens/instances/FileTreeView.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -9,6 +10,7 @@
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/UiCommon.h"
 #include "ui/imgui/panel/UiFont.h"
+#include "ui/imgui/panel/UiPageTransition.h"
 #include "ui/imgui/panel/UiRender.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
@@ -23,6 +25,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace ServerBuilderPage {
 
@@ -34,6 +37,10 @@ namespace ServerBuilderPage {
         constexpr float SELECT_W = 180.0f;
         constexpr float PICKER_W = 220.0f;
         const char* const NEW_WORLD = "不导入世界";
+        constexpr int TAB_BASIC = 0;
+        constexpr int TAB_SERVER = 1;
+        constexpr int TAB_FILES = 2;
+        PageTransition tabs(TAB_BASIC);
         std::string chosen;
 
         const Instances::Entry* usable(const std::string& key) {
@@ -240,6 +247,73 @@ namespace ServerBuilderPage {
                             UiWidgets::TEXT_CONTROL);
         }
 
+        int basicRows(const Options& o) {
+            return o.java == "custom" ? 5 : 4;
+        }
+
+        constexpr int SERVER_ROWS = 5;
+
+        void basicTab(const Instances::Entry& entry, float y, bool blocked) {
+            const std::string& key = entry.key;
+            const Options& o = ServerBuilds::options(key);
+            Page::card(y, basicRows(o));
+            if (ServerBuilds::supported(entry)) {
+                valueRow("加载器", ServerBuilds::loaderText(entry), y);
+            } else {
+                Page::label("加载器", y);
+                std::string tag = "不支持";
+                float w = UiFont::width(tag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+                Page::tag(tag, Page::controlRight() - w, y, UiTheme::dangerSoft(), UiTheme::danger());
+            }
+            y += Page::ROW_H;
+            selectRow("server#java#" + key, "Java", javaChoice(key), y, blocked);
+            y += Page::ROW_H;
+            if (o.java == "custom") {
+                javaPathRow(key, y, blocked);
+                y += Page::ROW_H;
+            }
+            numberRow(key, "memory", "最大内存 (MB)", ServerBuilds::defaultMemory(entry), &Options::memoryMb, 512,
+                      262144, y, blocked);
+            y += Page::ROW_H;
+            textRow(
+                    key, "jvmArgs", "JVM 参数", "无", WIDE, [](const Options& v) { return v.jvmArgs; },
+                    [](Options& v, const std::string& text) { v.jvmArgs = text; }, y, blocked);
+        }
+
+        void serverTab(const Instances::Entry& entry, float y, bool blocked) {
+            const std::string& key = entry.key;
+            Page::card(y, SERVER_ROWS);
+            numberRow(key, "port", "端口", 25565, &Options::port, 1, 65535, y, blocked);
+            toggleRow(key, "online", "正版验证", &Options::onlineMode, y + Page::ROW_H, blocked);
+            numberRow(key, "players", "最大人数", 20, &Options::maxPlayers, 1, 100000, y + 2 * Page::ROW_H, blocked);
+            textRow(
+                    key, "motd", "服务器描述", "A Minecraft Server", WIDE, [](const Options& v) { return v.motd; },
+                    [](Options& v, const std::string& text) { v.motd = text; }, y + 3 * Page::ROW_H, blocked);
+            selectRow("server#world#" + key, "世界", worldChoice(entry), y + 4 * Page::ROW_H, blocked);
+        }
+
+        void filesTab(const std::string& key, float y, bool blocked) {
+            auto tagger = [&key](const FileTree::Node& node) {
+                if (ServerBuilds::clientOnly(key, node.path)) {
+                    return FileTreeView::Tag{"仅客户端", true};
+                }
+                return FileTreeView::purpose(node);
+            };
+            std::string toggled;
+            if (FileTreeView::draw("server#tree#" + key, ServerBuilds::tree(key), ServerBuilds::options(key).picks,
+                                   Page::columnLeft(), y, Page::columnWidth(), blocked, tagger, &toggled)) {
+                ServerBuilds::picked(key, toggled);
+            }
+        }
+
+        float contentHeight(int tab, const std::string& key) {
+            switch (tab) {
+                case TAB_SERVER: return SERVER_ROWS * Page::ROW_H + 6.0f;
+                case TAB_FILES: return FileTreeView::height(ServerBuilds::tree(key)) + 6.0f;
+                default: return (float) basicRows(ServerBuilds::options(key)) * Page::ROW_H + 6.0f;
+            }
+        }
+
         void buildButton(const Instances::Entry& entry, bool blocked) {
             float y = MainWindow::height() - 28.0f - Page::FIELD_H;
             bool running = ServerBuilds::running();
@@ -302,74 +376,31 @@ namespace ServerBuilderPage {
         picker.bounds(Page::controlRight() - PICKER_W, Page::top(), PICKER_W, Page::FIELD_H).block(covered || mine);
         picker.paint();
 
-        Options& o = ServerBuilds::options(key);
-        FileTree::Tree& tree = ServerBuilds::tree(key);
+        float tabsY = Page::top() + 40.0f;
+        std::vector<DownloadsParts::Segment> items = {{TAB_BASIC, "基本"}, {TAB_SERVER, "服务器"}, {TAB_FILES, "文件"}};
+        int next = DownloadsParts::segments("server", tabs.page, items, Page::columnLeft(), tabsY, covered,
+                                            Page::columnWidth());
+        if (next != tabs.page) {
+            if (NewUi::textEditing.rfind("server#", 0) == 0) {
+                NewUi::commitTextEdit();
+            }
+            tabs.go(next);
+        }
 
-        const int serverCount = o.java == "custom" ? 5 : 4;
-        const int settingsCount = 5;
-        float treeH = FileTreeView::height(tree);
-        float contentH = 3 * Page::CAPTION_H + (serverCount + settingsCount) * Page::ROW_H + treeH + 2 * Page::GAP;
-        float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
-        Page::Scroll body("server#body#" + key, Page::top() + 40.0f, buttonTop - 14.0f, contentH);
+        tabs.begin();
+        float bottom = MainWindow::height() - 42.0f - Page::FIELD_H;
+        Page::Scroll body("server#body#" + key + "#" + std::to_string(tabs.page),
+                          tabsY + DownloadsParts::SEGMENT_H + 14.0f, bottom, contentHeight(tabs.page, key));
         bool outside = body.begin();
         bool blocked = outside || covered || mine;
         float y = body.top - body.offset;
-
-        if (Page::shown(y, Page::CAPTION_H + serverCount * Page::ROW_H)) {
-            Page::caption("服务端", y);
-            float rowY = y + Page::CAPTION_H;
-            Page::card(rowY, serverCount);
-            if (ServerBuilds::supported(entry)) {
-                valueRow("加载器", ServerBuilds::loaderText(entry), rowY);
-            } else {
-                Page::label("加载器", rowY);
-                std::string tag = "不支持";
-                float w = UiFont::width(tag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
-                Page::tag(tag, Page::controlRight() - w, rowY, UiTheme::dangerSoft(), UiTheme::danger());
-            }
-            rowY += Page::ROW_H;
-            selectRow("server#java#" + key, "Java", javaChoice(key), rowY, blocked);
-            rowY += Page::ROW_H;
-            if (o.java == "custom") {
-                javaPathRow(key, rowY, blocked);
-                rowY += Page::ROW_H;
-            }
-            numberRow(key, "memory", "最大内存 (MB)", ServerBuilds::defaultMemory(entry), &Options::memoryMb, 512,
-                      262144, rowY, blocked);
-            rowY += Page::ROW_H;
-            textRow(
-                    key, "jvmArgs", "JVM 参数", "无", WIDE, [](const Options& v) { return v.jvmArgs; },
-                    [](Options& v, const std::string& text) { v.jvmArgs = text; }, rowY, blocked);
-        }
-        y += Page::CAPTION_H + serverCount * Page::ROW_H + Page::GAP;
-
-        if (Page::shown(y, Page::CAPTION_H + settingsCount * Page::ROW_H)) {
-            Page::caption("服务器设置", y);
-            float rowY = y + Page::CAPTION_H;
-            Page::card(rowY, settingsCount);
-            numberRow(key, "port", "端口", 25565, &Options::port, 1, 65535, rowY, blocked);
-            toggleRow(key, "online", "正版验证", &Options::onlineMode, rowY + Page::ROW_H, blocked);
-            numberRow(key, "players", "最大人数", 20, &Options::maxPlayers, 1, 100000, rowY + 2 * Page::ROW_H, blocked);
-            textRow(
-                    key, "motd", "服务器描述", "A Minecraft Server", WIDE, [](const Options& v) { return v.motd; },
-                    [](Options& v, const std::string& text) { v.motd = text; }, rowY + 3 * Page::ROW_H, blocked);
-            selectRow("server#world#" + key, "世界", worldChoice(entry), rowY + 4 * Page::ROW_H, blocked);
-        }
-        y += Page::CAPTION_H + settingsCount * Page::ROW_H + Page::GAP;
-
-        Page::caption("文件", y);
-        auto tagger = [&key](const FileTree::Node& node) {
-            if (ServerBuilds::clientOnly(key, node.path)) {
-                return FileTreeView::Tag{"仅客户端", true};
-            }
-            return FileTreeView::purpose(node);
-        };
-        std::string toggled;
-        if (FileTreeView::draw("server#tree#" + key, tree, ServerBuilds::options(key).picks, Page::columnLeft(),
-                               y + Page::CAPTION_H, Page::columnWidth(), blocked, tagger, &toggled)) {
-            ServerBuilds::picked(key, toggled);
+        switch (tabs.page) {
+            case TAB_SERVER: serverTab(entry, y, blocked); break;
+            case TAB_FILES: filesTab(key, y, blocked); break;
+            default: basicTab(entry, y, blocked); break;
         }
         body.end();
+        tabs.end();
 
         buildButton(entry, covered);
         return back;
