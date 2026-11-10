@@ -21,6 +21,8 @@ namespace Addons {
         std::string gameVersion;
         std::vector<std::string> loaders;
         std::vector<std::string> categories;
+        // CurseForge category ids, one per chosen category that it has.
+        std::vector<std::string> curseCategories;
         bool client = false;
         bool server = false;
         bool openSource = false;

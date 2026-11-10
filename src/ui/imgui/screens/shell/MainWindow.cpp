@@ -969,7 +969,7 @@ namespace MainWindow {
     static const Destination HOME_DESTINATION = {"nav#home", 0xf015, "主页", PAGE_HOME};
     static const Destination DESTINATIONS[] = {
             {"nav#new", 0xf067, "新建实例", PAGE_NEW_INSTANCE},
-            {"nav#downloads", 0xf019, "下载附加件", PAGE_DOWNLOADS},
+            {"nav#downloads", 0xf019, "下载中心", PAGE_DOWNLOADS},
             {"nav#accounts", 0xf007, "账户", PAGE_ACCOUNTS},
             {"nav#multiplayer", 0xf6ff, "联机", PAGE_MULTIPLAYER},
             {"nav#settings", 0xf013, "选项", PAGE_SETTINGS},

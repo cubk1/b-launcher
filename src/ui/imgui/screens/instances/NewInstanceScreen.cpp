@@ -806,7 +806,7 @@ namespace NewInstanceScreen {
             bool localPack = modpack && !modpack->pack.file.empty();
             const char* backHint = !editing.empty() ? "返回实例设置"
                     : localPack                     ? "返回"
-                    : modpack                       ? "返回下载附加件"
+                    : modpack                       ? "返回下载中心"
                                                     : "重新选择版本";
             if (Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
                 if (!editing.empty()) {
