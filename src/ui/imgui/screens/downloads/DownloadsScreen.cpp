@@ -1312,7 +1312,7 @@ namespace DownloadsScreen {
             constexpr float GROUP_GAP = 30.0f;
             float width = std::max(200.0f, std::min(520.0f, mainW() - 40.0f));
             std::vector<std::string> body =
-                    UiFont::wrap("输入关键词，一键跨站检索所有相关模组。", UiFont::MEDIUM, BODY_SIZE, width);
+                    UiFont::wrap("输入关键词，一键跨站检索所有相关内容。", UiFont::MEDIUM, BODY_SIZE, width);
             float marksW = 0.0f;
             for (Source each : {Source::Modrinth, Source::CurseForge}) {
                 marksW += MARK + 7.0f + UiFont::width(Addons::sourceName(each), UiFont::MEDIUM, BODY_SIZE) + 22.0f;
