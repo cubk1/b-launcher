@@ -81,9 +81,7 @@ namespace DownloadsScreen {
         constexpr float RESULT_H = 56.0f;
         constexpr float RESULT_ICON = 36.0f;
         constexpr float CARD_RADIUS = 12.0f;
-        constexpr size_t LOADERS_SHOWN = 3;
         constexpr double TYPING_PAUSE = 0.4;
-        constexpr float INSTANCE_W = 160.0f;
         constexpr int CATALOG_PAGE = 0;
         constexpr int JAVA_PAGE = 1;
         constexpr int THEMES_PAGE = 2;
@@ -136,7 +134,6 @@ namespace DownloadsScreen {
         std::string versionFilter;
         std::string loaderFilter;
         std::set<std::string> folded;
-        bool allLoaders = false;
 
         PageTransition sourceViews(CATALOG_PAGE);
         struct Tab {
@@ -149,7 +146,6 @@ namespace DownloadsScreen {
             std::string versionFilter;
             std::string loaderFilter;
             std::set<std::string> folded;
-            bool allLoaders = false;
             std::vector<std::string> chosen;
         };
         std::map<int, Tab> kindTabs;
@@ -458,14 +454,20 @@ namespace DownloadsScreen {
         std::shared_ptr<ModeBinding> loaderChoice() {
             auto choice = std::make_shared<ModeBinding>(
                     "downloads#loaderFilter",
-                    [] { return loaderFilter.empty() ? std::string(ANY_LOADER) : Modrinth::label(loaderFilter); },
+                    [] {
+                        return query.loaders.size() == 1 ? Modrinth::label(query.loaders.front())
+                                                         : std::string(ANY_LOADER);
+                    },
                     [](const std::string& option) {
+                        query.loaders.clear();
                         loaderFilter.clear();
                         for (const std::string& tag : loaderTags()) {
                             if (Modrinth::label(tag) == option) {
+                                query.loaders.push_back(tag);
                                 loaderFilter = tag;
                             }
                         }
+                        query.page = 0;
                     },
                     [] {
                         std::vector<std::string> labels = {ANY_LOADER};
@@ -601,11 +603,16 @@ namespace DownloadsScreen {
             float x = mainX() + FILTER_PAD;
             float w = mainW() - FILTER_PAD * 2;
             float rowY = y + FILTER_PAD;
-            float instanceW = std::min(INSTANCE_W, std::max(110.0f, w * 0.34f));
+            bool loaders = hasLoaders();
+            // The filters keep the width of the four of the mods page, the widest case; a kind with fewer of them
+            // leaves the room at the right empty.
+            float counterW = UiFont::width("共 99999 个", UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            constexpr int COLUMNS = 4;
+            float cell = (w - counterW - GAP * (float) COLUMNS) / (float) COLUMNS;
             float nameX = x;
             if (ProjectBrowser::usesInstance(query.kind)) {
-                instancePicker(nameX, rowY, instanceW, blocked);
-                nameX += instanceW + GAP;
+                instancePicker(nameX, rowY, cell, blocked);
+                nameX += cell + GAP;
             }
             TextFieldWidget field(nameValue());
             field.box(nameX, rowY, x + w - nameX, Page::FIELD_H)
@@ -614,13 +621,17 @@ namespace DownloadsScreen {
             field.paint();
 
             rowY += Page::FIELD_H + GAP;
-            // The count keeps a fixed room, so the three filters keep their widths as the numbers change.
-            constexpr float COUNTER_W = 76.0f;
-            float cell = (w - GAP * 2.0f - COUNTER_W) / 3.0f;
-            select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), x, rowY, cell,
+            float cellX = x;
+            select("downloads#version", versionChoice("downloads#version", &query.gameVersion, true), cellX, rowY, cell,
                    blocked);
-            select("downloads#sort", sortChoice(), x + cell + GAP, rowY, cell, blocked);
-            select(SOURCES_OWNER, sourceChoice(), x + (cell + GAP) * 2.0f, rowY, cell, blocked);
+            cellX += cell + GAP;
+            select("downloads#sort", sortChoice(), cellX, rowY, cell, blocked);
+            cellX += cell + GAP;
+            select(SOURCES_OWNER, sourceChoice(), cellX, rowY, cell, blocked);
+            if (loaders) {
+                cellX += cell + GAP;
+                select("downloads#loader", loaderChoice(), cellX, rowY, cell, blocked);
+            }
             if (counted) {
                 std::string found = "共 " + std::to_string(total) + " 个";
                 float foundW = UiFont::width(found, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -827,47 +838,6 @@ namespace DownloadsScreen {
             return "类别";
         }
 
-        float loaderGroup(float y, bool blocked) {
-            if (!hasLoaders()) {
-                return 0.0f;
-            }
-            std::vector<std::string> tags = loaderTags();
-            bool more = tags.size() > LOADERS_SHOWN + 1;
-            std::vector<Filter> rows;
-            for (size_t i = 0; i < tags.size(); i++) {
-                if (more && !allLoaders && i >= LOADERS_SHOWN && !contains(query.loaders, tags[i])) {
-                    continue;
-                }
-                std::string tag = tags[i];
-                rows.push_back(Filter{"downloads#loader#" + tag, Modrinth::label(tag), 0xf12e, loaderImage(tag),
-                                      contains(query.loaders, tag), [tag] {
-                                          bool picked = contains(query.loaders, tag);
-                                          query.loaders.clear();
-                                          if (!picked) {
-                                              query.loaders.push_back(tag);
-                                          }
-                                          query.page = 0;
-                                      }});
-            }
-            std::function<void(float)> toggleMore;
-            if (more) {
-                toggleMore = [blocked](float rowY) {
-                    bool hovered = !blocked && NewUi::hit(Page::left(), rowY, SIDE_W, FILTER_ROW);
-                    uint32_t ink = hovered ? UiTheme::textPrimary() : UiTheme::textMuted();
-                    std::string text = allLoaders ? "收起" : "显示更多";
-                    UiWidgets::iconBeside(Ui::glyph(allLoaders ? 0xf077 : 0xf078), Page::left() + 17.0f, text,
-                                          UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, rowY, FILTER_ROW, ink, 9.0f);
-                    UiRender::textY(text, Page::left() + 32.0f, rowY, FILTER_ROW, ink, UiFont::MEDIUM,
-                                    UiWidgets::TEXT_CONTROL);
-                    if (!blocked && NewUi::click(Page::left(), rowY, SIDE_W, FILTER_ROW)) {
-                        UiSound::request(UiSound::TICK);
-                        allLoaders = !allLoaders;
-                    }
-                };
-            }
-            return group("loader", "加载器", rows, y, blocked, toggleMore, more ? FILTER_ROW : 0.0f);
-        }
-
         bool chosenHere(const std::vector<std::string>& keys) {
             for (const std::string& key : keys) {
                 if (contains(query.categories, key)) {
@@ -921,10 +891,9 @@ namespace DownloadsScreen {
         }
 
         float catalogGroups(float y, bool blocked) {
-            float start = y;
-            y += loaderGroup(y, blocked);
             const std::vector<ProjectBrowser::MergedCategory>& categories =
                     ProjectBrowser::categories(chosenSources(), query.kind);
+            float start = y;
             for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
                 y += categoryGroup(y, header, blocked);
             }
@@ -961,25 +930,10 @@ namespace DownloadsScreen {
             return y - start;
         }
 
-        float loaderHeight() {
-            if (!hasLoaders()) {
-                return 0.0f;
-            }
-            std::vector<std::string> tags = loaderTags();
-            bool more = tags.size() > LOADERS_SHOWN + 1;
-            size_t rows = 0;
-            for (size_t i = 0; i < tags.size(); i++) {
-                if (!more || allLoaders || i < LOADERS_SHOWN || contains(query.loaders, tags[i])) {
-                    rows++;
-                }
-            }
-            return groupHeight("loader", rows, more ? FILTER_ROW : 0.0f);
-        }
-
         float filterHeight() {
-            float h = loaderHeight();
             const std::vector<ProjectBrowser::MergedCategory>& categories =
                     ProjectBrowser::categories(chosenSources(), query.kind);
+            float h = 0.0f;
             for (const char* header : {"categories", "features", "resolutions", "performance impact"}) {
                 size_t rows = 0;
                 for (const ProjectBrowser::MergedCategory& category : categories) {
@@ -1027,7 +981,6 @@ namespace DownloadsScreen {
             typed.clear();
             shown = ProjectBrowser::Merged();
             folded.clear();
-            allLoaders = false;
             retarget();
             followInstance();
         }
@@ -1061,7 +1014,6 @@ namespace DownloadsScreen {
             out.versionFilter = versionFilter;
             out.loaderFilter = loaderFilter;
             out.folded = folded;
-            out.allLoaders = allLoaders;
             out.chosen = chosen;
         }
 
@@ -1073,7 +1025,6 @@ namespace DownloadsScreen {
             versionFilter = in.versionFilter;
             loaderFilter = in.loaderFilter;
             folded = in.folded;
-            allLoaders = in.allLoaders;
             chosen = in.chosen;
             views.page = (int) routes.size();
             if (in.target != target && ProjectBrowser::usesInstance(query.kind)) {
