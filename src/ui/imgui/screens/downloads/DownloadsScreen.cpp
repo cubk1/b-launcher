@@ -1768,9 +1768,9 @@ namespace DownloadsScreen {
             body.end();
         }
 
-        bool authorLink(const Addons::Hit& hit, Source from, float right, float y, float h, bool blocked) {
+        float authorLink(const Addons::Hit& hit, Source from, float right, float y, float h, bool blocked) {
             if (hit.author.empty()) {
-                return false;
+                return 0.0f;
             }
             std::string name = fitEnd(hit.author, 140.0f, UiWidgets::TEXT_SMALL);
             float w = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
@@ -1789,7 +1789,7 @@ namespace DownloadsScreen {
                                                hit.authorId, hit.author, std::string(), from);
                 }
             }
-            return true;
+            return w;
         }
 
         bool sourceMarks(const ProjectBrowser::MergedHit& merged, Kind kind, float right, float y, bool blocked) {
@@ -1873,13 +1873,14 @@ namespace DownloadsScreen {
                 tagX += tagW + 4.0f;
             }
             float descriptionRight = right;
-            if (authorLink(hit, from, right, y + 30.0f, 16.0f, blocked)) {
-                descriptionRight -=
-                        std::min(140.0f, UiFont::width(hit.author, UiFont::MEDIUM, UiWidgets::TEXT_SMALL)) + 16.0f;
+            float authorW = authorLink(hit, from, right, y + 30.0f, 16.0f, blocked);
+            if (authorW > 0.0f) {
+                descriptionRight -= authorW + 8.0f;
             }
-            bool overMark = merged != nullptr && sourceMarks(*merged, kind, descriptionRight - 6.0f, y + 30.0f, blocked);
-            if (overMark) {
-                descriptionRight -= 6.0f + (float) merged->found.size() * 19.0f;
+            bool overMark = false;
+            if (merged != nullptr && !merged->found.empty()) {
+                overMark = sourceMarks(*merged, kind, descriptionRight, y + 30.0f, blocked);
+                descriptionRight -= (float) merged->found.size() * 19.0f;
             }
             UiRender::textY(fitEnd(hit.description, descriptionRight - textX, UiWidgets::TEXT_SMALL), textX, y + 30.0f,
                             16.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
