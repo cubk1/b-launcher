@@ -1,4 +1,5 @@
 #include "app/downloads/Addons.h"
+#include "app/downloads/Aggregate.h"
 #include "app/downloads/Authors.h"
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/Dependencies.h"
@@ -306,6 +307,7 @@ namespace Addons {
     void poll() {
         Modrinth::poll();
         CurseForge::poll();
+        Aggregate::poll();
         ModNames::poll();
         Projects::poll();
         Mcmod::poll();
@@ -332,6 +334,7 @@ namespace Addons {
         iconWorkers.clear();
         Modrinth::shutdown();
         CurseForge::shutdown();
+        Aggregate::shutdown();
         ModNames::shutdown();
         Projects::shutdown();
         Mcmod::shutdown();

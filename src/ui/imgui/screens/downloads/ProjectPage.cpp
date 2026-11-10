@@ -740,17 +740,16 @@ namespace ProjectPage {
         }
 
         float filters(Route& route, State& st, float top, bool covered) {
-            float x = mainX();
-            float right = Page::right();
             bool instance = ProjectBrowser::usesInstance(route.kind);
             bool loaders = ProjectBrowser::hasLoaders(route.source, route.kind);
+            // Every filter of the row is as wide as the others, the row shared among them.
+            int cells = (instance ? 1 : 0) + (loaders ? 2 : 1) + 1;
+            float cell = (Page::right() - mainX() - DownloadsParts::GAP * (cells - 1)) / cells;
+            float x = mainX();
             if (instance) {
-                float instanceW = 150.0f;
-                DownloadsParts::instancePicker(x, top, instanceW, covered);
-                x += instanceW + DownloadsParts::GAP;
+                DownloadsParts::instancePicker(x, top, cell, covered);
+                x += cell + DownloadsParts::GAP;
             }
-            int cells = loaders ? 3 : 2;
-            float cell = (right - x - DownloadsParts::GAP * (cells - 1)) / cells;
             DownloadsParts::select("downloads#versionFilter", DownloadsParts::versionChoice(), x, top, cell, covered);
             x += cell + DownloadsParts::GAP;
             if (loaders) {
