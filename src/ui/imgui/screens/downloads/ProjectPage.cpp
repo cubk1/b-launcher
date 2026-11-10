@@ -742,9 +742,11 @@ namespace ProjectPage {
         float filters(Route& route, State& st, float top, bool covered) {
             bool instance = ProjectBrowser::usesInstance(route.kind);
             bool loaders = ProjectBrowser::hasLoaders(route.source, route.kind);
-            // Every filter of the row is as wide as the others, the row shared among them.
+            constexpr float PREFERRED_CELL = 210.0f;
+            constexpr float LEAST_CELL = 132.0f;
             int cells = (instance ? 1 : 0) + (loaders ? 2 : 1) + 1;
-            float cell = (Page::right() - mainX() - DownloadsParts::GAP * (cells - 1)) / cells;
+            float fillCell = (Page::right() - mainX() - DownloadsParts::GAP * (cells - 1)) / cells;
+            float cell = std::clamp(fillCell, LEAST_CELL, PREFERRED_CELL);
             float x = mainX();
             if (instance) {
                 DownloadsParts::instancePicker(x, top, cell, covered);
