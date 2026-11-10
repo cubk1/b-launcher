@@ -234,6 +234,9 @@ namespace Game {
             if (report == nullptr) {
                 return;
             }
+            if (Crashes::autoUpload()) {
+                Crashes::share(report);
+            }
             GameLog::show(live.log);
             if (!Interface::crashed(report)) {
                 Notices::add(Notices::Kind::Failed, live.name + " 崩溃了（退出代码 " + Crashes::exitText(code) + "）",

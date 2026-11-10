@@ -23,6 +23,7 @@
 #include "app/instances/Covers.h"
 #include "app/instances/Instances.h"
 #include "app/launch/AskAi.h"
+#include "app/launch/Crashes.h"
 #include "app/launch/GameOptions.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/LaunchDefaults.h"
@@ -233,6 +234,12 @@ namespace SettingsScreen {
                 }
             }
             select("settings#askAi", ai, y, blocked);
+            y += Page::ROW_H;
+
+            Page::label("崩溃时上传日志", y);
+            toggle(
+                    "settings#crashUpload", [] { return Crashes::autoUpload(); },
+                    [](bool on) { Crashes::setAutoUpload(on); }, y, blocked);
             y += Page::ROW_H;
 
             textRow(
@@ -655,6 +662,7 @@ namespace SettingsScreen {
                 {SECTION_LAUNCH, "游戏参数", nullptr},
                 {SECTION_LAUNCH, "显示游戏日志", nullptr},
                 {SECTION_LAUNCH, "崩溃时问 AI", "ChatGPT Claude Grok DeepSeek Kimi"},
+                {SECTION_LAUNCH, "崩溃时上传日志", "mclo.gs 二维码"},
                 {SECTION_LAUNCH, "启动前命令", "cmd 脚本"},
                 {SECTION_KEYS, nullptr, "快捷键 键位"},
                 {SECTION_PATCH, "应用给默认设置的实例", "启用"},
@@ -2059,7 +2067,7 @@ namespace SettingsScreen {
                 case SECTION_JAVA: javaTab(covered); break;
                 case SECTION_TOOLS: ToolboxTab::draw(covered); break;
                 case SECTION_ABOUT: aboutTab(covered); break;
-                default: cardPage("settings#launch", 7, covered, launchRows); break;
+                default: cardPage("settings#launch", 8, covered, launchRows); break;
             }
         }
 

@@ -2,6 +2,7 @@
 #include "app/launch/AskAi.h"
 #include "app/system/About.h"
 #include "app/system/AsyncTasks.h"
+#include "app/system/Config.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
 
@@ -716,8 +717,11 @@ namespace Crashes {
         };
 
         bool sharing = false;
+        std::weak_ptr<const Report> sharingReport;
         std::weak_ptr<const Report> sharedReport;
         Shared shared;
+        std::shared_ptr<const Report> waiting;
+        std::string waitingKey;
 
         std::string opening(const Report& report) {
             const Launch& launch = report.launch;
@@ -847,6 +851,45 @@ namespace Crashes {
             std::string link = blb::json_text(reply, "url");
             return link.rfind("https://", 0) == 0 ? link : std::string();
         }
+
+        void finish(const std::shared_ptr<const Report>& report, const Shared& result);
+
+        void startShare(std::shared_ptr<const Report> report) {
+            sharing = true;
+            sharingReport = report;
+            tasks.run(
+                    [report](blb::cancellation_token token) -> Continuation {
+                        Share share = shareable(*report);
+                        Shared result{share.title,
+                                      share.content.empty() ? std::string() : upload(share.content, token)};
+                        return [report, result] { finish(report, result); };
+                    },
+                    [report](const std::string&) -> Continuation { return [report] { finish(report, Shared{}); }; });
+        }
+
+        void finish(const std::shared_ptr<const Report>& report, const Shared& result) {
+            sharing = false;
+            sharingReport.reset();
+            sharedReport = report;
+            shared = result;
+            std::shared_ptr<const Report> pending = std::move(waiting);
+            std::string key = std::move(waitingKey);
+            waiting.reset();
+            waitingKey.clear();
+            if (pending == nullptr) {
+                return;
+            }
+            if (pending != report) {
+                waiting = pending;
+                waitingKey = key;
+                startShare(pending);
+                return;
+            }
+            if (result.link.empty()) {
+                Notices::add(Notices::Kind::Info, "无法上传到 mclo.gs，改为直接发送", 4000);
+            }
+            AskAi::ask(key, question(*report, result, AskAi::budget(key)));
+        }
     }
 
     std::shared_ptr<const Report> examine(Launch launch, std::string output) {
@@ -886,40 +929,56 @@ namespace Crashes {
                 ".zip";
     }
 
-    void ask(std::shared_ptr<const Report> report, const std::string& key) {
-        if (report == nullptr || sharing) {
+    bool autoUpload() {
+        return blb::json_bool(Config::data(), "crashUpload", true);
+    }
+
+    void setAutoUpload(bool on) {
+        Config::data()["crashUpload"] = on;
+        Config::save();
+    }
+
+    void share(std::shared_ptr<const Report> report) {
+        if (report == nullptr || sharing || uploadOf(report) == Upload::Done) {
             return;
         }
+        startShare(std::move(report));
+    }
+
+    Upload uploadOf(const std::shared_ptr<const Report>& report) {
+        if (report == nullptr) {
+            return Upload::None;
+        }
+        if (sharing && sharingReport.lock() == report) {
+            return Upload::Running;
+        }
         if (sharedReport.lock() == report) {
+            return shared.link.empty() ? Upload::Failed : Upload::Done;
+        }
+        return Upload::None;
+    }
+
+    std::string linkOf(const std::shared_ptr<const Report>& report) {
+        return report != nullptr && sharedReport.lock() == report ? shared.link : std::string();
+    }
+
+    void ask(std::shared_ptr<const Report> report, const std::string& key) {
+        if (report == nullptr || waiting != nullptr) {
+            return;
+        }
+        if (uploadOf(report) == Upload::Done) {
             AskAi::ask(key, question(*report, shared, AskAi::budget(key)));
             return;
         }
-        sharing = true;
-        tasks.run(
-                [report, key](blb::cancellation_token token) -> Continuation {
-                    Share share = shareable(*report);
-                    Shared result{share.title, share.content.empty() ? std::string() : upload(share.content, token)};
-                    return [report, key, result] {
-                        sharing = false;
-                        if (!result.link.empty()) {
-                            sharedReport = report;
-                            shared = result;
-                        } else {
-                            Notices::add(Notices::Kind::Info, "无法上传到 mclo.gs，改为直接发送", 4000);
-                        }
-                        AskAi::ask(key, question(*report, result, AskAi::budget(key)));
-                    };
-                },
-                [report, key](const std::string&) -> Continuation {
-                    return [report, key] {
-                        sharing = false;
-                        AskAi::ask(key, question(*report, Shared{}, AskAi::budget(key)));
-                    };
-                });
+        waiting = report;
+        waitingKey = key;
+        if (!sharing) {
+            startShare(std::move(report));
+        }
     }
 
     bool asking() {
-        return sharing;
+        return waiting != nullptr;
     }
 
     void save(std::shared_ptr<const Report> report, const std::filesystem::path& target) {
