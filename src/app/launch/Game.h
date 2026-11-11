@@ -43,7 +43,7 @@ namespace Game {
     void setAccount(const std::string& key, const std::string& accountKey);
 
     int launch(const std::string& key, bool test = false, const std::string& account = std::string(),
-               const std::string& server = std::string());
+               const std::string& server = std::string(), bool offline = false);
     void setQuiet(bool on);
     void cancel(const std::string& key);
     void stop(const std::string& key);

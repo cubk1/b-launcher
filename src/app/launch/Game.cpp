@@ -85,8 +85,7 @@ namespace Game {
             std::string token;
             std::optional<blb::auth::account> refreshedAccount;
             bool accountExpired = false;
-            // The auth step of the last prepare failed, so this account could not log in.
-            bool authFailed = false;
+            std::string failedTask;
             blb::errc failureCode = blb::errc::unknown;
             // The arguments of this launch, so a failed login can be tried again unchanged.
             std::string server;
@@ -276,8 +275,8 @@ namespace Game {
                         step.detail.clear();
                     }
                 }
-                if (task == "auth" && stage == "failed") {
-                    live.authFailed = true;
+                if (stage == "failed" && live.failedTask.empty()) {
+                    live.failedTask = task;
                 }
             }
 
@@ -374,7 +373,7 @@ namespace Game {
             }
             takeAccount(live);
             // A login that never got through is offered an offline start instead of a dead end.
-            bool noLogin = !wasCancelled && live.authFailed && LoginCheck::loginFailed(live.failureCode);
+            bool noLogin = !wasCancelled && live.failedTask == "auth" && LoginCheck::loginFailed(live.failureCode);
             if (game && game->valid()) {
                 live.game = std::move(*game);
                 live.killed = false;
@@ -586,7 +585,8 @@ namespace Game {
                 key, [accountKey](blb::instance::instance_settings& settings) { settings.account = accountKey; });
     }
 
-    int launch(const std::string& target, bool test, const std::string& who, const std::string& server) {
+    int launch(const std::string& target, bool test, const std::string& who, const std::string& server,
+               bool offlineOnly) {
         if (ModManager::busy(target)) {
             Instances::notify("模组正在更新，请稍后再启动游戏", true);
             return 0;
@@ -619,8 +619,6 @@ namespace Game {
             Instances::notify("这个启动器不允许用 " + Accounts::kindOf(*account) + " 账户启动游戏", true);
             return 0;
         }
-        // A dialog can ask for exactly one offline launch without touching the saved setting.
-        bool offlineOnly = Network::takeOfflineOnce();
         const blb::auth::account* chosen = Accounts::current();
         bool substituted = chosen != nullptr && Accounts::keyOf(*chosen) != Accounts::keyOf(*account);
         size_t alongside = sessionsOf(target).size();

@@ -1,6 +1,5 @@
 #include "ui/imgui/screens/launch/LoginDialog.h"
 #include "app/launch/Game.h"
-#include "app/system/Network.h"
 #include "app/system/Notices.h"
 #include "app/system/Platform.h"
 #include "ui/imgui/screens/shell/Dialog.h"
@@ -178,10 +177,7 @@ namespace LoginDialog {
         }
 
         void launch(const LoginCheck::Problem& problem, bool offline) {
-            if (offline) {
-                Network::setOfflineOnce(true);
-            }
-            Game::launch(problem.instance, problem.test, problem.account, problem.server);
+            Game::launch(problem.instance, problem.test, problem.account, problem.server, offline);
             Dialog::close();
         }
 
