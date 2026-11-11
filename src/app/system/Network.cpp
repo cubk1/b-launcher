@@ -9,9 +9,6 @@ namespace Network {
     namespace {
         const char* const KEY = "systemProxy";
         const char* const OFFLINE_KEY = "offlineLaunch";
-
-        // Only the interface thread sets and takes it, right before the launch it belongs to.
-        bool offlineOnce = false;
     }
 
     bool systemProxy() {
@@ -31,16 +28,6 @@ namespace Network {
     void setOfflineLaunch(bool on) {
         Config::data()[OFFLINE_KEY] = on;
         Config::save();
-    }
-
-    void setOfflineOnce(bool on) {
-        offlineOnce = on;
-    }
-
-    bool takeOfflineOnce() {
-        bool on = offlineOnce;
-        offlineOnce = false;
-        return on;
     }
 
     void apply() {
