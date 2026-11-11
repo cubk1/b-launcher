@@ -18,19 +18,16 @@ namespace Connectivity {
             return hosts;
         }
 
-        // The resolver port, which these servers always accept connections on.
         constexpr unsigned short DNS_PORT = 53;
 
         bool answered(const std::string& url, std::chrono::milliseconds timeout) {
             blb::net::http_request request;
-            // Only the route matters, so the headers are enough of an answer.
             request.method = "HEAD";
             request.url = url;
             request.timeout = timeout;
             request.follow_redirects = true;
             request.max_response_size = 4096;
             auto response = blb::net::http_send(request);
-            // Any status code means the host answered; only a curl failure means no route to it.
             return response.has_value();
         }
     }
@@ -49,7 +46,6 @@ namespace Connectivity {
     }
 
     bool internet(std::chrono::milliseconds timeout) {
-        // A connection is enough: DNS servers say nothing over HTTP on this port.
         for (const std::string& host : internetHosts()) {
             if (blb::net::tcp_reachable(host, DNS_PORT, timeout)) {
                 return true;

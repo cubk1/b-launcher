@@ -19,7 +19,6 @@ namespace LoginCheck {
     namespace {
         AsyncTasks tasks;
 
-        // The servers the launcher logs in against, so a working internet alone does not hide them.
         std::vector<std::string> loginUrls(const blb::auth::account* account) {
             std::vector<std::string> urls;
             if (account != nullptr && blb::auth::is_yggdrasil(account->type)) {
@@ -37,7 +36,6 @@ namespace LoginCheck {
         Reach probe(const std::vector<std::string>& urls) {
             bool online = false;
             bool login = false;
-            // Both checks wait on the network, so they run together instead of one after the other.
             std::thread reaches([&online] { online = Connectivity::internet(); });
             std::thread answers([&login, &urls] { login = Connectivity::answers(urls); });
             reaches.join();
@@ -57,13 +55,11 @@ namespace LoginCheck {
 
     bool loginFailed(blb::errc code) {
         switch (code) {
-            // Everything a missing or broken route to the login server can raise.
             case blb::errc::network:
             case blb::errc::timeout:
             case blb::errc::http_status:
             case blb::errc::auth:
             case blb::errc::unknown: return true;
-            // Credentials that need the user, not the network.
             default: return false;
         }
     }

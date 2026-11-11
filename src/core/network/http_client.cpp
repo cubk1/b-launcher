@@ -305,8 +305,6 @@ tcp_reachable (std::string_view host, unsigned short port,
   auto url = sformat ("http://{}:{}/", host, port);
   detail::apply_common_options (easy, settings, proxy);
   curl_easy_setopt (easy, CURLOPT_URL, url.c_str ());
-  // Stop once the connection is up: the route to the server is what is being asked about,
-  // not whatever the server would answer on that port.
   curl_easy_setopt (easy, CURLOPT_CONNECT_ONLY, 1L);
   curl_easy_setopt (easy, CURLOPT_TIMEOUT_MS,
                     static_cast<long> (timeout.count ()));

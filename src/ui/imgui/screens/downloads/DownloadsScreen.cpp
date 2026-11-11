@@ -1202,7 +1202,7 @@ namespace DownloadsScreen {
 
         void sidePanel(bool covered) {
             float y = Page::top();
-            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "聚合搜索");
+            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "搜索");
             aggregate.selected(side == Side::Aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             aggregate.paint();
             if (aggregate.pressed && (side != Side::Aggregate || views.page != VIEW_RESULTS)) {

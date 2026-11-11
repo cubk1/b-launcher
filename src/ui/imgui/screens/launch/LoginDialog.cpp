@@ -28,7 +28,6 @@ namespace LoginDialog {
 
     namespace {
         const char* const DIALOG = "login";
-        // One title for every state; the paragraph under it says what actually went wrong.
         const char* const TITLE = "登录失败";
         constexpr float WIDTH = 520.0f;
         constexpr float PAD = 24.0f;
@@ -37,7 +36,6 @@ namespace LoginDialog {
         constexpr float WINDOW_MARGIN = 48.0f;
         constexpr float EDGE = 12.0f;
         constexpr float BUTTON_GAP = 10.0f;
-        // Page::iconButton paints a fixed 28 px square.
         constexpr float COPY_SIZE = 28.0f;
         constexpr float COPY_GAP = 6.0f;
 
@@ -161,7 +159,7 @@ namespace LoginDialog {
             top = lines(wrapped(offlineNote(), inner, cap), left, top, UiTheme::textSecondary(), draw);
             if (!problem.reason.empty()) {
                 top += SECTION_GAP;
-                // The button copies the whole message, not the part that fits on this line.
+
                 float rowH = std::max(LINE_H, COPY_SIZE);
                 if (draw) {
                     float textW = std::max(0.0f, inner - COPY_SIZE - COPY_GAP);
@@ -187,8 +185,6 @@ namespace LoginDialog {
             Dialog::close();
         }
 
-        // One width for every button in every state: the longest label sizes the row, so the dialog
-        // looks the same whether it offers two buttons or three.
         float buttonWidth() {
             static const char* const LABELS[] = {"取消启动", "离线启动", "重试"};
             float width = 0.0f;
@@ -219,7 +215,6 @@ namespace LoginDialog {
             float retryX = grid ? left : offlineX + width + BUTTON_GAP;
             float retryY = grid ? top + Page::FIELD_H + BUTTON_GAP : top;
             bool cancelled = Page::button("login#cancel", cancel, cancelX, top, width, false, false);
-            // Without internet the offline start is the way out, so it is the highlighted one there.
             bool offlineClicked = Page::button("login#offline", offline, offlineX, top, width, offlineOnly, false);
             bool retried =
                     offlineOnly ? false : Page::button("login#retry", retry, retryX, retryY, width, true, false);
