@@ -10,10 +10,12 @@
 #include "ui/imgui/screens/downloads/TransfersScreen.h"
 #include "app/launch/Game.h"
 #include "app/launch/GameLog.h"
+#include "app/launch/LoginCheck.h"
 #include "ui/imgui/screens/home/Homepage.h"
 #include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/launch/CrashDialog.h"
+#include "ui/imgui/screens/launch/LoginDialog.h"
 #include "ui/imgui/screens/launch/LogWindow.h"
 #include "ui/imgui/screens/multiplayer/MultiplayerScreen.h"
 #include "app/multiplayer/Multiplayer.h"
@@ -245,6 +247,10 @@ namespace MainWindow {
                 [](std::shared_ptr<const Crashes::Report> report) {
                     summon();
                     CrashDialog::open(std::move(report));
+                },
+                [](const LoginCheck::Problem& problem) {
+                    summon();
+                    LoginDialog::open(problem);
                 },
                 summon,
         });

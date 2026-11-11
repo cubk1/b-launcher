@@ -45,6 +45,14 @@ namespace Interface {
         return true;
     }
 
+    bool loginFailed(const LoginCheck::Problem& problem) {
+        if (!handlers.loginFailed) {
+            return false;
+        }
+        handlers.loginFailed(problem);
+        return true;
+    }
+
     void summon() {
         summoned = true;
     }

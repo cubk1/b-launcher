@@ -53,6 +53,8 @@ namespace ForgottenMelody {
                     nullptr,
                     nullptr,
                     [&window](std::shared_ptr<const Crashes::Report> report) { window.showCrash(std::move(report)); },
+                    // This window has no offline dialog of its own; the notice stays the failure report.
+                    nullptr,
                     [] { Platform::raiseWindow(); },
             });
         }

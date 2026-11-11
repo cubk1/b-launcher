@@ -5,6 +5,7 @@
 #include "app/downloads/DownloadSources.h"
 #include "app/launch/Crashes.h"
 #include "app/launch/GameLog.h"
+#include "app/launch/LoginCheck.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
@@ -84,6 +85,11 @@ namespace Game {
             std::string token;
             std::optional<blb::auth::account> refreshedAccount;
             bool accountExpired = false;
+            std::string failedTask;
+            blb::errc failureCode = blb::errc::unknown;
+            // The arguments of this launch, so a failed login can be tried again unchanged.
+            std::string server;
+            bool test = false;
 
             std::mutex stepLock;
             std::vector<Step> steps;
@@ -269,6 +275,9 @@ namespace Game {
                         step.detail.clear();
                     }
                 }
+                if (stage == "failed" && live.failedTask.empty()) {
+                    live.failedTask = task;
+                }
             }
 
             void on_progress(const blb::progress_event& event) override {
@@ -363,6 +372,8 @@ namespace Game {
                 Catalog::seenJava(*javaInstall);
             }
             takeAccount(live);
+            // A login that never got through is offered an offline start instead of a dead end.
+            bool noLogin = !wasCancelled && live.failedTask == "auth" && LoginCheck::loginFailed(live.failureCode);
             if (game && game->valid()) {
                 live.game = std::move(*game);
                 live.killed = false;
@@ -394,7 +405,11 @@ namespace Game {
             } else {
                 std::string reason = error.empty() ? std::string("游戏没有启动") : error;
                 GameLog::note(live.log, "启动失败：" + reason);
-                Notices::add(Notices::Kind::Failed, "启动失败：" + reason, 5000);
+                if (noLogin) {
+                    LoginCheck::report(live.key, live.name, live.accountKey, live.server, live.test, reason);
+                } else {
+                    Notices::add(Notices::Kind::Failed, "启动失败：" + reason, 5000);
+                }
             }
         }
 
@@ -570,7 +585,8 @@ namespace Game {
                 key, [accountKey](blb::instance::instance_settings& settings) { settings.account = accountKey; });
     }
 
-    int launch(const std::string& target, bool test, const std::string& who, const std::string& server) {
+    int launch(const std::string& target, bool test, const std::string& who, const std::string& server,
+               bool offlineOnly) {
         if (ModManager::busy(target)) {
             Instances::notify("模组正在更新，请稍后再启动游戏", true);
             return 0;
@@ -634,7 +650,7 @@ namespace Game {
         if (Patches::enabled(options.patch)) {
             patchJar = Patches::jarIn(blb::meta::game_layout(root).cache());
             patchPlan = Patches::plan();
-            if (account->type == blb::auth::account_type::offline) {
+            if (account->type == blb::auth::account_type::offline || offlineOnly || Network::offlineLaunch()) {
                 Looks::apply(Accounts::keyOf(*account), patchPlan);
             }
             optionsFile = options.options_file;
@@ -659,6 +675,8 @@ namespace Game {
         live.minecraft = entry->info.minecraft_version;
         live.accountKey = Accounts::keyOf(*account);
         live.accountName = account->name;
+        live.server = server;
+        live.test = test;
         live.visibility = options.launcher_visibility;
         live.postExit = options.post_exit;
         live.variables = instanceVariables(*entry);
@@ -694,10 +712,13 @@ namespace Game {
         live.cancelling = std::make_shared<blb::cancellation_source>();
         blb::cancellation_token token = live.cancelling->token();
         blb::auth::account player = *account;
-        if (Network::offlineLaunch() && player.type != blb::auth::account_type::offline) {
+        if ((offlineOnly || Network::offlineLaunch()) && player.type != blb::auth::account_type::offline) {
             if (auto offline = blb::auth::offline_account(player.name, player.uuid)) {
+                // An offline login has nothing but the cached identity, so it keeps all of it.
+                offline->skin_url = player.skin_url;
+                offline->xuid = player.xuid;
                 player = std::move(*offline);
-                GameLog::note(log, "已开启以离线模式启动，只使用账户的名字和 UUID");
+                GameLog::note(log, "已开启以离线模式启动，只使用账户的名字、UUID 和皮肤");
             }
         }
         std::shared_ptr<blb::auth::microsoft_authenticator> authenticator = Accounts::authenticator(player);
@@ -712,6 +733,7 @@ namespace Game {
                                       javaOptions, javaKnown, optionsFile]() mutable {
             std::optional<blb::process> game_;
             std::string error;
+            blb::errc code = blb::errc::unknown;
             bool wasCancelled = false;
             try {
                 if (!patchJar.empty()) {
@@ -748,6 +770,7 @@ namespace Game {
                 auto ready = launcher.prepare(settings, player, callbacks, token);
                 if (!ready) {
                     wasCancelled = ready.err().code == blb::errc::cancelled || token.is_cancelled();
+                    code = ready.err().code;
                     error = Accounts::describe(ready.err());
                     if (ready.err().code == blb::errc::auth_expired) {
                         std::lock_guard<std::mutex> guard(self->lock);
@@ -809,6 +832,7 @@ namespace Game {
             std::lock_guard<std::mutex> guard(self->lock);
             self->started = std::move(game_);
             self->failure = error;
+            self->failureCode = code;
             self->cancelled = wasCancelled;
             self->prepared = true;
         });

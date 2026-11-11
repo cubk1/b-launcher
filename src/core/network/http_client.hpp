@@ -80,4 +80,9 @@ http_post_form (std::string_view url,
                 std::span<const std::pair<std::string, std::string>> fields,
                 cancellation_token token = {});
 
+// True when a connection to the host and port could be opened; nothing is sent, so this only
+// proves there is a route. Host may be a bare name or an IP address.
+bool tcp_reachable (std::string_view host, unsigned short port,
+                    std::chrono::milliseconds timeout);
+
 }
