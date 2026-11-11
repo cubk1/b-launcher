@@ -20,6 +20,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/JavaDownloads.h"
 #include "app/launch/KeyBinds.h"
+#include "app/launch/LoginCheck.h"
 #include "app/launch/ServerList.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
@@ -56,6 +57,7 @@ namespace Services {
         Avatars::poll();
         LittleSkin::poll();
         Game::poll();
+        LoginCheck::poll();
         Crashes::poll();
         Catalog::poll();
         Addons::poll();
@@ -85,6 +87,7 @@ namespace Services {
         Multiplayer::shutdown();
         CustomDownload::shutdown();
         Crashes::shutdown();
+        LoginCheck::shutdown();
         DiskScan::shutdown();
         ServerStatus::shutdown();
         Updates::shutdown();
