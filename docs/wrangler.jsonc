@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "b-launcher-docs",
+  "compatibility_date": "2026-11-01",
+  "routes": [{ "pattern": "b-docs.cubk.cn", "custom_domain": true }],
+  "assets": {
+    "directory": ".vitepress/dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}
