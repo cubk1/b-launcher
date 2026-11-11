@@ -92,25 +92,28 @@ function firstLink(item: DefaultTheme.SidebarItem): string | undefined {
 
 function tree() {
   const nav: DefaultTheme.NavItem[] = []
-  const sidebar: DefaultTheme.SidebarMulti = {}
+  const sidebar: DefaultTheme.SidebarItem[] = []
+  const home = join(root, 'index.md')
+  if (existsSync(home)) {
+    sidebar.push({ text: read(home, '首页').title, link: '/' })
+  }
   for (const node of scan(root, '/')) {
     const link = firstLink(node.item)
     if (!link) {
       continue
     }
     if (node.item.items) {
-      const base = `/${node.name}/`
-      nav.push({ text: node.page.title, link, activeMatch: `^${base}` })
-      sidebar[base] = [node.item]
+      nav.push({ text: node.page.title, link, activeMatch: `^/${node.name}/` })
     } else {
       nav.push({ text: node.page.title, link })
     }
+    sidebar.push(node.item)
   }
   return { nav, sidebar }
 }
 
 const { nav, sidebar } = tree()
-const empty = known.size === 0 && !existsSync(join(root, 'index.md'))
+const empty = known.size === 0
 
 export default defineConfig({
   lang: 'zh-CN',
