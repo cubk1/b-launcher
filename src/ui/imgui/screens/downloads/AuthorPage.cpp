@@ -77,8 +77,7 @@ namespace AuthorPage {
                 Authors::profile(normalized(route), route.authorId, route.authorName, route.authorAvatar);
         float x0 = DownloadsParts::mainX();
         float right = Page::right();
-        if (Page::iconButton("downloads#back", 0xf053, "返回", x0 - 4.0f, Page::top() - 2.0f + (AVATAR - 28.0f) * 0.5f,
-                             covered)) {
+        if (Page::back("downloads#back", "返回", x0 - 4.0f, Page::top() - 2.0f + (AVATAR - 28.0f) * 0.5f, covered)) {
             DownloadsParts::back();
             return;
         }

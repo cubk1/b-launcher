@@ -1171,6 +1171,7 @@ namespace KeyBindEditor {
             if (frame > state.captureFrame) {
                 std::string pressed;
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+                    NewUi::takeEscape();
                     pressed = KeyBinds::UNBOUND;
                 }
                 for (const Cap& cap : keyboard()) {
@@ -1197,6 +1198,7 @@ namespace KeyBindEditor {
             }
         } else if (!typing && !blocked && (UiOverlays::isEmpty() || UiOverlays::top() == &popover) &&
                    state.boardShown && NewUi::rawHit(state.boardX, state.boardY, state.boardW, state.boardH)) {
+            NewUi::takeEscape();
             for (const Cap& cap : keyboard()) {
                 if (cap.key != ImGuiKey_None && (cap.key != ImGuiKey_Escape || !popover.active) &&
                     ImGui::IsKeyPressed(cap.key, false)) {
@@ -1515,9 +1517,8 @@ namespace KeyBindEditor {
 
     bool page(const std::string& id, const std::filesystem::path& file, bool legacy, const std::string& note,
               bool blocked) {
-        bool back = Page::iconButton(id + "#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked);
         Page::title("按键绑定", Page::left() + 30.0f, Page::top());
         draw(id, file, legacy, note, Page::top() + 44.0f, blocked);
-        return back;
+        return Page::back(id + "#back", "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked);
     }
 }

@@ -404,9 +404,8 @@ namespace InstanceMods {
                 UiRender::alphaMul = saved;
             }
             float cy = bar.y + bar.h * 0.5f;
-            bool back = Page::iconButton("mods#back", 0xf053, "返回",
-                                         UiRender::lerp(Page::left() - 4.0f, bar.x + 6.0f, lift),
-                                         UiRender::lerp(Page::top() - 2.0f, cy - 14.0f, lift), blocked);
+            bool back = Page::back("mods#back", "返回", UiRender::lerp(Page::left() - 4.0f, bar.x + 6.0f, lift),
+                                   UiRender::lerp(Page::top() - 2.0f, cy - 14.0f, lift), blocked);
             const char* title = "模组";
             float titleW = UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE);
             float titleX = UiRender::lerp(Page::left() + 30.0f, bar.x + 38.0f, lift);

@@ -850,8 +850,7 @@ namespace ProfilePage {
         if (account == nullptr) {
             return false;
         }
-        if (Page::iconButton("accounts#profile#back", 0xf053, "返回", Page::left() - 6.0f, Page::top() - 2.0f,
-                             covered)) {
+        if (Page::back("accounts#profile#back", "返回", Page::left() - 6.0f, Page::top() - 2.0f, covered)) {
             stopEditing();
             Profiles::forgetName(key);
             return false;

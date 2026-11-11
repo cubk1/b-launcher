@@ -585,8 +585,7 @@ namespace LauncherBuilderPage {
     }
 
     bool draw(bool covered, bool embedded) {
-        bool back = Page::iconButton("builder#back", 0xf053, "返回", Page::columnLeft() - 4.0f, Page::top() - 2.0f,
-                                     covered);
+        bool back = Page::back("builder#back", "返回", Page::columnLeft() - 4.0f, Page::top() - 2.0f, covered);
         Page::title("自定义启动器", Page::columnLeft() + 30.0f, Page::top());
 
         float tabsY = Page::top() + 40.0f;

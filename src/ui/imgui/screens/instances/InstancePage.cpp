@@ -1143,7 +1143,7 @@ namespace InstancePage {
 
         void advancedSection(const Instances::Entry& entry) {
             bool covered = NewUi::overlayCoversMouse();
-            if (Page::iconButton("instance#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered)) {
+            if (Page::back("instance#back", "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered)) {
                 sections.go(SECTION_MAIN);
             }
             const char* title = "高级";

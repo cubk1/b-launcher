@@ -694,7 +694,7 @@ namespace Homepage {
             }
             UiWidgets::icon(Ui::glyph(0xf053), x + size * 0.5f, y + size * 0.5f,
                             UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), lit), 11.0f);
-            return !blocked && NewUi::click(x, y, size, size);
+            return Page::escape(blocked) || (!blocked && NewUi::click(x, y, size, size));
         }
     }
 

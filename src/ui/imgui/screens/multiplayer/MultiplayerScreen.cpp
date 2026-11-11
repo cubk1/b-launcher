@@ -517,7 +517,8 @@ namespace MultiplayerScreen {
             float backW = std::max(72.0f, Page::buttonWidth(back, 0xf053));
             float manualW = Page::buttonWidth(manual, 0xf11c);
             float buttonsX = cx - (backW + 8.0f + manualW) * 0.5f;
-            if (Page::button("multiplayer#wait#back", back, buttonsX, y, backW, false, blocked, 0xf053)) {
+            if (Page::button("multiplayer#wait#back", back, buttonsX, y, backW, false, blocked, 0xf053) ||
+                Page::escape(blocked)) {
                 waiting = false;
             }
             if (dimButton("multiplayer#wait#manual", manual, buttonsX + backW + 8.0f, y, manualW, false, hostable,
@@ -761,7 +762,8 @@ namespace MultiplayerScreen {
                 float backW = std::max(BUTTON_MIN, Page::buttonWidth(back, 0xf053));
                 float retryX = Page::right() - retryW;
                 if (Page::button("multiplayer#back", back, retryX - 8.0f - backW, buttonTop, backW, false, covered,
-                                 0xf053)) {
+                                 0xf053) ||
+                    Page::escape(covered)) {
                     Multiplayer::dismiss();
                 }
                 if (dimButton("multiplayer#retry", retry, retryX, buttonTop, retryW, true, Multiplayer::canRetry(),

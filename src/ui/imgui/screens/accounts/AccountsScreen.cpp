@@ -699,7 +699,7 @@ namespace AccountsScreen {
             float backW = Page::buttonWidth(back);
             float importW = Page::buttonWidth(import, 0xf56f);
             float buttonsX = cx - (backW + 8.0f + importW) * 0.5f;
-            if (Page::button("accounts#pick#back", back, buttonsX, y, backW, false, blocked)) {
+            if (Page::button("accounts#pick#back", back, buttonsX, y, backW, false, blocked) || Page::escape(blocked)) {
                 backToLaunchers();
             }
             bool usable = chosen > 0 && !importing;

@@ -133,7 +133,7 @@ namespace InstanceShortcut {
     bool draw(const Instances::Entry& entry) {
         const std::string& key = entry.key;
         bool covered = NewUi::overlayCoversMouse();
-        bool back = Page::iconButton("shortcut#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
+        bool back = Page::back("shortcut#back", "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "生成快捷方式";
         Page::title(title, Page::left() + 30.0f, Page::top());
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;

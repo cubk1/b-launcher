@@ -359,8 +359,7 @@ namespace ServerBuilderPage {
     }
 
     bool draw(bool covered) {
-        bool back =
-                Page::iconButton("server#back", 0xf053, "返回", Page::columnLeft() - 4.0f, Page::top() - 2.0f, covered);
+        bool back = Page::back("server#back", "返回", Page::columnLeft() - 4.0f, Page::top() - 2.0f, covered);
         Page::title("生成服务端", Page::columnLeft() + 30.0f, Page::top());
         const Instances::Entry* found = current();
         if (found == nullptr) {

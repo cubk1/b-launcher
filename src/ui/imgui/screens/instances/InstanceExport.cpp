@@ -133,7 +133,7 @@ namespace InstanceExport {
             views.end();
             return false;
         }
-        bool back = Page::iconButton("export#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
+        bool back = Page::back("export#back", "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "导出整合包";
         Page::title(title, Page::left() + 30.0f, Page::top());
         float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;

@@ -53,6 +53,8 @@ namespace Page {
     void tooltip(const std::string& text, float x, float y, float w, float h);
     bool iconButton(const std::string& id, int glyph, const std::string& hint, float x, float y,
                     bool blocked = false);
+    bool escape(bool blocked);
+    bool back(const std::string& id, const std::string& hint, float x, float y, bool blocked = false);
     bool button(const std::string& id, const std::string& text, float x, float y, float w, bool primary, bool blocked,
                 int glyph = 0, float h = FIELD_H);
     float buttonWidth(const std::string& text, int glyph = 0);

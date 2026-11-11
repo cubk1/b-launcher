@@ -68,6 +68,7 @@ namespace NewUi {
     std::string draggingSlider;
     std::string sliderEditing;
     bool focusFieldLive = false;
+    bool escapePending = false;
     std::vector<std::shared_ptr<TextValue>> tabStops;
     std::vector<std::shared_ptr<TextValue>> lastTabStops;
     float focusFieldX;
@@ -225,6 +226,7 @@ namespace NewUi {
 
     void pollInput() {
         ImGuiIO& io = ImGui::GetIO();
+        escapePending = false;
         for (int button = 0; button < ImGuiMouseButton_COUNT; button++) {
             if (ImGui::IsMouseClicked(button)) {
                 onMouseClick(button, 1);
@@ -242,7 +244,10 @@ namespace NewUi {
                 continue;
             }
             if (ImGui::IsKeyPressed(imKey, false)) {
-                onKeyPress(key, 1);
+                bool taken = onKeyPress(key, 1);
+                if (key == ImGuiKey_Escape) {
+                    escapePending = !taken;
+                }
             } else if (ImGui::IsKeyPressed(imKey, true)) {
                 onKeyRepeat(key);
             }
@@ -279,6 +284,12 @@ namespace NewUi {
 
     float wheel() {
         return wheelTaken && !drawingOverlay && !drawingDialog ? 0.0f : ImGui::GetIO().MouseWheel;
+    }
+
+    bool takeEscape() {
+        bool pending = escapePending && !popupOpen && UiOverlays::isEmpty() && textEditing.empty();
+        escapePending = false;
+        return pending;
     }
 
     void beginFrame() {

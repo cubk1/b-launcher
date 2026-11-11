@@ -274,7 +274,7 @@ namespace ThemeCatalogPage {
 
         void detail(const Entry& entry, bool covered) {
             float top = Page::top();
-            if (Page::iconButton("downloads#themes#back", 0xf053, "返回", mainX(), top, covered)) {
+            if (Page::back("downloads#themes#back", "返回", mainX(), top, covered)) {
                 opened.clear();
                 return;
             }

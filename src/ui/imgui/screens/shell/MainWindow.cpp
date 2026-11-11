@@ -899,7 +899,7 @@ namespace MainWindow {
         raised(y, 1.0f);
         instanceRow(*rows[from], y, true);
         UiRender::unscissor();
-        bool cancel = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        bool cancel = NewUi::takeEscape() || ImGui::IsKeyPressed(ImGuiKey_Escape, false);
         if (NewUi::mouseDown && !cancel) {
             return;
         }
@@ -1851,6 +1851,9 @@ namespace MainWindow {
         }
         sidebar();
         content();
+        if (pages.page != PAGE_HOME && NewUi::takeEscape()) {
+            pages.go(PAGE_HOME);
+        }
 
         // Every page but the home page offers the way back in the title bar, where no page keeps its own controls.
         if (pages.page != PAGE_HOME && !topbarShown) {
@@ -1915,6 +1918,7 @@ namespace MainWindow {
         float savedMouseX = NewUi::mouseX;
         float savedMouseY = NewUi::mouseY;
         bool savedDown = NewUi::mouseDown;
+        bool savedEscape = NewUi::escapePending;
         float savedScroll = listScroll;
         float savedSmooth = listSmooth;
         bool savedRestored = scrollRestored;
@@ -1943,6 +1947,7 @@ namespace MainWindow {
         NewUi::mouseX = -1.0e6f;
         NewUi::mouseY = -1.0e6f;
         NewUi::mouseDown = false;
+        NewUi::escapePending = false;
         if (layout != nullptr) {
             spec = ShellLayout::effective(*layout);
         }
@@ -1992,6 +1997,7 @@ namespace MainWindow {
         NewUi::mouseX = savedMouseX;
         NewUi::mouseY = savedMouseY;
         NewUi::mouseDown = savedDown;
+        NewUi::escapePending = savedEscape;
         listScroll = savedScroll;
         listSmooth = savedSmooth;
         scrollRestored = savedRestored;

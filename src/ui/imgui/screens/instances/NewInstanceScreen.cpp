@@ -808,7 +808,7 @@ namespace NewInstanceScreen {
                     : localPack                     ? "返回"
                     : modpack                       ? "返回下载中心"
                                                     : "重新选择版本";
-            if (Page::iconButton("new#back", 0xf053, backHint, Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
+            if (Page::back("new#back", backHint, Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
                 if (!editing.empty()) {
                     std::string key = editing;
                     reset();
@@ -1043,7 +1043,7 @@ namespace NewInstanceScreen {
 
         void loaderStep() {
             bool blocked = NewUi::overlayCoversMouse();
-            if (Page::iconButton("new#back2", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
+            if (Page::back("new#back2", "返回", Page::left() - 4.0f, Page::top() - 2.0f, blocked)) {
                 steps.go(STEP_SETUP);
             }
             std::string label = Installer::loaderName(picking);

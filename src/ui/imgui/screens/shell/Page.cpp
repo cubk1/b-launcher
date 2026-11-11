@@ -218,6 +218,15 @@ namespace Page {
         return button.pressed;
     }
 
+    bool escape(bool blocked) {
+        return NewUi::takeEscape() && !blocked;
+    }
+
+    bool back(const std::string& id, const std::string& hint, float x, float y, bool blocked) {
+        bool pressed = iconButton(id, 0xf053, hint, x, y, blocked);
+        return escape(blocked) || pressed;
+    }
+
     void spinnerArc(float& from, float& to) {
         UiState::keepAnimating();
         const double minimum = 10.0;

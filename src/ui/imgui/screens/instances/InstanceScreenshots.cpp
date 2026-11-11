@@ -190,8 +190,7 @@ namespace InstanceScreenshots {
         const Screenshots::List& list = Screenshots::of(key);
 
         bool covered = NewUi::overlayCoversMouse();
-        bool back =
-                Page::iconButton("screenshots#back", 0xf053, "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
+        bool back = Page::back("screenshots#back", "返回", Page::left() - 4.0f, Page::top() - 2.0f, covered);
         const char* title = "截图";
         Page::title(title, Page::left() + 30.0f, Page::top());
 

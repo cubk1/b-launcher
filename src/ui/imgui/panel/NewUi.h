@@ -46,6 +46,7 @@ namespace NewUi {
     extern bool drawingOverlay;
     extern bool drawingDialog;
     extern bool wheelTaken;
+    extern bool escapePending;
     extern bool overlayActive;
     extern float overlayX;
     extern float overlayY;
@@ -328,6 +329,7 @@ namespace NewUi {
     bool onMouseClick(int button, int action);
     bool onMouseScroll(double amount);
     float wheel();
+    bool takeEscape();
     void pollInput();
     float limitX();
     float limitY();
