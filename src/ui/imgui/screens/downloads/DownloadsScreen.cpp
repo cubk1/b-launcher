@@ -147,6 +147,7 @@ namespace DownloadsScreen {
         std::string versionFilter;
         std::string loaderFilter;
         std::set<std::string> folded;
+        std::vector<ProjectBrowser::MergedHit> picked;
 
         PageTransition sourceViews(AGGREGATE_PAGE);
         struct Tab {
@@ -160,6 +161,7 @@ namespace DownloadsScreen {
             std::string loaderFilter;
             std::set<std::string> folded;
             std::vector<std::string> chosen;
+            std::vector<ProjectBrowser::MergedHit> picked;
         };
         std::map<int, Tab> kindTabs;
 
@@ -393,6 +395,9 @@ namespace DownloadsScreen {
         }
 
         void chooseTarget(const std::string& key) {
+            if (key != target) {
+                picked.clear();
+            }
             target = key;
             saveTarget();
             followInstance();
@@ -1113,6 +1118,7 @@ namespace DownloadsScreen {
             typed.clear();
             shown = ProjectBrowser::Merged();
             folded.clear();
+            picked.clear();
             retarget();
             followInstance();
         }
@@ -1147,6 +1153,7 @@ namespace DownloadsScreen {
             out.loaderFilter = loaderFilter;
             out.folded = folded;
             out.chosen = chosenNames();
+            out.picked = picked;
         }
 
         void resume(const Tab& in) {
@@ -1158,6 +1165,7 @@ namespace DownloadsScreen {
             loaderFilter = in.loaderFilter;
             folded = in.folded;
             chosen = in.chosen;
+            picked = in.target == target ? in.picked : std::vector<ProjectBrowser::MergedHit>();
             views.page = (int) routes.size();
             if (in.target != target && ProjectBrowser::usesInstance(query.kind)) {
                 followInstance();
@@ -1819,15 +1827,29 @@ namespace DownloadsScreen {
         }
 
         bool projectRow(const std::string& id, const Addons::Hit& hit, Kind kind, Source from, float x, float y,
-                        float w, int index, int count, bool blocked,
-                        const ProjectBrowser::MergedHit* merged = nullptr) {
+                        float w, int index, int count, bool blocked, const ProjectBrowser::MergedHit* merged = nullptr,
+                        bool selected = false) {
             bool hovered = !blocked && NewUi::hit(x, y, w, RESULT_H);
             float hover = UiState::motion("downloads#hit#" + id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            float lit = UiState::motion("downloads#hit#" + id + "#picked", selected ? 1.0f : 0.0f, 16.0f);
+            if (lit > 0.001f) {
+                UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::accentSoft(Ui::round(36 * lit)),
+                                    Page::rowCorners(index, count));
+            }
             if (hover > 0.001f) {
                 UiRender::roundRect(x, y, w, RESULT_H, CARD_RADIUS, UiTheme::overlay(Ui::round(14 * hover)),
                                     Page::rowCorners(index, count));
             }
             projectIcon(hit.iconUrl, x + 12.0f, y + (RESULT_H - RESULT_ICON) * 0.5f, RESULT_ICON, kind);
+            if (lit > 0.001f) {
+                float saved = UiRender::alphaMul;
+                UiRender::alphaMul = saved * lit;
+                float cx = x + 12.0f + RESULT_ICON - 2.0f;
+                float cy = y + (RESULT_H + RESULT_ICON) * 0.5f - 2.0f;
+                UiRender::circle(cx, cy, 7.5f, UiTheme::accent());
+                UiWidgets::icon(Ui::glyph(0xf00c), cx, cy, UiTheme::onAccent(), 7.5f);
+                UiRender::alphaMul = saved;
+            }
             float textX = x + 12.0f + RESULT_ICON + 12.0f;
             float right = x + w - 14.0f;
             float titleY = hit.description.empty() && hit.author.empty() ? y + (RESULT_H - 20.0f) * 0.5f : y + 9.0f;
@@ -1975,6 +1997,68 @@ namespace DownloadsScreen {
             arrow("next", 0xf054, page + 1, page + 1 < count);
         }
 
+        bool pickable() {
+            return !ProjectInstaller::folder(query.kind).empty() && Instances::find(target) != nullptr;
+        }
+
+        bool samePick(const ProjectBrowser::MergedHit& a, const ProjectBrowser::MergedHit& b) {
+            return a.primary == b.primary && a.hit.id == b.hit.id;
+        }
+
+        bool isPicked(const ProjectBrowser::MergedHit& row) {
+            return std::any_of(picked.begin(), picked.end(),
+                               [&](const ProjectBrowser::MergedHit& each) { return samePick(each, row); });
+        }
+
+        void flipPick(const ProjectBrowser::MergedHit& row) {
+            auto at = std::find_if(picked.begin(), picked.end(),
+                                   [&](const ProjectBrowser::MergedHit& each) { return samePick(each, row); });
+            if (at != picked.end()) {
+                picked.erase(at);
+            } else {
+                picked.push_back(row);
+            }
+        }
+
+        void installPicked() {
+            if (!pickable() || picked.empty()) {
+                return;
+            }
+            std::vector<ProjectInstaller::Pick> picks;
+            for (const ProjectBrowser::MergedHit& row : picked) {
+                ProjectInstaller::Pick pick;
+                pick.title = row.hit.title;
+                pick.icon = row.hit.iconUrl;
+                for (Source each : {Source::Modrinth, Source::CurseForge}) {
+                    for (const ProjectBrowser::Found& found : row.found) {
+                        if (found.source == each && !found.hit.id.empty()) {
+                            pick.projects.push_back({each, found.hit.id});
+                        }
+                    }
+                }
+                if (pick.projects.empty()) {
+                    pick.projects.push_back({row.primary, row.hit.id});
+                }
+                picks.push_back(std::move(pick));
+            }
+            ProjectInstaller::installAll(picks, query.kind, target);
+            picked.clear();
+        }
+
+        void pickMenu(float x, float y) {
+            NewUi::openMenu(
+                    "downloads#picked#menu",
+                    [] {
+                        MenuItems items;
+                        std::string install =
+                                picked.size() > 1 ? "全部安装（" + std::to_string(picked.size()) + " 个）" : "安装";
+                        items.push_back(ActionMenuItem::make(install, 0xf019, [] { installPicked(); }));
+                        items.push_back(ActionMenuItem::make("取消选择", 0xf00d, [] { picked.clear(); }));
+                        return items;
+                    },
+                    x, y, 160.0f);
+        }
+
         void resultsView(bool covered) {
             followTyping();
             std::vector<Source> sources = chosenSources();
@@ -2051,6 +2135,15 @@ namespace DownloadsScreen {
             if (stale) {
                 UiRender::alphaMul = saved * 0.5f;
             }
+            bool selectable = pickable();
+            if (selectable && !picked.empty()) {
+                if (query.kind == Kind::Mod) {
+                    ModManager::prepare(target);
+                }
+                if (NewUi::takeEscape()) {
+                    picked.clear();
+                }
+            }
             Page::listCard(mainX(), rowsY, mainW(), RESULT_H, (int) shown.hits.size());
             for (size_t i = 0; i < shown.hits.size(); i++) {
                 float rowY = rowsY + (float) i * RESULT_H;
@@ -2059,9 +2152,22 @@ namespace DownloadsScreen {
                 }
                 const ProjectBrowser::MergedHit& row = shown.hits[i];
                 std::string id = std::to_string(i) + "#" + row.hit.id;
+                bool chosenRow = selectable && isPicked(row);
                 if (projectRow(id, row.hit, query.kind, row.primary, mainX(), rowY, mainW(), (int) i,
-                               (int) shown.hits.size(), blocked, &row)) {
-                    openProject(row);
+                               (int) shown.hits.size(), blocked, &row, chosenRow)) {
+                    if (selectable && NewUi::ctrlDown()) {
+                        UiSound::request(UiSound::TICK);
+                        flipPick(row);
+                    } else {
+                        openProject(row);
+                    }
+                } else if (selectable && !blocked && NewUi::rightClick &&
+                           NewUi::hit(mainX(), rowY, mainW(), RESULT_H)) {
+                    NewUi::rightClick = false;
+                    if (!chosenRow) {
+                        picked = {row};
+                    }
+                    pickMenu(NewUi::mouseX, NewUi::mouseY);
                 }
             }
             UiRender::alphaMul = saved;

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ProjectInstaller {
@@ -15,6 +16,12 @@ namespace ProjectInstaller {
         Addons::Status status = Addons::Status::Loading;
         std::string error;
         std::vector<Addons::Version> dependencies;
+    };
+
+    struct Pick {
+        std::vector<std::pair<Addons::Source, std::string>> projects;
+        std::string title;
+        std::string icon;
     };
 
     // Supplying an instance selects a world task in that instance's saves directory.
@@ -31,6 +38,7 @@ namespace ProjectInstaller {
     void install(const Addons::Version& version, Addons::Kind kind, const std::string& title,
                  const std::string& instanceKey,
                  std::optional<std::vector<Addons::Version>> dependencies = std::nullopt, const std::string& icon = {});
+    void installAll(const std::vector<Pick>& picks, Addons::Kind kind, const std::string& instanceKey);
     void saveTo(const Addons::Version& version, const std::filesystem::path& folder, const std::string& title,
                 const std::string& icon = {});
     void saveAs(const Addons::Version& version, const std::string& title, const std::string& icon = {});

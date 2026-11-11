@@ -2,6 +2,7 @@
 #include "app/downloads/Recent.h"
 #include "app/system/AsyncTasks.h"
 #include "app/instances/Instances.h"
+#include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
@@ -45,6 +46,7 @@
 #include <set>
 #include <stdexcept>
 #include <system_error>
+#include <thread>
 
 namespace ProjectInstaller {
 
@@ -54,6 +56,7 @@ namespace ProjectInstaller {
         using Continuation = AsyncTasks::Continuation;
 
         constexpr size_t DEPENDENCY_LIMIT = 512;
+        constexpr size_t LOOKUP_THREADS = 6;
 
         struct Task {
             std::atomic<int> state{(int) State::Idle};
@@ -67,6 +70,7 @@ namespace ProjectInstaller {
         std::map<TaskKey, std::shared_ptr<Task>> tasks;
         std::map<std::string, Plan> plans;
         Recent planUse;
+        uint64_t batches = 0;
 
         std::filesystem::path worldDirectory(const Instances::Entry& entry) {
             if (entry.gameDirectory.empty()) return {};
@@ -249,6 +253,16 @@ namespace ProjectInstaller {
                 return {};
             }
             return report.failures.front().reason.message;
+        }
+
+        bool sameName(const std::wstring& a, const std::wstring& b) {
+#if defined(_WIN32)
+            return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_EQUAL;
+#else
+            return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](wchar_t x, wchar_t y) {
+                       return std::towlower(x) == std::towlower(y);
+                   });
+#endif
         }
 
         bool junk(const std::string& name) {
@@ -476,6 +490,18 @@ namespace ProjectInstaller {
             return out;
         }
 
+        size_t recycle(const std::vector<std::filesystem::path>& outdated) {
+            size_t replaced = 0;
+            for (const std::filesystem::path& old : outdated) {
+                if (Platform::recycle(old)) {
+                    replaced++;
+                } else {
+                    Notices::add(Notices::Kind::Failed, "无法移除旧版本 " + blb::path_to_utf8(old.filename()), 5000);
+                }
+            }
+            return replaced;
+        }
+
         void finish(const std::shared_ptr<Task>& task, bool ok, const std::string& text, const std::string& problem) {
             Transfers::finish(task->transfer, ok ? Transfers::State::Done : Transfers::State::Failed,
                               ok ? std::string() : problem);
@@ -600,6 +626,70 @@ namespace ProjectInstaller {
                 return reached;
             }
             return blb::make_error(blb::errc::incompatible, "依赖版本约束无法满足");
+        }
+
+        struct Lookup {
+            std::optional<Addons::Version> root;
+            std::vector<Addons::Version> dependencies;
+            bool resolved = true;
+        };
+
+        Lookup lookup(const Pick& pick, Addons::Kind kind, const std::string& gameVersion, const std::string& loader,
+                      blb::cancellation_token token) {
+            Lookup out;
+            bool failed = false;
+            for (const auto& [source, project] : pick.projects) {
+                Addons::Fetched response = Addons::fetchProjectVersions(source, project, gameVersion, loader, token);
+                failed = failed || !response.ok;
+                for (const Addons::Version& version : response.versions) {
+                    if (version.file() != nullptr &&
+                        (!out.root || (out.root->type != "release" && version.type == "release"))) {
+                        out.root = version;
+                        out.root->source = source;
+                    }
+                }
+                if (out.root || token.is_cancelled()) {
+                    break;
+                }
+            }
+            if (!out.root) {
+                out.resolved = !failed;
+                return out;
+            }
+            if (kind != Addons::Kind::Mod) {
+                return out;
+            }
+            auto resolved = resolveDependencies(*out.root, gameVersion, loader, token);
+            if (!resolved) {
+                out.resolved = false;
+                return out;
+            }
+            out.dependencies.assign(resolved->begin() + (resolved->empty() ? 0 : 1), resolved->end());
+            return out;
+        }
+
+        std::vector<Lookup> lookupAll(const std::vector<Pick>& picks, Addons::Kind kind, const std::string& gameVersion,
+                                      const std::string& loader, blb::cancellation_token token) {
+            std::vector<Lookup> found(picks.size());
+            std::atomic<size_t> next{0};
+            auto work = [&] {
+                for (size_t i = next++; i < picks.size() && !token.is_cancelled(); i = next++) {
+                    try {
+                        found[i] = lookup(picks[i], kind, gameVersion, loader, token);
+                    } catch (...) {
+                        found[i].resolved = false;
+                    }
+                }
+            };
+            std::vector<std::thread> workers;
+            for (size_t i = 1; i < std::min(LOOKUP_THREADS, picks.size()); i++) {
+                workers.emplace_back(work);
+            }
+            work();
+            for (std::thread& worker : workers) {
+                worker.join();
+            }
+            return found;
         }
 
         std::filesystem::path saveFolder() {
@@ -734,17 +824,8 @@ namespace ProjectInstaller {
                     }
                     auto task = taskFor(*file, target);
                     auto name = task.target.filename().wstring();
-                    if (std::any_of(names.begin(), names.end(), [&](const auto& existing) {
-#if defined(_WIN32)
-                            return CompareStringOrdinal(existing.c_str(), -1, name.c_str(), -1, TRUE) == CSTR_EQUAL;
-#else
-                                return existing.size() == name.size() &&
-                                        std::equal(existing.begin(), existing.end(), name.begin(),
-                                                   [](wchar_t x, wchar_t y) {
-                                                       return std::towlower(x) == std::towlower(y);
-                                                   });
-#endif
-                        })) {
+                    if (std::any_of(names.begin(), names.end(),
+                                    [&](const auto& existing) { return sameName(existing, name); })) {
                         throw std::runtime_error("模组文件名冲突：" + file->filename);
                     }
                     names.push_back(std::move(name));
@@ -793,15 +874,7 @@ namespace ProjectInstaller {
                         finish(task, false, "无法安装 " + title + "：" + problem, problem);
                         return;
                     }
-                    size_t replaced = 0;
-                    for (const std::filesystem::path& old : outdated) {
-                        if (Platform::recycle(old)) {
-                            replaced++;
-                        } else {
-                            Notices::add(Notices::Kind::Failed, "无法移除旧版本 " + blb::path_to_utf8(old.filename()),
-                                         5000);
-                        }
-                    }
+                    size_t replaced = recycle(outdated);
                     if (kind == Addons::Kind::Mod) {
                         Mods::scan(instanceKey);
                     }
@@ -809,6 +882,133 @@ namespace ProjectInstaller {
                             dependencies > 0 ? "（含 " + std::to_string(dependencies) + " 个前置）" : std::string();
                     std::string moved = replaced > 0 ? "，旧版本已移到回收站" : std::string();
                     finish(task, true, "已将 " + title + " 安装到 " + instanceName + extra + moved, {});
+                };
+            });
+    }
+
+    void installAll(const std::vector<Pick>& picks, Addons::Kind kind, const std::string& instanceKey) {
+        const Instances::Entry* entry = Instances::find(instanceKey);
+        std::string sub = folder(kind);
+        if (entry == nullptr || sub.empty() || picks.empty()) {
+            return;
+        }
+        using Key = std::pair<Addons::Source, std::string>;
+        std::set<Key> present;
+        if (kind == Addons::Kind::Mod) {
+            for (const Mods::Mod& mod : Mods::of(instanceKey).mods) {
+                for (Addons::Source source : {Addons::Source::Modrinth, Addons::Source::CurseForge}) {
+                    if (const ModManager::Remote* remote = ModManager::remote(mod, source)) {
+                        present.insert({source, remote->projectId});
+                    }
+                }
+            }
+        }
+        std::filesystem::path target = entry->gameDirectory / sub;
+        std::string noun = kind == Addons::Kind::Mod ? "模组" : kind == Addons::Kind::ResourcePack ? "资源包" : "光影";
+        std::shared_ptr<Task> task =
+                begin("batch:" + std::to_string(++batches),
+                      specOf(std::to_string(picks.size()) + " 个" + noun, picks.front().icon, target, instanceKey));
+        std::string gameVersion = entry->info.minecraft_version;
+        std::string loader = kind == Addons::Kind::Mod ? loaderOf(instanceKey) : std::string();
+        std::string instanceName = entry->info.id;
+        run(task,
+            [task, picks, kind, present, target, noun, gameVersion, loader, instanceName,
+             instanceKey](blb::cancellation_token token) -> Continuation {
+                Transfers::stage(task->transfer, "正在查找兼容版本");
+                std::vector<Lookup> found = lookupAll(picks, kind, gameVersion, loader, token);
+                if (token.is_cancelled()) {
+                    return nullptr;
+                }
+                std::set<Key> taken;
+                for (const Lookup& each : found) {
+                    if (each.root && each.resolved) {
+                        taken.insert({each.root->source, each.root->projectId});
+                    }
+                }
+                std::vector<blb::net::download_task> files;
+                std::vector<std::wstring> names;
+                auto add = [&](const Addons::Version& version) {
+                    const Addons::File* file = version.file();
+                    if (file == nullptr || file->url.empty() || !blb::fs::safe_filename(file->filename)) {
+                        return false;
+                    }
+                    blb::net::download_task next = taskFor(*file, target);
+                    std::wstring name = next.target.filename().wstring();
+                    if (std::any_of(names.begin(), names.end(),
+                                    [&](const std::wstring& existing) { return sameName(existing, name); })) {
+                        return false;
+                    }
+                    names.push_back(std::move(name));
+                    files.push_back(std::move(next));
+                    return true;
+                };
+                std::vector<std::string> missing;
+                std::vector<std::string> broken;
+                size_t installed = 0;
+                for (size_t i = 0; i < found.size(); i++) {
+                    if (!found[i].resolved) {
+                        broken.push_back(picks[i].title);
+                    } else if (!found[i].root) {
+                        missing.push_back(picks[i].title);
+                    } else if (add(*found[i].root)) {
+                        installed++;
+                    }
+                }
+                int dependencies = 0;
+                for (const Lookup& each : found) {
+                    if (!each.root || !each.resolved) {
+                        continue;
+                    }
+                    for (const Addons::Version& dependency : each.dependencies) {
+                        Key key{dependency.source, dependency.projectId};
+                        if (present.count(key) == 0 && taken.insert(key).second && add(dependency)) {
+                            dependencies++;
+                        }
+                    }
+                }
+                std::vector<std::string> skipped;
+                if (!missing.empty()) {
+                    skipped.push_back(blb::join(missing, "、") + " 没有兼容版本");
+                }
+                if (!broken.empty()) {
+                    skipped.push_back(blb::join(broken, "、") + " 获取失败");
+                }
+                std::string left = blb::join(skipped, "，");
+                if (files.empty()) {
+                    std::string problem = left.empty() ? std::string("没有可下载的文件") : left;
+                    return [task, noun, problem] { finish(task, false, "无法安装" + noun + "：" + problem, problem); };
+                }
+                Transfers::stage(task->transfer, std::string());
+                std::error_code error;
+                std::filesystem::create_directories(target, error);
+                std::string problem = download(files, task, token);
+                if (token.is_cancelled()) {
+                    return nullptr;
+                }
+                std::vector<std::filesystem::path> outdated;
+                if (problem.empty() && kind == Addons::Kind::Mod) {
+                    outdated = superseded(files, target);
+                }
+                return [task, problem, noun, instanceName, instanceKey, kind, installed, dependencies, outdated, left] {
+                    if (!problem.empty()) {
+                        finish(task, false, "无法安装" + noun + "：" + problem, problem);
+                        return;
+                    }
+                    size_t replaced = recycle(outdated);
+                    if (kind == Addons::Kind::Mod) {
+                        Mods::scan(instanceKey);
+                    }
+                    std::string text = "已将 " + std::to_string(installed) + " 个" + noun + "安装到 " + instanceName;
+                    if (dependencies > 0) {
+                        text += "（含 " + std::to_string(dependencies) + " 个前置）";
+                    }
+                    if (replaced > 0) {
+                        text += "，旧版本已移到回收站";
+                    }
+                    if (!left.empty()) {
+                        text += "；" + left;
+                    }
+                    finish(task, true, text, {});
                 };
             });
     }
