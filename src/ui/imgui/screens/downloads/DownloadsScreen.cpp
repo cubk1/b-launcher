@@ -1202,7 +1202,7 @@ namespace DownloadsScreen {
 
         void sidePanel(bool covered) {
             float y = Page::top();
-            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "搜索");
+            NavItemWidget aggregate("downloads#aggregate", Ui::glyph(0xf002), "聚合搜索");
             aggregate.selected(side == Side::Aggregate).bounds(Page::left(), y, SIDE_W, NAV_ITEM_H).block(covered);
             aggregate.paint();
             if (aggregate.pressed && (side != Side::Aggregate || views.page != VIEW_RESULTS)) {
@@ -1353,7 +1353,7 @@ namespace DownloadsScreen {
                                 ask(text);
                             }
                         },
-                        "搜索模组或整合包");
+                        "搜索资源...");
                 binding->limit = 200;
                 return binding;
             }();
@@ -1379,7 +1379,7 @@ namespace DownloadsScreen {
             constexpr float GROUP_GAP = 20.0f;
             constexpr float BODY_SIZE = 15.0f;
             constexpr float LINE = 24.0f;
-            constexpr float FADED = 0.35f;
+            constexpr float FADED = 0.55f;
             float cx = mainX() + mainW() * 0.5f;
             float height = MARK + GROUP_GAP + LINE;
             float y = std::max(top + 16.0f, (MainWindow::height() - height) * 0.5f);
@@ -1387,14 +1387,14 @@ namespace DownloadsScreen {
             float markX = cx - (3.0f * MARK + 2.0f * MARK_GAP) * 0.5f;
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * FADED;
-            for (Source each : {Source::Modrinth, Source::CurseForge}) {
+            for (Source each : {Source::CurseForge, Source::Modrinth}) {
                 SourceMarks::draw(each, markX, y, MARK, SourceMarks::brand(each));
                 markX += MARK + MARK_GAP;
             }
             SourceMarks::mcmodColored(markX, y, MARK, 1.0f);
             UiRender::alphaMul = savedAlpha;
 
-            Page::centredText("输入任何关键字进行跨站搜索", cx, y + MARK + GROUP_GAP, LINE, UiTheme::textSecondary(),
+            Page::centredText("输入任意关键字进行跨站搜索", cx, y + MARK + GROUP_GAP, LINE, UiTheme::textSecondary(),
                               BODY_SIZE);
         }
 
