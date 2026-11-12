@@ -45,6 +45,7 @@
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiCommon.h"
+#include "ui/imgui/panel/UiCursor.h"
 #include "ui/imgui/panel/UiFont.h"
 #include "ui/imgui/panel/UiInput.h"
 #include "ui/imgui/panel/UiPageTransition.h"
@@ -80,6 +81,17 @@ namespace MainWindow {
     static const float RAIL_W = 48.0f;
     static const float ITEM_X = 8.0f;
     static const float SCROLL_ROOM = 8.0f;
+    static const float GRIP_PICK = 6.0f;
+    static const float SIDEBAR_MIN_W = 160.0f;
+    static const float SIDEBAR_MAX_W = 360.0f;
+    static float customSidebarW = 0.0f;
+    static bool widthLoaded = false;
+    static bool resizingSidebar = false;
+    static bool gripMoved = false;
+    static bool gripHovered = false;
+    static float gripFromX = 0.0f;
+    static float gripFromW = 0.0f;
+    static long long gripPressAt = 0;
     static float sideW = SIDEBAR_WIDTH;
     static float openW = SIDEBAR_WIDTH;
     static float openItemW = SIDEBAR_WIDTH - 16.0f;
@@ -1562,7 +1574,101 @@ namespace MainWindow {
         vSpan = h / (textureH * scale);
     }
 
+    static void loadSidebarWidth() {
+        if (widthLoaded) {
+            return;
+        }
+        widthLoaded = true;
+        const nlohmann::json& doc = Config::data();
+        if (auto it = doc.find("sidebarWidth"); it != doc.end() && it->is_number()) {
+            customSidebarW = std::clamp(it->get<float>(), SIDEBAR_MIN_W, SIDEBAR_MAX_W);
+        }
+    }
+
+    static float openSidebarWidth() {
+        float width = previewing || customSidebarW <= 0.0f ? spec.sidebarWidth : customSidebarW;
+        return std::round(std::clamp(width, SIDEBAR_MIN_W, SIDEBAR_MAX_W));
+    }
+
+    static void storeSidebarWidth() {
+        if (customSidebarW > 0.0f) {
+            Config::data()["sidebarWidth"] = customSidebarW;
+        } else {
+            Config::data().erase("sidebarWidth");
+        }
+        Config::save();
+    }
+
+    static bool gripShown() {
+        return !previewing && !topbarShown && !launchColumn && !folded;
+    }
+
+    static void resizeGrip() {
+        if (previewing) {
+            return;
+        }
+        if (!gripShown()) {
+            if (resizingSidebar && gripMoved) {
+                storeSidebarWidth();
+            }
+            resizingSidebar = false;
+            gripMoved = false;
+            gripHovered = false;
+            return;
+        }
+        // Below the window drag strip, in the gutter between the sidebar and the page.
+        float h = height() - titleH;
+        gripHovered = NewUi::hit(sideW, titleH, GRIP_PICK, h);
+        if (resizingSidebar) {
+            if (NewUi::mouseDown) {
+                if (std::fabs(NewUi::mouseX - gripFromX) > 2.0f) {
+                    gripMoved = true;
+                }
+                if (gripMoved) {
+                    float width = gripFromW + (NewUi::mouseX - gripFromX);
+                    customSidebarW = std::clamp(width, SIDEBAR_MIN_W, SIDEBAR_MAX_W);
+                }
+            } else {
+                resizingSidebar = false;
+                if (gripMoved) {
+                    gripPressAt = 0;
+                    storeSidebarWidth();
+                    UiSound::request(UiSound::RELEASE);
+                }
+            }
+        }
+        if (NewUi::pendingClick && !NewUi::clickConsumed && gripHovered) {
+            NewUi::clickConsumed = true;
+            long long now = Ui::millis();
+            bool twice = gripPressAt != 0 && now - gripPressAt < 400;
+            gripPressAt = now;
+            if (twice) {
+                gripPressAt = 0;
+                resizingSidebar = false;
+                gripMoved = false;
+                customSidebarW = 0.0f;
+                storeSidebarWidth();
+                UiSound::request(UiSound::TICK);
+            } else {
+                resizingSidebar = true;
+                gripMoved = false;
+                gripFromX = NewUi::mouseX;
+                gripFromW = openSidebarWidth();
+                UiSound::request(UiSound::PRESS);
+            }
+        }
+        if (gripHovered || resizingSidebar) {
+            UiCursor::resizeEW();
+        }
+        if (gripHovered && !resizingSidebar) {
+            NewUi::tooltipText = "拖动调节宽度，双击恢复默认";
+            NewUi::tooltipX = sideW + 10.0f;
+            NewUi::tooltipY = NewUi::mouseY + 18.0f;
+        }
+    }
+
     static void unfold() {
+        loadSidebarWidth();
         if (!foldLoaded) {
             foldLoaded = true;
             folded = b_launcher_base::json_bool(Config::data(), "sidebarFolded");
@@ -1570,7 +1676,8 @@ namespace MainWindow {
         launchColumn = spec.preset == ShellLayout::Preset::Launch;
         topbarShown = spec.preset == ShellLayout::Preset::Topbar || launchColumn;
         titleH = std::round(topbarShown ? spec.titleHeight : spec.sidebarTitle);
-        openW = std::round(launchColumn ? spec.launchWidth : topbarShown ? spec.columnWidth : spec.sidebarWidth);
+        resizeGrip();
+        openW = std::round(launchColumn ? spec.launchWidth : topbarShown ? spec.columnWidth : openSidebarWidth());
         openItemW = openW - 2.0f * ITEM_X;
         float target = folded ? 1.0f : 0.0f;
         fold = UiState::motionFrom("sidebar#fold", target, 12.0f, target);
@@ -1848,6 +1955,20 @@ namespace MainWindow {
         ThemePaint::decorations(above, pageName(), frames, window, shellShape);
     }
 
+    static void drawGrip() {
+        if (!gripShown()) {
+            return;
+        }
+        float lit = UiState::motion("sidebar#grip", resizingSidebar ? 1.0f : (gripHovered ? 0.65f : 0.0f), 18.0f);
+        if (lit <= 0.001f) {
+            return;
+        }
+        float h = 40.0f;
+        float y = (height() + titleH) * 0.5f - h * 0.5f;
+        uint32_t ink = UiRender::mix(UiTheme::divider(), UiTheme::accent(), resizingSidebar ? 1.0f : 0.4f);
+        UiRender::roundRect(sideW - 1.5f, y, 3.0f, h, 1.5f, ink);
+    }
+
     static void shell() {
         float outer = cornerRadius;
         frame(outer);
@@ -1857,6 +1978,7 @@ namespace MainWindow {
         }
         sidebar();
         content();
+        drawGrip();
         if (pages.page != PAGE_HOME && NewUi::takeEscape()) {
             pages.go(PAGE_HOME);
         }

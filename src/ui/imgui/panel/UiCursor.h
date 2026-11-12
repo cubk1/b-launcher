@@ -8,5 +8,6 @@ namespace UiCursor {
     void text();
     void hand();
     void resize();
+    void resizeEW();
     void apply();
 }
