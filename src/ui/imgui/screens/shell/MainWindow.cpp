@@ -1955,20 +1955,6 @@ namespace MainWindow {
         ThemePaint::decorations(above, pageName(), frames, window, shellShape);
     }
 
-    static void drawGrip() {
-        if (!gripShown()) {
-            return;
-        }
-        float lit = UiState::motion("sidebar#grip", resizingSidebar ? 1.0f : (gripHovered ? 0.65f : 0.0f), 18.0f);
-        if (lit <= 0.001f) {
-            return;
-        }
-        float h = 40.0f;
-        float y = (height() + titleH) * 0.5f - h * 0.5f;
-        uint32_t ink = UiRender::mix(UiTheme::divider(), UiTheme::accent(), resizingSidebar ? 1.0f : 0.4f);
-        UiRender::roundRect(sideW - 1.5f, y, 3.0f, h, 1.5f, ink);
-    }
-
     static void shell() {
         float outer = cornerRadius;
         frame(outer);
@@ -1978,7 +1964,6 @@ namespace MainWindow {
         }
         sidebar();
         content();
-        drawGrip();
         if (pages.page != PAGE_HOME && NewUi::takeEscape()) {
             pages.go(PAGE_HOME);
         }
