@@ -247,6 +247,7 @@ namespace exui {
         bool HandleWheel(WPARAM wp, LPARAM lp);
         bool HandleKey(UINT msg, WPARAM wp, LPARAM lp);
         void UpdateHover(Widget* widget);
+        void UpdateTooltipTarget(Widget* widget);
         void CancelCapture();
         void MoveTabFocus(bool backward);
         void RefreshTooltip(Widget* widget);
@@ -285,6 +286,7 @@ namespace exui {
         std::shared_ptr<Panel> m_root, m_chrome;
         std::vector<CaptionButton*> m_captionButtons;
         Widget* m_hovered = nullptr;
+        Widget* m_tooltipTarget = nullptr;
         Widget* m_pressed = nullptr;
         Widget* m_focused = nullptr;
         Widget* m_tabFocused = nullptr;

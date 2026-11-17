@@ -757,20 +757,24 @@ namespace exui {
 
     void EditBox::PasteFromClipboard() {
         if (!CanEdit()) return;
-        const auto text = ReadClipboardText();
-        if (text && !text->empty()) Commit(m_buffer.Replace(*text));
+        if (auto text = ReadClipboardText()) {
+            std::wstring value = PasteTransform ? PasteTransform(*text) : std::move(*text);
+            if (!value.empty()) Commit(m_buffer.Replace(value));
+        }
     }
 
     bool EditBox::ShowContextMenu(POINT p) {
         if (!IsEffectivelyEnabled() || !Hwnd()) return false;
         const bool selection = m_buffer.HasSelection();
         const auto clip = ReadClipboardText();
+        const bool canPaste = CanEdit() && clip &&
+                !(PasteTransform ? PasteTransform(*clip) : *clip).empty();
         const MenuItem separator{0, L"", true, false, true};
         m_menu.SetItems({{UndoCommand, L"撤销(&U)", CanEdit() && m_buffer.CanUndo()},
                          separator,
                          {CutCommand, L"剪切(&T)", CanEdit() && selection && !m_passwordMode},
                          {CopyCommand, L"复制(&C)", selection && !m_passwordMode},
-                         {PasteCommand, L"粘贴(&P)", CanEdit() && clip && !clip->empty()},
+                         {PasteCommand, L"粘贴(&P)", canPaste},
                          {DeleteCommand, L"删除(&D)", CanEdit() && selection},
                          separator,
                          {SelectAllCommand, L"全选(&A)", !m_caption.empty()}});

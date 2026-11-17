@@ -293,6 +293,10 @@ bool TextBinding::secret() {
     return masked;
 }
 
+std::string TextBinding::cleanPaste(const std::string& raw) const {
+    return pasteFilter ? pasteFilter(raw) : raw;
+}
+
 KeyBinding::KeyBinding(const std::string& owner, std::function<int()> getter, std::function<void(int)> setter)
     : KeyValue(owner),
       getter(std::move(getter)),

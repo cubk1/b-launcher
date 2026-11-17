@@ -13,6 +13,7 @@
 #include "app/launch/Game.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
+#include "app/multiplayer/TerracottaGuest.h"
 #include "app/system/Notices.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -575,10 +576,11 @@ namespace ImGuiApp {
             exiting = true;
         };
         window.onClose = [&]() {
-            if (!closingRoom && Multiplayer::active()) {
+            if (!closingRoom && (Multiplayer::active() || TerracottaGuest::active())) {
                 closingRoom = true;
                 closingSince = std::chrono::steady_clock::now();
                 Multiplayer::leave();
+                TerracottaGuest::leave();
                 Notices::add(Notices::Kind::Info, "正在关闭房间，关闭后启动器会退出", 4000);
                 return;
             }
@@ -600,7 +602,7 @@ namespace ImGuiApp {
                 continue;
             }
             if (closingRoom &&
-                (Multiplayer::state().role == Multiplayer::Role::None || sinceMs(closingSince) > ROOM_CLOSE_MS)) {
+                ((!Multiplayer::active() && !TerracottaGuest::active()) || sinceMs(closingSince) > ROOM_CLOSE_MS)) {
                 finishClose();
                 continue;
             }

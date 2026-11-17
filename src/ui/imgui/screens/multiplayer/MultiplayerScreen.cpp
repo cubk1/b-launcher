@@ -1,13 +1,16 @@
 #include "ui/imgui/screens/multiplayer/MultiplayerScreen.h"
 #include "ui/imgui/screens/shell/Dialog.h"
+#include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "app/multiplayer/Multiplayer.h"
 #include "app/multiplayer/RoomApi.h"
+#include "app/multiplayer/TerracottaGuest.h"
 
 #include "ui/imgui/menu/MenuItems.h"
+#include "ui/imgui/overlay/UiOverlays.h"
 #include "ui/imgui/panel/NewUi.h"
 #include "ui/imgui/panel/Notifications.h"
 #include "ui/imgui/panel/UiCommon.h"
@@ -19,6 +22,9 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/theme/ThemeStyle.h"
+#include "ui/imgui/value/Bind.h"
+#include "ui/imgui/widget/TextFieldWidget.h"
 
 #include "imgui.h"
 
@@ -37,6 +43,8 @@ namespace MultiplayerScreen {
         constexpr int VIEW_HOME = 0;
         constexpr int VIEW_WAIT = 1;
         constexpr int VIEW_ROOM = 2;
+        constexpr int VIEW_TC_JOIN = 3;
+        constexpr int VIEW_TC_ROOM = 4;
 
         constexpr float CODE_SIZE = 18.0f;
         constexpr float BUTTON_MIN = 96.0f;
@@ -62,6 +70,8 @@ namespace MultiplayerScreen {
         const char* const PORT_DIALOG = "multiplayer#port";
         const char* const ADDRESS_DOC = "在游戏的多人游戏里选直接连接输入这个地址";
         const char* const PLAY_DOC = "启动当前选中的实例";
+        const char* const TC_ADDRESS_DOC = "在游戏的多人游戏里选陶瓦局域网入口，或直接连接这个地址";
+        const char* const TC_PLAY_DOC = "启动当前选中的实例并自动连接";
         const char* const WAIT_TEXT = "请在单人世界里对局域网开放";
 
         PageTransition views(VIEW_HOME);
@@ -70,6 +80,42 @@ namespace MultiplayerScreen {
         std::string joinNotice;
         std::string noticeFor;
         double shakeAt = -10.0;
+        bool terracottaPage = false;
+        bool terracottaEditingLast = false;
+        std::string terracottaCode;
+        const char* const TERRACOTTA_INPUT = "multiplayer#terracotta#code";
+
+        std::string firstTrimmedLine(const std::string& text) {
+            std::string line = Ui::trim(text);
+            size_t lineBreak = line.find_first_of("\r\n");
+            if (lineBreak != std::string::npos) {
+                line = Ui::trim(line.substr(0, lineBreak));
+            }
+            return line;
+        }
+
+        std::shared_ptr<TextBinding> terracottaValue() {
+            static auto value = [] {
+                auto binding = std::make_shared<TextBinding>(
+                        TERRACOTTA_INPUT, [] { return terracottaCode; },
+                        [](const std::string& text) { terracottaCode = firstTrimmedLine(text); },
+                        "例如 U/XXXX-XXXX-XXXX-XXXX");
+                binding->limit = 2048;
+                binding->pasteFilter = firstTrimmedLine;
+                return binding;
+            }();
+            return value;
+        }
+
+        std::string liveTerracottaCode() {
+            return firstTrimmedLine(NewUi::textEditing == TERRACOTTA_INPUT
+                    ? UiInput::get(NewUi::INPUT_TEXT) : terracottaCode);
+        }
+
+        void stopTerracottaEditing() {
+            terracottaCode = liveTerracottaCode();
+            if (NewUi::textEditing == TERRACOTTA_INPUT) NewUi::cancelTextEdit();
+        }
 
         uint32_t onlineColor() {
             return UiTheme::success();
@@ -93,12 +139,12 @@ namespace MultiplayerScreen {
         }
 
         bool dimButton(const std::string& id, const std::string& text, float x, float y, float w, bool primary,
-                       bool ready, bool blocked, int glyph) {
+                       bool ready, bool blocked, int glyph, float h = Page::FIELD_H) {
             float saved = UiRender::alphaMul;
             if (!ready) {
                 UiRender::alphaMul = saved * 0.5f;
             }
-            bool pressed = Page::button(id, text, x, y, w, primary, blocked || !ready, glyph);
+            bool pressed = Page::button(id, text, x, y, w, primary, blocked || !ready, glyph, h);
             UiRender::alphaMul = saved;
             return pressed && ready;
         }
@@ -113,11 +159,37 @@ namespace MultiplayerScreen {
             }
         }
 
+        void showTruncatedTooltip(const std::string& fullText, const std::string& shownText, float x, float y, float w,
+                                  float h, bool blocked) {
+            if (blocked || shownText == fullText || !NewUi::hit(x, y, w, h)) {
+                return;
+            }
+            std::string tip = UiFont::fitEnd(fullText, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                             std::max(120.0f, MainWindow::width() - 36.0f));
+            Page::tooltip(tip, x, y, w, h);
+            if (NewUi::tooltipY + 28.0f > MainWindow::height() - 6.0f) {
+                NewUi::tooltipY = std::max(6.0f, y - 28.0f - 6.0f);
+            }
+        }
+
         void valueText(const std::string& text, float right, float left, float rowY, uint32_t color) {
             std::string shown =
                     UiFont::fitEnd(text, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, std::max(0.0f, right - left));
             float w = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             UiRender::textY(shown, right - w, rowY, Page::ROW_H, color, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+        }
+
+        bool valueTextWithTip(const std::string& text, float right, float left, float rowY, uint32_t color,
+                              bool blocked, int family = UiFont::MEDIUM) {
+            std::string shown = UiFont::fitEnd(text, family, UiWidgets::TEXT_CONTROL, std::max(0.0f, right - left));
+            float w = UiFont::width(shown, family, UiWidgets::TEXT_CONTROL);
+            float x = right - w;
+            UiRender::textY(shown, x, rowY, Page::ROW_H, color, family, UiWidgets::TEXT_CONTROL);
+            if (!blocked && shown != text && NewUi::hit(x, rowY, w, Page::ROW_H)) {
+                showTruncatedTooltip(text, shown, x, rowY, w, Page::ROW_H, false);
+                return true;
+            }
+            return false;
         }
 
         void hint(const std::string& text, float right, float rowY) {
@@ -170,6 +242,7 @@ namespace MultiplayerScreen {
         }
 
         void startHosting(int picked, int typed) {
+            if (TerracottaGuest::active()) return;
             if (picked > 0) {
                 Multiplayer::pick(picked);
             }
@@ -294,6 +367,7 @@ namespace MultiplayerScreen {
         }
 
         void finishJoin(const std::string& code) {
+            if (TerracottaGuest::active()) return;
             blurInput(CODE_INPUT);
             Dialog::close();
             Multiplayer::forgetLookup();
@@ -376,6 +450,7 @@ namespace MultiplayerScreen {
         }
 
         void openJoin() {
+            if (TerracottaGuest::active()) return;
             Multiplayer::forgetLookup();
             joinNotice.clear();
             noticeFor.clear();
@@ -428,31 +503,533 @@ namespace MultiplayerScreen {
         void homeView(bool blocked) {
             float cx = Page::left() + Page::width() * 0.5f;
             float middle = MainWindow::height() * 0.5f;
-            if (!Multiplayer::available()) {
-                Page::centredText("这个版本没有包含联机组件", cx, middle - 12.0f, 24.0f, UiTheme::textMuted(),
-                            UiWidgets::TEXT_BODY);
-                return;
-            }
-            float cardH = 2 * OPTION_H;
+            bool available = Multiplayer::available();
+            float cardH = 3 * OPTION_H;
             float total = 24.0f + 22.0f + cardH;
             float y = std::max(Page::top(), middle - total * 0.5f);
             Page::centredText("联机", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 22.0f;
             float x = cx - WELCOME_W * 0.5f;
-            Page::listCard(x, y, WELCOME_W, OPTION_H, 2);
+            Page::listCard(x, y, WELCOME_W, OPTION_H, 3);
             const Multiplayer::Service& service = Multiplayer::service();
-            bool hostable = Multiplayer::canHost();
+            bool hostable = available && Multiplayer::canHost() && !TerracottaGuest::active();
             std::string note = hostable ? std::string() : service.maintenance ? "维护中" : "暂时不可用";
-            if (optionRow("multiplayer#create", 0xf233, "创建房间", note, x, y, WELCOME_W, OPTION_H, 0, 2, hostable,
+            if (optionRow("multiplayer#create", 0xf233, "创建房间", note, x, y, WELCOME_W, OPTION_H, 0, 3, hostable,
                           blocked)) {
                 waiting = true;
                 waitSerial = Multiplayer::worldsSerial();
             }
             if (optionRow("multiplayer#enter", 0xf2f6, "加入房间", std::string(), x, y + OPTION_H, WELCOME_W, OPTION_H,
-                          1, 2, true, blocked)) {
+                          1, 3, available && !TerracottaGuest::active(), blocked)) {
                 openJoin();
             }
-            serviceLine(cx, MainWindow::height() - 28.0f - LINE_H, Page::width(), blocked);
+            if (optionRow("multiplayer#terracotta", 0xf0c0, "加入 HMCL / 陶瓦房间", std::string(), x,
+                          y + 2 * OPTION_H, WELCOME_W, OPTION_H, 2, 3, !Multiplayer::active(), blocked)) {
+                terracottaPage = true;
+            }
+            if (available) serviceLine(cx, MainWindow::height() - 28.0f - LINE_H, Page::width(), blocked);
+            else Page::centredText("这个版本没有包含原联机组件", cx, MainWindow::height() - 28.0f - LINE_H,
+                    LINE_H, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
+        }
+
+        bool miniPillButton(const std::string& id, int glyph, const std::string& text, float rightX, float y,
+                            bool blocked) {
+            constexpr float H = 22.0f;
+            bool showIcon = glyph != 0 && ThemeStyle::icons();
+            float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float padLeft = showIcon ? 23.0f : 10.0f;
+            float w = padLeft + textW + 9.0f;
+            float x = rightX - w;
+            bool hovered = !blocked && NewUi::hit(x, y, w, H);
+            float hover = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
+            UiRender::roundRect(x, y, w, H, 6.0f,
+                                UiRender::over(UiTheme::overlay(Ui::round(16 * hover)), UiTheme::surfaceRaised()));
+            UiRender::outline(x, y, w, H, 6.0f, UiTheme::border(UiTheme::outline()));
+            uint32_t ink = UiRender::mix(UiTheme::textSecondary(), UiTheme::textPrimary(), hover);
+            if (showIcon) {
+                UiWidgets::iconBeside(Ui::glyph(glyph), x + 13.0f, text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, y, H,
+                                      ink, 9.5f);
+            }
+            UiRender::textY(text, x + padLeft, y, H, ink, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            if (!blocked && NewUi::click(x, y, w, H)) {
+                UiSound::request(UiSound::TICK);
+                return true;
+            }
+            return false;
+        }
+
+        void hmclBadge(float x, float y, float boxSize, float iconSize, float radius) {
+            UiRender::roundRect(x, y, boxSize, boxSize, radius, UiTheme::surfaceRaised());
+            UiRender::roundRect(x, y, boxSize, boxSize, radius, UiTheme::accentSoft(44));
+            UiRender::outline(x, y, boxSize, boxSize, radius, UiTheme::border(UiTheme::outline()));
+            uint32_t iconTex = Icons::hmcl();
+            if (iconTex != 0) {
+                float inset = (boxSize - iconSize) * 0.5f;
+                UiRender::texture(iconTex, x + inset, y + inset, iconSize, iconSize);
+            } else if (ThemeStyle::icons()) {
+                UiWidgets::icon(Ui::glyph(0xf0c0), x + boxSize * 0.5f, y + boxSize * 0.5f, UiTheme::accentText(),
+                                iconSize * 0.65f);
+            } else {
+                Page::centredText("H", x + boxSize * 0.5f, y, boxSize, UiTheme::accentText(), iconSize * 0.65f);
+            }
+        }
+
+        void leaveTerracottaPage() {
+            stopTerracottaEditing();
+            terracottaEditingLast = false;
+            TerracottaGuest::dismiss();
+            terracottaPage = false;
+        }
+
+        void terracottaJoinView(const TerracottaGuest::State& state, bool failed, bool covered) {
+            constexpr float HERO_BADGE = 48.0f;
+            constexpr float HERO_ICON = 30.0f;
+            constexpr float CARD_PAD = 20.0f;
+            constexpr float INPUT_H = 36.0f;
+            constexpr float BTN_H = 30.0f;
+            constexpr float ERR_LINE = 17.0f;
+            constexpr float DETAIL_LINE = 16.0f;
+
+            bool showIcons = ThemeStyle::icons();
+            float cx = Page::left() + Page::width() * 0.5f;
+            float cardW = std::min(480.0f, Page::width());
+            float cardX = cx - cardW * 0.5f;
+            float innerW = cardW - 2.0f * CARD_PAD;
+
+            std::vector<std::string> errLines;
+            std::vector<std::string> detailLines;
+            float errBoxH = 0.0f;
+            float errLeftPad = showIcons ? 29.0f : 12.0f;
+            float errTextW = std::max(80.0f, innerW - errLeftPad - 35.0f);
+            if (failed && (!state.error.empty() || !state.detail.empty())) {
+                if (!state.error.empty()) {
+                    errLines = UiFont::wrap(state.error, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, errTextW);
+                }
+                if (!state.detail.empty()) {
+                    detailLines = UiFont::wrap(state.detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, errTextW);
+                }
+                float textH = (float) errLines.size() * ERR_LINE +
+                        (detailLines.empty() ? 0.0f : (errLines.empty() ? 0.0f : 4.0f) +
+                                (float) detailLines.size() * DETAIL_LINE);
+                errBoxH = std::max(38.0f, textH + 16.0f);
+            }
+
+            float heroH = HERO_BADGE + 12.0f + 24.0f + 6.0f + 18.0f;
+            float cardH = CARD_PAD + 22.0f + 8.0f + INPUT_H + (errBoxH > 0.0f ? 12.0f + errBoxH : 0.0f) + 18.0f +
+                    BTN_H + CARD_PAD;
+            float totalH = heroH + 20.0f + cardH;
+
+            float viewTop = Page::top();
+            float viewBottom = MainWindow::height() - 16.0f;
+            Page::Scroll body("multiplayer#terracotta#joinScroll", viewTop, viewBottom, totalH);
+            bool blocked = body.begin() || covered;
+            float avail = viewBottom - viewTop;
+            float y = body.top - body.offset + (totalH < avail ? (avail - totalH) * 0.45f : 0.0f);
+
+            // Centered Hero
+            hmclBadge(cx - HERO_BADGE * 0.5f, y, HERO_BADGE, HERO_ICON, 13.0f);
+            y += HERO_BADGE + 12.0f;
+            Page::centredText("加入 HMCL / 陶瓦房间", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
+            y += 24.0f + 6.0f;
+            Page::centredText("粘贴好友分享的房间码，自动配置联机兼容通道", cx, y, 18.0f, UiTheme::textMuted(),
+                              UiWidgets::TEXT_CONTROL);
+            y += 18.0f + 20.0f;
+
+            // Main Entry Card
+            Page::card(cardX, y, cardW, cardH);
+            float ix = cardX + CARD_PAD;
+            float iy = y + CARD_PAD;
+
+            UiRender::textY("房间码", ix + 2.0f, iy, 22.0f, UiTheme::textSecondary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            if (miniPillButton("multiplayer#terracotta#paste", 0xf0ea, "从剪贴板粘贴", ix + innerW, iy, blocked)) {
+                std::string clip = UiInput::filterAllowed(firstTrimmedLine(UiInput::clipboard()));
+                if (clip.empty()) {
+                    Notifications::add(Notifications::INFO, "剪贴板为空", 2000);
+                } else {
+                    if (NewUi::textEditing == TERRACOTTA_INPUT) {
+                        NewUi::cancelTextEdit();
+                    }
+                    terracottaCode = clip;
+                    if (failed && terracottaCode != state.code) {
+                        TerracottaGuest::dismiss();
+                    }
+                    Notifications::add(Notifications::INFO, "已粘贴房间码", 1500);
+                }
+            }
+            iy += 22.0f + 8.0f;
+
+            std::string liveCode = liveTerracottaCode();
+            bool hasCode = !liveCode.empty();
+            float clearReserve = hasCode ? 32.0f : 0.0f;
+            TextFieldWidget field(terracottaValue());
+            field.box(ix, iy, innerW, INPUT_H)
+                    .lead(3.0f)
+                    .room(clearReserve)
+                    .radius(8.0f)
+                    .bounds(ix, iy, innerW - clearReserve, INPUT_H)
+                    .block(blocked);
+            field.paint();
+            if (!field.editing() && (blocked || !NewUi::hit(ix, iy, innerW, INPUT_H))) {
+                UiRender::outline(ix, iy, innerW, INPUT_H, 8.0f, UiTheme::border(UiTheme::outlineSoft()));
+            }
+            if (hasCode) {
+                if (Page::iconButton("multiplayer#terracotta#clear", 0xf00d, "清空", ix + innerW - 32.0f, iy + 4.0f,
+                                     blocked)) {
+                    if (NewUi::textEditing == TERRACOTTA_INPUT) {
+                        NewUi::cancelTextEdit();
+                    }
+                    terracottaCode.clear();
+                    TerracottaGuest::dismiss();
+                }
+            }
+            iy += INPUT_H;
+
+            if (errBoxH > 0.0f) {
+                iy += 12.0f;
+                uint32_t red = UiTheme::danger() & 0x00FFFFFFu;
+                uint32_t fillAlpha = UiTheme::isLight() ? 0x16000000u : 0x22000000u;
+                uint32_t borderAlpha = UiTheme::isLight() ? 0x4D000000u : 0x5A000000u;
+                UiRender::roundRect(ix, iy, innerW, errBoxH, 8.0f, red | fillAlpha);
+                UiRender::outline(ix, iy, innerW, errBoxH, 8.0f, red | borderAlpha);
+                if (showIcons) {
+                    UiWidgets::icon(Ui::glyph(0xf071), ix + 14.5f, iy + 16.5f, UiTheme::danger(), 11.5f);
+                }
+                float lineY = iy + 8.0f;
+                for (size_t i = 0; i < errLines.size(); ++i) {
+                    UiRender::textY(errLines[i], ix + errLeftPad, lineY, ERR_LINE, UiTheme::danger(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    lineY += ERR_LINE;
+                }
+                if (!detailLines.empty()) {
+                    if (!errLines.empty()) {
+                        lineY += 4.0f;
+                    }
+                    for (size_t i = 0; i < detailLines.size(); ++i) {
+                        UiRender::textY(detailLines[i], ix + errLeftPad, lineY, DETAIL_LINE, UiTheme::textSecondary(),
+                                        UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                        lineY += DETAIL_LINE;
+                    }
+                }
+                if (Page::iconButton("multiplayer#terracotta#copyError", 0xf0c5, "复制错误信息",
+                                     ix + innerW - 31.0f, iy + 5.0f, blocked)) {
+                    std::string copyText = state.error;
+                    if (!state.detail.empty()) {
+                        if (!copyText.empty()) copyText += "\n";
+                        copyText += state.detail;
+                    }
+                    UiInput::setClipboard(copyText);
+                    Notifications::add(Notifications::INFO, "已复制错误信息", 2500);
+                }
+                iy += errBoxH;
+            }
+
+            iy += 18.0f;
+            float backW = std::max(84.0f, Page::buttonWidth("返回", 0xf053));
+            if (Page::button("multiplayer#terracotta#back", "返回", ix, iy, backW, false, blocked, 0xf053, BTN_H) ||
+                Page::escape(covered)) {
+                leaveTerracottaPage();
+                body.end();
+                return;
+            }
+            bool retrySame = failed && liveCode == state.code;
+            std::string joinText = retrySame ? "重试" : "加入房间";
+            int joinGlyph = retrySame ? 0xf2f1 : 0xf2f6;
+            float joinW = std::max(112.0f, Page::buttonWidth(joinText, joinGlyph));
+            bool usable = hasCode && !Multiplayer::active();
+            bool enterFromField = terracottaEditingLast && NewUi::textEditing.empty() && UiOverlays::isEmpty();
+            bool enterUnfocused = NewUi::textEditing.empty() && UiInput::focused.empty() && UiOverlays::isEmpty();
+            bool enterSubmit = !covered && usable && enterPressed() && (enterFromField || enterUnfocused);
+            if (dimButton("multiplayer#terracotta#join", joinText, ix + innerW - joinW, iy, joinW, true, usable,
+                          blocked, joinGlyph, BTN_H) ||
+                enterSubmit) {
+                stopTerracottaEditing();
+                TerracottaGuest::join(terracottaCode);
+            }
+            terracottaEditingLast = (NewUi::textEditing == TERRACOTTA_INPUT);
+
+            body.end();
+        }
+
+        void terracottaMemberRow(const TerracottaGuest::Member& member, float rowY, bool ready, bool blocked) {
+            float cy = rowY + Page::ROW_H * 0.5f;
+            bool isHost = member.kind == "HOST";
+            bool isLocal = member.kind == "LOCAL";
+            float x = Page::left() + 16.0f;
+            if (ThemeStyle::icons()) {
+                int glyph = isHost ? 0xf521 : isLocal ? 0xf007 : 0xf108;
+                uint32_t iconInk = isHost ? UiTheme::accentText()
+                                          : isLocal ? UiTheme::textSecondary() : UiTheme::textMuted();
+                UiWidgets::icon(Ui::glyph(glyph), Page::left() + 24.0f, cy, iconInk, 12.0f);
+                x = Page::left() + 44.0f;
+            }
+            std::string roleText = isHost ? "房主" : isLocal ? "你" : "成员";
+            float tagW = UiFont::width(roleText, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+            float rightReserve = 0.0f;
+            std::string stateLabel = "在线";
+            float statusW = 0.0f;
+            if (ready) {
+                statusW = UiFont::width(stateLabel, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+                rightReserve = statusW + 22.0f;
+            }
+            float nameMaxW = std::max(40.0f, Page::controlRight() - rightReserve - tagW - 10.0f - x);
+            std::string rawName = Ui::trim(member.name);
+            if (rawName.empty()) {
+                rawName = "未知成员";
+            }
+            std::string name = UiFont::fitEnd(rawName, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, nameMaxW);
+            float nameW = UiFont::width(name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+            UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
+                            UiWidgets::TEXT_CONTROL);
+            showTruncatedTooltip(rawName, name, x, rowY, nameW, Page::ROW_H, blocked);
+            x += nameW + 8.0f;
+            if (isHost) {
+                Page::tag(roleText, x, rowY, UiTheme::accentSoft(56), UiTheme::accentText());
+            } else if (isLocal) {
+                Page::tag(roleText, x, rowY, UiTheme::surfaceRaised(), UiTheme::textSecondary());
+            } else {
+                Page::tag(roleText, x, rowY, UiTheme::surfaceRaised(), UiTheme::textMuted());
+            }
+            if (ready) {
+                float right = Page::controlRight();
+                UiRender::circle(right - statusW - 10.0f, cy, 3.0f, onlineColor());
+                UiRender::textY(stateLabel, right - statusW, rowY, Page::ROW_H, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+            }
+        }
+
+        void terracottaRoomView(const TerracottaGuest::State& state, bool covered) {
+            using TCStage = TerracottaGuest::Stage;
+            bool ready = state.stage == TCStage::Ready;
+            bool closing = state.stage == TCStage::Closing;
+
+            // Header: HMCL badge + Title + Live Status Pill
+            float headerY = Page::top();
+            hmclBadge(Page::left(), headerY - 1.0f, 26.0f, 18.0f, 7.0f);
+            const std::string titleText = "HMCL / 陶瓦房间";
+            float titleX = Page::left() + 34.0f;
+            Page::title(titleText, titleX, headerY);
+
+            std::string pillText = ready   ? "通道已就绪"
+                                 : closing ? "正在退出"
+                                 : state.stage == TCStage::Preparing ? "准备组件中"
+                                                                     : "正在连接";
+            float pillTextW = UiFont::width(pillText, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            float pillLead = 14.0f;
+            float pillW = 8.0f + pillLead + pillTextW + 9.0f;
+            float pillX = titleX + UiFont::width(titleText, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
+            float pillY = headerY + 1.0f;
+            float pillH = 22.0f;
+
+            if (pillX + pillW <= Page::right()) {
+                uint32_t pillFill = ready   ? ((onlineColor() & 0x00FFFFFFu) | 0x24000000u)
+                                  : closing ? UiTheme::surfaceRaised()
+                                            : UiTheme::accentSoft(44);
+                uint32_t pillInk = ready   ? onlineColor()
+                                 : closing ? UiTheme::textMuted()
+                                           : UiTheme::accentText();
+                UiRender::roundRect(pillX, pillY, pillW, pillH, 11.0f, pillFill);
+                if (ready) {
+                    UiRender::circle(pillX + 12.0f, pillY + pillH * 0.5f, 3.5f, pillInk);
+                } else {
+                    Page::spinner(pillX + 12.5f, pillY + pillH * 0.5f, 4.5f, pillInk);
+                }
+                UiRender::textY(pillText, pillX + 8.0f + pillLead, pillY, pillH, pillInk, UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+            }
+
+            // Compute Scroll Content Height
+            std::vector<std::string> detailLines;
+            float progressCardH = 0.0f;
+            if (!ready) {
+                std::string detail = closing
+                        ? std::string("正在断开联机通道并关闭本地联机组件，请稍候…")
+                        : state.detail.empty() ? std::string("请保持启动器运行，正在与联机组件通信")
+                                               : state.detail;
+                detailLines = UiFont::wrap(detail, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                           std::max(80.0f, Page::width() - 72.0f));
+                progressCardH = std::max(60.0f, 14.0f + 20.0f + 4.0f + (float) detailLines.size() * 18.0f + 14.0f);
+            }
+
+            constexpr float SECTION_GAP = 14.0f;
+            int memberRows = std::max(1, (int) state.members.size());
+            float contentH = 0.0f;
+            if (!ready) {
+                contentH = progressCardH + SECTION_GAP + Page::CAPTION_H + 2 * Page::ROW_H + SECTION_GAP +
+                        Page::CAPTION_H + memberRows * Page::ROW_H;
+            } else {
+                contentH = Page::CAPTION_H + 4 * Page::ROW_H + SECTION_GAP + Page::CAPTION_H +
+                        memberRows * Page::ROW_H;
+            }
+
+            float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
+            Page::Scroll body("multiplayer#terracotta#body", Page::top() + 38.0f, buttonTop - 12.0f, contentH);
+            bool blocked = body.begin() || covered;
+            float y = body.top - body.offset;
+
+            if (!ready) {
+                // Progress Hero Card
+                Page::card(Page::left(), y, Page::width(), progressCardH);
+                if (!closing) {
+                    UiRender::roundRect(Page::left(), y, Page::width(), progressCardH, 12.0f,
+                                        UiTheme::accentSoft(24));
+                }
+                Page::spinner(Page::left() + 26.0f, y + progressCardH * 0.5f, 9.0f,
+                              closing ? UiTheme::textMuted() : UiTheme::accent());
+                float msgX = Page::left() + 50.0f;
+                float msgBlockH = 20.0f + 4.0f + (float) detailLines.size() * 18.0f;
+                float msgY = y + (progressCardH - msgBlockH) * 0.5f;
+                UiRender::textY(TerracottaGuest::stageText(), msgX, msgY, 20.0f, UiTheme::textPrimary(), UiFont::BOLD,
+                                UiWidgets::TEXT_BODY);
+                for (size_t i = 0; i < detailLines.size(); ++i) {
+                    UiRender::textY(detailLines[i], msgX, msgY + 24.0f + i * 18.0f, 18.0f, UiTheme::textMuted(),
+                                    UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                }
+                y += progressCardH + SECTION_GAP;
+
+                // Room Info Card (Preparing/Connecting/Closing)
+                Page::caption("房间信息", y);
+                float rowY = y + Page::CAPTION_H;
+                Page::card(rowY, 2);
+                Page::label("房间码", rowY);
+                if (!state.code.empty()) {
+                    float copyX = Page::controlRight() - ICON_INSET;
+                    if (Page::iconButton("multiplayer#terracotta#copyCode", 0xf0c5, "复制房间码", copyX, rowY + 6.0f,
+                                         blocked)) {
+                        UiInput::setClipboard(state.code);
+                        Notifications::add(Notifications::INFO, "已复制房间码", 2500);
+                    }
+                    valueTextWithTip(state.code, copyX - 4.0f, labelRight("房间码"), rowY, UiTheme::textSecondary(),
+                                     blocked);
+                }
+                rowY += Page::ROW_H;
+                if (closing) {
+                    Page::label("状态", rowY);
+                    valueTextWithTip("正在释放端口与本地联机进程", Page::controlRight(), labelRight("状态"), rowY,
+                                     UiTheme::textMuted(), blocked);
+                } else {
+                    Page::label("兼容补丁", rowY);
+                    valueTextWithTip("从 B 启动游戏时自动为本次进程启用", Page::controlRight(), labelRight("兼容补丁"),
+                                     rowY, UiTheme::textMuted(), blocked);
+                }
+                y = rowY + Page::ROW_H + SECTION_GAP;
+            } else {
+                // Ready Room Card (matches native roomView)
+                Page::caption("加入的房间", y);
+                float rowY = y + Page::CAPTION_H;
+                Page::card(rowY, 4);
+
+                // Row 1: Room Code
+                Page::label("房间码", rowY);
+                if (!state.code.empty()) {
+                    float copyX = Page::controlRight() - ICON_INSET;
+                    if (Page::iconButton("multiplayer#terracotta#copyCode", 0xf0c5, "复制房间码", copyX, rowY + 6.0f,
+                                         blocked)) {
+                        UiInput::setClipboard(state.code);
+                        Notifications::add(Notifications::INFO, "已复制房间码", 2500);
+                    }
+                    valueTextWithTip(state.code, copyX - 4.0f, labelRight("房间码"), rowY, UiTheme::textSecondary(),
+                                     blocked);
+                }
+                rowY += Page::ROW_H;
+
+                // Row 2: Status
+                Page::label("状态", rowY);
+                {
+                    std::string status = "联机通道已就绪，请在游戏内加入";
+                    float left = labelRight("状态");
+                    std::string shown = UiFont::fitEnd(status, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
+                                                       std::max(0.0f, Page::controlRight() - left - 14.0f));
+                    float shownW = UiFont::width(shown, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
+                    float textX = Page::controlRight() - shownW;
+                    UiRender::circle(textX - 10.0f, rowY + Page::ROW_H * 0.5f, 3.5f, onlineColor());
+                    UiRender::textY(shown, textX, rowY, Page::ROW_H, onlineColor(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_CONTROL);
+                    showTruncatedTooltip(status, shown, textX, rowY, shownW, Page::ROW_H, blocked);
+                }
+                rowY += Page::ROW_H;
+
+                // Row 3: Forward Address
+                Page::label("连接地址", rowY);
+                {
+                    float left = labelRight("连接地址");
+                    float copyX = Page::controlRight() - ICON_INSET;
+                    if (!state.address.empty() &&
+                        Page::iconButton("multiplayer#terracotta#copy", 0xf0c5, "复制游戏连接地址", copyX,
+                                         rowY + 6.0f, blocked)) {
+                        UiInput::setClipboard(state.address);
+                        Notifications::add(Notifications::INFO, "已复制连接地址", 2500);
+                    }
+                    float addrRight = state.address.empty() ? Page::controlRight() : copyX - 4.0f;
+                    std::string addrText = state.address.empty() ? "等待联机通道" : state.address;
+                    bool tipped = valueTextWithTip(addrText, addrRight, left, rowY, UiTheme::textPrimary(), blocked,
+                                                   UiFont::BOLD);
+                    if (!tipped) {
+                        explain("multiplayer#terracotta#address#doc", TC_ADDRESS_DOC, rowY, left, blocked);
+                    }
+                }
+                rowY += Page::ROW_H;
+
+                // Row 4: Launch & Join
+                Page::label("进入游戏", rowY);
+                {
+                    const Instances::Entry* entry = Instances::find(Instances::selected());
+                    bool idle = entry != nullptr && Game::state(entry->key) == Game::State::Idle;
+                    bool canLaunch = idle && !state.address.empty();
+                    const std::string playText = "启动并加入";
+                    float w = std::max(BUTTON_MIN, Page::buttonWidth(playText, 0xf04b));
+                    float left = labelRight("进入游戏");
+                    float textRight = Page::controlRight() - w - 12.0f;
+                    if (entry != nullptr && !idle) {
+                        std::string badge = Game::state(entry->key) == Game::State::Preparing ? "准备中" : "运行中";
+                        float tagW = UiFont::width(badge, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 12.0f;
+                        Page::tag(badge, textRight - tagW, rowY, UiTheme::surfaceRaised(), UiTheme::textMuted());
+                        textRight -= tagW + 8.0f;
+                    }
+                    std::string instanceText = entry != nullptr ? entry->info.id : std::string("没有选中实例");
+                    bool tipped = valueTextWithTip(instanceText, textRight, left, rowY, UiTheme::textMuted(), blocked);
+                    if (dimButton("multiplayer#terracotta#play", playText, Page::controlRight() - w,
+                                  rowY + Page::FIELD_Y, w, true, canLaunch, blocked, 0xf04b)) {
+                        Game::launch(entry->key, false, std::string(), state.address);
+                    }
+                    if (!tipped) {
+                        bool preparing = entry != nullptr && Game::state(entry->key) == Game::State::Preparing;
+                        explain("multiplayer#terracotta#play#doc",
+                                entry == nullptr ? "请先在左侧选择或创建一个游戏实例"
+                                        : preparing
+                                        ? "当前实例正在准备启动；若在加入房间前已发起启动，请重启游戏以加载兼容补丁"
+                                        : !idle
+                                        ? "游戏已在运行；若在加入房间前已启动，请重启游戏以加载兼容补丁"
+                                        : TC_PLAY_DOC,
+                                rowY, canLaunch ? Page::controlRight() - w - 8.0f : Page::controlRight(), blocked);
+                    }
+                }
+                y = rowY + Page::ROW_H + SECTION_GAP;
+            }
+
+            // Members Card
+            Page::caption("联机成员（" + std::to_string(state.members.size()) + "）", y);
+            y += Page::CAPTION_H;
+            Page::card(y, memberRows);
+            if (state.members.empty()) {
+                hint(closing ? "正在退出房间…" : ready ? "暂无其他成员" : "正在同步联机成员…", Page::controlRight(), y);
+            } else {
+                for (size_t i = 0; i < state.members.size(); ++i) {
+                    float rowY = y + i * Page::ROW_H;
+                    if (Page::shown(rowY)) {
+                        terracottaMemberRow(state.members[i], rowY, ready, blocked);
+                    }
+                }
+            }
+            body.end();
+
+            // Bottom Bar
+            std::string action = closing ? "正在退出…" : "退出房间";
+            float w = std::max(BUTTON_MIN, Page::buttonWidth(action, 0xf2f5));
+            if (Page::button("multiplayer#terracotta#leave", action, Page::right() - w, buttonTop, w, false,
+                             covered || closing, 0xf2f5)) {
+                TerracottaGuest::leave();
+            }
         }
 
         void waitView(bool blocked) {
@@ -783,9 +1360,11 @@ namespace MultiplayerScreen {
 
     void draw() {
         bool covered = NewUi::overlayCoversMouse();
+        const TerracottaGuest::State& tcState = TerracottaGuest::state();
+        bool inTerracotta = terracottaPage || tcState.stage != TerracottaGuest::Stage::Idle;
         const Multiplayer::State& state = Multiplayer::state();
-        bool inRoom = state.role != Role::None;
-        if (inRoom || !Multiplayer::available()) {
+        bool inRoom = !inTerracotta && state.role != Role::None;
+        if (inTerracotta || inRoom || !Multiplayer::available()) {
             waiting = false;
         }
         if (Multiplayer::available()) {
@@ -797,9 +1376,27 @@ namespace MultiplayerScreen {
                 Multiplayer::watchWorlds();
             }
         }
-        views.go(inRoom ? VIEW_ROOM : waiting ? VIEW_WAIT : VIEW_HOME);
+        int nextView = VIEW_HOME;
+        if (inTerracotta) {
+            bool tcActive = TerracottaGuest::active();
+            if (tcActive) {
+                stopTerracottaEditing();
+                terracottaEditingLast = false;
+                terracottaCode = tcState.code;
+            }
+            nextView = tcActive ? VIEW_TC_ROOM : VIEW_TC_JOIN;
+        } else if (inRoom) {
+            nextView = VIEW_ROOM;
+        } else if (waiting) {
+            nextView = VIEW_WAIT;
+        }
+        views.go(nextView);
         views.begin();
-        if (views.page == VIEW_ROOM) {
+        if (views.page == VIEW_TC_ROOM) {
+            terracottaRoomView(tcState, covered);
+        } else if (views.page == VIEW_TC_JOIN) {
+            terracottaJoinView(tcState, tcState.stage == TerracottaGuest::Stage::Failed, covered);
+        } else if (views.page == VIEW_ROOM) {
             roomView(state, covered);
         } else if (views.page == VIEW_WAIT) {
             waitView(covered);

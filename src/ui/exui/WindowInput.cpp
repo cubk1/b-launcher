@@ -42,6 +42,23 @@ namespace exui {
             }
             return nullptr;
         }
+
+        // The topmost visible widget eligible for a tooltip (including disabled ones that opt in).
+        Widget* HitTestTooltip(const Widget& parent, int x, int y, bool parentEnabled) {
+            const auto& children = parent.GetChildren();
+            for (auto i = children.rbegin(); i != children.rend(); ++i) {
+                Widget& child = **i;
+                const int cx = x - child.GetX(), cy = y - child.GetY();
+                if (!child.IsVisible() || !child.Contains(cx, cy)) continue;
+                const bool enabled = parentEnabled && child.IsEnabled();
+                if (auto* inner = HitTestTooltip(child, cx, cy, enabled)) return inner;
+                if ((enabled || child.ShowsTooltipWhenDisabled()) && !child.IsTransparentToPointer() &&
+                    child.HitsPoint(cx, cy)) {
+                    return &child;
+                }
+            }
+            return nullptr;
+        }
     } // namespace
 
     // ---------------------------------------------------------------------------
@@ -77,6 +94,11 @@ namespace exui {
     void Window::ReconcileInputState() {
         if (m_pressed && !Available(m_pressed)) CancelCapture();
         if (m_hovered && !Available(m_hovered)) UpdateHover(nullptr);
+        if (m_tooltipTarget &&
+            (!m_tooltipTarget->IsEffectivelyVisible() ||
+             (!m_tooltipTarget->IsEffectivelyEnabled() && !m_tooltipTarget->ShowsTooltipWhenDisabled()))) {
+            UpdateTooltipTarget(nullptr);
+        }
         if (m_focused && !CanFocus(m_focused)) SetFocusedWidget(nullptr);
     }
 
@@ -101,6 +123,9 @@ namespace exui {
         }
         if (m_hovered == widget) {
             m_hovered = nullptr;
+        }
+        if (m_tooltipTarget == widget) {
+            m_tooltipTarget = nullptr;
             HideTooltip();
         }
         if (m_tabFocused == widget) m_tabFocused = nullptr;
@@ -109,11 +134,18 @@ namespace exui {
 
     void Window::UpdateHover(Widget* widget) {
         if (m_hovered == widget) return;
-        HideTooltip();
         const auto old = Hold(m_hovered), next = Hold(widget);
         m_hovered = widget;
         if (old) old->OnMouseLeave();
         if (next && m_hovered == widget) next->OnMouseEnter();
+    }
+
+    void Window::UpdateTooltipTarget(Widget* widget) {
+        if (m_tooltipTarget != widget) {
+            HideTooltip();
+            m_tooltipTarget = widget;
+        }
+        RefreshTooltip(m_tooltipTarget);
     }
 
     void Window::CancelCapture() {
@@ -128,8 +160,10 @@ namespace exui {
     }
 
     void Window::RefreshTooltip(Widget* widget) {
-        if (widget != m_hovered) return;
-        if (!Available(widget) || widget->GetTooltipText().empty() || m_pressed || IsWindowAnimating()) {
+        if (widget != m_tooltipTarget) return;
+        const bool visible = widget && widget->IsEffectivelyVisible();
+        const bool eligible = widget && (widget->IsEffectivelyEnabled() || widget->ShowsTooltipWhenDisabled());
+        if (!visible || !eligible || widget->GetTooltipText().empty() || m_pressed || IsWindowAnimating()) {
             HideTooltip();
             return;
         }
@@ -186,12 +220,17 @@ namespace exui {
             const auto local = Local(*target, x, y);
             target->OnMouseMove(local.x, local.y, UINT(wp));
         }
-        RefreshTooltip(m_hovered);
+        Widget* tipTarget = nullptr;
+        if (!m_animator.IsOpening() || m_animator.IncludesOpeningWidgets()) {
+            tipTarget = HitTestTooltip(*m_chrome, x, y, true);
+            if (!tipTarget) tipTarget = HitTestTooltip(*m_root, x, y, true);
+        }
+        UpdateTooltipTarget(tipTarget);
         return 0;
     }
 
     LRESULT Window::HandleButtonDown(UINT msg, LPARAM lp) {
-        HideTooltip();
+        UpdateTooltipTarget(nullptr);
         if (!IsWindowEnabled(m_hwnd)) return 0;
         const auto [x, y] = ToLogical(lp);
         const UINT button = msg == WM_RBUTTONDOWN ? VK_RBUTTON : msg == WM_MBUTTONDOWN ? VK_MBUTTON : VK_LBUTTON;
@@ -255,7 +294,10 @@ namespace exui {
         if (target == pressed && Available(pressed.get())) {
             ActivateWidget(pressed.get());
         }
-        if (m_hwnd == hwnd) UpdateHover(Available(target.get()) ? target.get() : nullptr);
+        if (m_hwnd == hwnd) {
+            UpdateHover(Available(target.get()) ? target.get() : nullptr);
+            UpdateTooltipTarget(m_hovered);
+        }
         return 0;
     }
 

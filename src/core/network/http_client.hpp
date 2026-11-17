@@ -45,6 +45,8 @@ struct http_request
   std::string body;
   std::chrono::milliseconds timeout { 60000 };
   bool follow_redirects = true;
+  // Local control APIs must never inherit system or launcher proxy settings.
+  bool bypass_proxy = false;
   // Limit the decoded response body while receiving it; zero leaves it unlimited.
   std::size_t max_response_size = 0;
   std::function<void (std::string_view)> on_data;

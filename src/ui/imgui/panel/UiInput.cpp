@@ -16,6 +16,7 @@ namespace UiInput {
     std::unordered_map<std::string, int> byteLimits;
     std::string focused;
     std::unordered_set<std::string> secrets;
+    std::unordered_map<std::string, std::function<std::string(const std::string&)>> pasteFilters;
 
     namespace {
         struct Edit {
@@ -332,8 +333,14 @@ namespace UiInput {
         }
     }
 
+    std::string cleanPaste(const std::string& id, const std::string& raw) {
+        auto found = pasteFilters.find(id);
+        std::string text = found != pasteFilters.end() && found->second ? found->second(raw) : raw;
+        return filterAllowed(text);
+    }
+
     void paste(const std::string& id) {
-        std::string value = filterAllowed(clipboard());
+        std::string value = cleanPaste(id, clipboard());
         if (value.empty()) {
             return;
         }

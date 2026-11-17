@@ -1,6 +1,7 @@
 #include <core/base/format.hpp>
 #include <core/base/process.hpp>
 #include <core/base/strings.hpp>
+#include "core/base/win_util.hpp"
 
 #include <reproc/reproc.h>
 
@@ -335,8 +336,34 @@ process::start (const process_options &options, output_callback on_output)
         env_storage.push_back (key + "=" + value);
     }
 #else
-  for (const auto &[key, value] : options.environment)
-    env_storage.push_back (key + "=" + value);
+  if (!options.environment.empty ())
+    {
+      // reproc's Windows EXTEND concatenates blocks without replacing keys.
+      // Windows reads the inherited value first, so merge overrides ourselves.
+      auto less = [] (const std::wstring &a, const std::wstring &b) {
+        return CompareStringOrdinal (a.c_str (), -1, b.c_str (), -1, TRUE)
+               == CSTR_LESS_THAN;
+      };
+      std::map<std::wstring, std::wstring, decltype (less)> merged (less);
+      std::unique_ptr<wchar_t, decltype (&FreeEnvironmentStringsW)> parent (
+          GetEnvironmentStringsW (), &FreeEnvironmentStringsW);
+      if (!parent)
+        return make_error (errc::process, "cannot read child environment: "
+                            + detail::last_error_message (GetLastError ()));
+      for (auto entry = parent.get (); *entry;
+           entry += std::char_traits<wchar_t>::length (entry) + 1)
+        {
+          std::wstring_view text (entry);
+          // Preserve Windows' hidden per-drive variables such as =C:=C:\...
+          auto equals = text.find (L'=', text.front () == L'=' ? 1 : 0);
+          if (equals != std::wstring_view::npos)
+            merged[std::wstring (text.substr (0, equals))] = text.substr (equals + 1);
+        }
+      for (const auto &[key, value] : options.environment)
+        merged[detail::utf8_to_wide (key)] = detail::utf8_to_wide (value);
+      for (const auto &[key, value] : merged)
+        env_storage.push_back (detail::wide_to_utf8 (key + L"=" + value));
+    }
 #endif
   for (const auto &entry : env_storage)
     env.push_back (entry.c_str ());
@@ -347,12 +374,8 @@ process::start (const process_options &options, output_callback on_output)
   reproc_options opts {};
   opts.working_directory
       = options.working_directory.empty () ? nullptr : working.c_str ();
-#if defined(_WIN32)
-  opts.env.behavior = REPROC_ENV_EXTEND;
-#else
   opts.env.behavior = options.environment.empty () ? REPROC_ENV_EXTEND
                                                    : REPROC_ENV_EMPTY;
-#endif
   opts.env.extra = env_storage.empty () ? nullptr : env.data ();
   opts.redirect.in.type = REPROC_REDIRECT_DISCARD;
   opts.redirect.out.type = options.capture_output ? REPROC_REDIRECT_PIPE

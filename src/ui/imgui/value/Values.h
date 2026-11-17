@@ -190,6 +190,10 @@ public:
     virtual bool secret() {
         return false;
     }
+
+    virtual std::string cleanPaste(const std::string& raw) const {
+        return raw;
+    }
 };
 
 class KeyValue {
