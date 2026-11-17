@@ -1732,7 +1732,6 @@ namespace NewUi {
         if (target->secret()) {
             UiInput::secrets.insert(INPUT_TEXT);
         }
-        UiInput::pasteFilters[INPUT_TEXT] = [target](const std::string& raw) { return target->cleanPaste(raw); };
         std::string value = target->get();
         UiInput::set(INPUT_TEXT, value);
         UiInput::focus(INPUT_TEXT, target->maxLength());
@@ -1773,7 +1772,6 @@ namespace NewUi {
         textEditing.clear();
         textEditValue = nullptr;
         UiInput::secrets.erase(INPUT_TEXT);
-        UiInput::pasteFilters.erase(INPUT_TEXT);
         UiInput::set(INPUT_TEXT, "");
         if (UiInput::isFocused(INPUT_TEXT)) {
             UiInput::blur();
@@ -2357,7 +2355,7 @@ namespace NewUi {
                           UiInput::canRedo(id),
                           selected,
                           selected,
-                          !UiInput::cleanPaste(id, UiInput::clipboard()).empty(),
+                          !UiInput::filterAllowed(UiInput::clipboard()).empty(),
                           selected,
                           !UiInput::get(id).empty()};
 

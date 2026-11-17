@@ -270,7 +270,6 @@ namespace exui {
         if (!enabled) {
             CancelCapture();
             UpdateHover(nullptr);
-            UpdateTooltipTarget(nullptr);
         }
     }
 
@@ -419,7 +418,7 @@ namespace exui {
             // Widget focus survives HWND focus changes; only SetFocusedWidget moves it.
             case WM_SETFOCUS: return 0;
             case WM_KILLFOCUS:
-                UpdateTooltipTarget(nullptr);
+                HideTooltip();
                 CancelCapture();
                 return 0;
             case WM_GETDLGCODE: return DLGC_WANTALLKEYS;
@@ -428,10 +427,7 @@ namespace exui {
                 break;
             case WM_MOUSELEAVE:
                 // During a press the capture keeps the pointer; hover resolves on release.
-                if (!m_pressed) {
-                    UpdateHover(nullptr);
-                    UpdateTooltipTarget(nullptr);
-                }
+                if (!m_pressed) UpdateHover(nullptr);
                 return 0;
             case WM_MOUSEMOVE: return HandleMouseMove(wp, lp);
             case WM_LBUTTONDOWN:

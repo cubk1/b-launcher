@@ -699,7 +699,7 @@ namespace Game {
         GameLog::note(log,
                       "正在启动 " + live.name + "（Minecraft " + entry->info.minecraft_version + "），账户 " +
                               account->name + "（" + Accounts::kindOf(*account) + "）");
-        if (configuredPatches) {
+        if (!patchJar.empty()) {
             GameLog::note(log,
                           optionsFile.empty() ? std::string("已启用启动器补丁")
                                               : "已启用启动器补丁，游戏设置保存在 " + optionsFile);

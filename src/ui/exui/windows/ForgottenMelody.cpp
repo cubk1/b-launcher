@@ -11,7 +11,6 @@
 #include "app/launch/GameLog.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
-#include "app/multiplayer/TerracottaGuest.h"
 #include "app/system/Config.h"
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
@@ -85,11 +84,10 @@ namespace ForgottenMelody {
             bool launchFailed = false;
             std::optional<ULONGLONG> closingRoom;
             window.OnWindowMessageFilter = [&](UINT msg, WPARAM wp, LPARAM lp, LRESULT& result) {
-                if (msg == WM_CLOSE && (closingRoom || Multiplayer::active() || TerracottaGuest::active())) {
+                if (msg == WM_CLOSE && (closingRoom || Multiplayer::active())) {
                     if (!closingRoom) {
                         closingRoom = GetTickCount64();
                         Multiplayer::leave();
-                        TerracottaGuest::leave();
                         window.GetRoot().SetEnabled(false);
                         closeMultiplayer();
                         Notices::add(Notices::Kind::Info, "正在关闭房间，关闭后启动器会退出", 4000);
@@ -114,7 +112,7 @@ namespace ForgottenMelody {
                 }
                 GameLog::poll();
                 Services::poll();
-                if (closingRoom && ((!Multiplayer::active() && !TerracottaGuest::active()) ||
+                if (closingRoom && (Multiplayer::state().role == Multiplayer::Role::None ||
                                     GetTickCount64() - *closingRoom >= 10000)) {
                     window.CloseWindow();
                     result = 0;
