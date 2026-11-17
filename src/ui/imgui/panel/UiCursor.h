@@ -9,5 +9,7 @@ namespace UiCursor {
     void hand();
     void resize();
     void resizeEW();
+    void resizeNS();
+    void resizeNESW();
     void apply();
 }

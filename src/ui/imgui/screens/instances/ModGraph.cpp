@@ -59,10 +59,14 @@ namespace ModGraph {
         constexpr float LABEL_W = 52.0f;
         constexpr float ABOUT_LINE = 17.0f;
         constexpr int ABOUT_LINES = 3;
+        constexpr int ABOUT_MAX_LINES = 20;
         constexpr int PICK_ROWS = 8;
         constexpr float PICK_H = 10.0f + Page::FIELD_H + 8.0f + PICK_ROWS * 34.0f + 12.0f;
         constexpr float CARD_HEAD = 46.0f;
         constexpr float CARD_ROW = 26.0f;
+        constexpr float CARD_MIN_W = 260.0f;
+        constexpr float CARD_MIN_H = 150.0f;
+        constexpr float CARD_GRIP = 7.0f;
         constexpr float TOOL_STEP = 32.0f;
         constexpr double DOUBLE_CLICK = 0.3;
         const char* const BUILTIN[] = {"minecraft", "java",     "fabricloader", "fabric-loader", "quilt_loader",
@@ -111,6 +115,24 @@ namespace ModGraph {
             double since = 0.0;
         };
 
+        // Where the detail card of a node sits while it is open, in screen space. Never written to the layout file.
+        struct Card {
+            bool pinned = false;
+            bool sized = false;
+            float x = 0.0f;
+            float y = 0.0f;
+            float w = CARD_W;
+            float h = 0.0f;
+            int grip = 0;
+            float grabX = 0.0f;
+            float grabY = 0.0f;
+            float fromX = 0.0f;
+            float fromY = 0.0f;
+            float fromW = 0.0f;
+            float fromH = 0.0f;
+            float scroll = 0.0f;
+        };
+
         struct View {
             std::string signature;
             std::map<std::string, std::pair<float, float>> pinned;
@@ -150,6 +172,7 @@ namespace ModGraph {
             double lastPress = -1.0;
             std::string lastPressed;
             bool touched = false;
+            Card card;
         };
 
         std::map<std::string, View> views;
@@ -1202,45 +1225,25 @@ namespace ModGraph {
             UiRender::alphaMul = saved;
         }
 
-        Detail detailOf(const Mods::List& list, const View& view, int focus) {
+        // The card's content follows its width and, when the user has sized it, its height: the description takes the room
+        // the rows leave free instead of a fixed three lines.
+        float cardFooter(const Detail& detail) {
+            return detail.buttons ? 8.0f + Page::FIELD_H + 14.0f : 14.0f;
+        }
+
+        Detail detailOf(const Mods::List& list, const View& view, int focus, float width, float cardHeight) {
             Detail detail;
             const Node& node = view.nodes[(size_t) focus];
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
             const Item* item = itemOf(node);
+            std::string about;
             if (item != nullptr) {
-                std::string about = item->about;
-                std::replace(about.begin(), about.end(), '\n', ' ');
-                about = Ui::trim(about);
-                if (!about.empty()) {
-                    std::vector<std::string> lines =
-                            UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, CARD_W - 28.0f);
-                    if (lines.size() > (size_t) ABOUT_LINES) {
-                        lines.resize(ABOUT_LINES);
-                        lines.back() = UiFont::fitEnd(lines.back() + "…", UiFont::MEDIUM, UiWidgets::TEXT_SMALL,
-                                                      CARD_W - 28.0f);
-                    }
-                    detail.about = lines;
-                }
+                about = Ui::trim(item->about);
                 detail.rows = item->rows;
             }
             if (mod != nullptr) {
-                std::string about = blb::strip_formatting(mod->info.description);
-                std::replace(about.begin(), about.end(), '\n', ' ');
+                about = Ui::trim(blb::strip_formatting(mod->info.description));
                 std::replace(about.begin(), about.end(), '\r', ' ');
-                about = Ui::trim(about);
-                if (!about.empty()) {
-                    std::vector<std::string> lines =
-                            UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, CARD_W - 28.0f);
-                    if (lines.size() > (size_t) ABOUT_LINES) {
-                        std::string tail = lines[ABOUT_LINES - 1];
-                        for (size_t i = ABOUT_LINES; i < lines.size(); i++) {
-                            tail += " " + lines[i];
-                        }
-                        lines.resize(ABOUT_LINES);
-                        lines.back() = UiFont::fitEnd(tail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, CARD_W - 28.0f);
-                    }
-                    detail.about = lines;
-                }
                 std::string chinese = ModManager::chineseName(*mod);
                 if (!chinese.empty()) {
                     if (ModNames::original()) {
@@ -1267,6 +1270,7 @@ namespace ModGraph {
                     detail.rows.push_back({"许可", mod->info.license});
                 }
             }
+            std::replace(about.begin(), about.end(), '\n', ' ');
             detail.rows.push_back({"依赖", joinNames(view, focus, true)});
             detail.rows.push_back({"被依赖", joinNames(view, focus, false)});
             if (std::string linked = joinLinked(view, focus, Link::Integration); !linked.empty()) {
@@ -1281,17 +1285,34 @@ namespace ModGraph {
             detail.toggle = mod != nullptr;
             detail.buttons =
                     node.kind == Kind::Remote ? openable(node) : node.kind != Kind::Missing || !node.projectId.empty();
-            detail.height = CARD_HEAD + 8.0f + (float) detail.about.size() * ABOUT_LINE +
-                    (detail.about.empty() ? 0.0f : 6.0f) +
-                    (float) (detail.rows.size() + (detail.toggle ? 1 : 0)) * CARD_ROW +
-                    (detail.buttons ? 8.0f + Page::FIELD_H : 0.0f) + 14.0f;
+            float footer = cardFooter(detail);
+            float fixed = CARD_HEAD + 8.0f + (float) (detail.rows.size() + (detail.toggle ? 1 : 0)) * CARD_ROW +
+                    footer + (about.empty() ? 0.0f : 6.0f);
+            int lines = ABOUT_LINES;
+            if (cardHeight > 0.0f) {
+                lines = std::clamp((int) std::floor((cardHeight - fixed) / ABOUT_LINE), 1, ABOUT_MAX_LINES);
+            }
+            if (!about.empty()) {
+                float room = width - 28.0f;
+                std::vector<std::string> wrapped = UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
+                if (wrapped.size() > (size_t) lines) {
+                    std::string tail = wrapped[(size_t) lines - 1];
+                    for (size_t i = (size_t) lines; i < wrapped.size(); i++) {
+                        tail += " " + wrapped[i];
+                    }
+                    wrapped.resize((size_t) lines);
+                    wrapped.back() = UiFont::fitEnd(tail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
+                }
+                detail.about = wrapped;
+            }
+            detail.height = fixed + (float) detail.about.size() * ABOUT_LINE;
             return detail;
         }
 
         void cardHeader(const std::string& key, const Mods::List& list, const Node& node, const Area& area,
                         bool picking, bool blocked, View& view) {
             float left = area.x + 14.0f;
-            float right = area.x + CARD_W - 14.0f;
+            float right = area.x + area.w - 14.0f;
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
             const Item* item = itemOf(node);
             float iconSize = 26.0f;
@@ -1347,16 +1368,21 @@ namespace ModGraph {
             }
             UiRender::textY(UiFont::fitEnd(nameOf(node), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL, limit - textX), textX,
                             area.y, CARD_HEAD, UiTheme::textPrimary(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
-            UiRender::hLine(area.x + 12.0f, area.x + CARD_W - 12.0f, area.y + CARD_HEAD, UiTheme::outlineSoft());
+            UiRender::hLine(area.x + 12.0f, area.x + area.w - 12.0f, area.y + CARD_HEAD, UiTheme::outlineSoft());
         }
 
         void cardDetails(const std::string& key, const Mods::List& list, View& view, int focus, const Detail& detail,
-                         const Area& area, bool blocked) {
+                         const Area& area, bool blocked, float scroll) {
             const Node& node = view.nodes[(size_t) focus];
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
             float left = area.x + 14.0f;
-            float right = area.x + CARD_W - 14.0f;
-            float y = area.y + CARD_HEAD + 8.0f;
+            float right = area.x + area.w - 14.0f;
+            float viewTop = area.y + CARD_HEAD;
+            float viewBottom = area.y + area.h - cardFooter(detail);
+            auto shownAt = [viewTop, viewBottom](float rowY, float rowH) {
+                return rowY >= viewTop - 0.5f && rowY + rowH <= viewBottom + 0.5f;
+            };
+            float y = viewTop + 8.0f - scroll;
             for (const std::string& line : detail.about) {
                 UiRender::textY(line, left, y, ABOUT_LINE, UiTheme::textSecondary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_SMALL);
@@ -1377,7 +1403,7 @@ namespace ModGraph {
                 float toggleY = y + (CARD_ROW - 18.0f) * 0.5f;
                 toggle.bounds(toggleX, toggleY, 30.0f, 18.0f)
                         .hitArea(toggleX - 4.0f, y + 2.0f, 38.0f, CARD_ROW - 4.0f)
-                        .block(blocked);
+                        .block(blocked || !shownAt(y, CARD_ROW));
                 toggle.paint();
                 y += CARD_ROW;
             }
@@ -1388,7 +1414,8 @@ namespace ModGraph {
                 std::string fitted = UiFont::fitEnd(row.second, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, right - valueX);
                 UiRender::textY(fitted, valueX, y, CARD_ROW, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_SMALL);
-                if (fitted != row.second && !blocked && NewUi::hit(valueX, y, right - valueX, CARD_ROW)) {
+                if (fitted != row.second && !blocked && shownAt(y, CARD_ROW) &&
+                    NewUi::hit(valueX, y, right - valueX, CARD_ROW)) {
                     Page::tooltip(row.second, valueX, y, right - valueX, CARD_ROW);
                 }
                 y += CARD_ROW;
@@ -1396,7 +1423,7 @@ namespace ModGraph {
             if (!detail.buttons) {
                 return;
             }
-            float buttonY = y + 8.0f;
+            float buttonY = area.y + area.h - 14.0f - Page::FIELD_H;
             if (node.kind == Kind::Remote) {
                 std::string label = "查看详情";
                 float buttonW = Page::buttonWidth(label, 0xf05a);
@@ -1430,13 +1457,16 @@ namespace ModGraph {
                 view.picking = true;
             }
             float linkY = buttonY + (Page::FIELD_H - 28.0f) * 0.5f;
+            float limit = left + pickW + 10.0f;
             float linkX = right - 26.0f;
-            if (Page::iconButton("mods#graph#card#reveal", 0xf07c, "在文件夹中显示", linkX, linkY, blocked)) {
+            if (linkX >= limit &&
+                Page::iconButton("mods#graph#card#reveal", 0xf07c, "在文件夹中显示", linkX, linkY, blocked)) {
                 Platform::reveal(mod->info.file);
             }
             if (long long wiki = ModManager::wikiId(*mod); wiki > 0) {
                 linkX -= 30.0f;
-                if (Page::iconButton("mods#graph#card#wiki", 0xf02d, "在 MC 百科上查看", linkX, linkY, blocked)) {
+                if (linkX >= limit &&
+                    Page::iconButton("mods#graph#card#wiki", 0xf02d, "在 MC 百科上查看", linkX, linkY, blocked)) {
                     Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
                 }
             }
@@ -1448,13 +1478,19 @@ namespace ModGraph {
                     continue;
                 }
                 linkX -= 30.0f;
+                if (linkX < limit) {
+                    break;
+                }
                 if (Page::iconButton(std::string("mods#graph#card#link#") + hint, glyph, hint, linkX, linkY, blocked)) {
                     Platform::openUrl(url);
                 }
             }
         }
 
-        float cardHeight(const Detail& detail, float pick) {
+        float cardHeight(const Detail& detail, const View& view, float pick, float limit) {
+            if (view.card.sized) {
+                return std::min(view.card.h, limit);
+            }
             return UiRender::lerp(detail.height, CARD_HEAD + PICK_H, pick);
         }
 
@@ -1477,20 +1513,145 @@ namespace ModGraph {
             UiRender::scissor(area.x, area.y, area.w, area.h);
             UiRender::alphaMul = saved * content;
             cardHeader(key, list, node, area, view.picking && pick > 0.5f, blocked, view);
+            float footer = cardFooter(detail);
+            float overflow = std::max(0.0f, detail.height - area.h);
+            float scroll = std::min(view.card.scroll, overflow);
             if (pick < 0.999f) {
                 UiRender::alphaMul = saved * content * (1.0f - pick);
-                cardDetails(key, list, view, focus, detail, area, blocked || pick > 0.001f);
+                if (overflow > 0.5f) {
+                    UiRender::scissor(area.x, area.y + CARD_HEAD, area.w, std::max(0.0f, area.h - CARD_HEAD - footer));
+                }
+                cardDetails(key, list, view, focus, detail, area, blocked || pick > 0.001f, scroll);
+                if (overflow > 0.5f) {
+                    UiRender::unscissor();
+                }
             }
             if (pick > 0.001f && node.kind == Kind::Local) {
                 UiRender::alphaMul = saved * content * pick;
                 const Mods::Mod& mod = list.mods[(size_t) node.mod];
-                if (ModVersionPicker::list("mods#graph#versions", key, mod, area.x + 12.0f, area.y + CARD_HEAD + 10.0f,
-                                           CARD_W - 24.0f, PICK_H - 22.0f, blocked || pick < 0.9f)) {
+                float pickTop = area.y + CARD_HEAD + 10.0f;
+                float pickH = std::max(0.0f, area.h - CARD_HEAD - 22.0f);
+                if (ModVersionPicker::list("mods#graph#versions", key, mod, area.x + 12.0f, pickTop, area.w - 24.0f,
+                                           pickH, blocked || pick < 0.9f)) {
                     view.picking = false;
                 }
             }
+            if (overflow > 0.5f && pick < 0.001f) {
+                UiRender::alphaMul = saved * content;
+                float trackX = area.x + area.w - 7.0f;
+                float trackY = area.y + CARD_HEAD + 6.0f;
+                float trackH = std::max(0.0f, area.h - CARD_HEAD - footer - 12.0f);
+                float full = std::max(1.0f, detail.height - CARD_HEAD);
+                float visible = std::max(1.0f, area.h - CARD_HEAD - footer);
+                float thumbH = std::min(trackH, std::max(28.0f, trackH * visible / full));
+                float thumbY = trackY + (trackH - thumbH) * (overflow > 0.0f ? scroll / overflow : 0.0f);
+                UiRender::roundRect(trackX, trackY, 3.0f, trackH, 1.5f, withAlpha(UiTheme::textPrimary(), 0.06f));
+                UiRender::roundRect(trackX, thumbY, 3.0f, thumbH, 1.5f, withAlpha(UiTheme::textPrimary(), 0.24f));
+            }
             UiRender::unscissor();
             UiRender::alphaMul = saved;
+        }
+
+        enum : int { GRIP_LEFT = 1, GRIP_RIGHT = 2, GRIP_TOP = 4, GRIP_BOTTOM = 8, GRIP_MOVE = 16 };
+
+        int gripAt(const Area& card, float x, float y) {
+            bool left = x >= card.x - CARD_GRIP && x <= card.x + CARD_GRIP;
+            bool right = x >= card.x + card.w - CARD_GRIP && x <= card.x + card.w + CARD_GRIP;
+            bool top = y >= card.y - CARD_GRIP && y <= card.y + CARD_GRIP;
+            bool bottom = y >= card.y + card.h - CARD_GRIP && y <= card.y + card.h + CARD_GRIP;
+            bool across = x >= card.x - CARD_GRIP && x <= card.x + card.w + CARD_GRIP;
+            bool down = y >= card.y - CARD_GRIP && y <= card.y + card.h + CARD_GRIP;
+            int grip = 0;
+            if (left && down) grip |= GRIP_LEFT;
+            if (right && down) grip |= GRIP_RIGHT;
+            if (top && across) grip |= GRIP_TOP;
+            if (bottom && across) grip |= GRIP_BOTTOM;
+            return grip;
+        }
+
+        void cardCursor(int grip) {
+            bool horizontal = (grip & (GRIP_LEFT | GRIP_RIGHT)) != 0;
+            bool vertical = (grip & (GRIP_TOP | GRIP_BOTTOM)) != 0;
+            if (horizontal && vertical) {
+                bool falling = (grip & GRIP_LEFT) != 0 ? (grip & GRIP_TOP) != 0 : (grip & GRIP_BOTTOM) != 0;
+                if (falling) {
+                    UiCursor::resize();
+                } else {
+                    UiCursor::resizeNESW();
+                }
+            } else if (horizontal) {
+                UiCursor::resizeEW();
+            } else if (vertical) {
+                UiCursor::resizeNS();
+            }
+        }
+
+        void cardGestures(View& view, const Area& card, const Area& fitArea, bool resizable, bool blocked) {
+            Card& state = view.card;
+            float mx = NewUi::mouseX;
+            float my = NewUi::mouseY;
+            float lowX = fitArea.x + 4.0f;
+            float lowY = fitArea.y + 4.0f;
+            float highX = fitArea.x + fitArea.w - 4.0f;
+            float highY = fitArea.y + fitArea.h - 4.0f;
+            auto between = [](float value, float low, float high) {
+                return std::clamp(value, low, std::max(low, high));
+            };
+            if (state.grip == 0) {
+                if (blocked) {
+                    return;
+                }
+                int grip = resizable ? gripAt(card, mx, my) : 0;
+                if (grip != 0) {
+                    cardCursor(grip);
+                    if (NewUi::press(card.x - CARD_GRIP, card.y - CARD_GRIP, card.w + 2.0f * CARD_GRIP,
+                                     card.h + 2.0f * CARD_GRIP)) {
+                        state.grip = grip;
+                        state.fromX = card.x;
+                        state.fromY = card.y;
+                        state.fromW = card.w;
+                        state.fromH = card.h;
+                    }
+                    return;
+                }
+                if (!NewUi::rawHit(card.x, card.y + CARD_GRIP, card.w, CARD_HEAD - CARD_GRIP)) {
+                    return;
+                }
+                UiCursor::hand();
+                if (NewUi::press(card.x, card.y + CARD_GRIP, card.w, CARD_HEAD - CARD_GRIP)) {
+                    state.grip = GRIP_MOVE;
+                    state.pinned = true;
+                    state.x = card.x;
+                    state.y = card.y;
+                    state.grabX = mx - card.x;
+                    state.grabY = my - card.y;
+                }
+                return;
+            }
+            if (!NewUi::mouseDown) {
+                state.grip = 0;
+                return;
+            }
+            if (state.grip == GRIP_MOVE) {
+                state.pinned = true;
+                state.x = between(mx - state.grabX, lowX, highX - card.w);
+                state.y = between(my - state.grabY, lowY, highY - card.h);
+                return;
+            }
+            float x0 = state.fromX;
+            float y0 = state.fromY;
+            float x1 = x0 + state.fromW;
+            float y1 = y0 + state.fromH;
+            if (state.grip & GRIP_LEFT) x0 = between(mx, lowX, x1 - CARD_MIN_W);
+            if (state.grip & GRIP_RIGHT) x1 = between(mx, x0 + CARD_MIN_W, highX);
+            if (state.grip & GRIP_TOP) y0 = between(my, lowY, y1 - CARD_MIN_H);
+            if (state.grip & GRIP_BOTTOM) y1 = between(my, y0 + CARD_MIN_H, highY);
+            state.pinned = true;
+            state.sized = true;
+            state.x = x0;
+            state.y = y0;
+            state.w = x1 - x0;
+            state.h = y1 - y0;
         }
 
         void message(const std::string& text, float x, float y, float w, float h, bool loading) {
@@ -1647,6 +1808,7 @@ namespace ModGraph {
             view.expanded = view.selected;
             view.picking = view.pickNext;
             view.pickNext = false;
+            view.card.scroll = 0.0f;
             UiState::remove(openId);
             UiState::remove(pickId);
         }
@@ -1662,10 +1824,12 @@ namespace ModGraph {
             if (view.selected.empty() && open < 0.02f) {
                 view.expanded.clear();
                 view.picking = false;
+                view.card.grip = 0;
                 shown = -1;
             }
         } else {
             view.expanded.clear();
+            view.card.grip = 0;
         }
         if (shown >= 0 && view.nodes[(size_t) shown].kind != Kind::Local) {
             view.picking = false;
@@ -1676,17 +1840,27 @@ namespace ModGraph {
         Detail info;
         Area card;
         if (shown >= 0) {
-            info = detailOf(list, view, shown);
+            float cardW = view.card.sized ? std::clamp(view.card.w, CARD_MIN_W, std::max(CARD_MIN_W, fitArea.w - 24.0f))
+                                          : CARD_W;
+            float limit = std::max(CARD_MIN_H, fitArea.h - 8.0f);
+            info = detailOf(list, view, shown, cardW, view.card.sized ? std::min(view.card.h, limit) : 0.0f);
             const Node& node = view.nodes[(size_t) shown];
             float nx = screenX(node.x);
             float ny = screenY(node.y);
-            float height = cardHeight(info, pick);
+            float height = cardHeight(info, view, pick, limit);
             float lowX = fitArea.x + 12.0f;
             float lowY = fitArea.y + 12.0f;
-            float tx = std::clamp(nx, lowX, std::max(lowX, fitArea.x + fitArea.w - 12.0f - CARD_W));
+            float tx = std::clamp(nx, lowX, std::max(lowX, fitArea.x + fitArea.w - 12.0f - cardW));
             float ty = std::clamp(ny, lowY, std::max(lowY, fitArea.y + fitArea.h - 12.0f - height));
+            if (view.card.pinned) {
+                float pinnedX = fitArea.x + 4.0f;
+                float pinnedY = fitArea.y + 4.0f;
+                tx = std::clamp(view.card.x, pinnedX, std::max(pinnedX, fitArea.x + fitArea.w - 4.0f - cardW));
+                ty = std::clamp(view.card.y, pinnedY, std::max(pinnedY, fitArea.y + fitArea.h - 4.0f - height));
+            }
             card = Area{UiRender::lerp(nx, tx, reveal), UiRender::lerp(ny, ty, reveal),
-                        UiRender::lerp(nodeW, CARD_W, reveal), UiRender::lerp(nodeH, height, reveal)};
+                        UiRender::lerp(nodeW, cardW, reveal), UiRender::lerp(nodeH, height, reveal)};
+            view.card.scroll = std::clamp(view.card.scroll, 0.0f, std::max(0.0f, info.height - height));
         }
 
         float toolsW = 5.0f * TOOL_STEP - 4.0f + 8.0f;
@@ -1938,6 +2112,7 @@ namespace ModGraph {
             view.pending.clear();
             view.signature.clear();
             view.fitted = false;
+            view.card = Card();
             touch(view);
         }
         if (Page::iconButton("mods#graph#lock", movable ? 0xf3c1 : 0xf023, movable ? "锁定分组" : "允许拖动分组",
@@ -1957,6 +2132,17 @@ namespace ModGraph {
             }
         }
         UiRender::unscissor();
+
+        if (shown >= 0 && reveal > 0.99f) {
+            cardGestures(view, card, fitArea, pick < 0.001f, blocked || view.selected.empty());
+            if (pick < 0.001f && !blocked && NewUi::rawHit(card.x, card.y + CARD_HEAD, card.w, card.h - CARD_HEAD)) {
+                float wheel = NewUi::wheel();
+                if (wheel != 0.0f) {
+                    view.card.scroll =
+                            std::clamp(view.card.scroll - wheel * 60.0f, 0.0f, std::max(0.0f, info.height - card.h));
+                }
+            }
+        }
 
         if (canvasHover && NewUi::wheel() != 0.0f) {
             zoomAt(view, view.zoomTarget * std::pow(1.15f, NewUi::wheel()), mx - originX, my - originY);
