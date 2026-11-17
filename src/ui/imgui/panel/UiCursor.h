@@ -10,5 +10,6 @@ namespace UiCursor {
     void resize();
     void resizeEW();
     void resizeNS();
+    void resizeNESW();
     void apply();
 }

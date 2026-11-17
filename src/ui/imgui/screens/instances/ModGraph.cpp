@@ -1561,7 +1561,12 @@ namespace ModGraph {
             bool horizontal = (grip & (GRIP_LEFT | GRIP_RIGHT)) != 0;
             bool vertical = (grip & (GRIP_TOP | GRIP_BOTTOM)) != 0;
             if (horizontal && vertical) {
-                UiCursor::resize();
+                bool falling = (grip & GRIP_LEFT) != 0 ? (grip & GRIP_TOP) != 0 : (grip & GRIP_BOTTOM) != 0;
+                if (falling) {
+                    UiCursor::resize();
+                } else {
+                    UiCursor::resizeNESW();
+                }
             } else if (horizontal) {
                 UiCursor::resizeEW();
             } else if (vertical) {
