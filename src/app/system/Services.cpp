@@ -118,8 +118,8 @@ namespace Services {
     }
 
     bool busy() {
-        return Game::active() || Multiplayer::active() || TerracottaGuest::active() || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || Exports::running() || LauncherBuilder::running() ||
+        return Game::active() || Multiplayer::active() || TerracottaGuest::active() || Installer::running() ||
+                JavaDownloads::busy() || ProjectInstaller::busy() || Exports::running() || LauncherBuilder::running() ||
                 ServerBuilds::running() || CustomDownload::busy() || ModManager::busy() ||
                 !Instances::activity().empty();
     }

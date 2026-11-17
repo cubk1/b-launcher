@@ -602,7 +602,8 @@ namespace ImGuiApp {
                 continue;
             }
             if (closingRoom &&
-                (Multiplayer::state().role == Multiplayer::Role::None || sinceMs(closingSince) > ROOM_CLOSE_MS)) {
+                ((Multiplayer::state().role == Multiplayer::Role::None && !TerracottaGuest::active()) ||
+                 sinceMs(closingSince) > ROOM_CLOSE_MS)) {
                 finishClose();
                 continue;
             }

@@ -24,7 +24,6 @@ namespace Patches {
         std::string player;
     };
 
-    // HMCL compatibility is per launch and never changes stored patch preferences.
     Plan plan(bool hmclCompatibility = false, bool configuredPatches = true);
     std::string resolve(Plan& plan, b_launcher_base::cancellation_token token);
     std::filesystem::path jarIn(const std::filesystem::path& directory);

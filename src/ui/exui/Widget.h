@@ -145,12 +145,6 @@ namespace exui {
         const std::wstring& GetTooltipText() const noexcept {
             return m_tooltipText;
         }
-        void SetTooltipWhenDisabled(bool show) noexcept {
-            m_tooltipWhenDisabled = show;
-        }
-        bool ShowsTooltipWhenDisabled() const noexcept {
-            return m_tooltipWhenDisabled;
-        }
         void SetFont(std::wstring family, float sizePx, int style = Gdiplus::FontStyleRegular);
         const std::wstring& GetFontFamily() const noexcept {
             return m_fontFamily;
@@ -253,7 +247,7 @@ namespace exui {
         std::vector<std::shared_ptr<Widget>> m_children;
         uint32_t m_id = 0;
         RECT m_bounds{};
-        bool m_visible = true, m_enabled = true, m_tabStop = false, m_tooltipWhenDisabled = false;
+        bool m_visible = true, m_enabled = true, m_tabStop = false;
         uint8_t m_opacity = 255;
         ActivationKind m_activation = ActivationKind::None;
         std::wstring m_tooltipText;

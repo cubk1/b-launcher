@@ -45,6 +45,11 @@ namespace MultiplayerScreen {
         constexpr int VIEW_ROOM = 2;
         constexpr int VIEW_TC_JOIN = 3;
         constexpr int VIEW_TC_ROOM = 4;
+#if defined(_WIN32)
+        constexpr bool TERRACOTTA = true;
+#else
+        constexpr bool TERRACOTTA = false;
+#endif
 
         constexpr float CODE_SIZE = 18.0f;
         constexpr float BUTTON_MIN = 96.0f;
@@ -70,8 +75,6 @@ namespace MultiplayerScreen {
         const char* const PORT_DIALOG = "multiplayer#port";
         const char* const ADDRESS_DOC = "在游戏的多人游戏里选直接连接输入这个地址";
         const char* const PLAY_DOC = "启动当前选中的实例";
-        const char* const TC_ADDRESS_DOC = "在游戏的多人游戏里选陶瓦局域网入口，或直接连接这个地址";
-        const char* const TC_PLAY_DOC = "启动当前选中的实例并自动连接";
         const char* const WAIT_TEXT = "请在单人世界里对局域网开放";
 
         PageTransition views(VIEW_HOME);
@@ -101,15 +104,14 @@ namespace MultiplayerScreen {
                         [](const std::string& text) { terracottaCode = firstTrimmedLine(text); },
                         "例如 U/XXXX-XXXX-XXXX-XXXX");
                 binding->limit = 2048;
-                binding->pasteFilter = firstTrimmedLine;
                 return binding;
             }();
             return value;
         }
 
         std::string liveTerracottaCode() {
-            return firstTrimmedLine(NewUi::textEditing == TERRACOTTA_INPUT
-                    ? UiInput::get(NewUi::INPUT_TEXT) : terracottaCode);
+            return firstTrimmedLine(NewUi::textEditing == TERRACOTTA_INPUT ? UiInput::get(NewUi::INPUT_TEXT)
+                                                                           : terracottaCode);
         }
 
         void stopTerracottaEditing() {
@@ -504,32 +506,39 @@ namespace MultiplayerScreen {
             float cx = Page::left() + Page::width() * 0.5f;
             float middle = MainWindow::height() * 0.5f;
             bool available = Multiplayer::available();
-            float cardH = 3 * OPTION_H;
+            if (!available && !TERRACOTTA) {
+                Page::centredText("这个版本没有包含联机组件", cx, middle - 12.0f, 24.0f, UiTheme::textMuted(),
+                                  UiWidgets::TEXT_BODY);
+                return;
+            }
+            int rows = TERRACOTTA ? 3 : 2;
+            float cardH = (float) rows * OPTION_H;
             float total = 24.0f + 22.0f + cardH;
             float y = std::max(Page::top(), middle - total * 0.5f);
             Page::centredText("联机", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 22.0f;
             float x = cx - WELCOME_W * 0.5f;
-            Page::listCard(x, y, WELCOME_W, OPTION_H, 3);
+            Page::listCard(x, y, WELCOME_W, OPTION_H, rows);
             const Multiplayer::Service& service = Multiplayer::service();
             bool hostable = available && Multiplayer::canHost() && !TerracottaGuest::active();
             std::string note = hostable ? std::string() : service.maintenance ? "维护中" : "暂时不可用";
-            if (optionRow("multiplayer#create", 0xf233, "创建房间", note, x, y, WELCOME_W, OPTION_H, 0, 3, hostable,
+            if (optionRow("multiplayer#create", 0xf233, "创建房间", note, x, y, WELCOME_W, OPTION_H, 0, rows, hostable,
                           blocked)) {
                 waiting = true;
                 waitSerial = Multiplayer::worldsSerial();
             }
             if (optionRow("multiplayer#enter", 0xf2f6, "加入房间", std::string(), x, y + OPTION_H, WELCOME_W, OPTION_H,
-                          1, 3, available && !TerracottaGuest::active(), blocked)) {
+                          1, rows, available && !TerracottaGuest::active(), blocked)) {
                 openJoin();
             }
-            if (optionRow("multiplayer#terracotta", 0xf0c0, "加入 HMCL / 陶瓦房间", std::string(), x,
-                          y + 2 * OPTION_H, WELCOME_W, OPTION_H, 2, 3, !Multiplayer::active(), blocked)) {
+            if (TERRACOTTA &&
+                optionRow("multiplayer#terracotta", 0xf0c0, "加入 HMCL / 陶瓦房间", std::string(), x, y + 2 * OPTION_H,
+                          WELCOME_W, OPTION_H, 2, rows, !Multiplayer::active(), blocked)) {
                 terracottaPage = true;
             }
-            if (available) serviceLine(cx, MainWindow::height() - 28.0f - LINE_H, Page::width(), blocked);
-            else Page::centredText("这个版本没有包含原联机组件", cx, MainWindow::height() - 28.0f - LINE_H,
-                    LINE_H, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
+            if (available) {
+                serviceLine(cx, MainWindow::height() - 28.0f - LINE_H, Page::width(), blocked);
+            }
         }
 
         bool miniPillButton(const std::string& id, int glyph, const std::string& text, float rightX, float y,
@@ -609,8 +618,9 @@ namespace MultiplayerScreen {
                     detailLines = UiFont::wrap(state.detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, errTextW);
                 }
                 float textH = (float) errLines.size() * ERR_LINE +
-                        (detailLines.empty() ? 0.0f : (errLines.empty() ? 0.0f : 4.0f) +
-                                (float) detailLines.size() * DETAIL_LINE);
+                        (detailLines.empty()
+                                 ? 0.0f
+                                 : (errLines.empty() ? 0.0f : 4.0f) + (float) detailLines.size() * DETAIL_LINE);
                 errBoxH = std::max(38.0f, textH + 16.0f);
             }
 
@@ -626,16 +636,13 @@ namespace MultiplayerScreen {
             float avail = viewBottom - viewTop;
             float y = body.top - body.offset + (totalH < avail ? (avail - totalH) * 0.45f : 0.0f);
 
-            // Centered Hero
             hmclBadge(cx - HERO_BADGE * 0.5f, y, HERO_BADGE, HERO_ICON, 13.0f);
             y += HERO_BADGE + 12.0f;
             Page::centredText("加入 HMCL / 陶瓦房间", cx, y, 24.0f, UiTheme::textPrimary(), Page::TITLE_SIZE);
             y += 24.0f + 6.0f;
-            Page::centredText("粘贴好友分享的房间码，自动配置联机兼容通道", cx, y, 18.0f, UiTheme::textMuted(),
-                              UiWidgets::TEXT_CONTROL);
+            Page::centredText("粘贴好友分享的房间码", cx, y, 18.0f, UiTheme::textMuted(), UiWidgets::TEXT_CONTROL);
             y += 18.0f + 20.0f;
 
-            // Main Entry Card
             Page::card(cardX, y, cardW, cardH);
             float ix = cardX + CARD_PAD;
             float iy = y + CARD_PAD;
@@ -711,8 +718,8 @@ namespace MultiplayerScreen {
                         lineY += DETAIL_LINE;
                     }
                 }
-                if (Page::iconButton("multiplayer#terracotta#copyError", 0xf0c5, "复制错误信息",
-                                     ix + innerW - 31.0f, iy + 5.0f, blocked)) {
+                if (Page::iconButton("multiplayer#terracotta#copyError", 0xf0c5, "复制错误信息", ix + innerW - 31.0f,
+                                     iy + 5.0f, blocked)) {
                     std::string copyText = state.error;
                     if (!state.detail.empty()) {
                         if (!copyText.empty()) copyText += "\n";
@@ -759,7 +766,8 @@ namespace MultiplayerScreen {
             if (ThemeStyle::icons()) {
                 int glyph = isHost ? 0xf521 : isLocal ? 0xf007 : 0xf108;
                 uint32_t iconInk = isHost ? UiTheme::accentText()
-                                          : isLocal ? UiTheme::textSecondary() : UiTheme::textMuted();
+                        : isLocal         ? UiTheme::textSecondary()
+                                          : UiTheme::textMuted();
                 UiWidgets::icon(Ui::glyph(glyph), Page::left() + 24.0f, cy, iconInk, 12.0f);
                 x = Page::left() + 44.0f;
             }
@@ -803,17 +811,16 @@ namespace MultiplayerScreen {
             bool ready = state.stage == TCStage::Ready;
             bool closing = state.stage == TCStage::Closing;
 
-            // Header: HMCL badge + Title + Live Status Pill
             float headerY = Page::top();
             hmclBadge(Page::left(), headerY - 1.0f, 26.0f, 18.0f, 7.0f);
             const std::string titleText = "HMCL / 陶瓦房间";
             float titleX = Page::left() + 34.0f;
             Page::title(titleText, titleX, headerY);
 
-            std::string pillText = ready   ? "通道已就绪"
-                                 : closing ? "正在退出"
-                                 : state.stage == TCStage::Preparing ? "准备组件中"
-                                                                     : "正在连接";
+            std::string pillText = ready                ? "通道已就绪"
+                    : closing                           ? "正在退出"
+                    : state.stage == TCStage::Preparing ? "准备组件中"
+                                                        : "正在连接";
             float pillTextW = UiFont::width(pillText, UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
             float pillLead = 14.0f;
             float pillW = 8.0f + pillLead + pillTextW + 9.0f;
@@ -822,12 +829,10 @@ namespace MultiplayerScreen {
             float pillH = 22.0f;
 
             if (pillX + pillW <= Page::right()) {
-                uint32_t pillFill = ready   ? ((onlineColor() & 0x00FFFFFFu) | 0x24000000u)
-                                  : closing ? UiTheme::surfaceRaised()
-                                            : UiTheme::accentSoft(44);
-                uint32_t pillInk = ready   ? onlineColor()
-                                 : closing ? UiTheme::textMuted()
-                                           : UiTheme::accentText();
+                uint32_t pillFill = ready ? ((onlineColor() & 0x00FFFFFFu) | 0x24000000u)
+                        : closing         ? UiTheme::surfaceRaised()
+                                          : UiTheme::accentSoft(44);
+                uint32_t pillInk = ready ? onlineColor() : closing ? UiTheme::textMuted() : UiTheme::accentText();
                 UiRender::roundRect(pillX, pillY, pillW, pillH, 11.0f, pillFill);
                 if (ready) {
                     UiRender::circle(pillX + 12.0f, pillY + pillH * 0.5f, 3.5f, pillInk);
@@ -838,12 +843,10 @@ namespace MultiplayerScreen {
                                 UiWidgets::TEXT_SMALL);
             }
 
-            // Compute Scroll Content Height
             std::vector<std::string> detailLines;
             float progressCardH = 0.0f;
             if (!ready) {
-                std::string detail = closing
-                        ? std::string("正在断开联机通道并关闭本地联机组件，请稍候…")
+                std::string detail = closing   ? std::string("正在断开联机通道并关闭本地联机组件，请稍候…")
                         : state.detail.empty() ? std::string("请保持启动器运行，正在与联机组件通信")
                                                : state.detail;
                 detailLines = UiFont::wrap(detail, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
@@ -858,8 +861,7 @@ namespace MultiplayerScreen {
                 contentH = progressCardH + SECTION_GAP + Page::CAPTION_H + 2 * Page::ROW_H + SECTION_GAP +
                         Page::CAPTION_H + memberRows * Page::ROW_H;
             } else {
-                contentH = Page::CAPTION_H + 4 * Page::ROW_H + SECTION_GAP + Page::CAPTION_H +
-                        memberRows * Page::ROW_H;
+                contentH = Page::CAPTION_H + 4 * Page::ROW_H + SECTION_GAP + Page::CAPTION_H + memberRows * Page::ROW_H;
             }
 
             float buttonTop = MainWindow::height() - 28.0f - Page::FIELD_H;
@@ -868,11 +870,9 @@ namespace MultiplayerScreen {
             float y = body.top - body.offset;
 
             if (!ready) {
-                // Progress Hero Card
                 Page::card(Page::left(), y, Page::width(), progressCardH);
                 if (!closing) {
-                    UiRender::roundRect(Page::left(), y, Page::width(), progressCardH, 12.0f,
-                                        UiTheme::accentSoft(24));
+                    UiRender::roundRect(Page::left(), y, Page::width(), progressCardH, 12.0f, UiTheme::accentSoft(24));
                 }
                 Page::spinner(Page::left() + 26.0f, y + progressCardH * 0.5f, 9.0f,
                               closing ? UiTheme::textMuted() : UiTheme::accent());
@@ -887,7 +887,6 @@ namespace MultiplayerScreen {
                 }
                 y += progressCardH + SECTION_GAP;
 
-                // Room Info Card (Preparing/Connecting/Closing)
                 Page::caption("房间信息", y);
                 float rowY = y + Page::CAPTION_H;
                 Page::card(rowY, 2);
@@ -909,17 +908,15 @@ namespace MultiplayerScreen {
                                      UiTheme::textMuted(), blocked);
                 } else {
                     Page::label("兼容补丁", rowY);
-                    valueTextWithTip("从 B 启动游戏时自动为本次进程启用", Page::controlRight(), labelRight("兼容补丁"),
-                                     rowY, UiTheme::textMuted(), blocked);
+                    valueTextWithTip("启动游戏时自动启用", Page::controlRight(), labelRight("兼容补丁"), rowY,
+                                     UiTheme::textMuted(), blocked);
                 }
                 y = rowY + Page::ROW_H + SECTION_GAP;
             } else {
-                // Ready Room Card (matches native roomView)
                 Page::caption("加入的房间", y);
                 float rowY = y + Page::CAPTION_H;
                 Page::card(rowY, 4);
 
-                // Row 1: Room Code
                 Page::label("房间码", rowY);
                 if (!state.code.empty()) {
                     float copyX = Page::controlRight() - ICON_INSET;
@@ -933,7 +930,6 @@ namespace MultiplayerScreen {
                 }
                 rowY += Page::ROW_H;
 
-                // Row 2: Status
                 Page::label("状态", rowY);
                 {
                     std::string status = "联机通道已就绪，请在游戏内加入";
@@ -949,28 +945,22 @@ namespace MultiplayerScreen {
                 }
                 rowY += Page::ROW_H;
 
-                // Row 3: Forward Address
                 Page::label("连接地址", rowY);
                 {
                     float left = labelRight("连接地址");
                     float copyX = Page::controlRight() - ICON_INSET;
                     if (!state.address.empty() &&
-                        Page::iconButton("multiplayer#terracotta#copy", 0xf0c5, "复制游戏连接地址", copyX,
-                                         rowY + 6.0f, blocked)) {
+                        Page::iconButton("multiplayer#terracotta#copy", 0xf0c5, "复制游戏连接地址", copyX, rowY + 6.0f,
+                                         blocked)) {
                         UiInput::setClipboard(state.address);
                         Notifications::add(Notifications::INFO, "已复制连接地址", 2500);
                     }
                     float addrRight = state.address.empty() ? Page::controlRight() : copyX - 4.0f;
                     std::string addrText = state.address.empty() ? "等待联机通道" : state.address;
-                    bool tipped = valueTextWithTip(addrText, addrRight, left, rowY, UiTheme::textPrimary(), blocked,
-                                                   UiFont::BOLD);
-                    if (!tipped) {
-                        explain("multiplayer#terracotta#address#doc", TC_ADDRESS_DOC, rowY, left, blocked);
-                    }
+                    valueTextWithTip(addrText, addrRight, left, rowY, UiTheme::textPrimary(), blocked, UiFont::BOLD);
                 }
                 rowY += Page::ROW_H;
 
-                // Row 4: Launch & Join
                 Page::label("进入游戏", rowY);
                 {
                     const Instances::Entry* entry = Instances::find(Instances::selected());
@@ -987,27 +977,15 @@ namespace MultiplayerScreen {
                         textRight -= tagW + 8.0f;
                     }
                     std::string instanceText = entry != nullptr ? entry->info.id : std::string("没有选中实例");
-                    bool tipped = valueTextWithTip(instanceText, textRight, left, rowY, UiTheme::textMuted(), blocked);
+                    valueTextWithTip(instanceText, textRight, left, rowY, UiTheme::textMuted(), blocked);
                     if (dimButton("multiplayer#terracotta#play", playText, Page::controlRight() - w,
                                   rowY + Page::FIELD_Y, w, true, canLaunch, blocked, 0xf04b)) {
                         Game::launch(entry->key, false, std::string(), state.address);
-                    }
-                    if (!tipped) {
-                        bool preparing = entry != nullptr && Game::state(entry->key) == Game::State::Preparing;
-                        explain("multiplayer#terracotta#play#doc",
-                                entry == nullptr ? "请先在左侧选择或创建一个游戏实例"
-                                        : preparing
-                                        ? "当前实例正在准备启动；若在加入房间前已发起启动，请重启游戏以加载兼容补丁"
-                                        : !idle
-                                        ? "游戏已在运行；若在加入房间前已启动，请重启游戏以加载兼容补丁"
-                                        : TC_PLAY_DOC,
-                                rowY, canLaunch ? Page::controlRight() - w - 8.0f : Page::controlRight(), blocked);
                     }
                 }
                 y = rowY + Page::ROW_H + SECTION_GAP;
             }
 
-            // Members Card
             Page::caption("联机成员（" + std::to_string(state.members.size()) + "）", y);
             y += Page::CAPTION_H;
             Page::card(y, memberRows);
@@ -1023,7 +1001,6 @@ namespace MultiplayerScreen {
             }
             body.end();
 
-            // Bottom Bar
             std::string action = closing ? "正在退出…" : "退出房间";
             float w = std::max(BUTTON_MIN, Page::buttonWidth(action, 0xf2f5));
             if (Page::button("multiplayer#terracotta#leave", action, Page::right() - w, buttonTop, w, false,

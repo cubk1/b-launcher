@@ -3,8 +3,6 @@
 #include <string>
 #include <vector>
 
-// A guest of an existing HMCL/Terracotta room. Ready means the transport is
-// available; Minecraft still has to connect to State::address.
 namespace TerracottaGuest {
 
     enum class Stage { Idle, Preparing, Connecting, Ready, Closing, Failed };

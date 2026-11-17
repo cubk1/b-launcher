@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -16,7 +15,6 @@ namespace UiInput {
     extern std::unordered_map<std::string, int> byteLimits;
     extern std::string focused;
     extern std::unordered_set<std::string> secrets;
-    extern std::unordered_map<std::string, std::function<std::string(const std::string&)>> pasteFilters;
 
     std::string get(const std::string& id);
     std::string shown(const std::string& id);
@@ -44,7 +42,6 @@ namespace UiInput {
     std::string clipboard();
     void setClipboard(const std::string& value);
     std::string filterAllowed(const std::string& value);
-    std::string cleanPaste(const std::string& id, const std::string& raw);
     void snapshot(const std::string& id, bool coalesce);
     void undo(const std::string& id);
     void redo(const std::string& id);

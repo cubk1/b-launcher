@@ -146,7 +146,6 @@ public:
     std::string placeholder;
     int limit;
     bool masked;
-    std::function<std::string(const std::string&)> pasteFilter;
 
     TextBinding(const std::string& owner, std::function<std::string()> getter,
                 std::function<void(const std::string&)> setter, const std::string& placeholder);
@@ -155,7 +154,6 @@ public:
     std::string hint() override;
     int maxLength() override;
     bool secret() override;
-    std::string cleanPaste(const std::string& raw) const override;
 };
 
 class KeyBinding final : public KeyValue {

@@ -333,12 +333,8 @@ namespace ForgottenMelody {
                 tcFeedback.SetAlignment(Gdiplus::StringAlignmentCenter, Gdiplus::StringAlignmentCenter);
                 tcFeedback.SetTrimming(Gdiplus::StringTrimmingEllipsisCharacter);
                 Control<exui::Label>(TC_NOTE).SetMultiline(true);
-                FindControl(TC_PASTE)->SetTooltipText(L"从剪贴板读取第一行房间码并填入");
-                FindControl(TC_ADDRESS)->SetTooltipText(L"在游戏的多人游戏中选择陶瓦局域网入口，或直接连接这个地址");
-                FindControl(TC_PLAY)->SetTooltipWhenDisabled(true);
                 UpdateText(TC_CODE, Platform::widen(TerracottaGuest::state().code));
                 auto& tcCode = Control<exui::EditBox>(TC_CODE);
-                tcCode.PasteTransform = [](std::wstring_view raw) { return firstTrimmedWideLine(raw); };
                 tcCode.OnTextChanged = [this](const std::wstring&) { refresh(); };
                 auto& tcMembers = Control<exui::ListView>(TC_MEMBERS);
                 tcMembers.SetRowHeight(24);
@@ -834,8 +830,7 @@ namespace ForgottenMelody {
                     statusLabel.SetTextColor(statusColor);
                 }
                 UpdateText(TC_STATUS, Platform::widen(status));
-                FindControl(TC_STATUS)->SetTooltipText(Platform::widen(
-                        !state.detail.empty() && !failed ? status + " · " + state.detail : status));
+                FindControl(TC_STATUS)->SetTooltipText(Platform::widen(status));
 
                 UpdateText(TC_NOTE, note);
                 FindControl(TC_NOTE)->SetTooltipText(note);
@@ -847,20 +842,16 @@ namespace ForgottenMelody {
                 }
                 UpdateText(TC_ERROR, errDisplay);
 
-                std::wstring playTip;
                 if (!entry) {
                     UpdateText(TC_GAME, L"请在主窗口选择实例");
-                    FindControl(TC_GAME)->SetTooltipText(L"请先在主窗口选择或创建一个游戏实例");
+                    FindControl(TC_GAME)->SetTooltipText(L"");
                     UpdateText(TC_PLAY, L"启动并加入");
-                    playTip = L"请先在主窗口选择或创建一个游戏实例";
                     tcStyledGameState = -1;
                 } else {
                     std::wstring instanceName = Platform::widen(entry->info.id);
                     UpdateText(TC_GAME, instanceName);
                     std::wstring gameTip = instanceName;
                     if (gameState == Game::State::Preparing) {
-                        gameTip += L"（准备中）\n实例正在准备启动；若在加入房间前已发起启动，请重启游戏以加载兼容补丁";
-                        playTip = L"当前实例正在准备启动；若在加入房间前已发起启动，请重启游戏以加载兼容补丁";
                         UpdateText(TC_PLAY, L"准备中…");
                         if (tcStyledGameState != 1) {
                             tcStyledGameState = 1;
@@ -871,8 +862,6 @@ namespace ForgottenMelody {
                         }
                         UpdateText(TC_GAME_STATE, L"准备中");
                     } else if (gameState == Game::State::Running) {
-                        gameTip += L"（运行中）\n游戏已在运行；若在加入房间前已启动，请重启游戏以加载兼容补丁";
-                        playTip = L"游戏已在运行；若在加入房间前已启动，请重启游戏以加载兼容补丁";
                         UpdateText(TC_PLAY, L"运行中");
                         if (tcStyledGameState != 2) {
                             tcStyledGameState = 2;
@@ -883,16 +872,12 @@ namespace ForgottenMelody {
                         }
                         UpdateText(TC_GAME_STATE, L"运行中");
                     } else {
-                        gameTip += L"\n点击右侧“启动并加入”会自动启动该实例并连接房间";
-                        playTip = state.address.empty() ? L"正在等待联机通道地址就绪"
-                                                        : L"启动当前选中的实例并自动连接房间";
                         UpdateText(TC_PLAY, L"启动并加入");
                         tcStyledGameState = 0;
                     }
                     FindControl(TC_GAME)->SetTooltipText(gameTip);
                     FindControl(TC_GAME_STATE)->SetTooltipText(gameTip);
                 }
-                FindControl(TC_PLAY)->SetTooltipText(playTip);
                 FindControl(TC_PLAY)->SetEnabled(ready && !state.address.empty() && entry &&
                         gameState == Game::State::Idle);
 

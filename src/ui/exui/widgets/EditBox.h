@@ -96,8 +96,6 @@ namespace exui {
 
         // Called whenever the text changes, including SetText with different text.
         std::function<void(const std::wstring&)> OnTextChanged;
-        // Optional filter applied to clipboard text before pasting.
-        std::function<std::wstring(std::wstring_view)> PasteTransform;
 
         void OnPaint(Gdiplus::Graphics& g) override;
         void OnMouseCancel() override;

@@ -17,6 +17,9 @@
 #include <core/network/http_client.hpp>
 #include <core/network/server_ping.hpp>
 
+#include <zlib.h>
+
+#include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -51,20 +54,22 @@ namespace TerracottaGuest {
         constexpr auto WORLD_CHECK_TIMEOUT = std::chrono::seconds(3);
         constexpr int WORLD_CHECK_FAILURES = 3;
 
-        // Official, unmodified Terracotta release; SHA-512 values come from
-        // HMCL v3.16.4's assets/terracotta.json (fbcc17472f08e877d60d6b715734e8054e9e61ee).
-        // Terracotta: https://github.com/burningtnt/Terracotta (AGPL-3.0)
-        // EasyTier is embedded by that upstream package, not rebuilt here.
 #if defined(_M_ARM64) || defined(__aarch64__)
         constexpr auto CLASSIFIER = "windows-arm64";
-        constexpr auto PACKAGE_HASH = "fc1077247014ac0c712469498bde2ef7f6d881d5fcb7bdd5e11ebe20218fed365be19afdb8d453a79d77b729f866058522b910741767f4df947faa891434b463";
-        constexpr auto EXE_HASH = "30a15c5c53e5817c5a3634532172559327474741d3b2c7ef4e8a30acc6f59cdcf3570bf5f583e3cbe9e2abc8253e977c1abda1e9f36c88c4e99240da257347d0";
-        constexpr auto DLL_HASH = "5cb5ce114614101d260f4754c09e8a0dd57e4da885ebb96b91e274326f3e1dd95ed0ade9f542f1922fad0ed025e88a1f368e791e1d01fae69718f0ec3c7b98c8";
+        constexpr auto PACKAGE_HASH = "fc1077247014ac0c712469498bde2ef7f6d881d5fcb7bdd5e11ebe20218fed365be19afdb8d453a7"
+                                      "9d77b729f866058522b910741767f4df947faa891434b463";
+        constexpr auto EXE_HASH = "30a15c5c53e5817c5a3634532172559327474741d3b2c7ef4e8a30acc6f59cdcf3570bf5f583e3cbe9e2"
+                                  "abc8253e977c1abda1e9f36c88c4e99240da257347d0";
+        constexpr auto DLL_HASH = "5cb5ce114614101d260f4754c09e8a0dd57e4da885ebb96b91e274326f3e1dd95ed0ade9f542f1922fad"
+                                  "0ed025e88a1f368e791e1d01fae69718f0ec3c7b98c8";
 #else
         constexpr auto CLASSIFIER = "windows-x86_64";
-        constexpr auto PACKAGE_HASH = "6a98f524d4f00373696517306af8aa50d01d55ce4eadb27e9e4bc2f882707a0b5f20d5d4c33371d1459dcf5bf144ffed9beb414202d9ccf32b11dbbfcf19d650";
-        constexpr auto EXE_HASH = "6e98d1f2380ed22fb5a2dd4aafce6c773e9cf69100c8bb8e49e7d6983756bdb9a31f80e06bcfbe5a2742144fe806d3d687dec54d8f09d87c659341f99dd9fd80";
-        constexpr auto DLL_HASH = "3d4b24061f72c0e957c7b04a0c4098c94c8f1afb4a7e159850b9939c7210d73398be6f27b5ab85073b4e8c999816e7804fef0f6115c39cd061f4aaeb4dcda8cf";
+        constexpr auto PACKAGE_HASH = "6a98f524d4f00373696517306af8aa50d01d55ce4eadb27e9e4bc2f882707a0b5f20d5d4c33371d1"
+                                      "459dcf5bf144ffed9beb414202d9ccf32b11dbbfcf19d650";
+        constexpr auto EXE_HASH = "6e98d1f2380ed22fb5a2dd4aafce6c773e9cf69100c8bb8e49e7d6983756bdb9a31f80e06bcfbe5a2742"
+                                  "144fe806d3d687dec54d8f09d87c659341f99dd9fd80";
+        constexpr auto DLL_HASH = "3d4b24061f72c0e957c7b04a0c4098c94c8f1afb4a7e159850b9939c7210d73398be6f27b5ab85073b4e"
+                                  "8c999816e7804fef0f6115c39cd061f4aaeb4dcda8cf";
 #endif
 
         std::mutex mutex;
@@ -95,8 +100,8 @@ namespace TerracottaGuest {
         }
 
         blb::result<blb::net::http_response> localRequest(int port, const std::string& path,
-                                                       blb::cancellation_token token = {},
-                                                       std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
+                                                          blb::cancellation_token token = {},
+                                                          std::chrono::milliseconds timeout = std::chrono::seconds(3)) {
             blb::net::http_request request;
             request.url = "http://127.0.0.1:" + std::to_string(port) + path;
             request.timeout = timeout;
@@ -113,6 +118,63 @@ namespace TerracottaGuest {
             return doc;
         }
 
+        std::string inflateGzip(const std::string& packed) {
+            z_stream stream{};
+            require(inflateInit2(&stream, 15 + 16) == Z_OK, "无法解压联机组件");
+            stream.next_in = (Bytef*) packed.data();
+            stream.avail_in = (uInt) packed.size();
+            std::string out;
+            std::vector<char> buffer(1 << 16);
+            int status = Z_OK;
+            while (status == Z_OK) {
+                stream.next_out = (Bytef*) buffer.data();
+                stream.avail_out = (uInt) buffer.size();
+                status = inflate(&stream, Z_NO_FLUSH);
+                out.append(buffer.data(), buffer.size() - stream.avail_out);
+            }
+            inflateEnd(&stream);
+            require(status == Z_STREAM_END, "联机组件压缩包已损坏");
+            return out;
+        }
+
+        std::string_view tarField(std::string_view header, size_t at, size_t length) {
+            std::string_view text = header.substr(at, length);
+            return text.substr(0, text.find('\0'));
+        }
+
+        void unpack(const std::filesystem::path& archive, const std::filesystem::path& directory,
+                    const std::vector<std::string>& names) {
+            auto packed = blb::fs::read_file(archive);
+            require((bool) packed, packed ? "" : packed.err().message);
+            std::string tar = inflateGzip(*packed);
+            size_t found = 0;
+            size_t at = 0;
+            while (at + 512 <= tar.size() && tar[at] != '\0') {
+                std::string_view header(tar.data() + at, 512);
+                std::string_view name = tarField(header, 0, 100);
+                std::string_view digits = blb::trim(tarField(header, 124, 12));
+                unsigned long long size = 0;
+                if (!digits.empty()) {
+                    auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), size, 8);
+                    require(parsed.ec == std::errc{}, "联机组件压缩包已损坏");
+                }
+                at += 512;
+                require(size <= tar.size() - at, "联机组件压缩包已损坏");
+                if (name.starts_with("./")) {
+                    name.remove_prefix(2);
+                }
+                char type = header[156];
+                if ((type == '0' || type == '\0') && std::find(names.begin(), names.end(), name) != names.end()) {
+                    auto written = blb::fs::write_file_atomic(directory / blb::path_from_utf8(std::string(name)),
+                                                              std::string_view(tar.data() + at, (size_t) size));
+                    require((bool) written, written ? "" : written.err().message);
+                    found++;
+                }
+                at += (size_t) ((size + 511) / 512 * 512);
+            }
+            require(found == names.size(), "联机组件压缩包缺少文件");
+        }
+
         std::filesystem::path prepare(const std::filesystem::path& root, blb::cancellation_token token) {
             auto directory = root / VERSION;
             auto base = std::string("terracotta-") + VERSION + "-" + CLASSIFIER;
@@ -126,35 +188,24 @@ namespace TerracottaGuest {
                 blb::net::download_task task;
                 task.target = archive;
                 auto suffix = std::string("/releases/download/v") + VERSION + "/" + base + "-pkg.tar.gz";
-                task.urls = {
-                    "https://github.com/burningtnt/Terracotta" + suffix,
-                    "https://gitee.com/burningtnt/Terracotta" + suffix,
-                    "https://cnb.cool/HMCL-Terracotta/Terracotta/-" + suffix
-                };
+                task.urls = {"https://github.com/burningtnt/Terracotta" + suffix,
+                             "https://gitee.com/burningtnt/Terracotta" + suffix,
+                             "https://cnb.cool/HMCL-Terracotta/Terracotta/-" + suffix};
                 blb::net::download_options options;
                 options.concurrency = 1;
                 options.retries = 1;
                 blb::net::download_client downloader(options);
                 auto report = downloader.run(std::span<const blb::net::download_task>(&task, 1), nullptr, token);
                 require(!token.is_cancelled(), "已取消");
-                require(report.ok(), report.failures.empty() ? "无法下载联机组件" : report.failures.front().reason.message);
+                require(report.ok(),
+                        report.failures.empty() ? "无法下载联机组件" : report.failures.front().reason.message);
                 if (!matches(archive, PACKAGE_HASH)) {
                     (void) blb::fs::remove_file(archive);
                     throw std::runtime_error("联机组件压缩包的 SHA-512 校验失败，请重试");
                 }
             }
             require(!token.is_cancelled(), "已取消");
-            blb::process_options extract;
-#if defined(_WIN32)
-            wchar_t system[MAX_PATH]{};
-            require(GetSystemDirectoryW(system, MAX_PATH) != 0, "无法找到系统解压工具");
-            extract.args = {blb::path_to_utf8(std::filesystem::path(system) / "tar.exe"), "-xzf",
-                            blb::path_to_utf8(archive), "-C", blb::path_to_utf8(directory),
-                            base + ".exe", "VCRUNTIME140.DLL"};
-#endif
-            auto extracted = blb::run_process(extract, token, std::chrono::seconds(30));
-            require((bool) extracted, extracted ? "" : extracted.err().message);
-            require(extracted->exit_code == 0, "无法解压联机组件：" + extracted->err);
+            unpack(archive, directory, {base + ".exe", "VCRUNTIME140.DLL"});
             require(matches(executable, EXE_HASH) && matches(dll, DLL_HASH), "联机组件文件的 SHA-512 校验失败");
             return executable;
         }
@@ -193,8 +244,8 @@ namespace TerracottaGuest {
                 return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_LESS_THAN;
             };
             std::map<std::wstring, std::wstring, decltype(less)> merged(less);
-            std::unique_ptr<wchar_t, decltype(&FreeEnvironmentStringsW)> parent(
-                GetEnvironmentStringsW(), &FreeEnvironmentStringsW);
+            std::unique_ptr<wchar_t, decltype(&FreeEnvironmentStringsW)> parent(GetEnvironmentStringsW(),
+                                                                                &FreeEnvironmentStringsW);
             require((bool) parent, "无法读取子进程环境变量");
             for (const wchar_t* entry = parent.get(); *entry; entry += std::wcslen(entry) + 1) {
                 std::wstring_view text(entry);
@@ -203,8 +254,6 @@ namespace TerracottaGuest {
                     merged[std::wstring(text.substr(0, equals))] = std::wstring(text.substr(equals + 1));
                 }
             }
-            // Replace inherited TMP/TEMP case-insensitively so the child uses
-            // B Launcher's isolated runtime lock rather than another launcher's %TEMP%.
             auto tmp = temporary.native();
             merged.erase(L"TEMP");
             merged.erase(L"TMP");
@@ -236,11 +285,9 @@ namespace TerracottaGuest {
             void claim(const std::filesystem::path& root) {
                 auto made = blb::fs::create_directories(root);
                 require((bool) made, made ? "" : made.err().message);
-                // The upstream singleton is shared by the temp folder.
-                // A second B instance must not reset or close the first one.
-                owner = CreateFileW((root / "session.lock").c_str(), GENERIC_READ | GENERIC_WRITE,
-                                    0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-                require(owner != INVALID_HANDLE_VALUE, "另一个 B Launcher 正在使用 HMCL 联机，请先退出该房间");
+                owner = CreateFileW((root / "session.lock").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                require(owner != INVALID_HANDLE_VALUE, "另一个启动器正在使用 HMCL 联机，请先退出那个房间");
             }
 
             bool isOurImage(HANDLE handle, const std::filesystem::path& expectedReal) {
@@ -251,8 +298,6 @@ namespace TerracottaGuest {
                 return blb::fs::path_key(actual) == blb::fs::path_key(expectedReal);
             }
 
-            // Capture the detached child before it exposes HTTP, so startup
-            // timeout can still close exactly the process we started.
             void rememberStartingDaemon(const std::filesystem::path& expectedReal) {
                 if (daemon || bootstrapPid == 0) return;
                 HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -265,7 +310,10 @@ namespace TerracottaGuest {
                         HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
                                                     FALSE, entry.th32ProcessID);
                         if (!handle) continue;
-                        if (isOurImage(handle, expectedReal)) { daemon = handle; break; }
+                        if (isOurImage(handle, expectedReal)) {
+                            daemon = handle;
+                            break;
+                        }
                         CloseHandle(handle);
                     } while (Process32NextW(snapshot, &entry));
                 }
@@ -277,16 +325,17 @@ namespace TerracottaGuest {
                 DWORD size = 0;
                 std::vector<unsigned char> bytes;
                 for (int attempt = 0; attempt < 4; ++attempt) {
-                    DWORD status = GetExtendedTcpTable(bytes.empty() ? nullptr : bytes.data(), &size,
-                                                       FALSE, family, TCP_TABLE_OWNER_PID_LISTENER, 0);
+                    DWORD status = GetExtendedTcpTable(bytes.empty() ? nullptr : bytes.data(), &size, FALSE, family,
+                                                       TCP_TABLE_OWNER_PID_LISTENER, 0);
                     if (status == NO_ERROR && !bytes.empty()) {
                         auto table = reinterpret_cast<Table*>(bytes.data());
                         for (DWORD i = 0; i < table->dwNumEntries; ++i) {
                             auto& row = table->table[i];
                             if (ntohs(static_cast<u_short>(row.dwLocalPort)) != port) continue;
                             if (row.dwOwningPid == 0) continue;
-                            auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
-                                                      FALSE, row.dwOwningPid);
+                            auto handle =
+                                    OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                                                FALSE, row.dwOwningPid);
                             if (!handle) {
                                 foreignOwner = true;
                                 continue;
@@ -308,12 +357,10 @@ namespace TerracottaGuest {
                 return false;
             }
 
-            // --hmcl spawns the real daemon and exits. Retain only the process
-            // that owns this endpoint and has our verified, dedicated EXE path.
             bool rememberDaemon(const std::filesystem::path& expectedReal, bool& foreignOwner) {
                 foreignOwner = false;
                 return findListenerOwner<MIB_TCPTABLE_OWNER_PID>(AF_INET, expectedReal, foreignOwner) ||
-                       findListenerOwner<MIB_TCP6TABLE_OWNER_PID>(AF_INET6, expectedReal, foreignOwner);
+                        findListenerOwner<MIB_TCP6TABLE_OWNER_PID>(AF_INET6, expectedReal, foreignOwner);
             }
 #else
             blb::process bootstrap;
@@ -325,8 +372,6 @@ namespace TerracottaGuest {
                 running = running && daemon && WaitForSingleObject(daemon, 0) == WAIT_TIMEOUT;
 #endif
                 if (running) {
-                    // Set waiting first so Terracotta drops its EasyTier and
-                    // local forwarding resources before its peaceful exit.
                     (void) localRequest(port, "/state/ide", {}, std::chrono::seconds(3));
                     (void) localRequest(port, "/panic?peaceful=true", {}, std::chrono::milliseconds(1500));
                 }
@@ -364,8 +409,6 @@ namespace TerracottaGuest {
 
         void bootstrap(Session& session, const std::filesystem::path& root, const std::filesystem::path& executable,
                        blb::cancellation_token token) {
-            // Stable child-only temp keeps machine-id across runs while giving
-            // B its own upstream singleton lock, separate from a user's HMCL.
             auto temporary = std::filesystem::absolute(root / "runtime");
             auto made = blb::fs::create_directories(temporary);
             require((bool) made, made ? "" : made.err().message);
@@ -374,12 +417,12 @@ namespace TerracottaGuest {
 #if defined(_WIN32)
             auto expectedReal = blb::fs::real_path(executable);
             auto envBlock = buildIsolatedTempEnvironment(temporary);
-            auto commandLine = quoteWindowsArg(executable.native()) + L" --hmcl " + quoteWindowsArg(session.transfer.native());
+            auto commandLine =
+                    quoteWindowsArg(executable.native()) + L" --hmcl " + quoteWindowsArg(session.transfer.native());
             auto workingDir = executable.parent_path().native();
             SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
-            HANDLE nul = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
-                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                     &inherit, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            HANDLE nul = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &inherit,
+                                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             SIZE_T attrSize = 0;
             InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
             std::vector<unsigned char> attrStorage(attrSize);
@@ -392,8 +435,8 @@ namespace TerracottaGuest {
                 auto candidate = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrStorage.data());
                 if (InitializeProcThreadAttributeList(candidate, 1, 0, &attrSize)) {
                     attrs = candidate;
-                    if (UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                                                  &nul, sizeof(nul), nullptr, nullptr)) {
+                    if (UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &nul, sizeof(nul),
+                                                  nullptr, nullptr)) {
                         si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
                         si.StartupInfo.hStdInput = nul;
                         si.StartupInfo.hStdOutput = nul;
@@ -405,9 +448,8 @@ namespace TerracottaGuest {
                 }
             }
             PROCESS_INFORMATION pi{};
-            BOOL started = CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr,
-                                          inheritHandles, creationFlags, envBlock.data(),
-                                          workingDir.c_str(), &si.StartupInfo, &pi);
+            BOOL started = CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr, inheritHandles,
+                                          creationFlags, envBlock.data(), workingDir.c_str(), &si.StartupInfo, &pi);
             DWORD startError = started ? ERROR_SUCCESS : GetLastError();
             if (attrs) DeleteProcThreadAttributeList(attrs);
             if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
@@ -428,10 +470,21 @@ namespace TerracottaGuest {
             auto deadline = Clock::now() + std::chrono::seconds(20);
             bool portConfirmed = false;
             bool verifiedOwner = false;
+            bool cancelled = false;
             std::optional<Clock::time_point> mismatchSince;
             while (Clock::now() < deadline) {
+                if (!cancelled && token.is_cancelled()) {
+                    cancelled = true;
+                    auto grace = Clock::now() + std::chrono::seconds(2);
+                    if (grace < deadline) {
+                        deadline = grace;
+                    }
+                }
 #if defined(_WIN32)
                 session.rememberStartingDaemon(expectedReal);
+                if (cancelled && session.daemon) {
+                    break;
+                }
 #endif
                 if (!portConfirmed) {
                     auto contents = blb::fs::read_file(session.transfer);
@@ -453,7 +506,8 @@ namespace TerracottaGuest {
                         if (session.rememberDaemon(expectedReal, foreignOwner)) {
                             verifiedOwner = true;
                         } else if (foreignOwner) {
-                            if (!mismatchSince) mismatchSince = Clock::now();
+                            if (!mismatchSince)
+                                mismatchSince = Clock::now();
                             else if (Clock::now() - *mismatchSince >= std::chrono::milliseconds(500)) {
                                 throw std::runtime_error("无法确认独立联机进程的身份");
                             }
@@ -468,7 +522,8 @@ namespace TerracottaGuest {
                         auto response = localRequest(session.port, "/meta");
                         if (response) {
                             auto meta = document(*response);
-                            require(blb::json_text(meta, "version") == VERSION && blb::json_text(meta, "target_os") == "windows",
+                            require(blb::json_text(meta, "version") == VERSION &&
+                                            blb::json_text(meta, "target_os") == "windows",
                                     "联机组件版本或平台与预期不符");
                             session.verified = true;
                             LOG.info("Terracotta {} ready at localhost:{}; EasyTier {}", VERSION, session.port,
@@ -478,10 +533,9 @@ namespace TerracottaGuest {
                         }
                     }
                 }
-                // Even after cancellation, drain the bounded bootstrap so a
-                // late port file can be used to clean up its detached daemon.
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
+            require(!cancelled, "已取消");
             throw std::runtime_error(portConfirmed && !verifiedOwner ? "无法确认独立联机进程的身份"
                                                                      : "联机组件启动超时，未能取得本地控制端口");
         }
@@ -527,8 +581,8 @@ namespace TerracottaGuest {
             return parsed.ec == std::errc{} && parsed.ptr == end && port > 0 && port <= 65535;
         }
 
-        void run(unsigned long long expected, State value, const std::filesystem::path& root,
-                 const std::string& player, blb::cancellation_token token) {
+        void run(unsigned long long expected, State value, const std::filesystem::path& root, const std::string& player,
+                 blb::cancellation_token token) {
             try {
                 {
 #if !defined(_WIN32)
@@ -543,10 +597,13 @@ namespace TerracottaGuest {
                     auto waiting = localRequest(session.port, "/state", token);
                     require((bool) waiting, waiting ? "" : waiting.err().message);
                     auto initial = document(*waiting);
-                    require(blb::json_text(initial, "state") == "waiting", "独立联机组件尚未退出上一个房间，请退出后重试");
+                    require(blb::json_text(initial, "state") == "waiting",
+                            "独立联机组件尚未退出上一个房间，请退出后重试");
                     auto nodes = nodeQuery(token);
-                    auto entering = localRequest(session.port, "/state/guesting?room=" + blb::url_encode(value.code) +
-                                                 "&player=" + blb::url_encode(player) + nodes, token);
+                    auto entering = localRequest(session.port,
+                                                 "/state/guesting?room=" + blb::url_encode(value.code) +
+                                                         "&player=" + blb::url_encode(player) + nodes,
+                                                 token);
                     require((bool) entering, entering ? "" : entering.err().message);
                     require(entering->status != 400, "房间码无效，或联机组件当前无法加入房间");
                     require(entering->ok(), "加入房间请求失败（HTTP " + std::to_string(entering->status) + "）");
@@ -569,7 +626,8 @@ namespace TerracottaGuest {
                         } else {
                             failures = 0;
                             auto doc = document(*response);
-                            require(doc.contains("index") && doc["index"].is_number_integer(), "联机组件状态缺少版本编号");
+                            require(doc.contains("index") && doc["index"].is_number_integer(),
+                                    "联机组件状态缺少版本编号");
                             auto index = doc["index"].get<long long>();
                             if (index > lastIndex) {
                                 lastIndex = index;
@@ -585,12 +643,16 @@ namespace TerracottaGuest {
                                     }
                                     value.stage = worldReachable ? Stage::Ready : Stage::Connecting;
                                     value.address = worldReachable ? forwardAddress : std::string();
-                                    value.detail = worldReachable ? "联机通道已就绪，请在 Minecraft 中加入此地址" :
-                                                   everReady ? "正在重新检查房主游戏连接" : "正在验证房主游戏连接";
+                                    value.detail = worldReachable ? "联机通道已就绪，请在 Minecraft 中加入此地址"
+                                            : everReady           ? "正在重新检查房主游戏连接"
+                                                                  : "正在验证房主游戏连接";
                                     value.members.clear();
-                                    if (auto profiles = doc.find("profiles"); profiles != doc.end() && profiles->is_array()) {
+                                    if (auto profiles = doc.find("profiles");
+                                        profiles != doc.end() && profiles->is_array()) {
                                         for (const auto& profile : *profiles) {
-                                            if (profile.is_object()) value.members.push_back({blb::json_text(profile, "name"), blb::json_text(profile, "kind")});
+                                            if (profile.is_object())
+                                                value.members.push_back({blb::json_text(profile, "name"),
+                                                                         blb::json_text(profile, "kind")});
                                         }
                                     }
                                 } else if (name == "guest-connecting" || name == "guest-starting") {
@@ -601,18 +663,17 @@ namespace TerracottaGuest {
                                     worldFailures = 0;
                                     value.detail = name == "guest-starting" ? "正在建立联机通道" : "正在连接房主";
                                 } else if (name == "exception") {
-                                    int type = doc.contains("type") && doc["type"].is_number_integer() ? doc["type"].get<int>() : -1;
+                                    int type = doc.contains("type") && doc["type"].is_number_integer()
+                                            ? doc["type"].get<int>()
+                                            : -1;
                                     throw std::runtime_error(exceptionText(type));
                                 } else {
-                                    throw std::runtime_error(name == "waiting" ? "已离开联机房间" : "联机组件返回了非预期状态：" + name);
+                                    throw std::runtime_error(name == "waiting" ? "已离开联机房间"
+                                                                               : "联机组件返回了非预期状态：" + name);
                                 }
                                 publish(expected, value);
                             }
                         }
-                        // Terracotta 0.4.2 can retain guest-ok after the host
-                        // leaves. Its FakeServer only broadcasts the LAN entry;
-                        // this address forwards TCP to the real Minecraft world.
-                        // Verify that world rather than trusting a listening port.
                         if (!forwardAddress.empty() && Clock::now() >= nextWorldCheck) {
                             auto status = blb::net::ping_server(forwardAddress, token, WORLD_CHECK_TIMEOUT);
                             if (token.is_cancelled()) break;
@@ -629,8 +690,8 @@ namespace TerracottaGuest {
                                 value.address.clear();
                                 require(++worldFailures < WORLD_CHECK_FAILURES,
                                         "无法通过联机通道连接房主游戏，请确认房间和网络正常后重试");
-                                value.detail = "房主游戏暂未响应，正在重新检查（" +
-                                               std::to_string(worldFailures) + "/" + std::to_string(WORLD_CHECK_FAILURES) + "）";
+                                value.detail = "房主游戏暂未响应，正在重新检查（" + std::to_string(worldFailures) +
+                                        "/" + std::to_string(WORLD_CHECK_FAILURES) + "）";
                             }
                             publish(expected, value);
                         }
@@ -653,11 +714,13 @@ namespace TerracottaGuest {
         }
     }
 
-    const State& state() { return shown; }
+    const State& state() {
+        return shown;
+    }
 
     bool active() {
-        return shown.stage == Stage::Preparing || shown.stage == Stage::Connecting ||
-               shown.stage == Stage::Ready || shown.stage == Stage::Closing;
+        return shown.stage == Stage::Preparing || shown.stage == Stage::Connecting || shown.stage == Stage::Ready ||
+                shown.stage == Stage::Closing;
     }
 
     std::string stageText() {
@@ -689,7 +752,8 @@ namespace TerracottaGuest {
     void join(const std::string& input) {
         poll();
         if (active() || worker.joinable() || Multiplayer::active()) return;
-        auto code = std::string(blb::trim(input));
+        std::string_view text = blb::trim(input);
+        auto code = std::string(blb::trim(text.substr(0, text.find_first_of("\r\n"))));
         if (code.empty() || code.size() > 4096) {
             shown = State{};
             shown.stage = Stage::Failed;
@@ -722,7 +786,7 @@ namespace TerracottaGuest {
         if (!active()) return;
         {
             std::lock_guard guard(mutex);
-            ++revision; // A late worker response cannot restore Ready after Leave.
+            ++revision;
             seen = serial;
         }
         shown.stage = Stage::Closing;

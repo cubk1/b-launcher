@@ -191,16 +191,14 @@ namespace Patches {
     Plan plan(bool hmclCompatibility, bool configuredPatches) {
         Plan out;
         if (!configuredPatches) {
-            // The embedded agent enables several unrelated patches by default.
-            // A room-only launch must opt out of each, without consulting or
-            // changing the user's normal patch and skin preferences.
-            out.values = {{"skin.authlib", "false"}, {"skin.legacy", "false"},
-                          {"skin.trusted", "false"}, {"log4j.enabled", "false"},
-                          {"input.enabled", "false"}, {"lwjgl.unsafe", "false"},
-                          {"window.title", ""}, {"window.icon", ""}, {"debug", "false"},
-                          {"dumpDir", ""}, {"options.file", ""}, {"options.inherit", "false"},
-                          {"lan.enabled", "false"}, {"lan.file", ""},
-                          {"lan.offlineJoin", hmclCompatibility ? "true" : "false"}};
+            for (const Default& entry : DEFAULTS) {
+                if (entry.passed) {
+                    out.values.emplace_back(entry.key, std::string_view(entry.value) == "true" ? "false" : entry.value);
+                }
+            }
+            put(out, "options.inherit", "false");
+            put(out, "lan.enabled", "false");
+            put(out, "lan.offlineJoin", hmclCompatibility ? "true" : "false");
             return out;
         }
         for (const Default& entry : DEFAULTS) {
@@ -208,7 +206,9 @@ namespace Patches {
                 out.values.emplace_back(entry.key, value(entry.key));
             }
         }
-        if (hmclCompatibility) put(out, "lan.offlineJoin", "true");
+        if (hmclCompatibility) {
+            put(out, "lan.offlineJoin", "true");
+        }
         std::string source = value("skin.source");
         if (source == "littleskin") {
             put(out, "skin.sources", LITTLESKIN);
