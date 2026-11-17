@@ -1518,7 +1518,7 @@ namespace SettingsScreen {
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
-            Page::caption("实例高级设置", y);
+            Page::caption("资源删除设置", y);
             Page::card(y + Page::CAPTION_H, rows);
             deleteModeRow(y + Page::CAPTION_H, blocked);
             deleteConfirmRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
