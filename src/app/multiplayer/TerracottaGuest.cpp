@@ -10,6 +10,9 @@
 #include <core/base/log.hpp>
 #include <core/base/process.hpp>
 #include <core/base/strings.hpp>
+#if defined(_WIN32)
+#include <core/base/win_util.hpp>
+#endif
 #include <core/network/download_client.hpp>
 #include <core/network/http_client.hpp>
 #include <core/network/server_ping.hpp>
@@ -17,15 +20,19 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cwchar>
 #include <filesystem>
 #include <iterator>
+#include <map>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
 #if defined(_WIN32)
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <iphlpapi.h>
 #include <tlhelp32.h>
@@ -152,77 +159,164 @@ namespace TerracottaGuest {
             return executable;
         }
 
+#if defined(_WIN32)
+        std::wstring quoteWindowsArg(std::wstring_view arg) {
+            if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring_view::npos) {
+                return std::wstring(arg);
+            }
+            std::wstring out;
+            out.push_back(L'"');
+            for (auto it = arg.begin();; ++it) {
+                size_t backslashes = 0;
+                while (it != arg.end() && *it == L'\\') {
+                    ++it;
+                    ++backslashes;
+                }
+                if (it == arg.end()) {
+                    out.append(backslashes * 2, L'\\');
+                    break;
+                }
+                if (*it == L'"') {
+                    out.append(backslashes * 2 + 1, L'\\');
+                    out.push_back(L'"');
+                } else {
+                    out.append(backslashes, L'\\');
+                    out.push_back(*it);
+                }
+            }
+            out.push_back(L'"');
+            return out;
+        }
+
+        std::wstring buildIsolatedTempEnvironment(const std::filesystem::path& temporary) {
+            auto less = [](const std::wstring& a, const std::wstring& b) {
+                return CompareStringOrdinal(a.c_str(), -1, b.c_str(), -1, TRUE) == CSTR_LESS_THAN;
+            };
+            std::map<std::wstring, std::wstring, decltype(less)> merged(less);
+            std::unique_ptr<wchar_t, decltype(&FreeEnvironmentStringsW)> parent(
+                GetEnvironmentStringsW(), &FreeEnvironmentStringsW);
+            require((bool) parent, "无法读取子进程环境变量");
+            for (const wchar_t* entry = parent.get(); *entry; entry += std::wcslen(entry) + 1) {
+                std::wstring_view text(entry);
+                auto equals = text.find(L'=', text.front() == L'=' ? 1 : 0);
+                if (equals != std::wstring_view::npos) {
+                    merged[std::wstring(text.substr(0, equals))] = std::wstring(text.substr(equals + 1));
+                }
+            }
+            // Replace inherited TMP/TEMP case-insensitively so the child uses
+            // B Launcher's isolated runtime lock rather than another launcher's %TEMP%.
+            auto tmp = temporary.native();
+            merged.erase(L"TEMP");
+            merged.erase(L"TMP");
+            merged.emplace(L"TEMP", tmp);
+            merged.emplace(L"TMP", tmp);
+            std::wstring block;
+            for (const auto& [key, val] : merged) {
+                block.append(key);
+                block.push_back(L'=');
+                block.append(val);
+                block.push_back(L'\0');
+            }
+            if (block.empty()) block.push_back(L'\0');
+            block.push_back(L'\0');
+            return block;
+        }
+#endif
+
         struct Session {
             int port = 0;
             bool verified = false;
-            blb::process bootstrap;
             std::filesystem::path transfer;
 #if defined(_WIN32)
+            HANDLE bootstrapHandle = nullptr;
+            DWORD bootstrapPid = 0;
             HANDLE daemon = nullptr;
             HANDLE owner = INVALID_HANDLE_VALUE;
 
             void claim(const std::filesystem::path& root) {
                 auto made = blb::fs::create_directories(root);
                 require((bool) made, made ? "" : made.err().message);
-                // The upstream singleton is shared by the stable temp folder.
+                // The upstream singleton is shared by the temp folder.
                 // A second B instance must not reset or close the first one.
                 owner = CreateFileW((root / "session.lock").c_str(), GENERIC_READ | GENERIC_WRITE,
                                     0, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
                 require(owner != INVALID_HANDLE_VALUE, "另一个 B Launcher 正在使用 HMCL 联机，请先退出该房间");
             }
 
-            bool isOurImage(HANDLE handle, const std::filesystem::path& executable) {
+            bool isOurImage(HANDLE handle, const std::filesystem::path& expectedReal) {
                 wchar_t image[32768];
                 DWORD length = (DWORD) std::size(image);
-                return QueryFullProcessImageNameW(handle, 0, image, &length) &&
-                       blb::fs::path_key(std::filesystem::path(std::wstring(image, length))) == blb::fs::path_key(executable);
+                if (!QueryFullProcessImageNameW(handle, 0, image, &length)) return false;
+                auto actual = blb::fs::real_path(std::filesystem::path(std::wstring(image, length)));
+                return blb::fs::path_key(actual) == blb::fs::path_key(expectedReal);
             }
 
             // Capture the detached child before it exposes HTTP, so startup
             // timeout can still close exactly the process we started.
-            void rememberStartingDaemon(const std::filesystem::path& executable) {
-                if (daemon || !bootstrap.valid()) return;
+            void rememberStartingDaemon(const std::filesystem::path& expectedReal) {
+                if (daemon || bootstrapPid == 0) return;
                 HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
                 if (snapshot == INVALID_HANDLE_VALUE) return;
                 PROCESSENTRY32W entry{};
                 entry.dwSize = sizeof(entry);
                 if (Process32FirstW(snapshot, &entry)) {
                     do {
-                        if (entry.th32ParentProcessID != (DWORD) bootstrap.pid()) continue;
+                        if (entry.th32ParentProcessID != bootstrapPid) continue;
                         HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
                                                     FALSE, entry.th32ProcessID);
                         if (!handle) continue;
-                        if (isOurImage(handle, executable)) { daemon = handle; break; }
+                        if (isOurImage(handle, expectedReal)) { daemon = handle; break; }
                         CloseHandle(handle);
                     } while (Process32NextW(snapshot, &entry));
                 }
                 CloseHandle(snapshot);
             }
 
-            // --hmcl spawns the real daemon and exits. Retain only the process
-            // that owns this endpoint and has our verified, dedicated EXE path.
-            bool rememberDaemon(const std::filesystem::path& executable) {
+            template <typename Table>
+            bool findListenerOwner(ULONG family, const std::filesystem::path& expectedReal, bool& foreignOwner) {
                 DWORD size = 0;
-                GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0);
-                std::vector<unsigned char> bytes(size);
-                if (bytes.empty() || GetExtendedTcpTable(bytes.data(), &size, FALSE, AF_INET,
-                                                         TCP_TABLE_OWNER_PID_LISTENER, 0) != NO_ERROR) return false;
-                auto table = reinterpret_cast<MIB_TCPTABLE_OWNER_PID*>(bytes.data());
-                for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-                    auto& row = table->table[i];
-                    if (ntohs((u_short) row.dwLocalPort) != port) continue;
-                    auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
-                                              FALSE, row.dwOwningPid);
-                    if (!handle) continue;
-                    if (isOurImage(handle, executable)) {
-                        if (daemon) CloseHandle(daemon);
-                        daemon = handle;
-                        return true;
+                std::vector<unsigned char> bytes;
+                for (int attempt = 0; attempt < 4; ++attempt) {
+                    DWORD status = GetExtendedTcpTable(bytes.empty() ? nullptr : bytes.data(), &size,
+                                                       FALSE, family, TCP_TABLE_OWNER_PID_LISTENER, 0);
+                    if (status == NO_ERROR && !bytes.empty()) {
+                        auto table = reinterpret_cast<Table*>(bytes.data());
+                        for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+                            auto& row = table->table[i];
+                            if (ntohs(static_cast<u_short>(row.dwLocalPort)) != port) continue;
+                            if (row.dwOwningPid == 0) continue;
+                            auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE,
+                                                      FALSE, row.dwOwningPid);
+                            if (!handle) {
+                                foreignOwner = true;
+                                continue;
+                            }
+                            if (isOurImage(handle, expectedReal)) {
+                                if (daemon) CloseHandle(daemon);
+                                daemon = handle;
+                                return true;
+                            }
+                            CloseHandle(handle);
+                            foreignOwner = true;
+                        }
+                        return false;
                     }
-                    CloseHandle(handle);
+                    if (status != ERROR_INSUFFICIENT_BUFFER || size == 0) return false;
+                    bytes.resize(size + 512);
+                    size = static_cast<DWORD>(bytes.size());
                 }
                 return false;
             }
+
+            // --hmcl spawns the real daemon and exits. Retain only the process
+            // that owns this endpoint and has our verified, dedicated EXE path.
+            bool rememberDaemon(const std::filesystem::path& expectedReal, bool& foreignOwner) {
+                foreignOwner = false;
+                return findListenerOwner<MIB_TCPTABLE_OWNER_PID>(AF_INET, expectedReal, foreignOwner) ||
+                       findListenerOwner<MIB_TCP6TABLE_OWNER_PID>(AF_INET6, expectedReal, foreignOwner);
+            }
+#else
+            blb::process bootstrap;
 #endif
 
             ~Session() {
@@ -245,11 +339,19 @@ namespace TerracottaGuest {
                     }
                     CloseHandle(daemon);
                 }
-#endif
+                if (bootstrapHandle) {
+                    if (WaitForSingleObject(bootstrapHandle, 0) == WAIT_TIMEOUT) {
+                        TerminateProcess(bootstrapHandle, 1);
+                        WaitForSingleObject(bootstrapHandle, 1000);
+                    }
+                    CloseHandle(bootstrapHandle);
+                }
+#else
                 if (bootstrap.valid() && bootstrap.running()) {
                     (void) bootstrap.kill();
                     (void) bootstrap.wait(std::chrono::seconds(1));
                 }
+#endif
                 if (!transfer.empty()) {
                     (void) blb::fs::remove_file(transfer);
                     (void) blb::fs::remove_file(blb::path_from_utf8(blb::path_to_utf8(transfer) + ".tmp"));
@@ -268,41 +370,111 @@ namespace TerracottaGuest {
             auto made = blb::fs::create_directories(temporary);
             require((bool) made, made ? "" : made.err().message);
             session.transfer = temporary / ("http-" + blb::random_bytes_hex(8) + ".json");
+            require(!token.is_cancelled(), "已取消");
+#if defined(_WIN32)
+            auto expectedReal = blb::fs::real_path(executable);
+            auto envBlock = buildIsolatedTempEnvironment(temporary);
+            auto commandLine = quoteWindowsArg(executable.native()) + L" --hmcl " + quoteWindowsArg(session.transfer.native());
+            auto workingDir = executable.parent_path().native();
+            SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+            HANDLE nul = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     &inherit, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            SIZE_T attrSize = 0;
+            InitializeProcThreadAttributeList(nullptr, 1, 0, &attrSize);
+            std::vector<unsigned char> attrStorage(attrSize);
+            STARTUPINFOEXW si{};
+            si.StartupInfo.cb = sizeof(si);
+            DWORD creationFlags = CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT;
+            BOOL inheritHandles = FALSE;
+            LPPROC_THREAD_ATTRIBUTE_LIST attrs = nullptr;
+            if (nul != INVALID_HANDLE_VALUE && attrSize > 0) {
+                auto candidate = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attrStorage.data());
+                if (InitializeProcThreadAttributeList(candidate, 1, 0, &attrSize)) {
+                    attrs = candidate;
+                    if (UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                                  &nul, sizeof(nul), nullptr, nullptr)) {
+                        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+                        si.StartupInfo.hStdInput = nul;
+                        si.StartupInfo.hStdOutput = nul;
+                        si.StartupInfo.hStdError = nul;
+                        si.lpAttributeList = attrs;
+                        creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
+                        inheritHandles = TRUE;
+                    }
+                }
+            }
+            PROCESS_INFORMATION pi{};
+            BOOL started = CreateProcessW(executable.c_str(), commandLine.data(), nullptr, nullptr,
+                                          inheritHandles, creationFlags, envBlock.data(),
+                                          workingDir.c_str(), &si.StartupInfo, &pi);
+            DWORD startError = started ? ERROR_SUCCESS : GetLastError();
+            if (attrs) DeleteProcThreadAttributeList(attrs);
+            if (nul != INVALID_HANDLE_VALUE) CloseHandle(nul);
+            require(started != FALSE, "无法启动独立联机组件：" + blb::detail::last_error_message(startError));
+            CloseHandle(pi.hThread);
+            session.bootstrapHandle = pi.hProcess;
+            session.bootstrapPid = pi.dwProcessId;
+#else
             blb::process_options options;
             options.args = {blb::path_to_utf8(executable), "--hmcl", blb::path_to_utf8(session.transfer)};
             options.working_directory = executable.parent_path();
             options.environment = {{"TMP", blb::path_to_utf8(temporary)}, {"TEMP", blb::path_to_utf8(temporary)}};
             options.capture_output = false;
-            require(!token.is_cancelled(), "已取消");
             auto child = blb::process::start(options);
             require((bool) child, child ? "" : child.err().message);
             session.bootstrap = std::move(*child);
+#endif
             auto deadline = Clock::now() + std::chrono::seconds(20);
+            bool portConfirmed = false;
+            bool verifiedOwner = false;
+            std::optional<Clock::time_point> mismatchSince;
             while (Clock::now() < deadline) {
 #if defined(_WIN32)
-                session.rememberStartingDaemon(executable);
+                session.rememberStartingDaemon(expectedReal);
 #endif
-                auto contents = blb::fs::read_file(session.transfer);
-                if (contents) {
-                    auto doc = Json::parse(*contents, nullptr, false);
-                    if (doc.is_object() && doc.contains("port") && doc["port"].is_number_integer()) {
-                        int port = doc["port"].get<int>();
-                        if (port > 0 && port <= 65535) {
-                            session.port = port;
-#if defined(_WIN32)
-                            require(session.rememberDaemon(executable), "无法确认独立联机进程的身份");
-#endif
-                            auto response = localRequest(port, "/meta");
-                            if (response) {
-                                auto meta = document(*response);
-                                require(blb::json_text(meta, "version") == VERSION && blb::json_text(meta, "target_os") == "windows",
-                                        "联机组件版本或平台与预期不符");
-                                session.verified = true;
-                                LOG.info("Terracotta {} ready at localhost:{}; EasyTier {}", VERSION, port,
-                                         blb::json_text(meta, "easytier_version"));
-                                require(!token.is_cancelled(), "已取消");
-                                return;
+                if (!portConfirmed) {
+                    auto contents = blb::fs::read_file(session.transfer);
+                    if (contents) {
+                        auto doc = Json::parse(*contents, nullptr, false);
+                        if (doc.is_object() && doc.contains("port") && doc["port"].is_number_integer()) {
+                            int port = doc["port"].get<int>();
+                            if (port > 0 && port <= 65535) {
+                                session.port = port;
+                                portConfirmed = true;
                             }
+                        }
+                    }
+                }
+                if (portConfirmed) {
+#if defined(_WIN32)
+                    if (!verifiedOwner) {
+                        bool foreignOwner = false;
+                        if (session.rememberDaemon(expectedReal, foreignOwner)) {
+                            verifiedOwner = true;
+                        } else if (foreignOwner) {
+                            if (!mismatchSince) mismatchSince = Clock::now();
+                            else if (Clock::now() - *mismatchSince >= std::chrono::milliseconds(500)) {
+                                throw std::runtime_error("无法确认独立联机进程的身份");
+                            }
+                        } else {
+                            mismatchSince.reset();
+                        }
+                    }
+                    if (verifiedOwner) {
+#else
+                    {
+#endif
+                        auto response = localRequest(session.port, "/meta");
+                        if (response) {
+                            auto meta = document(*response);
+                            require(blb::json_text(meta, "version") == VERSION && blb::json_text(meta, "target_os") == "windows",
+                                    "联机组件版本或平台与预期不符");
+                            session.verified = true;
+                            LOG.info("Terracotta {} ready at localhost:{}; EasyTier {}", VERSION, session.port,
+                                     blb::json_text(meta, "easytier_version"));
+                            require(!token.is_cancelled(), "已取消");
+                            return;
                         }
                     }
                 }
@@ -310,7 +482,8 @@ namespace TerracottaGuest {
                 // late port file can be used to clean up its detached daemon.
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            throw std::runtime_error("联机组件启动超时，未能取得本地控制端口");
+            throw std::runtime_error(portConfirmed && !verifiedOwner ? "无法确认独立联机进程的身份"
+                                                                     : "联机组件启动超时，未能取得本地控制端口");
         }
 
         std::string nodeQuery(blb::cancellation_token token) {
