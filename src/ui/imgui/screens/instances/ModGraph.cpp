@@ -59,6 +59,7 @@ namespace ModGraph {
         constexpr float LABEL_W = 52.0f;
         constexpr float ABOUT_LINE = 17.0f;
         constexpr int ABOUT_LINES = 3;
+        constexpr int ABOUT_MAX_LINES = 20;
         constexpr int PICK_ROWS = 8;
         constexpr float PICK_H = 10.0f + Page::FIELD_H + 8.0f + PICK_ROWS * 34.0f + 12.0f;
         constexpr float CARD_HEAD = 46.0f;
@@ -1224,43 +1225,25 @@ namespace ModGraph {
             UiRender::alphaMul = saved;
         }
 
-        Detail detailOf(const Mods::List& list, const View& view, int focus, float width) {
+        // The card's content follows its width and, when the user has sized it, its height: the description takes the room
+        // the rows leave free instead of a fixed three lines.
+        float cardFooter(const Detail& detail) {
+            return detail.buttons ? 8.0f + Page::FIELD_H + 14.0f : 14.0f;
+        }
+
+        Detail detailOf(const Mods::List& list, const View& view, int focus, float width, float cardHeight) {
             Detail detail;
             const Node& node = view.nodes[(size_t) focus];
             const Mods::Mod* mod = node.kind == Kind::Local ? &list.mods[(size_t) node.mod] : nullptr;
             const Item* item = itemOf(node);
-            float room = width - 28.0f;
+            std::string about;
             if (item != nullptr) {
-                std::string about = item->about;
-                std::replace(about.begin(), about.end(), '\n', ' ');
-                about = Ui::trim(about);
-                if (!about.empty()) {
-                    std::vector<std::string> lines = UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
-                    if (lines.size() > (size_t) ABOUT_LINES) {
-                        lines.resize(ABOUT_LINES);
-                        lines.back() = UiFont::fitEnd(lines.back() + "…", UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
-                    }
-                    detail.about = lines;
-                }
+                about = Ui::trim(item->about);
                 detail.rows = item->rows;
             }
             if (mod != nullptr) {
-                std::string about = blb::strip_formatting(mod->info.description);
-                std::replace(about.begin(), about.end(), '\n', ' ');
+                about = Ui::trim(blb::strip_formatting(mod->info.description));
                 std::replace(about.begin(), about.end(), '\r', ' ');
-                about = Ui::trim(about);
-                if (!about.empty()) {
-                    std::vector<std::string> lines = UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
-                    if (lines.size() > (size_t) ABOUT_LINES) {
-                        std::string tail = lines[ABOUT_LINES - 1];
-                        for (size_t i = ABOUT_LINES; i < lines.size(); i++) {
-                            tail += " " + lines[i];
-                        }
-                        lines.resize(ABOUT_LINES);
-                        lines.back() = UiFont::fitEnd(tail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
-                    }
-                    detail.about = lines;
-                }
                 std::string chinese = ModManager::chineseName(*mod);
                 if (!chinese.empty()) {
                     if (ModNames::original()) {
@@ -1287,6 +1270,7 @@ namespace ModGraph {
                     detail.rows.push_back({"许可", mod->info.license});
                 }
             }
+            std::replace(about.begin(), about.end(), '\n', ' ');
             detail.rows.push_back({"依赖", joinNames(view, focus, true)});
             detail.rows.push_back({"被依赖", joinNames(view, focus, false)});
             if (std::string linked = joinLinked(view, focus, Link::Integration); !linked.empty()) {
@@ -1301,10 +1285,27 @@ namespace ModGraph {
             detail.toggle = mod != nullptr;
             detail.buttons =
                     node.kind == Kind::Remote ? openable(node) : node.kind != Kind::Missing || !node.projectId.empty();
-            detail.height = CARD_HEAD + 8.0f + (float) detail.about.size() * ABOUT_LINE +
-                    (detail.about.empty() ? 0.0f : 6.0f) +
-                    (float) (detail.rows.size() + (detail.toggle ? 1 : 0)) * CARD_ROW +
-                    (detail.buttons ? 8.0f + Page::FIELD_H : 0.0f) + 14.0f;
+            float footer = cardFooter(detail);
+            float fixed = CARD_HEAD + 8.0f + (float) (detail.rows.size() + (detail.toggle ? 1 : 0)) * CARD_ROW +
+                    footer + (about.empty() ? 0.0f : 6.0f);
+            int lines = ABOUT_LINES;
+            if (cardHeight > 0.0f) {
+                lines = std::clamp((int) std::floor((cardHeight - fixed) / ABOUT_LINE), 1, ABOUT_MAX_LINES);
+            }
+            if (!about.empty()) {
+                float room = width - 28.0f;
+                std::vector<std::string> wrapped = UiFont::wrap(about, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
+                if (wrapped.size() > (size_t) lines) {
+                    std::string tail = wrapped[(size_t) lines - 1];
+                    for (size_t i = (size_t) lines; i < wrapped.size(); i++) {
+                        tail += " " + wrapped[i];
+                    }
+                    wrapped.resize((size_t) lines);
+                    wrapped.back() = UiFont::fitEnd(tail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL, room);
+                }
+                detail.about = wrapped;
+            }
+            detail.height = fixed + (float) detail.about.size() * ABOUT_LINE;
             return detail;
         }
 
@@ -1377,7 +1378,7 @@ namespace ModGraph {
             float left = area.x + 14.0f;
             float right = area.x + area.w - 14.0f;
             float viewTop = area.y + CARD_HEAD;
-            float viewBottom = area.y + area.h;
+            float viewBottom = area.y + area.h - cardFooter(detail);
             auto shownAt = [viewTop, viewBottom](float rowY, float rowH) {
                 return rowY >= viewTop - 0.5f && rowY + rowH <= viewBottom + 0.5f;
             };
@@ -1422,9 +1423,7 @@ namespace ModGraph {
             if (!detail.buttons) {
                 return;
             }
-            bool reachable = shownAt(y + 8.0f, Page::FIELD_H);
-            blocked = blocked || !reachable;
-            float buttonY = y + 8.0f;
+            float buttonY = area.y + area.h - 14.0f - Page::FIELD_H;
             if (node.kind == Kind::Remote) {
                 std::string label = "查看详情";
                 float buttonW = Page::buttonWidth(label, 0xf05a);
@@ -1458,13 +1457,16 @@ namespace ModGraph {
                 view.picking = true;
             }
             float linkY = buttonY + (Page::FIELD_H - 28.0f) * 0.5f;
+            float limit = left + pickW + 10.0f;
             float linkX = right - 26.0f;
-            if (Page::iconButton("mods#graph#card#reveal", 0xf07c, "在文件夹中显示", linkX, linkY, blocked)) {
+            if (linkX >= limit &&
+                Page::iconButton("mods#graph#card#reveal", 0xf07c, "在文件夹中显示", linkX, linkY, blocked)) {
                 Platform::reveal(mod->info.file);
             }
             if (long long wiki = ModManager::wikiId(*mod); wiki > 0) {
                 linkX -= 30.0f;
-                if (Page::iconButton("mods#graph#card#wiki", 0xf02d, "在 MC 百科上查看", linkX, linkY, blocked)) {
+                if (linkX >= limit &&
+                    Page::iconButton("mods#graph#card#wiki", 0xf02d, "在 MC 百科上查看", linkX, linkY, blocked)) {
                     Platform::openUrl("https://www.mcmod.cn/class/" + std::to_string(wiki) + ".html");
                 }
             }
@@ -1476,15 +1478,20 @@ namespace ModGraph {
                     continue;
                 }
                 linkX -= 30.0f;
+                if (linkX < limit) {
+                    break;
+                }
                 if (Page::iconButton(std::string("mods#graph#card#link#") + hint, glyph, hint, linkX, linkY, blocked)) {
                     Platform::openUrl(url);
                 }
             }
         }
 
-        float cardHeight(const Detail& detail, const View& view, float pick) {
-            float base = view.card.sized ? view.card.h : detail.height;
-            return UiRender::lerp(base, CARD_HEAD + PICK_H, pick);
+        float cardHeight(const Detail& detail, const View& view, float pick, float limit) {
+            if (view.card.sized) {
+                return std::min(view.card.h, limit);
+            }
+            return UiRender::lerp(detail.height, CARD_HEAD + PICK_H, pick);
         }
 
         void detailCard(const std::string& key, const Mods::List& list, View& view, int focus, const Detail& detail,
@@ -1506,12 +1513,13 @@ namespace ModGraph {
             UiRender::scissor(area.x, area.y, area.w, area.h);
             UiRender::alphaMul = saved * content;
             cardHeader(key, list, node, area, view.picking && pick > 0.5f, blocked, view);
+            float footer = cardFooter(detail);
             float overflow = std::max(0.0f, detail.height - area.h);
             float scroll = std::min(view.card.scroll, overflow);
             if (pick < 0.999f) {
                 UiRender::alphaMul = saved * content * (1.0f - pick);
                 if (overflow > 0.5f) {
-                    UiRender::scissor(area.x, area.y + CARD_HEAD, area.w, area.h - CARD_HEAD);
+                    UiRender::scissor(area.x, area.y + CARD_HEAD, area.w, std::max(0.0f, area.h - CARD_HEAD - footer));
                 }
                 cardDetails(key, list, view, focus, detail, area, blocked || pick > 0.001f, scroll);
                 if (overflow > 0.5f) {
@@ -1521,8 +1529,10 @@ namespace ModGraph {
             if (pick > 0.001f && node.kind == Kind::Local) {
                 UiRender::alphaMul = saved * content * pick;
                 const Mods::Mod& mod = list.mods[(size_t) node.mod];
-                if (ModVersionPicker::list("mods#graph#versions", key, mod, area.x + 12.0f, area.y + CARD_HEAD + 10.0f,
-                                           area.w - 24.0f, PICK_H - 22.0f, blocked || pick < 0.9f)) {
+                float pickTop = area.y + CARD_HEAD + 10.0f;
+                float pickH = std::max(0.0f, area.h - CARD_HEAD - 22.0f);
+                if (ModVersionPicker::list("mods#graph#versions", key, mod, area.x + 12.0f, pickTop, area.w - 24.0f,
+                                           pickH, blocked || pick < 0.9f)) {
                     view.picking = false;
                 }
             }
@@ -1530,8 +1540,10 @@ namespace ModGraph {
                 UiRender::alphaMul = saved * content;
                 float trackX = area.x + area.w - 7.0f;
                 float trackY = area.y + CARD_HEAD + 6.0f;
-                float trackH = std::max(0.0f, area.h - CARD_HEAD - 12.0f);
-                float thumbH = std::min(trackH, std::max(28.0f, trackH * area.h / detail.height));
+                float trackH = std::max(0.0f, area.h - CARD_HEAD - footer - 12.0f);
+                float full = std::max(1.0f, detail.height - CARD_HEAD);
+                float visible = std::max(1.0f, area.h - CARD_HEAD - footer);
+                float thumbH = std::min(trackH, std::max(28.0f, trackH * visible / full));
                 float thumbY = trackY + (trackH - thumbH) * (overflow > 0.0f ? scroll / overflow : 0.0f);
                 UiRender::roundRect(trackX, trackY, 3.0f, trackH, 1.5f, withAlpha(UiTheme::textPrimary(), 0.06f));
                 UiRender::roundRect(trackX, thumbY, 3.0f, thumbH, 1.5f, withAlpha(UiTheme::textPrimary(), 0.24f));
@@ -1830,11 +1842,12 @@ namespace ModGraph {
         if (shown >= 0) {
             float cardW = view.card.sized ? std::clamp(view.card.w, CARD_MIN_W, std::max(CARD_MIN_W, fitArea.w - 24.0f))
                                           : CARD_W;
-            info = detailOf(list, view, shown, cardW);
+            float limit = std::max(CARD_MIN_H, fitArea.h - 8.0f);
+            info = detailOf(list, view, shown, cardW, view.card.sized ? std::min(view.card.h, limit) : 0.0f);
             const Node& node = view.nodes[(size_t) shown];
             float nx = screenX(node.x);
             float ny = screenY(node.y);
-            float height = std::min(cardHeight(info, view, pick), std::max(CARD_MIN_H, fitArea.h - 8.0f));
+            float height = cardHeight(info, view, pick, limit);
             float lowX = fitArea.x + 12.0f;
             float lowY = fitArea.y + 12.0f;
             float tx = std::clamp(nx, lowX, std::max(lowX, fitArea.x + fitArea.w - 12.0f - cardW));
