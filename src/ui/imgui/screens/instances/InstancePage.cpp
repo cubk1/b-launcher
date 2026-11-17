@@ -15,6 +15,8 @@
 #include "app/instances/InstanceSettings.h"
 #include "app/instances/Installer.h"
 #include "app/launch/LaunchDefaults.h"
+#include "app/system/Deletion.h"
+#include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "app/instances/Mods.h"
 #include "ui/imgui/screens/instances/NewInstanceScreen.h"
@@ -191,19 +193,49 @@ namespace InstancePage {
             });
         }
 
-        void remove(const std::string& key) {
+        std::string neighbourOf(const std::string& key) {
             const std::vector<Instances::Entry>& list = Instances::list();
-            std::string neighbour;
             for (size_t i = 0; i < list.size(); i++) {
                 if (list[i].key == key) {
-                    neighbour = i + 1 < list.size() ? list[i + 1].key : (i > 0 ? list[i - 1].key : std::string());
-                    break;
+                    return i + 1 < list.size() ? list[i + 1].key : (i > 0 ? list[i - 1].key : std::string());
                 }
             }
+            return {};
+        }
+
+        void remove(const std::string& key) {
+            const Instances::Entry* found = Instances::find(key);
+            if (found == nullptr) {
+                return;
+            }
+            std::string name = found->info.id;
+            std::filesystem::path folder = found->info.directory;
+            std::string neighbour = neighbourOf(key);
             bool current = Instances::selected() == key;
-            Instances::remove(key, [neighbour, current](const std::string& error) {
-                if (error.empty() && current) {
+            auto settled = [neighbour, current](bool removed) {
+                if (removed && current) {
                     Instances::select(neighbour);
+                }
+            };
+
+            if (Deletion::mode() == Deletion::Mode::Permanent) {
+                DeleteDialogs::openInstance(name, {}, [key, settled] {
+                    Instances::removePermanent(key, [settled](const std::string& error) { settled(error.empty()); });
+                });
+                return;
+            }
+            Instances::removeToRecycle(key, [key, name, folder, settled](const Instances::Removal& removal) {
+                if (removal.ok) {
+                    settled(true);
+                    return;
+                }
+                if (removal.needsPermanent) {
+                    DeleteDialogs::openInstanceRecycleFailed(
+                            name, removal.reason, removal.tooLarge, folder, [key, settled] {
+                                Instances::removePermanent(key, [settled](const std::string& error) {
+                                    settled(error.empty());
+                                });
+                            });
                 }
             });
         }

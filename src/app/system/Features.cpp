@@ -35,7 +35,7 @@ namespace Features {
                     {SECTION_WINDOW, "section.window", "窗口", GROUP_SETTINGS},
                     {SECTION_HOME, "section.home", "主页", GROUP_SETTINGS},
                     {SECTION_NETWORK, "section.network", "下载与网络", GROUP_SETTINGS},
-                    {SECTION_RESET, "section.reset", "引导与重置", GROUP_SETTINGS},
+                    {SECTION_RESET, "section.reset", "高级设置", GROUP_SETTINGS},
             };
             return list;
         }

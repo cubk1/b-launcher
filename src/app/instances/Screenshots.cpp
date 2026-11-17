@@ -303,16 +303,17 @@ namespace Screenshots {
                 nullptr);
     }
 
-    void remove(const std::string& instanceKey, const std::filesystem::path& path) {
-        if (!Platform::recycle(path)) {
-            Notices::add(Notices::Kind::Failed, "无法删除截图", 4000);
-            return;
+    Deletion::Outcome remove(const std::string& instanceKey, const std::filesystem::path& path, bool permanently) {
+        Deletion::Outcome outcome = permanently ? Deletion::removePermanent(path) : Deletion::removeResource(path);
+        if (!outcome.ok) {
+            return outcome;
         }
         List& list = lists[instanceKey];
         list.entries.erase(std::remove_if(list.entries.begin(), list.entries.end(),
                                           [&path](const Entry& e) { return e.path == path; }),
                            list.entries.end());
         list.serial = nextSerial++;
+        return outcome;
     }
 
     bool rename(const std::string& instanceKey, const std::filesystem::path& path, const std::string& newName) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/system/Deletion.h"
 #include "app/system/Pixels.h"
 
 #include <cstdint>
@@ -33,7 +34,9 @@ namespace Screenshots {
     void forgetFullImage();
     void copy(const std::filesystem::path& path, std::function<void()> onCopied = nullptr);
 
-    void remove(const std::string& instanceKey, const std::filesystem::path& path);
+    // permanently deletes now instead of following the configured setting.
+    Deletion::Outcome remove(const std::string& instanceKey, const std::filesystem::path& path,
+                             bool permanently = false);
     bool rename(const std::string& instanceKey, const std::filesystem::path& path, const std::string& newName);
 
     void poll();

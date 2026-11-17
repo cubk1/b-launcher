@@ -73,6 +73,18 @@ namespace Instances {
     void duplicate(const std::string& key, const std::string& to, Done done = nullptr);
     void remove(const std::string& key, Done done = nullptr);
 
+    struct Removal {
+        bool ok = false;
+        bool recycled = false;
+        bool needsPermanent = false;
+        bool tooLarge = false;
+        std::string reason;
+    };
+    using RemoveDone = std::function<void(const Removal& removal)>;
+    // A recycle bin failure is only reported; nothing is deleted permanently.
+    void removeToRecycle(const std::string& key, RemoveDone done = nullptr);
+    void removePermanent(const std::string& key, Done done = nullptr);
+
     std::string checkId(const std::string& source, const std::string& id);
     std::string checkInstallId(const std::string& source, const std::string& id);
     std::string freeId(const std::string& source, const std::string& base);

@@ -574,15 +574,169 @@ namespace Platform {
         return true;
     }
 
+    namespace {
+        DWORD registryNumber(HKEY root, const std::wstring& key, const wchar_t* name) {
+            DWORD value = 0;
+            DWORD size = sizeof(value);
+            if (RegGetValueW(root, key.c_str(), name, RRF_RT_REG_DWORD, nullptr, &value, &size) != ERROR_SUCCESS) {
+                return 0;
+            }
+            return value;
+        }
+
+        std::wstring mountOf(const std::filesystem::path& path) {
+            wchar_t mount[MAX_PATH] = {};
+            if (path.empty() || !GetVolumePathNameW(path.c_str(), mount, MAX_PATH)) {
+                return {};
+            }
+            return mount;
+        }
+
+        struct Bin {
+            bool nuke = false;
+            unsigned long long capacity = 0;
+        };
+
+        Bin binOf(const std::wstring& mount) {
+            Bin bin;
+            wchar_t volume[MAX_PATH] = {};
+            if (mount.empty() || !GetVolumeNameForVolumeMountPointW(mount.c_str(), volume, MAX_PATH)) {
+                return bin;
+            }
+            std::wstring name = volume;
+            size_t open = name.find(L'{');
+            size_t close = open == std::wstring::npos ? std::wstring::npos : name.find(L'}', open);
+            if (close == std::wstring::npos) {
+                return bin;
+            }
+            std::wstring key = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\BitBucket\\Volume\\" +
+                    name.substr(open, close - open + 1);
+            bin.nuke = registryNumber(HKEY_CURRENT_USER, key, L"NukeOnDelete") != 0;
+            bin.capacity =
+                    (unsigned long long) registryNumber(HKEY_CURRENT_USER, key, L"MaxCapacity") * 1024ULL * 1024ULL;
+            return bin;
+        }
+
+        unsigned long long sizeOf(const std::filesystem::path& path, unsigned long long stop) {
+            std::error_code error;
+            if (!std::filesystem::is_directory(std::filesystem::symlink_status(path, error))) {
+                unsigned long long size = std::filesystem::file_size(path, error);
+                return error ? 0 : size;
+            }
+            unsigned long long total = 0;
+            std::filesystem::recursive_directory_iterator it(
+                    path, std::filesystem::directory_options::skip_permission_denied, error);
+            std::filesystem::recursive_directory_iterator end;
+            for (; !error && it != end && total <= stop; it.increment(error)) {
+                std::error_code entry;
+                if (!it->is_symlink(entry) && it->is_regular_file(entry)) {
+                    unsigned long long size = it->file_size(entry);
+                    if (!entry) {
+                        total += size;
+                    }
+                }
+            }
+            return total;
+        }
+
+        std::string refusal(const std::filesystem::path& path, bool& tooLarge) {
+            const std::wstring policy = L"Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer";
+            if (registryNumber(HKEY_CURRENT_USER, policy, L"NoRecycleFiles") != 0 ||
+                registryNumber(HKEY_LOCAL_MACHINE, policy, L"NoRecycleFiles") != 0) {
+                return "系统策略关闭了回收站";
+            }
+            std::wstring mount = mountOf(path);
+            UINT type = mount.empty() ? DRIVE_UNKNOWN : GetDriveTypeW(mount.c_str());
+            if (type == DRIVE_REMOTE) {
+                return "网络位置上的文件不能放入回收站";
+            }
+            if (type == DRIVE_REMOVABLE) {
+                return "可移动磁盘上的文件不能放入回收站";
+            }
+            Bin bin = binOf(mount);
+            if (bin.nuke) {
+                return "这个磁盘的回收站设置为不保留删除的文件";
+            }
+            if (bin.capacity > 0 && sizeOf(path, bin.capacity) > bin.capacity) {
+                tooLarge = true;
+                return "文件比回收站的容量还大";
+            }
+            return {};
+        }
+
+        std::string failure(int code) {
+            switch (code) {
+                case ERROR_FILE_NOT_FOUND:
+                case ERROR_PATH_NOT_FOUND: return "文件已不存在";
+                case ERROR_ACCESS_DENIED:
+                case 0x78: return "没有权限删除这个文件";
+                case ERROR_SHARING_VIOLATION:
+                case ERROR_LOCK_VIOLATION: return "文件正在被其他程序使用";
+                case ERROR_CANCELLED:
+                case 0x75: return "操作已取消";
+                case 0x79: return "文件路径太深";
+                case 0x7C: return "文件路径无效";
+                case 0x81: return "文件名太长";
+                default: break;
+            }
+            char text[32];
+            std::snprintf(text, sizeof(text), "系统错误 0x%X", (unsigned) code);
+            return text;
+        }
+
+        int shellDelete(const std::filesystem::path& path, FILEOP_FLAGS flags) {
+            std::wstring from = path.wstring();
+            from.push_back(L'\0');
+            SHFILEOPSTRUCTW operation = {};
+            operation.hwnd = (HWND) window;
+            operation.wFunc = FO_DELETE;
+            operation.pFrom = from.c_str();
+            operation.fFlags = flags;
+            int code = SHFileOperationW(&operation);
+            return code == 0 && operation.fAnyOperationsAborted ? ERROR_CANCELLED : code;
+        }
+    }
+
     bool recycle(const std::filesystem::path& path) {
-        std::wstring from = path.wstring();
-        from.push_back(L'\0');
-        SHFILEOPSTRUCTW operation = {};
-        operation.hwnd = (HWND) window;
-        operation.wFunc = FO_DELETE;
-        operation.pFrom = from.c_str();
-        operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
-        return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
+        return shellDelete(path, FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI) == 0;
+    }
+
+    RecycleResult recycleDetailed(const std::filesystem::path& path) {
+        RecycleResult result;
+        std::error_code error;
+        if (path.empty() || !std::filesystem::exists(std::filesystem::symlink_status(path, error))) {
+            result.reason = "文件已不存在";
+            return result;
+        }
+        result.reason = refusal(path, result.tooLarge);
+        if (!result.reason.empty()) {
+            result.refused = true;
+            return result;
+        }
+        int code = shellDelete(path,
+                               FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOF_WANTNUKEWARNING);
+        if (code != 0) {
+            result.reason = failure(code);
+            return result;
+        }
+        result.ok = true;
+        return result;
+    }
+
+    RecycleSpace recycleSpace(const std::filesystem::path& path) {
+        RecycleSpace space;
+        std::wstring mount = mountOf(path);
+        if (mount.empty()) {
+            return space;
+        }
+        SHQUERYRBINFO info = {};
+        info.cbSize = sizeof(info);
+        if (SUCCEEDED(SHQueryRecycleBinW(mount.c_str(), &info)) && info.i64Size >= 0) {
+            space.known = true;
+            space.usedBytes = (unsigned long long) info.i64Size;
+            space.limitBytes = binOf(mount).capacity;
+        }
+        return space;
     }
 
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial, const wchar_t* title) {

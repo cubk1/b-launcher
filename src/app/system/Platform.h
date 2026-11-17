@@ -59,6 +59,23 @@ namespace Platform {
     std::string narrow(const std::wstring& text);
     void reveal(const std::filesystem::path& path);
     bool recycle(const std::filesystem::path& path);
+
+    // The recycle bin can refuse a file on its size limit or when policy disables it, so the reason has to reach
+    // the user.
+    struct RecycleResult {
+        bool ok = false;
+        bool refused = false;
+        bool tooLarge = false;
+        std::string reason;
+    };
+    RecycleResult recycleDetailed(const std::filesystem::path& path);
+
+    struct RecycleSpace {
+        bool known = false;
+        unsigned long long usedBytes = 0;
+        unsigned long long limitBytes = 0;
+    };
+    RecycleSpace recycleSpace(const std::filesystem::path& path);
     bool setClipboardImage(const Pixels& pixels);
     bool setClipboardText(const std::string& text);
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial,

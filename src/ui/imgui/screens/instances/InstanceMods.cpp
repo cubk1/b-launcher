@@ -8,6 +8,7 @@
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/instances/ModChanges.h"
 #include "ui/imgui/screens/instances/ModGraph.h"
 #include "ui/imgui/screens/instances/ModVersionPicker.h"
@@ -145,6 +146,7 @@ namespace InstanceMods {
 
         void rowMenu(const std::string& key, const Mods::Mod& mod, float x, float y) {
             std::filesystem::path file = mod.info.file;
+            std::string name = mod.info.name;
             std::string homepage = mod.info.homepage;
             const ModManager::Change* staged = ModManager::changeFor(key, file);
             bool hasChange = staged != nullptr;
@@ -162,7 +164,7 @@ namespace InstanceMods {
             long long wiki = ModManager::wikiId(mod);
             NewUi::openMenu(
                     "mods#menu",
-                    [key, file, homepage, hasChange, change, known, from, hit, modrinthUrl, wiki] {
+                    [key, file, name, homepage, hasChange, change, known, from, hit, modrinthUrl, wiki] {
                         MenuItems items;
                         if (Features::enabled(Features::MOD_UPDATES)) {
                             items.push_back(ActionMenuItem::make("切换版本", 0xf021,
@@ -192,9 +194,11 @@ namespace InstanceMods {
                             items.push_back(ActionMenuItem::make("打开主页", 0xf35d,
                                                                  [homepage] { Platform::openUrl(homepage); }));
                         }
-                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [key, file] { Mods::remove(key, file); })
-                                                ->dangerous()
-                                                ->confirmFirst());
+                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [key, file, name] {
+                            DeleteDialogs::removeResourceFile(name, file, [key, file](bool permanently) {
+                                return Mods::remove(key, file, permanently);
+                            });
+                        })->dangerous());
                         return items;
                     },
                     x, y, 180.0f);

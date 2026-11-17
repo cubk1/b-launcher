@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/instances/InstanceScreenshots.h"
 #include "app/instances/Screenshots.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/instances/ScreenshotViewer.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -102,19 +103,21 @@ namespace InstanceScreenshots {
 
         void rowMenu(const std::string& key, const Screenshots::Entry& entry, float x, float y) {
             std::filesystem::path path = entry.path;
+            std::string name = entry.filename;
             NewUi::openMenu(
                     "screenshots#menu",
-                    [key, path] {
+                    [key, path, name] {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make("查看", 0xf06e,
                                                              [key, path] { ScreenshotViewer::open(key, path); }));
                         items.push_back(ActionMenuItem::make("复制", 0xf0c5, [path] { Screenshots::copy(path); }));
                         items.push_back(
                                 ActionMenuItem::make("在文件夹中显示", 0xf07c, [path] { Platform::reveal(path); }));
-                        items.push_back(
-                                ActionMenuItem::make("删除", 0xf2ed, [key, path] { Screenshots::remove(key, path); })
-                                        ->dangerous()
-                                        ->confirmFirst());
+                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [key, path, name] {
+                            DeleteDialogs::removeResourceFile(name, path, [key, path](bool permanently) {
+                                return Screenshots::remove(key, path, permanently);
+                            });
+                        })->dangerous());
                         return items;
                     },
                     x, y, 160.0f);

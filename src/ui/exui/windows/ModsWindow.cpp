@@ -411,7 +411,10 @@ namespace ForgottenMelody {
                 }
                 if (!canEditFiles()) return;
                 for (const std::filesystem::path& file : files) {
-                    Mods::remove(key, file);
+                    Deletion::Outcome outcome = Mods::remove(key, file);
+                    if (!outcome.ok) {
+                        message(GetHwnd(), L"无法删除：" + Platform::widen(outcome.reason), L"删除模组");
+                    }
                 }
             }
 
