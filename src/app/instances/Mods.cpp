@@ -177,15 +177,17 @@ namespace Mods {
         checkDependencies(lists[instanceKey]);
     }
 
-    void remove(const std::string& instanceKey, const std::filesystem::path& file) {
+    Deletion::Outcome remove(const std::string& instanceKey, const std::filesystem::path& file, bool permanently) {
         Mod* mod = findMod(instanceKey, file);
         if (mod == nullptr) {
-            return;
+            Deletion::Outcome outcome;
+            outcome.reason = "找不到这个文件";
+            return outcome;
         }
         std::string name = mod->info.name;
-        if (!Platform::recycle(file)) {
-            Notices::add(Notices::Kind::Failed, "无法删除 " + name, 5000);
-            return;
+        Deletion::Outcome outcome = permanently ? Deletion::removePermanent(file) : Deletion::removeResource(file);
+        if (!outcome.ok) {
+            return outcome;
         }
         List& list = lists[instanceKey];
         list.mods.erase(
@@ -193,7 +195,9 @@ namespace Mods {
                 list.mods.end());
         list.serial++;
         checkDependencies(list);
-        Notices::add(Notices::Kind::Done, "已将 " + name + " 移到回收站", 2500);
+        Notices::add(Notices::Kind::Done,
+                     outcome.recycled ? "已将 " + name + " 移到回收站" : "已永久删除 " + name, 2500);
+        return outcome;
     }
 
     std::filesystem::path folder(const std::string& instanceKey, const char* kind) {

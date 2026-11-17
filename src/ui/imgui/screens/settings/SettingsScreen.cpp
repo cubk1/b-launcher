@@ -15,6 +15,7 @@
 #include "app/downloads/ModNames.h"
 #include "app/system/DiskScan.h"
 #include "app/system/Customization.h"
+#include "app/system/Deletion.h"
 #include "app/system/Features.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/home/Homepage.h"
@@ -537,7 +538,7 @@ namespace SettingsScreen {
                 {SECTION_WINDOW, 0xf2d0, "窗口", GROUP_LAUNCHER},
                 {SECTION_HOME, 0xf015, "主页", GROUP_LAUNCHER},
                 {SECTION_NETWORK, 0xf019, "下载与网络", GROUP_LAUNCHER},
-                {SECTION_RESET, 0xf2f1, "引导与重置", GROUP_LAUNCHER},
+                {SECTION_RESET, 0xf085, "高级设置", GROUP_LAUNCHER},
                 {SECTION_FEATURES, 0xf070, "功能隐藏", GROUP_LAUNCHER},
                 {SECTION_JAVA, 0xf0f4, "Java 管理", GROUP_NONE},
                 {SECTION_TOOLS, 0xf0ad, "工具箱", GROUP_NONE},
@@ -722,6 +723,8 @@ namespace SettingsScreen {
                 {SECTION_NETWORK, "Modrinth", "下载源 镜像 MCIM"},
                 {SECTION_NETWORK, "CurseForge", "下载源 镜像 MCIM"},
                 {SECTION_NETWORK, "使用系统代理", "代理 proxy"},
+                {SECTION_RESET, "默认删除方式", "系统回收站 永久删除 回收站 删除 移到回收站 删除方式 彻底删除"},
+                {SECTION_RESET, "永久删除前再次确认", "确认 危险 长按 二次确认 防误删"},
                 {SECTION_RESET, "使用启动引导", "引导"},
                 {SECTION_RESET, "重置启动器选项", "恢复默认"},
                 {SECTION_JAVA, nullptr, "JDK JRE 运行时"},
@@ -1493,6 +1496,40 @@ namespace SettingsScreen {
             }
         }
 
+        void deleteModeRow(float y, bool blocked) {
+            Page::label("默认删除方式", y);
+            static auto mode = ModeBinding::mapped<Deletion::Mode>(
+                    "settings#deleteMode", Deletion::mode, Deletion::setMode,
+                    {{Deletion::Mode::Recycle, "移到系统回收站"}, {Deletion::Mode::Permanent, "直接永久删除"}});
+            select("settings#deleteMode", mode, y, blocked);
+        }
+
+        void deleteConfirmRow(float y, bool blocked) {
+            Page::label("永久删除前再次确认", y);
+            toggle(
+                    "settings#deleteConfirm", [] { return Deletion::confirmPermanent(); },
+                    [](bool on) { Deletion::setConfirmPermanent(on); }, y, blocked);
+        }
+
+        void advancedSection(bool covered) {
+            constexpr int rows = 2;
+            float contentH = 2 * Page::CAPTION_H + 4 * Page::ROW_H + Page::GAP;
+            Page::Scroll body("settings#advanced", Page::top(), MainWindow::height() - 14.0f, contentH);
+            bool outside = body.begin();
+            bool blocked = outside || covered;
+            float y = body.top - body.offset;
+            Page::caption("实例高级设置", y);
+            Page::card(y + Page::CAPTION_H, rows);
+            deleteModeRow(y + Page::CAPTION_H, blocked);
+            deleteConfirmRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
+            y += Page::CAPTION_H + rows * Page::ROW_H + Page::GAP;
+            Page::caption("引导与重置", y);
+            Page::card(y + Page::CAPTION_H, rows);
+            guideRow(y + Page::CAPTION_H, blocked);
+            resetRow(y + Page::CAPTION_H + Page::ROW_H, blocked);
+            body.end();
+        }
+
         void lookSection(bool covered) {
             int look = lookCount();
             int theme = ThemeManager::settingCount();
@@ -2058,12 +2095,7 @@ namespace SettingsScreen {
                 case SECTION_WINDOW: cardPage("settings#window", windowCount(), covered, windowSettingRows); break;
                 case SECTION_HOME: cardPage("settings#home", homepageCount(), covered, homepageRows); break;
                 case SECTION_NETWORK: networkSection(covered); break;
-                case SECTION_RESET:
-                    cardPage("settings#reset", 2, covered, [](float y, bool blocked) {
-                        guideRow(y, blocked);
-                        resetRow(y + Page::ROW_H, blocked);
-                    });
-                    break;
+                case SECTION_RESET: advancedSection(covered); break;
                 case SECTION_JAVA: javaTab(covered); break;
                 case SECTION_TOOLS: ToolboxTab::draw(covered); break;
                 case SECTION_ABOUT: aboutTab(covered); break;

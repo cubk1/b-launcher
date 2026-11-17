@@ -1,6 +1,7 @@
 #include "app/instances/Instances.h"
 #include "app/instances/Installer.h"
 #include "app/system/Config.h"
+#include "app/system/Deletion.h"
 #include "app/system/FolderWatch.h"
 #include "app/system/Platform.h"
 #include "app/system/Notices.h"
@@ -666,7 +667,7 @@ namespace Instances {
             }
             flushSaves();
             if (pendingSaves.contains(key)) {
-                std::string error = "实例设置尚未保存，请稍后重试";
+                std::string error = "实例设置尚未保存，请稍后再试";
                 notify(error, true);
                 if (done) done(error);
                 return;
@@ -1039,7 +1040,7 @@ namespace Instances {
         }
         flushSaves();
         if (pendingSaves.contains(key)) {
-            done(blb::make_error(blb::errc::io, "实例设置尚未保存，请稍后重试"));
+            done(blb::make_error(blb::errc::io, "实例设置尚未保存，请稍后再试"));
             return;
         }
         auto with = managerFor(from->root);
@@ -1199,6 +1200,106 @@ namespace Instances {
                         done(error);
                     }
                 });
+    }
+
+    namespace {
+        // A recycle bin failure leaves the files untouched; the interface decides whether to delete them for good.
+        void removeWith(const std::string& key, bool toRecycle, std::function<void(const Removal&)> done) {
+            pendingSaves.erase(key);
+            const Entry* entry = findMutable(key);
+            const Source* from = entry != nullptr ? sourceMutable(entry->source) : nullptr;
+            if (from == nullptr) {
+                if (done) {
+                    Removal removal;
+                    removal.reason = "找不到这个实例";
+                    done(removal);
+                }
+                return;
+            }
+            flushSaves();
+            if (pendingSaves.contains(key)) {
+                if (done) {
+                    Removal removal;
+                    removal.reason = "实例设置尚未保存，请稍后再试";
+                    done(removal);
+                }
+                return;
+            }
+            blb::instance::instance_manager with = managerFor(from->root);
+            std::string id = entry->info.id;
+            std::filesystem::path folder = with.layout().version_dir(id);
+            std::vector<Source> all = roots;
+            blb::instance::isolation_mode isolation = mode;
+            uint64_t revision = settingsRevision;
+            running++;
+            std::string activity = toRecycle ? "正在删除" : "正在永久删除";
+            activityText = activity + " " + id;
+            operating[key] = activity;
+            std::string notice = Notices::live(Notices::Kind::Info, activityText);
+            submit(
+                    [folder, toRecycle, all, isolation, revision, key, id, notice, done]() -> Continuation {
+                        Removal removal;
+                        Deletion::Outcome outcome =
+                                toRecycle ? Deletion::recycle(folder) : Deletion::removePermanent(folder);
+                        removal.ok = outcome.ok;
+                        removal.recycled = outcome.recycled;
+                        removal.needsPermanent = outcome.needsPermanent;
+                        removal.tooLarge = outcome.tooLarge;
+                        removal.reason = outcome.reason;
+                        Scan fresh = scan(all, isolation, revision);
+                        return [removal, fresh = std::move(fresh), key, id, notice, done, toRecycle]() mutable {
+                            if (--running == 0) {
+                                activityText.clear();
+                            }
+                            operating.erase(key);
+                            apply(fresh);
+                            if (removal.ok) {
+                                rearrange(key, [](std::vector<std::string>& ids, size_t at) {
+                                    ids.erase(ids.begin() + (long long) at);
+                                });
+                                Notices::finish(notice, Notices::Kind::Done,
+                                                toRecycle ? "已将 " + id + " 移到回收站" : "已永久删除 " + id,
+                                                2500);
+                            } else if (removal.needsPermanent) {
+                                Notices::finish(notice, Notices::Kind::Failed, "无法移到系统回收站，请确认是否永久删除",
+                                                3000);
+                            } else {
+                                Notices::finish(notice, Notices::Kind::Failed, "删除失败：" + removal.reason, 4000);
+                            }
+                            if (done) {
+                                done(removal);
+                            }
+                        };
+                    },
+                    [key, notice, done](const std::string& error) {
+                        if (--running == 0) {
+                            activityText.clear();
+                        }
+                        operating.erase(key);
+                        Notices::finish(notice, Notices::Kind::Failed, "删除失败：" + error, 4000);
+                        if (done) {
+                            Removal removal;
+                            removal.reason = error;
+                            done(removal);
+                        }
+                    });
+        }
+    }
+
+    void removeToRecycle(const std::string& key, RemoveDone done) {
+        removeWith(key, true, [done](const Removal& removal) {
+            if (done) {
+                done(removal);
+            }
+        });
+    }
+
+    void removePermanent(const std::string& key, Done done) {
+        removeWith(key, false, [done](const Removal& removal) {
+            if (done) {
+                done(removal.ok ? std::string() : removal.reason);
+            }
+        });
     }
 
     std::string checkId(const std::string& source, const std::string& id) {

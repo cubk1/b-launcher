@@ -304,6 +304,30 @@ namespace Platform {
         return false;
     }
 
+    RecycleResult recycleDetailed(const std::filesystem::path& path) {
+        RecycleResult result;
+        if (path.empty()) {
+            result.reason = "找不到对应的文件位置";
+            return result;
+        }
+        if (recycle(path)) {
+            result.ok = true;
+            return result;
+        }
+        result.reason = "无法移到系统回收站，可能是没有操作权限，或文件所在的磁盘不支持回收站";
+        return result;
+    }
+
+    // freedesktop trash has no shared size cap, so only Windows reports usage.
+    RecycleSpace recycleSpace(const std::filesystem::path& path) {
+        (void) path;
+        return RecycleSpace{};
+    }
+
+    bool openRecycleBin() {
+        return open(blb::app_data_directory() / "Trash");
+    }
+
     Memory memory() {
         std::ifstream file("/proc/meminfo");
         std::stringstream text;

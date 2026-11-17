@@ -574,15 +574,121 @@ namespace Platform {
         return true;
     }
 
+    namespace {
+        // SHFileOperation keeps the error code in the low 16 bits of its result.
+        RecycleResult recycleFailure(int code) {
+            RecycleResult result;
+            switch (code & 0xFFFF) {
+                case 0x75: result.reason = "操作已取消"; break;
+                case 0x78: result.reason = "没有操作权限，或者文件正在被其他程序使用"; break;
+                case 0x74: result.reason = "文件已不存在，可能已被移动或删除"; break;
+                case 0x79: result.reason = "文件所在的路径太深"; break;
+                case 0x7C: result.reason = "文件路径无效"; break;
+                case 0x81: result.reason = "文件名称太长"; break;
+                case 0x85:
+                    result.reason = "文件超过了系统回收站允许的单个文件大小限制";
+                    result.tooLarge = true;
+                    break;
+                case 0x71: result.reason = "文件位置冲突，无法移入回收站"; break;
+                default:
+                    result.reason = "系统回收站暂时无法接收这个文件";
+                    break;
+            }
+            return result;
+        }
+
+        // The per-volume cap lives in BitBucket\Volume\{GUID}\MaxCapacity as megabytes; without it the system
+        // default applies.
+        unsigned long long recycleLimit(const std::filesystem::path& path) {
+            wchar_t mount[MAX_PATH] = {};
+            if (!GetVolumePathNameW(path.c_str(), mount, MAX_PATH)) {
+                return 0;
+            }
+            wchar_t volume[MAX_PATH] = {};
+            if (!GetVolumeNameForVolumeMountPointW(mount, volume, MAX_PATH)) {
+                return 0;
+            }
+            std::wstring name = volume;
+            if (name.size() < 5) {
+                return 0;
+            }
+            std::wstring guid = name.substr(4);
+            if (!guid.empty() && guid.back() == L'\\') {
+                guid.pop_back();
+            }
+            std::wstring key = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\BitBucket\\Volume\\" + guid;
+            HKEY handle = nullptr;
+            if (RegOpenKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, KEY_READ, &handle) != ERROR_SUCCESS) {
+                return 0;
+            }
+            DWORD capacity = 0;
+            DWORD size = sizeof(capacity);
+            DWORD type = 0;
+            LONG status = RegQueryValueExW(handle, L"MaxCapacity", nullptr, &type, (LPBYTE) &capacity, &size);
+            RegCloseKey(handle);
+            if (status != ERROR_SUCCESS || type != REG_DWORD || capacity == 0) {
+                return 0;
+            }
+            return (unsigned long long) capacity * 1024ULL * 1024ULL;
+        }
+    }
+
     bool recycle(const std::filesystem::path& path) {
+        return recycleDetailed(path).ok;
+    }
+
+    RecycleResult recycleDetailed(const std::filesystem::path& path) {
+        RecycleResult result;
+        if (path.empty()) {
+            result.reason = "找不到对应的文件位置";
+            return result;
+        }
+        std::error_code error;
+        if (!std::filesystem::exists(path, error)) {
+            result.reason = "文件已不存在，可能已被移动或删除";
+            return result;
+        }
+        // pFrom is a double-null-terminated list; SHFileOperation walks it entry by entry.
         std::wstring from = path.wstring();
+        from.push_back(L'\0');
         from.push_back(L'\0');
         SHFILEOPSTRUCTW operation = {};
         operation.hwnd = (HWND) window;
         operation.wFunc = FO_DELETE;
         operation.pFrom = from.c_str();
         operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
-        return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
+        int code = SHFileOperationW(&operation);
+        if (code != 0) {
+            return recycleFailure(code);
+        }
+        if (operation.fAnyOperationsAborted) {
+            result.reason = "操作已取消";
+            return result;
+        }
+        result.ok = true;
+        return result;
+    }
+
+    bool openRecycleBin() {
+        HINSTANCE result = ShellExecuteW((HWND) window, L"open", L"shell:RecycleBinFolder", nullptr, nullptr,
+                                         SW_SHOWNORMAL);
+        return (INT_PTR) result > 32;
+    }
+
+    RecycleSpace recycleSpace(const std::filesystem::path& path) {
+        RecycleSpace space;
+        wchar_t mount[MAX_PATH] = {};
+        if (path.empty() || !GetVolumePathNameW(path.c_str(), mount, MAX_PATH)) {
+            return space;
+        }
+        SHQUERYRBINFO info = {};
+        info.cbSize = sizeof(info);
+        if (SUCCEEDED(SHQueryRecycleBinW(mount, &info)) && info.i64Size >= 0) {
+            space.known = true;
+            space.usedBytes = (unsigned long long) info.i64Size;
+            space.limitBytes = recycleLimit(path);
+        }
+        return space;
     }
 
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial, const wchar_t* title) {

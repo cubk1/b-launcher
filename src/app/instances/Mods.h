@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/system/Deletion.h"
 #include "app/system/Pixels.h"
 
 #include <core/modpack/mods.hpp>
@@ -32,7 +33,9 @@ namespace Mods {
     bool acceptsDrop(std::string_view filename);
     void scan(const std::string& instanceKey);
     void setEnabled(const std::string& instanceKey, const std::filesystem::path& file, bool enabled);
-    void remove(const std::string& instanceKey, const std::filesystem::path& file);
+    // permanently deletes now instead of following the configured setting.
+    Deletion::Outcome remove(const std::string& instanceKey, const std::filesystem::path& file,
+                             bool permanently = false);
 
     std::filesystem::path folder(const std::string& instanceKey, const char* kind);
     void add(const std::string& instanceKey, const std::vector<std::filesystem::path>& files, const char* kind,

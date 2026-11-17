@@ -4,6 +4,7 @@
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
 #include "app/system/Platform.h"
+#include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/instances/ModVersionPicker.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
@@ -956,6 +957,7 @@ namespace ModGraph {
             }
             const Mods::Mod& mod = list.mods[(size_t) node.mod];
             std::filesystem::path file = mod.info.file;
+            std::string name = mod.info.name;
             std::string homepage = mod.info.homepage;
             const ModManager::Change* staged = ModManager::changeFor(key, file);
             bool hasChange = staged != nullptr;
@@ -963,7 +965,7 @@ namespace ModGraph {
             std::string id = node.id;
             NewUi::openMenu(
                     "mods#graph#menu",
-                    [key, id, file, homepage, hasChange, change] {
+                    [key, id, file, name, homepage, hasChange, change] {
                         MenuItems items;
                         items.push_back(ActionMenuItem::make("切换版本", 0xf021, [key, id] {
                             View& view = views[key];
@@ -984,9 +986,11 @@ namespace ModGraph {
                             items.push_back(ActionMenuItem::make("打开主页", 0xf35d,
                                                                  [homepage] { Platform::openUrl(homepage); }));
                         }
-                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [key, file] { Mods::remove(key, file); })
-                                                ->dangerous()
-                                                ->confirmFirst());
+                        items.push_back(ActionMenuItem::make("删除", 0xf2ed, [key, file, name] {
+                            DeleteDialogs::removeResourceFile(name, file, [key, file](bool permanently) {
+                                return Mods::remove(key, file, permanently);
+                            });
+                        })->dangerous());
                         return items;
                     },
                     x, y, 160.0f);

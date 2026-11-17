@@ -2,6 +2,7 @@
 #include "app/instances/Screenshots.h"
 #include "app/system/Platform.h"
 #include "ui/imgui/screens/home/WebImages.h"
+#include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/instances/InstanceScreenshots.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -373,7 +374,6 @@ namespace ScreenshotViewer {
 
             float toolY = (BAR_H - TOOL) * 0.5f;
             float x = windowW - 12.0f - TOOL;
-            bool removed = false;
             if (tool("close", 0xf00d, "关闭", x, toolY, true)) {
                 ScreenshotViewer::close();
             }
@@ -384,8 +384,15 @@ namespace ScreenshotViewer {
                 }
             } else {
                 if (tool("delete", 0xf2ed, "删除", x, toolY, true)) {
-                    Screenshots::remove(key, entry.path);
-                    removed = true;
+                    DeleteDialogs::removeResourceFile(
+                            entry.filename, entry.path,
+                            [instanceKey = key, path = entry.path](bool permanently) {
+                                Deletion::Outcome outcome = Screenshots::remove(instanceKey, path, permanently);
+                                if (outcome.ok) {
+                                    ScreenshotViewer::close();
+                                }
+                                return outcome;
+                            });
                 }
                 x -= TOOL_GAP + TOOL;
                 if (tool("reveal", 0xf07c, "在文件夹中显示", x, toolY, true)) {
@@ -474,15 +481,6 @@ namespace ScreenshotViewer {
             }
             UiRender::alphaMul = savedAlpha;
 
-            if (removed) {
-                int left = count();
-                if (left == 0) {
-                    ScreenshotViewer::close();
-                } else {
-                    go(std::min(index, left - 1));
-                }
-                return;
-            }
             if (closing) {
                 return;
             }
