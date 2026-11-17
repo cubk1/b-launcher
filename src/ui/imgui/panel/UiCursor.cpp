@@ -23,6 +23,10 @@ namespace UiCursor {
         wanted = ImGuiMouseCursor_ResizeEW;
     }
 
+    void resizeNS() {
+        wanted = ImGuiMouseCursor_ResizeNS;
+    }
+
     void apply() {
         int shape = wanted;
         wanted = ImGuiMouseCursor_Arrow;
