@@ -164,8 +164,8 @@ namespace ForgottenMelody {
                 if (id == REMOVE && message(GetHwnd(), L"要把截图 “" + Platform::widen(shot->filename) +
                         L"” 移到回收站吗？", L"删除截图", exui::MsgBoxButtons::OkCancel, {L"取消", L"删除"}) == 0) {
                     Deletion::Outcome outcome = Screenshots::remove(key, shot->path);
-                    if (!outcome.ok && outcome.needsPermanent) {
-                        message(GetHwnd(), L"无法移到系统回收站：" + Platform::widen(outcome.reason), L"删除截图");
+                    if (!outcome.ok) {
+                        message(GetHwnd(), L"无法删除：" + Platform::widen(outcome.reason), L"删除截图");
                     }
                     refresh();
                 }

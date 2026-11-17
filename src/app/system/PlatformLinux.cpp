@@ -306,14 +306,16 @@ namespace Platform {
 
     RecycleResult recycleDetailed(const std::filesystem::path& path) {
         RecycleResult result;
-        if (path.empty()) {
-            result.reason = "找不到对应的文件位置";
+        std::error_code error;
+        if (path.empty() || !std::filesystem::exists(std::filesystem::symlink_status(path, error))) {
+            result.reason = "文件已不存在";
             return result;
         }
         if (recycle(path)) {
             result.ok = true;
             return result;
         }
+        result.refused = true;
         result.reason = "无法移到系统回收站，可能是没有操作权限，或文件所在的磁盘不支持回收站";
         return result;
     }
@@ -322,10 +324,6 @@ namespace Platform {
     RecycleSpace recycleSpace(const std::filesystem::path& path) {
         (void) path;
         return RecycleSpace{};
-    }
-
-    bool openRecycleBin() {
-        return open(blb::app_data_directory() / "Trash");
     }
 
     Memory memory() {

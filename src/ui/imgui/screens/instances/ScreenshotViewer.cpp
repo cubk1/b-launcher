@@ -46,6 +46,7 @@ namespace ScreenshotViewer {
         bool remote = false;
         std::vector<Picture> web;
         bool closing = false;
+        bool removed = false;
         float zoom = 1.0f;
         float zoomTarget = 1.0f;
         float panX = 0.0f;
@@ -81,6 +82,7 @@ namespace ScreenshotViewer {
                 }
                 active = false;
                 closing = false;
+                removed = false;
                 pressing = false;
                 key.clear();
                 index = -1;
@@ -388,8 +390,8 @@ namespace ScreenshotViewer {
                             entry.filename, entry.path,
                             [instanceKey = key, path = entry.path](bool permanently) {
                                 Deletion::Outcome outcome = Screenshots::remove(instanceKey, path, permanently);
-                                if (outcome.ok) {
-                                    ScreenshotViewer::close();
+                                if (outcome.ok && layer.active && key == instanceKey) {
+                                    removed = true;
                                 }
                                 return outcome;
                             });
@@ -481,6 +483,16 @@ namespace ScreenshotViewer {
             }
             UiRender::alphaMul = savedAlpha;
 
+            if (removed) {
+                removed = false;
+                int left = count();
+                if (left == 0) {
+                    ScreenshotViewer::close();
+                } else {
+                    go(std::min(index, left - 1));
+                }
+                return;
+            }
             if (closing) {
                 return;
             }

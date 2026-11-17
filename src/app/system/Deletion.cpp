@@ -32,7 +32,7 @@ namespace Deletion {
                 outcome.recycled = true;
                 return outcome;
             }
-            outcome.needsPermanent = true;
+            outcome.needsPermanent = result.refused;
             outcome.tooLarge = result.tooLarge;
             outcome.reason = result.reason;
             return outcome;

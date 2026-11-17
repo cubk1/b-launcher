@@ -64,9 +64,9 @@ namespace Platform {
     // the user.
     struct RecycleResult {
         bool ok = false;
-        std::string reason;
-        // Larger than the recycle bin's per-file limit, so emptying the bin will not help.
+        bool refused = false;
         bool tooLarge = false;
+        std::string reason;
     };
     RecycleResult recycleDetailed(const std::filesystem::path& path);
 
@@ -76,7 +76,6 @@ namespace Platform {
         unsigned long long limitBytes = 0;
     };
     RecycleSpace recycleSpace(const std::filesystem::path& path);
-    bool openRecycleBin();
     bool setClipboardImage(const Pixels& pixels);
     bool setClipboardText(const std::string& text);
     std::optional<std::filesystem::path> pickFolder(const std::filesystem::path& initial,

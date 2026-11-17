@@ -18,7 +18,6 @@ namespace Deletion {
         bool recycled = false;
         // The recycle bin refused it; the caller asks the user what to do next.
         bool needsPermanent = false;
-        // Larger than the recycle bin's per-file limit, so emptying the bin will not help.
         bool tooLarge = false;
         std::string reason;
     };

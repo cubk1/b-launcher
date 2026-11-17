@@ -2,7 +2,6 @@
 
 #include "app/system/Deletion.h"
 #include "app/system/Notices.h"
-#include "app/system/Platform.h"
 #include "ui/imgui/screens/shell/Dialog.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -50,7 +49,6 @@ namespace DeleteDialogs {
             std::vector<std::string> notes;
             std::function<void()> confirmed;
             bool hold = false;
-            bool recycleBin = false;
         };
 
         Request request;
@@ -232,17 +230,6 @@ namespace DeleteDialogs {
                 return;
             }
             float next = right - permanentW - BUTTON_GAP;
-            if (request.recycleBin) {
-                std::string text = "打开回收站";
-                float w2 = Page::buttonWidth(text, 0xf1b8);
-                next -= w2;
-                if (Page::button("delete#bin", text, next, buttonY, w2, false, false, 0xf1b8, BUTTON_H)) {
-                    if (!Platform::openRecycleBin()) {
-                        Notices::add(Notices::Kind::Failed, "无法打开系统回收站", 3000);
-                    }
-                }
-                next -= BUTTON_GAP;
-            }
             if (Page::button("delete#cancel", "取消", next - cancelW, buttonY, cancelW, false, false, 0, BUTTON_H)) {
                 Dialog::close();
             }
@@ -273,18 +260,10 @@ namespace DeleteDialogs {
             std::vector<std::string> notes;
             notes.push_back(reason + "。");
             if (tooLarge) {
-                notes.push_back("文件超过了回收站单个文件的大小限制，即使清空回收站也放不进去。");
-            }
-            Deletion::Space space = Deletion::space(file);
-            if (space.known) {
-                std::string text = "回收站目前已用 " + bytes(space.usedBytes);
+                Deletion::Space space = Deletion::space(file);
                 if (space.limitBytes > 0) {
-                    text += " / " + bytes(space.limitBytes);
-                    if (space.usedBytes * 100 >= space.limitBytes * 90) {
-                        text += "，空间快满了";
-                    }
+                    notes.push_back("这个磁盘的回收站容量为 " + bytes(space.limitBytes) + "。");
                 }
-                notes.push_back(text + "。");
             }
             return notes;
         }
@@ -331,11 +310,9 @@ namespace DeleteDialogs {
         reset();
         request.title = "无法移到系统回收站";
         request.lead = "“" + name + "”删除失败。";
-        request.detail = tooLarge ? std::string()
-                                  : "无法将文件放入系统回收站。你可以先清空回收站再试，或者选择直接永久删除。";
+        request.detail = "可以改为永久删除，删除后无法恢复。";
         request.notes = recycleNotes(reason, tooLarge, file);
         request.confirmed = std::move(confirmed);
-        request.recycleBin = !tooLarge;
         present();
     }
 }
