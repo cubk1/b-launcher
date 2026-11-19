@@ -35,7 +35,6 @@ namespace DeleteDialogs {
         constexpr float TITLE_H = 24.0f;
         constexpr float SECTION_GAP = 16.0f;
         constexpr float NOTE_PAD = 12.0f;
-        // The crash dialog sizes its buttons with Page::button, so these follow the same rules.
         constexpr float BUTTON_H = Page::FIELD_H;
         constexpr float BUTTON_GAP = 10.0f;
         constexpr float CANCEL_MIN_W = 72.0f;
@@ -125,13 +124,13 @@ namespace DeleteDialogs {
             return false;
         }
 
-        // Releasing the button or moving off it resets the count, so a stray click cannot delete.
         bool holdButton(float x, float y, float w) {
             bool inside = NewUi::hit(x, y, w, BUTTON_H);
             if (!holding) {
                 if (NewUi::press(x, y, w, BUTTON_H)) {
                     holding = true;
                     held = 0.0f;
+                    UiSound::request(UiSound::RELEASE);
                 }
             } else if (!NewUi::mouseDown || !inside) {
                 holding = false;
@@ -146,12 +145,12 @@ namespace DeleteDialogs {
                     holding = false;
                     held = 0.0f;
                     done = true;
+                    UiSound::request(UiSound::RELEASE);
                 }
             }
 
             uint32_t red = UiTheme::danger() & 0x00FFFFFFu;
             UiRender::roundRect(x, y, w, BUTTON_H, 7.0f, red | 0x22000000u);
-            // Fills from the left edge, keeping the left corners round and the right ones square.
             float fill = w * std::min(1.0f, held / HOLD_SECONDS);
             if (fill > 0.5f) {
                 UiRender::roundRect(x, y, fill, BUTTON_H, 7.0f, red | 0x66000000u, fill >= w - 0.5f ? 0xF : (1 | 4));
@@ -205,8 +204,8 @@ namespace DeleteDialogs {
             float cancelW = std::max(CANCEL_MIN_W, Page::buttonWidth("取消"));
             if (request.hold) {
                 float holdW = Page::buttonWidth(HOLD_TEXT);
-                if (Page::button("delete#cancel", "取消", right - holdW - BUTTON_GAP - cancelW, buttonY, cancelW,
-                                 false, false, 0, BUTTON_H)) {
+                if (Page::button("delete#cancel", "取消", right - holdW - BUTTON_GAP - cancelW, buttonY, cancelW, false,
+                                 false, 0, BUTTON_H)) {
                     Dialog::close();
                     return;
                 }
@@ -242,8 +241,7 @@ namespace DeleteDialogs {
         }
     }
 
-    void openInstance(const std::string& name, const std::vector<std::string>& notes,
-                      std::function<void()> confirmed) {
+    void openInstance(const std::string& name, const std::vector<std::string>& notes, std::function<void()> confirmed) {
         reset();
         request.title = "永久删除实例";
         request.lead = "“" + name + "”及其模组、存档、日志和设置都会被永久删除。";
@@ -298,8 +296,7 @@ namespace DeleteDialogs {
             return;
         }
         if (outcome.needsPermanent) {
-            openRecycleFailed(name, outcome.reason, outcome.tooLarge, file,
-                              [erase, failed] { failed(erase(true)); });
+            openRecycleFailed(name, outcome.reason, outcome.tooLarge, file, [erase, failed] { failed(erase(true)); });
             return;
         }
         failed(outcome);
