@@ -12,6 +12,7 @@
 #include "app/launch/LaunchDefaults.h"
 #include "app/launch/Patches.h"
 #include "app/multiplayer/Multiplayer.h"
+#include "app/multiplayer/TerracottaGuest.h"
 #include "app/system/Platform.h"
 #include "app/system/Interface.h"
 #include "app/system/Network.h"
@@ -389,7 +390,7 @@ namespace Game {
                 } else if (live.visibility == "hide") {
                     Platform::hideWindow();
                     hidden = true;
-                } else if (live.visibility == "close" && Multiplayer::active()) {
+                } else if (live.visibility == "close" && (Multiplayer::active() || TerracottaGuest::active())) {
                     Platform::hideWindow();
                     hidden = true;
                 } else if (live.visibility == "close") {
@@ -647,15 +648,21 @@ namespace Game {
         std::filesystem::path patchJar;
         Patches::Plan patchPlan;
         std::string optionsFile;
-        if (Patches::enabled(options.patch)) {
+        const auto hmclStage = TerracottaGuest::state().stage;
+        const bool hmclCompatibility = hmclStage == TerracottaGuest::Stage::Preparing ||
+                hmclStage == TerracottaGuest::Stage::Connecting || hmclStage == TerracottaGuest::Stage::Ready;
+        const bool configuredPatches = Patches::enabled(options.patch);
+        if (configuredPatches || hmclCompatibility) {
             patchJar = Patches::jarIn(blb::meta::game_layout(root).cache());
-            patchPlan = Patches::plan();
-            if (account->type == blb::auth::account_type::offline || offlineOnly || Network::offlineLaunch()) {
-                Looks::apply(Accounts::keyOf(*account), patchPlan);
-            }
-            optionsFile = options.options_file;
-            if (!optionsFile.empty()) {
-                patchPlan.values.emplace_back("options.file", optionsFile);
+            patchPlan = Patches::plan(hmclCompatibility, configuredPatches);
+            if (configuredPatches) {
+                if (account->type == blb::auth::account_type::offline || offlineOnly || Network::offlineLaunch()) {
+                    Looks::apply(Accounts::keyOf(*account), patchPlan);
+                }
+                optionsFile = options.options_file;
+                if (!optionsFile.empty()) {
+                    patchPlan.values.emplace_back("options.file", optionsFile);
+                }
             }
         }
         jvm.insert(jvm.end(), settings.jvm_args.begin(), settings.jvm_args.end());
@@ -697,6 +704,9 @@ namespace Game {
                           optionsFile.empty() ? std::string("已启用启动器补丁")
                                               : "已启用启动器补丁，游戏设置保存在 " + optionsFile);
         }
+        if (hmclCompatibility) {
+            GameLog::note(log, "仅本次游戏进程启用 HMCL 离线联机兼容，不修改账户或补丁设置");
+        }
         if (substituted && entry->info.settings.account.empty()) {
             GameLog::note(log, "这个实例指定了登录方式，没有使用当前账户");
         }
@@ -730,7 +740,7 @@ namespace Game {
         lives.push_back(std::move(made));
         self->preparer = std::thread([self, log, root, settings, player, authenticator, token, preLaunch, priority,
                                       commandVariables, directory, language, minecraft, patchJar, patchPlan,
-                                      javaOptions, javaKnown, optionsFile]() mutable {
+                                      javaOptions, javaKnown, optionsFile, hmclCompatibility]() mutable {
             std::optional<blb::process> game_;
             std::string error;
             blb::errc code = blb::errc::unknown;
@@ -747,6 +757,9 @@ namespace Game {
                     }
                     std::vector<std::string> agent = Patches::arguments(patchJar, patchPlan);
                     settings.jvm_args.insert(settings.jvm_args.begin(), agent.begin(), agent.end());
+                    if (hmclCompatibility) {
+                        GameLog::note(log, "已准备 HMCL 离线联机兼容补丁（lan.offlineJoin），将在游戏启动时加载");
+                    }
                 }
                 blb::install::install_options options;
                 options.mirror = DownloadSources::provider();
