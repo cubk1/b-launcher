@@ -29,6 +29,7 @@
 #include "ui/imgui/value/Values.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
+#include "ui/imgui/widget/ToggleWidget.h"
 
 #include <core/instance/loader_editor.hpp>
 #include <core/base/strings.hpp>
@@ -213,9 +214,8 @@ namespace NewInstanceScreen {
 
         std::string sourceLabel(const Instances::Source& source) {
             const auto& sources = Instances::sources();
-            bool duplicate = std::count_if(sources.begin(), sources.end(), [&](const auto& other) {
-                return other.label == source.label;
-            }) > 1;
+            bool duplicate = std::count_if(sources.begin(), sources.end(),
+                                           [&](const auto& other) { return other.label == source.label; }) > 1;
             return duplicate ? source.label + "（" + Platform::display(source.root) + "）" : source.label;
         }
 
@@ -804,6 +804,7 @@ namespace NewInstanceScreen {
             attachFabricApi();
             bool blocked = NewUi::overlayCoversMouse();
             bool localPack = modpack && !modpack->pack.file.empty();
+            bool multimc = modpack && modpack->pack.multimc;
             const char* backHint = !editing.empty() ? "返回实例设置"
                     : localPack                     ? "返回"
                     : modpack                       ? "返回下载中心"
@@ -824,6 +825,7 @@ namespace NewInstanceScreen {
                 }
             }
             Page::title(!editing.empty()  ? std::string("修改加载器")
+                                : multimc ? std::string("导入 MMC 实例")
                                 : modpack ? std::string("安装整合包")
                                           : "新建 " + minecraft + " 实例",
                         Page::left() + 30.0f, Page::top());
@@ -856,6 +858,7 @@ namespace NewInstanceScreen {
             } else {
                 const Instances::Source* source = targetSource();
                 problem = source == nullptr ? std::string("没有可用的游戏目录")
+                        : multimc           ? Instances::checkId(source->key, instanceName())
                                             : Instances::checkInstallId(source->key, instanceName());
             }
             installButton(Page::right(), buttonBottom, problem, autoFabricApi);
@@ -870,8 +873,8 @@ namespace NewInstanceScreen {
                             UiWidgets::TEXT_CONTROL);
         }
 
-        void modpackRows(float y) {
-            infoRow("整合包", modpack->title, y);
+        void modpackRows(float y, bool blocked) {
+            infoRow(modpack->pack.multimc ? "MMC 实例" : "整合包", modpack->title, y);
             y += Page::ROW_H;
             infoRow("版本", modpack->version, y);
             y += Page::ROW_H;
@@ -883,14 +886,30 @@ namespace NewInstanceScreen {
                 loaders += (loaders.empty() ? "" : "、") + loader;
             }
             infoRow("加载器", loaders.empty() ? std::string("无") : loaders, y);
+            if (modpack->pack.multimc) {
+                y += Page::ROW_H;
+                Page::label("保留嵌套实例", y);
+                static const std::string id = "new#keepNestedInstances";
+                static const auto flag = std::make_shared<FlagBinding>(
+                        id, [] { return modpack->pack.keepNestedInstances; },
+                        [](bool on) { modpack->pack.keepNestedInstances = on; });
+                ToggleWidget toggle(id, flag, true);
+                float x = Page::controlRight() - 30.0f;
+                toggle.bounds(x, y + (Page::ROW_H - 18.0f) * 0.5f, 30.0f, 18.0f)
+                        .hitArea(Page::left(), y, Page::width(), Page::ROW_H)
+                        .block(blocked);
+                toggle.paint();
+                if (toggle.hovered()) {
+                    Page::tooltip("一并复制游戏目录里的嵌套 MMC 实例", x, y, 30.0f, Page::ROW_H);
+                }
+            }
         }
 
         void settings(float top, float bottom, float gone, bool blocked) {
             settleWanted();
-            std::vector<blb::instance::loader_choice> choices = modpack
-                    ? std::vector<blb::instance::loader_choice>()
-                    : loaderSelection.choices();
-            int loaderRows = modpack ? 4 : (int) choices.size();
+            std::vector<blb::instance::loader_choice> choices =
+                    modpack ? std::vector<blb::instance::loader_choice>() : loaderSelection.choices();
+            int loaderRows = modpack ? (modpack->pack.multimc ? 5 : 4) : (int) choices.size();
             bool edit = !editing.empty();
             bool choosePlace = !edit && Instances::soleSource() == nullptr;
             bool versionRow = !modpack;
@@ -978,7 +997,7 @@ namespace NewInstanceScreen {
                 Page::caption("整合包", y);
                 y += Page::CAPTION_H;
                 Page::card(y, loaderRows);
-                modpackRows(y);
+                modpackRows(y, rowsBlocked);
                 body.end();
                 UiRender::alphaMul = savedAlpha;
                 UiRender::offsetY = savedOffsetY;
@@ -1124,7 +1143,8 @@ namespace NewInstanceScreen {
 
     void openLoaderEdit(const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
-        if (entry == nullptr || entry->info.minecraft_version.empty() || Installer::running()) {
+        if (entry == nullptr || entry->info.loader_edit_locked || entry->info.minecraft_version.empty() ||
+            Installer::running()) {
             return;
         }
         reset();

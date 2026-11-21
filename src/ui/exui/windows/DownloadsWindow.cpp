@@ -104,6 +104,7 @@ namespace ForgottenMelody {
             NAME,
             PLACE_LABEL,
             PLACE,
+            KEEP_NESTED_INSTANCES,
             // A name and a value on each of four rows.
             INFO,
             SETUP_STATUS = INFO + 8,
@@ -483,6 +484,10 @@ namespace ForgottenMelody {
                         {NAME, ControlKind::Edit, {345, 129, 300, 26}},
                         {PLACE_LABEL, ControlKind::Label, {225, 163, 115, 26}, L"安装位置"},
                         {PLACE, ControlKind::Combo, {345, 162, 300, 28}},
+                        {KEEP_NESTED_INSTANCES,
+                         ControlKind::Check,
+                         {225, 203 + 4 * LoaderRows::ROW_H, 200, 26},
+                         L"保留嵌套实例"},
                         {SETUP_STATUS, ControlKind::Label, {225, 510, 540, 26}},
                         {INSTALL, ControlKind::Button, {779, 509, 90, 28}, L"安装"},
                         {FINISH, ControlKind::Button, {779, 509, 90, 28}, L"取消"},
@@ -555,8 +560,8 @@ namespace ForgottenMelody {
                          {GAME_SEARCH, RELEASES, SNAPSHOTS, APRIL_FOOLS, OLD_VERSIONS, GAME_REFRESH, IMPORT, GAMES,
                           GAMES_RETRY, PICK_STATUS, NEXT_STEP});
                 MoveInto(SETUP_VIEW,
-                         {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE, SETUP_STATUS,
-                          INSTALL});
+                         {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE,
+                          KEEP_NESTED_INSTANCES, SETUP_STATUS, INSTALL});
                 for (uint32_t id = INFO; id < SETUP_STATUS; id++) {
                     MoveInto(SETUP_VIEW, {id});
                 }
@@ -581,6 +586,7 @@ namespace ForgottenMelody {
                 FindControl(GAME_SEARCH)->SetTooltipText(L"按版本号搜索");
                 FindControl(NAME)->SetTooltipText(L"实例的名称，也是它的文件夹名");
                 FindControl(PLACE)->SetTooltipText(L"实例装进哪个游戏目录");
+                FindControl(KEEP_NESTED_INSTANCES)->SetTooltipText(L"一并复制游戏目录里的嵌套 MMC 实例");
                 MoveInto(SEARCH_VIEW,
                          {SOURCE, SEARCH, INSTANCE, VERSION, LOADER, CATEGORY, SORT, COUNT, RESULTS, RETRY, PREVIOUS,
                           PAGE, NEXT});
@@ -904,8 +910,8 @@ namespace ForgottenMelody {
                     options.push_back(Platform::widen(versionChoices[i]));
                 }
                 UpdateOptions(id, options,
-                           (int) (std::find(versionChoices.begin(), versionChoices.end(), chosen) -
-                                  versionChoices.begin()));
+                              (int) (std::find(versionChoices.begin(), versionChoices.end(), chosen) -
+                                     versionChoices.begin()));
             }
 
             void fillLoaders(uint32_t id, const std::string& chosen) {
@@ -970,8 +976,7 @@ namespace ForgottenMelody {
                 const Addons::Results& found = Addons::search(source, query);
                 bool loading = found.status == Addons::Status::Loading;
                 bool failed = found.status == Addons::Status::Failed;
-                if (found.status == Addons::Status::Ready &&
-                    (found.total != shown.total || found.hits != shown.hits)) {
+                if (found.status == Addons::Status::Ready && (found.total != shown.total || found.hits != shown.hits)) {
                     shown = found;
                     std::vector<ProjectList::Row> rows;
                     for (const Addons::Hit& hit : shown.hits) {
@@ -1001,8 +1006,8 @@ namespace ForgottenMelody {
                 UpdateText(COUNT, counted ? L"共 " + std::to_wstring(shown.total) + L" 个" : L"");
                 int pages = std::max(1, (shown.total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
                 UpdateText(PAGE,
-                        L"第 " + std::to_wstring(std::min(query.page, pages - 1) + 1) + L" / " +
-                                std::to_wstring(pages) + L" 页");
+                           L"第 " + std::to_wstring(std::min(query.page, pages - 1) + 1) + L" / " +
+                                   std::to_wstring(pages) + L" 页");
                 FindControl(PREVIOUS)->SetEnabled(!loading && query.page > 0);
                 FindControl(NEXT)->SetEnabled(!loading && query.page + 1 < pages);
             }
@@ -1061,7 +1066,8 @@ namespace ForgottenMelody {
                 std::string prefix = ProjectBrowser::sharedPrefix(versions.list);
                 Rows rows;
                 std::vector<std::string> keys;
-                for (const Addons::Version* version : ProjectBrowser::matching(versions.list, versionFilter, loaderFilter)) {
+                for (const Addons::Version* version :
+                     ProjectBrowser::matching(versions.list, versionFilter, loaderFilter)) {
                     std::string games = versionFilter;
                     if (games.empty() && !version->gameVersions.empty()) {
                         games = version->gameVersions.back() + (version->gameVersions.size() > 1 ? " 等" : "");
@@ -1184,7 +1190,7 @@ namespace ForgottenMelody {
                 }
                 auto manifest = blb::modpack::read_modpack(picked.front());
                 if (!manifest) {
-                    message(GetHwnd(), L"这个文件不是支持的整合包", L"导入整合包");
+                    message(GetHwnd(), L"无法导入：" + Platform::widen(manifest.err().message), L"导入整合包");
                     return;
                 }
                 openPack(ModpackSetup::fromFile(picked.front(), *manifest), -1);
@@ -1199,6 +1205,7 @@ namespace ForgottenMelody {
 
             void startSetup() {
                 settingUp = true;
+                SetChecked(KEEP_NESTED_INSTANCES, false);
                 nameShown = Platform::widen(generatedName());
                 SetText(NAME, nameShown);
                 refresh();
@@ -1234,9 +1241,13 @@ namespace ForgottenMelody {
 
             void showSetup() {
                 bool pack = modpack.has_value();
+                bool multimc = pack && modpack->pack.multimc;
                 UpdateText(SETUP_TITLE,
-                           pack ? std::wstring(L"安装整合包") : L"新建 " + Platform::widen(minecraft) + L" 实例");
+                           multimc ? L"导入 MMC 实例"
+                                   : pack ? L"安装整合包"
+                                          : L"新建 " + Platform::widen(minecraft) + L" 实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
+                FindControl(KEEP_NESTED_INSTANCES)->SetVisible(multimc);
 
                 std::vector<std::wstring> places;
                 placeKeys.clear();
@@ -1263,7 +1274,7 @@ namespace ForgottenMelody {
                     for (const std::string& loader : modpack->loaders) {
                         names += (names.empty() ? "" : "、") + loader;
                     }
-                    info = {{L"整合包", Platform::widen(modpack->title)},
+                    info = {{multimc ? L"MMC 实例" : L"整合包", Platform::widen(modpack->title)},
                             {L"版本", Platform::widen(modpack->version)},
                             {L"游戏版本", minecraft.empty() ? L"未知" : L"Minecraft " + Platform::widen(minecraft)},
                             {L"加载器", names.empty() ? L"无" : Platform::widen(names)}};
@@ -1288,6 +1299,7 @@ namespace ForgottenMelody {
                 }
                 nameShown = generated;
                 std::string problem = target == nullptr ? std::string("没有可用的游戏目录")
+                        : multimc                       ? Instances::checkId(target->key, trimmed(Text(NAME)))
                                                         : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
                 UpdateText(SETUP_STATUS, Platform::widen(problem));
                 FindControl(INSTALL)->SetEnabled(problem.empty());
@@ -1301,6 +1313,7 @@ namespace ForgottenMelody {
                 std::string key = target->key;
                 std::string name = trimmed(Text(NAME));
                 if (modpack) {
+                    modpack->pack.keepNestedInstances = modpack->pack.multimc && Checked(KEEP_NESTED_INSTANCES);
                     Installer::startModpack(key, modpack->pack, name);
                 } else {
                     // An unchanged name is left to the installer, as in the default interface.
