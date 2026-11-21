@@ -36,6 +36,7 @@ collect_native_archives (const meta::version &resolved,
                          const meta::rule_context &context)
 {
   std::vector<native_archive> out;
+  const auto library_dir = resolved.library_directory (layout);
   for (const auto *lib : install::applicable_libraries (resolved, context))
     {
       if (!lib->is_legacy_native ())
@@ -49,7 +50,7 @@ collect_native_archives (const meta::version &resolved,
         relative = it->second.path;
       else
         relative = lib->artifact.with_classifier (*classifier).path ();
-      out.push_back ({ layout.library (relative), lib->extract_exclude });
+      out.push_back ({ library_dir / path_from_utf8 (relative), lib->extract_exclude });
     }
   return out;
 }
@@ -61,14 +62,17 @@ std::optional<std::filesystem::path>
 entry_target (const native_archive &archive, const zip_entry &entry,
               const std::filesystem::path &directory)
 {
-  if (entry.directory || entry.name == stamp_name
-      || entry.name.starts_with ("META-INF/")
-      || !fs::safe_relative (entry.name))
+  auto relative = replace_all (entry.name, "\\", "/");
+  if (entry.directory || relative == stamp_name
+      || relative.starts_with ("META-INF/"))
     return std::nullopt;
-  for (const auto &prefix : archive.exclude)
-    if (entry.name.starts_with (prefix))
+  for (auto part : split (relative, '/'))
+    if (!fs::safe_filename (part))
       return std::nullopt;
-  auto target = directory / path_from_utf8 (entry.name);
+  for (const auto &prefix : archive.exclude)
+    if (relative.starts_with (prefix))
+      return std::nullopt;
+  auto target = directory / path_from_utf8 (relative);
   return fs::is_inside (directory, target)
              ? std::optional<std::filesystem::path> (std::move (target))
              : std::nullopt;

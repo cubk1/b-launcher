@@ -160,11 +160,13 @@ zip_reader::contains (std::string_view name)
 }
 
 result<std::string>
-zip_reader::read_current ()
+zip_reader::read_current (std::size_t limit)
 {
   auto length = mz_zip_reader_entry_save_buffer_length (m_handle);
   if (length < 0)
     return zip_error ("cannot get zip entry length", length);
+  if (static_cast<std::size_t> (length) > limit)
+    return make_error (errc::size_mismatch, "zip entry is too large");
   std::string data (static_cast<std::size_t> (length), '\0');
   if (length == 0)
     return data;
@@ -217,10 +219,10 @@ zip_reader::extract_current (const std::filesystem::path &target)
 }
 
 result<std::string>
-zip_reader::read (std::string_view name)
+zip_reader::read (std::string_view name, std::size_t limit)
 {
   BLB_TRY (locate (name));
-  return read_current ();
+  return read_current (limit);
 }
 
 zip_writer::zip_writer (zip_writer &&other) noexcept

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -37,12 +38,15 @@ public:
 
   result<std::vector<zip_entry>> entries ();
   bool contains (std::string_view name);
-  result<std::string> read (std::string_view name);
+  result<std::string> read (
+      std::string_view name,
+      std::size_t limit = std::numeric_limits<std::size_t>::max ());
   result<void> extract (std::string_view name,
                         const std::filesystem::path &target);
   result<void> for_each (
       const std::function<bool (const zip_entry &, zip_reader &)> &visit);
-  result<std::string> read_current ();
+  result<std::string> read_current (
+      std::size_t limit = std::numeric_limits<std::size_t>::max ());
   result<void> extract_current (const std::filesystem::path &target);
 
 private:

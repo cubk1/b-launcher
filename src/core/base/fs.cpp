@@ -56,13 +56,13 @@ wide_to_utf8 (std::wstring_view text)
 }
 
 std::wstring
-native_path (const std::filesystem::path &path)
+native_path (const std::filesystem::path &path, bool extended)
 {
   std::wstring text = path.native ();
   for (auto &c : text)
     if (c == L'/')
       c = L'\\';
-  if (text.size () < 240 || text.starts_with (L"\\\\?\\"))
+  if ((!extended && text.size () < 240) || text.starts_with (L"\\\\?\\"))
     return text;
   if (text.starts_with (L"\\\\"))
     return L"\\\\?\\UNC\\" + text.substr (2);

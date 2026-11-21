@@ -60,6 +60,7 @@ namespace Installer {
             std::map<std::string, std::pair<uint64_t, uint64_t>> downloads;
             std::map<std::string, double> speeds;
             std::pair<uint64_t, uint64_t> checked{0, 0};
+            uint64_t copied = 0;
         };
 
         std::vector<std::string> steps;
@@ -94,6 +95,7 @@ namespace Installer {
             if (step == "modpack:resolve") return "正在整理模组列表";
             if (step == "modpack:files") return "正在下载模组文件";
             if (step == "modpack:overrides") return "正在解压整合包配置";
+            if (step == "modpack:instance-files") return "正在导入实例文件";
             if (step == "vanilla:json") return "正在获取版本信息";
             if (step == "vanilla:core") return "正在下载游戏本体";
             if (step == "vanilla:assets") return "正在下载游戏资源";
@@ -142,6 +144,8 @@ namespace Installer {
             } else if (part.checked.second > 0 && part.checked.first < part.checked.second) {
                 part.part.detail =
                         "校验 " + std::to_string(part.checked.first) + "/" + std::to_string(part.checked.second);
+            } else if (part.copied > 0) {
+                part.part.detail = "已导入 " + std::to_string(part.copied) + " 个文件";
             } else {
                 part.part.detail = part.part.status == Part::Status::Waiting ? "等待中" : "进行中";
             }
@@ -188,6 +192,10 @@ namespace Installer {
             if (stage == "modpack:files" || stage == "modpack:overrides") {
                 last = stage == "modpack:overrides";
                 return partByKey("modpack-files");
+            }
+            if (stage == "modpack:instance-files") {
+                last = true;
+                return partByKey("instance-files");
             }
             if (stage == "vanilla:json" || stage == "vanilla:core") {
                 last = stage == "vanilla:core";
@@ -275,6 +283,8 @@ namespace Installer {
                             part->speeds[task] = event.finished ? 0.0 : event.bytes_per_second;
                         } else if (kind == "verify" && event.total_items > 0) {
                             part->checked = {event.done_items, event.total_items};
+                        } else if (kind == "copy") {
+                            part->copied = event.done_items;
                         }
                         if (part->part.status != Part::Status::Done) {
                             measure(*part);
@@ -458,10 +468,14 @@ namespace Installer {
             }
             tracked.push_back(Tracked{Part{"游戏本体"}, "core"});
             tracked.push_back(Tracked{Part{"游戏资源"}, "assets"});
-            for (blb::install::loader_type loader : pack.loaders) {
-                tracked.push_back(Tracked{Part{loaderName(loader)}, std::string(blb::install::loader_name(loader))});
+            if (pack.multimc) {
+                tracked.push_back(Tracked{Part{"实例文件"}, "instance-files"});
+            } else {
+                for (blb::install::loader_type loader : pack.loaders) {
+                    tracked.push_back(Tracked{Part{loaderName(loader)}, std::string(blb::install::loader_name(loader))});
+                }
+                tracked.push_back(Tracked{Part{"模组文件"}, "modpack-files"});
             }
-            tracked.push_back(Tracked{Part{"模组文件"}, "modpack-files"});
         }
         cancelling = std::make_shared<blb::cancellation_source>();
         blb::cancellation_token token = cancelling->token();
@@ -469,7 +483,7 @@ namespace Installer {
         std::filesystem::path archive = local
                 ? pack.file
                 : blb::fs::temp_sibling(std::filesystem::temp_directory_path() / "b-launcher-pack.mrpack");
-        std::vector<std::filesystem::path> made = newFolders(root, {id});
+        auto made = pack.multimc ? std::vector<std::filesystem::path>() : newFolders(root, {id});
         track(Transfers::Kind::Modpack, root, source, id, pack.minecraft);
         blb::net::download_task download;
         download.urls = pack.urls;
