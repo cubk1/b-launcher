@@ -232,9 +232,8 @@ namespace InstancePage {
                 if (removal.needsPermanent) {
                     DeleteDialogs::openInstanceRecycleFailed(
                             name, removal.reason, removal.tooLarge, folder, [key, settled] {
-                                Instances::removePermanent(key, [settled](const std::string& error) {
-                                    settled(error.empty());
-                                });
+                                Instances::removePermanent(
+                                        key, [settled](const std::string& error) { settled(error.empty()); });
                             });
                 }
             });
@@ -644,13 +643,14 @@ namespace InstancePage {
             const float tagY = lineY + (lineH - Page::ROW_H) * 0.5f;
             static const std::string multimcTag = "转换的MultiMC实例";
             const bool multimc = entry.info.imported_from_multimc;
-            const float tagRight = Page::right() - (multimc
-                    ? UiFont::width(multimcTag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 2.0f * tagPadding : 0.0f);
+            const float tagRight = Page::right() -
+                    (multimc ? UiFont::width(multimcTag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 2.0f * tagPadding
+                             : 0.0f);
 
             const bool showLoaders = problem.empty() && entry.info.valid;
             std::string detail = showLoaders ? "Minecraft " + entry.info.minecraft_version
-                    : problem.empty()       ? "无法读取版本信息：" + entry.info.problem
-                                            : problem;
+                    : problem.empty()        ? "无法读取版本信息：" + entry.info.problem
+                                             : problem;
             if (multimc || (problem.empty() && !entry.info.valid)) {
                 detail = fitEnd(detail, tagRight - textX - (multimc ? detailGap : 0.0f), UiWidgets::TEXT_SMALL);
             }
@@ -668,7 +668,8 @@ namespace InstancePage {
                     if (text.empty() || UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) > available) {
                         break;
                     }
-                    tagX += Page::tag(text, tagX, tagY, UiTheme::surfaceRaised(), UiTheme::textSecondary(), tagPadding) +
+                    tagX += Page::tag(text, tagX, tagY, UiTheme::surfaceRaised(), UiTheme::textSecondary(),
+                                      tagPadding) +
                             tagGap;
                 }
             }

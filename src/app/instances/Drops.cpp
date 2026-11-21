@@ -527,9 +527,10 @@ namespace Drops {
             }
             for (const Item& item : found) {
                 if (item.kind == Kind::Unknown) {
-                    Notices::add(Notices::Kind::Failed, item.problem.empty()
-                                         ? "无法识别 " + blb::path_to_utf8(item.file.filename())
-                                         : item.problem, 4000);
+                    Notices::add(Notices::Kind::Failed,
+                                 item.problem.empty() ? "无法识别 " + blb::path_to_utf8(item.file.filename())
+                                                      : item.problem,
+                                 4000);
                     break;
                 }
             }

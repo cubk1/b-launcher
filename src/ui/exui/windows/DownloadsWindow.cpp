@@ -484,7 +484,9 @@ namespace ForgottenMelody {
                         {NAME, ControlKind::Edit, {345, 129, 300, 26}},
                         {PLACE_LABEL, ControlKind::Label, {225, 163, 115, 26}, L"安装位置"},
                         {PLACE, ControlKind::Combo, {345, 162, 300, 28}},
-                        {KEEP_NESTED_INSTANCES, ControlKind::Check, {225, 203 + 4 * LoaderRows::ROW_H, 200, 26},
+                        {KEEP_NESTED_INSTANCES,
+                         ControlKind::Check,
+                         {225, 203 + 4 * LoaderRows::ROW_H, 200, 26},
                          L"保留嵌套实例"},
                         {SETUP_STATUS, ControlKind::Label, {225, 510, 540, 26}},
                         {INSTALL, ControlKind::Button, {779, 509, 90, 28}, L"安装"},
@@ -908,8 +910,8 @@ namespace ForgottenMelody {
                     options.push_back(Platform::widen(versionChoices[i]));
                 }
                 UpdateOptions(id, options,
-                           (int) (std::find(versionChoices.begin(), versionChoices.end(), chosen) -
-                                  versionChoices.begin()));
+                              (int) (std::find(versionChoices.begin(), versionChoices.end(), chosen) -
+                                     versionChoices.begin()));
             }
 
             void fillLoaders(uint32_t id, const std::string& chosen) {
@@ -974,8 +976,7 @@ namespace ForgottenMelody {
                 const Addons::Results& found = Addons::search(source, query);
                 bool loading = found.status == Addons::Status::Loading;
                 bool failed = found.status == Addons::Status::Failed;
-                if (found.status == Addons::Status::Ready &&
-                    (found.total != shown.total || found.hits != shown.hits)) {
+                if (found.status == Addons::Status::Ready && (found.total != shown.total || found.hits != shown.hits)) {
                     shown = found;
                     std::vector<ProjectList::Row> rows;
                     for (const Addons::Hit& hit : shown.hits) {
@@ -1005,8 +1006,8 @@ namespace ForgottenMelody {
                 UpdateText(COUNT, counted ? L"共 " + std::to_wstring(shown.total) + L" 个" : L"");
                 int pages = std::max(1, (shown.total + Addons::PAGE_SIZE - 1) / Addons::PAGE_SIZE);
                 UpdateText(PAGE,
-                        L"第 " + std::to_wstring(std::min(query.page, pages - 1) + 1) + L" / " +
-                                std::to_wstring(pages) + L" 页");
+                           L"第 " + std::to_wstring(std::min(query.page, pages - 1) + 1) + L" / " +
+                                   std::to_wstring(pages) + L" 页");
                 FindControl(PREVIOUS)->SetEnabled(!loading && query.page > 0);
                 FindControl(NEXT)->SetEnabled(!loading && query.page + 1 < pages);
             }
@@ -1065,7 +1066,8 @@ namespace ForgottenMelody {
                 std::string prefix = ProjectBrowser::sharedPrefix(versions.list);
                 Rows rows;
                 std::vector<std::string> keys;
-                for (const Addons::Version* version : ProjectBrowser::matching(versions.list, versionFilter, loaderFilter)) {
+                for (const Addons::Version* version :
+                     ProjectBrowser::matching(versions.list, versionFilter, loaderFilter)) {
                     std::string games = versionFilter;
                     if (games.empty() && !version->gameVersions.empty()) {
                         games = version->gameVersions.back() + (version->gameVersions.size() > 1 ? " 等" : "");
@@ -1240,8 +1242,10 @@ namespace ForgottenMelody {
             void showSetup() {
                 bool pack = modpack.has_value();
                 bool multimc = pack && modpack->pack.multimc;
-                UpdateText(SETUP_TITLE, multimc ? L"导入 MMC 实例"
-                        : pack ? L"安装整合包" : L"新建 " + Platform::widen(minecraft) + L" 实例");
+                UpdateText(SETUP_TITLE,
+                           multimc ? L"导入 MMC 实例"
+                                   : pack ? L"安装整合包"
+                                          : L"新建 " + Platform::widen(minecraft) + L" 实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
                 FindControl(KEEP_NESTED_INSTANCES)->SetVisible(multimc);
 
@@ -1295,8 +1299,8 @@ namespace ForgottenMelody {
                 }
                 nameShown = generated;
                 std::string problem = target == nullptr ? std::string("没有可用的游戏目录")
-                        : multimc ? Instances::checkId(target->key, trimmed(Text(NAME)))
-                                  : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
+                        : multimc                       ? Instances::checkId(target->key, trimmed(Text(NAME)))
+                                                        : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
                 UpdateText(SETUP_STATUS, Platform::widen(problem));
                 FindControl(INSTALL)->SetEnabled(problem.empty());
             }

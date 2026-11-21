@@ -214,9 +214,8 @@ namespace NewInstanceScreen {
 
         std::string sourceLabel(const Instances::Source& source) {
             const auto& sources = Instances::sources();
-            bool duplicate = std::count_if(sources.begin(), sources.end(), [&](const auto& other) {
-                return other.label == source.label;
-            }) > 1;
+            bool duplicate = std::count_if(sources.begin(), sources.end(),
+                                           [&](const auto& other) { return other.label == source.label; }) > 1;
             return duplicate ? source.label + "（" + Platform::display(source.root) + "）" : source.label;
         }
 
@@ -859,8 +858,8 @@ namespace NewInstanceScreen {
             } else {
                 const Instances::Source* source = targetSource();
                 problem = source == nullptr ? std::string("没有可用的游戏目录")
-                        : multimc          ? Instances::checkId(source->key, instanceName())
-                                           : Instances::checkInstallId(source->key, instanceName());
+                        : multimc           ? Instances::checkId(source->key, instanceName())
+                                            : Instances::checkInstallId(source->key, instanceName());
             }
             installButton(Page::right(), buttonBottom, problem, autoFabricApi);
         }
@@ -908,9 +907,8 @@ namespace NewInstanceScreen {
 
         void settings(float top, float bottom, float gone, bool blocked) {
             settleWanted();
-            std::vector<blb::instance::loader_choice> choices = modpack
-                    ? std::vector<blb::instance::loader_choice>()
-                    : loaderSelection.choices();
+            std::vector<blb::instance::loader_choice> choices =
+                    modpack ? std::vector<blb::instance::loader_choice>() : loaderSelection.choices();
             int loaderRows = modpack ? (modpack->pack.multimc ? 5 : 4) : (int) choices.size();
             bool edit = !editing.empty();
             bool choosePlace = !edit && Instances::soleSource() == nullptr;

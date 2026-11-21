@@ -472,7 +472,8 @@ namespace Installer {
                 tracked.push_back(Tracked{Part{"实例文件"}, "instance-files"});
             } else {
                 for (blb::install::loader_type loader : pack.loaders) {
-                    tracked.push_back(Tracked{Part{loaderName(loader)}, std::string(blb::install::loader_name(loader))});
+                    tracked.push_back(
+                            Tracked{Part{loaderName(loader)}, std::string(blb::install::loader_name(loader))});
                 }
                 tracked.push_back(Tracked{Part{"模组文件"}, "modpack-files"});
             }

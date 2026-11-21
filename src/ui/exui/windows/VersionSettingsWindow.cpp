@@ -65,7 +65,8 @@ namespace ForgottenMelody {
             PATCH,
             OPTIONS_LABEL,
             OPTIONS,
-            GAME_OPTIONS_GROUP, GAME_OPTIONS_PANEL,
+            GAME_OPTIONS_GROUP,
+            GAME_OPTIONS_PANEL,
             // 内存
             MEMORY_GROUP,
             AUTO_MEMORY,
@@ -260,7 +261,8 @@ namespace ForgottenMelody {
                 AddControl(SCROLL, scroll);
                 MoveInto(PAGE, {SCROLL});
                 AddControls(CONTROLS);
-                gameOptions = &static_cast<GameOptionsPanel&>(AddControl(GAME_OPTIONS_PANEL, std::make_shared<GameOptionsPanel>()));
+                gameOptions = &static_cast<GameOptionsPanel&>(
+                        AddControl(GAME_OPTIONS_PANEL, std::make_shared<GameOptionsPanel>()));
                 for (const exui::ControlSpec& spec : CONTROLS) {
                     MoveInto(page->GetContent(), {spec.id});
                 }
@@ -392,48 +394,62 @@ namespace ForgottenMelody {
                 if (server) serverRows.push_back(std::move(authRow));
                 serverRows.push_back(row(JOIN_LABEL, {cell(JOIN, 300)}));
                 std::vector<Layout> groups{
-                        group(MANAGE_GROUP, {Layout::Row({cell(MODS), cell(LOADERS), cell(EXPORT)}, 8, 30),
-                                            Layout::Row({cell(KEYS), cell(SCREENSHOTS), cell(SHORTCUT)}, 8, 30)},
+                        group(MANAGE_GROUP,
+                              {Layout::Row({cell(MODS), cell(LOADERS), cell(EXPORT)}, 8, 30),
+                               Layout::Row({cell(KEYS), cell(SCREENSHOTS), cell(SHORTCUT)}, 8, 30)},
                               {20, 26, 14, 16}),
-                        group(GAME_GROUP, {
-                                row(DIR_LABEL, {cell(DIR, 250)}),
-                                row(JAVA_LABEL, {cell(JAVA, 350)}),
-                                row(VISIBILITY_LABEL, {cell(VISIBILITY, 250)}),
-                                row(PRIORITY_LABEL, {cell(PRIORITY, 250)}),
-                                row(LOGS_LABEL, {cell(LOGS, 250)}),
-                                row(PATCH_LABEL, {cell(PATCH, 250)}),
-                                row(OPTIONS_LABEL, {cell(OPTIONS, 250)}),
-                        }),
-                        group(MEMORY_GROUP, {
-                                Layout::Row({cell(AUTO_MEMORY, 200)}, 0, 26),
-                                row(MAX_LABEL, {Layout::Row({cell(MAX, 80), cell(MAX_UNIT, 30)}, 5, 119),
-                                                cell(MAX_HINT, 290)}),
-                        }),
-                        group(WINDOW_GROUP, {
-                                row(SIZE_LABEL, {Layout::Row({cell(WIDTH, 70), cell(TIMES, 15), cell(HEIGHT, 70)}, 5, 170),
-                                                 cell(SIZE_HINT, 240)}),
-                                Layout::Row({cell(FULLSCREEN, 200)}, 0, 26),
-                        }),
+                        group(GAME_GROUP,
+                              {
+                                      row(DIR_LABEL, {cell(DIR, 250)}),
+                                      row(JAVA_LABEL, {cell(JAVA, 350)}),
+                                      row(VISIBILITY_LABEL, {cell(VISIBILITY, 250)}),
+                                      row(PRIORITY_LABEL, {cell(PRIORITY, 250)}),
+                                      row(LOGS_LABEL, {cell(LOGS, 250)}),
+                                      row(PATCH_LABEL, {cell(PATCH, 250)}),
+                                      row(OPTIONS_LABEL, {cell(OPTIONS, 250)}),
+                              }),
+                        group(MEMORY_GROUP,
+                              {
+                                      Layout::Row({cell(AUTO_MEMORY, 200)}, 0, 26),
+                                      row(MAX_LABEL,
+                                          {Layout::Row({cell(MAX, 80), cell(MAX_UNIT, 30)}, 5, 119),
+                                           cell(MAX_HINT, 290)}),
+                              }),
+                        group(WINDOW_GROUP,
+                              {
+                                      row(SIZE_LABEL,
+                                          {Layout::Row({cell(WIDTH, 70), cell(TIMES, 15), cell(HEIGHT, 70)}, 5, 170),
+                                           cell(SIZE_HINT, 240)}),
+                                      Layout::Row({cell(FULLSCREEN, 200)}, 0, 26),
+                              }),
                         group(SERVER_GROUP, std::move(serverRows)),
                         group(OTHER_GROUP, {row(NOTES_LABEL, {cell(NOTES)}, 70)}, {20, 25, 20, 10}),
-                        group(COMMANDS_GROUP, {
-                                row(GAME_ARGS_LABEL, {cell(GAME_ARGS)}),
-                                row(PRE_LAUNCH_LABEL, {cell(PRE_LAUNCH)}),
-                                row(WRAPPER_LABEL, {cell(WRAPPER)}),
-                                row(POST_EXIT_LABEL, {cell(POST_EXIT)}),
-                        }, {20, 25, 20, 10}),
-                        group(JVM_GROUP, {
-                                row(JVM_LABEL, {cell(JVM)}),
-                                row(MIN_LABEL, {cell(MIN, 80), cell(MIN_UNIT, 30)}),
-                                row(ENVIRONMENT_LABEL, {cell(ENVIRONMENT)}),
-                        }, {20, 25, 20, 10}),
-                        group(COMPATIBILITY_GROUP, {
-                                Layout::Row({cell(NO_DEFAULT_JVM_ARGS, 250)}, 0, 26),
-                                Layout::Row({cell(NO_INTEGRITY_CHECK, 250)}, 0, 26),
-                        }, {20, 25, 20, 11}),
+                        group(COMMANDS_GROUP,
+                              {
+                                      row(GAME_ARGS_LABEL, {cell(GAME_ARGS)}),
+                                      row(PRE_LAUNCH_LABEL, {cell(PRE_LAUNCH)}),
+                                      row(WRAPPER_LABEL, {cell(WRAPPER)}),
+                                      row(POST_EXIT_LABEL, {cell(POST_EXIT)}),
+                              },
+                              {20, 25, 20, 10}),
+                        group(JVM_GROUP,
+                              {
+                                      row(JVM_LABEL, {cell(JVM)}),
+                                      row(MIN_LABEL, {cell(MIN, 80), cell(MIN_UNIT, 30)}),
+                                      row(ENVIRONMENT_LABEL, {cell(ENVIRONMENT)}),
+                              },
+                              {20, 25, 20, 10}),
+                        group(COMPATIBILITY_GROUP,
+                              {
+                                      Layout::Row({cell(NO_DEFAULT_JVM_ARGS, 250)}, 0, 26),
+                                      Layout::Row({cell(NO_INTEGRITY_CHECK, 250)}, 0, 26),
+                              },
+                              {20, 25, 20, 11}),
                 };
                 FindControl(GAME_OPTIONS_GROUP)->SetVisible(optionsHeight > 0);
-                if (optionsHeight > 0) groups.insert(groups.begin() + 2, group(GAME_OPTIONS_GROUP, {cell(GAME_OPTIONS_PANEL, optionsHeight)}));
+                if (optionsHeight > 0)
+                    groups.insert(groups.begin() + 2,
+                                  group(GAME_OPTIONS_GROUP, {cell(GAME_OPTIONS_PANEL, optionsHeight)}));
                 page->SetContentLayout(Layout::Column(std::move(groups), 10), {12, 10, 0, 10});
             }
 
