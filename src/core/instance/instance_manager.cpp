@@ -274,7 +274,8 @@ instance_manager::get (std::string_view id) const
       out.chain = resolved->chain;
       isolated_libraries = resolved->isolated_libraries;
     }
-  out.loader_edit_locked = isolated_libraries || is_multimc_import (out.directory);
+  out.imported_from_multimc = is_multimc_import (out.directory);
+  out.loader_edit_locked = isolated_libraries || out.imported_from_multimc;
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
   else

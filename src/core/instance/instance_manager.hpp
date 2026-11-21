@@ -66,6 +66,7 @@ struct instance
   // The versions it is made of, the one it inherits from first and itself
   // last; only itself when it does not resolve.
   std::vector<std::string> chain;
+  bool imported_from_multimc = false;
   bool loader_edit_locked = false;
 
   bool
