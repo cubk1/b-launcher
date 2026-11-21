@@ -2,6 +2,7 @@
 
 #include <core/base/cancellation.hpp>
 #include <core/base/error.hpp>
+#include <core/base/zip.hpp>
 #include <core/modpack/modpack.hpp>
 #include <core/network/mirror_provider.hpp>
 
@@ -27,6 +28,20 @@ struct remote_file
   std::string client_side;
   std::string server_side;
 };
+
+result<std::optional<std::string>>
+read_multimc_file (const std::filesystem::path &source, zip_reader *zip,
+                   std::string_view name);
+result<void> copy_multimc_game (const std::filesystem::path &source,
+                                const pack_manifest &manifest,
+                                const meta::game_layout &layout,
+                                const std::string &id, progress_sink *sink,
+                                cancellation_token token);
+result<void> install_multimc (install::game_installer &installer,
+                              const std::filesystem::path &source,
+                              const pack_manifest &manifest,
+                              const std::string &id, progress_sink *sink,
+                              cancellation_token token);
 
 bool glob_match (std::string_view pattern, std::string_view path);
 std::uint32_t curseforge_fingerprint (std::string_view data);

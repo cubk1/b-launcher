@@ -95,6 +95,8 @@ export_hidden (std::string_view relative, std::string_view instance_id)
   if (relative.find ('/') != std::string_view::npos)
     return false;
   auto lower = to_lower (relative);
+  if (lower == meta::instance_libraries)
+    return true;
   for (std::string_view name :
        { "logs", "crash-reports", ".fabric", ".mixin.out", "debug",
          ".blb-cache", "blb-instance.json", "versions", "libraries", "assets",
