@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <set>
 #include <system_error>
 
 namespace b_launcher_base::modpack::detail
@@ -27,6 +28,7 @@ using std::filesystem::path;
 
 constexpr std::size_t metadata_limit = 4u << 20;
 constexpr std::string_view metadata_url = "https://meta.prismlauncher.org/v1/";
+constexpr std::string_view instance_index = "mmc-pack.json";
 
 bool
 safe_path (std::string_view name)
@@ -84,10 +86,17 @@ is_game_path (std::string_view name, std::string_view id)
          && top != std::string (id) + ".jar";
 }
 
+bool
+is_multimc_directory (const path &directory)
+{
+  auto index = fs::stat (directory / instance_index);
+  return index.exists && !index.is_directory && !index.is_link;
+}
+
 result<void>
 copy_game_folder (const path &source, const path &target,
-                  std::string_view id, progress_tracker &progress,
-                  cancellation_token token)
+                  std::string_view id, bool keep_nested_instances,
+                  progress_tracker &progress, cancellation_token token)
 {
   if (fs::stat (source).is_link)
     return make_error (errc::unsupported, "MMC game directory is a link");
@@ -109,7 +118,13 @@ copy_game_folder (const path &source, const path &target,
           continue;
         }
       if (it->is_directory (ec))
-        BLB_TRY (fs::create_directories (target / path_from_utf8 (name)));
+        {
+          if (!keep_nested_instances && is_multimc_directory (file))
+            it.disable_recursion_pending ();
+          // 让复制文件时创建父目录，避免留下只包含嵌套实例的空目录。
+          else if (keep_nested_instances || std::filesystem::is_empty (file, ec))
+            BLB_TRY (fs::create_directories (target / path_from_utf8 (name)));
+        }
       else if (!ec && it->is_regular_file (ec))
         {
           BLB_TRY (fs::copy_file (file, target / path_from_utf8 (name)));
@@ -459,8 +474,9 @@ read_multimc_file (const path &source, zip_reader *zip, std::string_view name)
 
 result<void>
 copy_multimc_game (const path &source, const pack_manifest &manifest,
-                   const meta::game_layout &layout, const std::string &id,
-                   progress_sink *sink, cancellation_token token)
+                    const meta::game_layout &layout, const std::string &id,
+                    bool keep_nested_instances, progress_sink *sink,
+                    cancellation_token token)
 {
   if (manifest.overrides.empty ())
     return ok ();
@@ -470,10 +486,31 @@ copy_multimc_game (const path &source, const pack_manifest &manifest,
   progress_tracker progress (sink, "copy:instance-files");
   if (fs::stat (source).is_directory)
     BLB_TRY (copy_game_folder (source / path_from_utf8 (prefix.substr (0, prefix.size () - 1)),
-                              target, lower_id, progress, token));
+                              target, lower_id, keep_nested_instances, progress, token));
   else
     {
       BLB_TRY_ASSIGN (auto zip, zip_reader::open (source));
+      std::set<std::string, std::less<>> nested;
+      if (!keep_nested_instances)
+        {
+          BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &) {
+            if (token.is_cancelled ())
+              return false;
+            if (entry.directory || !entry.name.ends_with (instance_index))
+              return true;
+            auto name = replace_all (entry.name, "\\", "/");
+            if (!name.starts_with (prefix))
+              return true;
+            auto relative = std::string_view (name).substr (prefix.size ());
+            auto slash = relative.rfind ('/');
+            if (slash != std::string_view::npos
+                && relative.substr (slash + 1) == instance_index
+                && safe_path (relative))
+              nested.emplace (relative.substr (0, slash));
+            return true;
+          }));
+          BLB_TRY (token.check ());
+        }
       std::optional<error> failure;
       BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &reader) {
         if (token.is_cancelled ())
@@ -482,6 +519,11 @@ copy_multimc_game (const path &source, const pack_manifest &manifest,
         if (!name.starts_with (prefix) || entry.directory || name.ends_with ('/'))
           return true;
         auto relative = std::string_view (name).substr (prefix.size ());
+        if (!nested.empty ())
+          for (auto slash = relative.find ('/'); slash != std::string_view::npos;
+               slash = relative.find ('/', slash + 1))
+            if (nested.contains (relative.substr (0, slash)))
+              return true;
         if (!is_game_path (relative, lower_id))
           return true;
         if (auto extracted = reader.extract_current (target / path_from_utf8 (relative));

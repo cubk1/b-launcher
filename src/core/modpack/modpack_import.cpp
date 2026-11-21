@@ -153,6 +153,7 @@ import_modpack (install::game_installer &installer,
     graph.add ("modpack:instance-files",
                [&] (cancellation_token t) {
                  return detail::copy_multimc_game (source, manifest, layout, id,
+                                                   options.keep_nested_instances,
                                                    sink, t);
                },
                { version_task });

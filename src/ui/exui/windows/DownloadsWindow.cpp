@@ -104,6 +104,7 @@ namespace ForgottenMelody {
             NAME,
             PLACE_LABEL,
             PLACE,
+            KEEP_NESTED_INSTANCES,
             // A name and a value on each of four rows.
             INFO,
             SETUP_STATUS = INFO + 8,
@@ -483,6 +484,8 @@ namespace ForgottenMelody {
                         {NAME, ControlKind::Edit, {345, 129, 300, 26}},
                         {PLACE_LABEL, ControlKind::Label, {225, 163, 115, 26}, L"安装位置"},
                         {PLACE, ControlKind::Combo, {345, 162, 300, 28}},
+                        {KEEP_NESTED_INSTANCES, ControlKind::Check, {225, 203 + 4 * LoaderRows::ROW_H, 200, 26},
+                         L"保留嵌套实例"},
                         {SETUP_STATUS, ControlKind::Label, {225, 510, 540, 26}},
                         {INSTALL, ControlKind::Button, {779, 509, 90, 28}, L"安装"},
                         {FINISH, ControlKind::Button, {779, 509, 90, 28}, L"取消"},
@@ -555,8 +558,8 @@ namespace ForgottenMelody {
                          {GAME_SEARCH, RELEASES, SNAPSHOTS, APRIL_FOOLS, OLD_VERSIONS, GAME_REFRESH, IMPORT, GAMES,
                           GAMES_RETRY, PICK_STATUS, NEXT_STEP});
                 MoveInto(SETUP_VIEW,
-                         {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE, SETUP_STATUS,
-                          INSTALL});
+                         {SETUP_BACK, SETUP_TITLE, LOADERS_REFRESH, NAME_LABEL, NAME, PLACE_LABEL, PLACE,
+                          KEEP_NESTED_INSTANCES, SETUP_STATUS, INSTALL});
                 for (uint32_t id = INFO; id < SETUP_STATUS; id++) {
                     MoveInto(SETUP_VIEW, {id});
                 }
@@ -581,6 +584,7 @@ namespace ForgottenMelody {
                 FindControl(GAME_SEARCH)->SetTooltipText(L"按版本号搜索");
                 FindControl(NAME)->SetTooltipText(L"实例的名称，也是它的文件夹名");
                 FindControl(PLACE)->SetTooltipText(L"实例装进哪个游戏目录");
+                FindControl(KEEP_NESTED_INSTANCES)->SetTooltipText(L"一并复制游戏目录里的嵌套 MMC 实例");
                 MoveInto(SEARCH_VIEW,
                          {SOURCE, SEARCH, INSTANCE, VERSION, LOADER, CATEGORY, SORT, COUNT, RESULTS, RETRY, PREVIOUS,
                           PAGE, NEXT});
@@ -1199,6 +1203,7 @@ namespace ForgottenMelody {
 
             void startSetup() {
                 settingUp = true;
+                SetChecked(KEEP_NESTED_INSTANCES, false);
                 nameShown = Platform::widen(generatedName());
                 SetText(NAME, nameShown);
                 refresh();
@@ -1238,6 +1243,7 @@ namespace ForgottenMelody {
                 UpdateText(SETUP_TITLE, multimc ? L"导入 MMC 实例"
                         : pack ? L"安装整合包" : L"新建 " + Platform::widen(minecraft) + L" 实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
+                FindControl(KEEP_NESTED_INSTANCES)->SetVisible(multimc);
 
                 std::vector<std::wstring> places;
                 placeKeys.clear();
@@ -1303,6 +1309,7 @@ namespace ForgottenMelody {
                 std::string key = target->key;
                 std::string name = trimmed(Text(NAME));
                 if (modpack) {
+                    modpack->pack.keepNestedInstances = modpack->pack.multimc && Checked(KEEP_NESTED_INSTANCES);
                     Installer::startModpack(key, modpack->pack, name);
                 } else {
                     // An unchanged name is left to the installer, as in the default interface.

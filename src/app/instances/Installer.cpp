@@ -494,7 +494,8 @@ namespace Installer {
         }
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
-        worker = std::thread([root, archive, download, id, token, made, local, javaOptions, javaKnown] {
+        worker = std::thread([root, archive, download, id, token, made, local, javaOptions, javaKnown,
+                              keepNestedInstances = pack.keepNestedInstances] {
             std::string result;
             std::string error;
             bool wasCancelled = false;
@@ -521,6 +522,7 @@ namespace Installer {
                     blb::install::game_installer installer(blb::meta::game_layout(root), options);
                     blb::modpack::import_options settings;
                     settings.id = id;
+                    settings.keep_nested_instances = keepNestedInstances;
                     settings.curseforge.api_key = CurseForge::apiKey();
                     auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
                     if (imported) {
