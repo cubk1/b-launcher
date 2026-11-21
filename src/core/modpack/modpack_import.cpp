@@ -136,22 +136,26 @@ import_modpack (install::game_installer &installer,
       files.push_back (f);
 
   install::task_graph graph;
-  graph.add ("modpack:version", [&] (cancellation_token t) -> result<void> {
-    if (manifest.multimc)
-      return detail::install_multimc (installer, source, manifest, id, sink, t);
-    install::loader_installer loaders (installer);
-    install::install_request request;
-    request.minecraft = manifest.minecraft;
-    request.loaders = manifest.loaders;
-    request.id = id;
-    request.mods_directory = game_dir / "mods";
-    BLB_TRY (loaders.install (request, sink, t));
-    return {};
-  });
+  auto version_task = graph.add (
+      "modpack:version", [&] (cancellation_token t) -> result<void> {
+        if (manifest.multimc)
+          return detail::install_multimc (installer, source, manifest, id, sink, t);
+        install::loader_installer loaders (installer);
+        install::install_request request;
+        request.minecraft = manifest.minecraft;
+        request.loaders = manifest.loaders;
+        request.id = id;
+        request.mods_directory = game_dir / "mods";
+        BLB_TRY (loaders.install (request, sink, t));
+        return {};
+      });
   if (manifest.multimc)
-    graph.add ("modpack:instance-files", [&] (cancellation_token t) {
-      return detail::copy_multimc_game (source, manifest, layout, id, sink, t);
-    });
+    graph.add ("modpack:instance-files",
+               [&] (cancellation_token t) {
+                 return detail::copy_multimc_game (source, manifest, layout, id,
+                                                   sink, t);
+               },
+               { version_task });
   else
     {
       auto resolve = graph.add (

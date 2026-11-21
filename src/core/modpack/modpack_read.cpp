@@ -385,7 +385,7 @@ read_multimc (const std::filesystem::path &source, zip_reader *zip,
             }
         }
     }
-  for (std::string_view dir : { "minecraft", ".minecraft" })
+  for (std::string_view dir : { ".minecraft", "minecraft" })
     {
       auto candidate = prefix + std::string (dir) + "/";
       bool found = zip ? std::any_of (
