@@ -5,6 +5,7 @@
 #include <core/base/strings.hpp>
 #include <core/instance/instance_manager.hpp>
 #include <core/meta/version.hpp>
+#include <core/modpack/modpack.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -19,11 +20,30 @@ namespace
 
 using json = nlohmann::json;
 constexpr log::logger s_log ("instance");
+constexpr std::uint64_t modpack_info_limit = 4u << 20;
 
 bool
 valid_id (std::string_view id)
 {
   return id.size () <= 128 && fs::safe_component (id);
+}
+
+bool
+is_multimc_import (const std::filesystem::path &directory)
+{
+  const auto file = directory / modpack::info_file;
+  const auto st = fs::stat (file);
+  if (st.is_directory || st.is_link || st.size == 0
+      || st.size > modpack_info_limit)
+    return false;
+  auto text = fs::read_file (file);
+  if (!text)
+    return false;
+  const auto info = json::parse (*text, nullptr, false);
+  const auto format = info.find ("format");
+  return format != info.end () && format->is_string ()
+         && format->get_ref<const std::string &> ()
+                == modpack::format_name (modpack::pack_format::multimc);
 }
 
 json
@@ -231,15 +251,19 @@ instance_manager::get (std::string_view id) const
   instance out;
   out.id = std::string (id);
   out.directory = m_layout.version_dir (id);
+  bool isolated_libraries = false;
   auto resolved = meta::resolve_version (m_layout, id);
   if (!resolved)
     {
       out.valid = false;
       out.problem = resolved.err ().message;
       out.chain = { std::string (id) };
-      if (auto raw = meta::load_version (m_layout, id);
-          raw && raw->inherits_from == id)
-        out.minecraft_version = std::string (id);
+      if (auto raw = meta::load_version (m_layout, id))
+        {
+          isolated_libraries = raw->isolated_libraries;
+          if (raw->inherits_from == id)
+            out.minecraft_version = std::string (id);
+        }
     }
   else
     {
@@ -248,7 +272,9 @@ instance_manager::get (std::string_view id) const
       out.release_time = resolved->release_time;
       out.loaders = install::detect_loaders (*resolved);
       out.chain = resolved->chain;
+      isolated_libraries = resolved->isolated_libraries;
     }
+  out.loader_edit_locked = isolated_libraries || is_multimc_import (out.directory);
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
   else

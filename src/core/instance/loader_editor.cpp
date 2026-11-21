@@ -334,6 +334,11 @@ modify_loaders (install::game_installer &installer,
 {
   BLB_TRY (token.check ());
   BLB_TRY_ASSIGN (auto inst, manager.get (id));
+  if (inst.loader_edit_locked)
+    return make_error (
+        errc::unsupported,
+        sformat ("cannot modify loaders of '{}': its launch configuration must be preserved",
+                 id));
   if (inst.minecraft_version.empty ())
     return make_error (
         errc::parse,

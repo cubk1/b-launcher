@@ -217,8 +217,7 @@ import_modpack (install::game_installer &installer,
                 { "author", manifest.author },
                 { "format", format_name (manifest.format) },
                 { "minecraft", manifest.minecraft } };
-  BLB_TRY (
-      fs::write_file_atomic (game_dir / "blb-modpack.json", info.dump (2)));
+  BLB_TRY (fs::write_file_atomic (game_dir / info_file, info.dump (2)));
   cleanup.directory.clear ();
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds> (
                 std::chrono::steady_clock::now () - started)

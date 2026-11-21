@@ -19,6 +19,8 @@
 namespace b_launcher_base::modpack
 {
 
+inline constexpr std::string_view info_file = "blb-modpack.json";
+
 enum class pack_format : std::uint8_t
 {
   modrinth,

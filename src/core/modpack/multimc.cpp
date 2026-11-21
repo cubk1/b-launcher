@@ -77,7 +77,7 @@ is_game_path (std::string_view name, std::string_view id)
   if (!safe_path (name))
     return false;
   auto top = to_lower (name.substr (0, name.find ('/')));
-  return top != instance::settings_file && top != "blb-modpack.json"
+  return top != instance::settings_file && top != info_file
          && top != meta::instance_libraries && top != "natives"
          && !top.starts_with ("natives-")
          && top != "launch.args" && top != std::string (id) + ".json"

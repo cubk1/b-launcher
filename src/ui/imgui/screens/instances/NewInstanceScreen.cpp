@@ -1127,7 +1127,8 @@ namespace NewInstanceScreen {
 
     void openLoaderEdit(const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
-        if (entry == nullptr || entry->info.minecraft_version.empty() || Installer::running()) {
+        if (entry == nullptr || entry->info.loader_edit_locked || entry->info.minecraft_version.empty() ||
+            Installer::running()) {
             return;
         }
         reset();

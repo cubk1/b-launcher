@@ -994,12 +994,17 @@ namespace InstancePage {
                 y += Page::ROW_H;
                 index++;
             }
+            const bool loadersLocked = entry.info.loader_edit_locked;
             std::string loaders;
-            for (const blb::install::loader_info& loader : entry.info.loaders) {
-                loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
+            if (loadersLocked) {
+                loaders = "需保留原有启动配置";
+            } else {
+                for (const blb::install::loader_info& loader : entry.info.loaders) {
+                    loaders += (loaders.empty() ? "" : "、") + Installer::loaderName(loader.type);
+                }
             }
             if (Page::navRow("instance#loaders", "修改加载器", loaders.empty() ? std::string("未安装") : loaders, y,
-                             blocked || entry.info.minecraft_version.empty() || Installer::running() ||
+                             blocked || loadersLocked || entry.info.minecraft_version.empty() || Installer::running() ||
                                      !Features::enabled(Features::INSTANCE_EDIT),
                              Page::rowCorners(index, count), 0xf0ad)) {
                 NewInstanceScreen::openLoaderEdit(entry.key);
