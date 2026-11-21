@@ -51,8 +51,9 @@ namespace PackInstall {
                 Notices::add(Notices::Kind::Failed, "没有可以安装整合包的游戏目录", 5000);
                 return;
             }
-            std::string id =
-                    Instances::checkInstallId(source->key, name).empty() ? name : Instances::freeId(source->key, name);
+            std::string problem = setup.pack.multimc ? Instances::checkId(source->key, name)
+                                                     : Instances::checkInstallId(source->key, name);
+            std::string id = problem.empty() ? name : Instances::freeId(source->key, name);
             Installer::startModpack(source->key, setup.pack, id);
             Config::data()["packModpackDone"] = true;
             Config::save();

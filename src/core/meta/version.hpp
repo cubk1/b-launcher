@@ -15,6 +15,8 @@
 namespace b_launcher_base::meta
 {
 
+inline constexpr std::string_view instance_libraries = ".blb-libraries";
+
 struct download_artifact
 {
   std::string path;
@@ -67,6 +69,7 @@ struct java_version_ref
 {
   std::string component;
   int major_version = 0;
+  std::vector<int> compatible_majors;
 };
 
 struct logging_ref
@@ -100,10 +103,12 @@ struct version
   int compliance_level = 0;
   int minimum_launcher_version = 0;
   std::vector<std::string> chain;
+  bool isolated_libraries = false;
 
   std::string jar_id () const;
   std::string asset_id () const;
   std::string minecraft () const;
+  std::filesystem::path library_directory (const game_layout &layout) const;
   const download_artifact *client_download () const;
 };
 

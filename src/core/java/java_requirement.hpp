@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace b_launcher_base::java
 {
@@ -17,6 +18,7 @@ struct java_requirement
   int max_major = 0;
   int preferred_major = 8;
   std::string component = "jre-legacy";
+  std::vector<int> compatible_majors;
 };
 
 java_requirement requirement_for (const meta::version &resolved);

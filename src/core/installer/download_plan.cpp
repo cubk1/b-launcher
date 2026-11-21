@@ -99,6 +99,10 @@ plan_version_files (const meta::version &resolved,
                   "versions/" + jar + "/" + jar + ".jar", client->url,
                   client->sha1, client->size, mirror);
       }
+  const auto library_dir = resolved.library_directory (layout);
+  const std::string library_prefix = resolved.isolated_libraries
+      ? "versions/" + resolved.id + "/" + std::string (meta::instance_libraries) + "/"
+      : "libraries/";
   std::unordered_set<std::string> planned_paths;
   for (const auto &entry : resolved.libraries)
     {
@@ -126,7 +130,7 @@ plan_version_files (const meta::version &resolved,
           add_file (out,
                     lib->is_modern_native () ? file_kind::native
                                              : file_kind::library,
-                    layout.library (relative), "libraries/" + relative, url,
+                     library_dir / path_from_utf8 (relative), library_prefix + relative, url,
                     sha1, size, mirror);
         }
       if (options.natives && legacy_native)
@@ -139,16 +143,16 @@ plan_version_files (const meta::version &resolved,
                   = it->second.path.empty ()
                         ? lib->artifact.with_classifier (classifier).path ()
                         : it->second.path;
-              add_file (out, file_kind::native, layout.library (relative),
-                        "libraries/" + relative, it->second.url,
+               add_file (out, file_kind::native, library_dir / path_from_utf8 (relative),
+                         library_prefix + relative, it->second.url,
                         it->second.sha1, it->second.size, mirror);
             }
           else
             {
               auto artifact = lib->artifact.with_classifier (classifier);
               auto relative = artifact.path ();
-              add_file (out, file_kind::native, layout.library (relative),
-                        "libraries/" + relative, library_url (*lib, artifact),
+               add_file (out, file_kind::native, library_dir / path_from_utf8 (relative),
+                         library_prefix + relative, library_url (*lib, artifact),
                         {}, -1, mirror);
             }
         }

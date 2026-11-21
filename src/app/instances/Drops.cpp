@@ -5,6 +5,7 @@
 #include "app/system/Interface.h"
 #include "app/system/Notices.h"
 
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/base/zip.hpp>
 #include <core/modpack/modpack.hpp>
@@ -53,29 +54,52 @@ namespace Drops {
             return false;
         }
 
-        bool themeArchive(const std::filesystem::path& file) {
-            static std::map<std::filesystem::path, bool> known;
+        bool multimcEntry(std::string_view name) {
+            constexpr std::string_view index = "mmc-pack.json";
+            if (!name.ends_with(index)) {
+                return false;
+            }
+            name.remove_suffix(index.size());
+            return name.empty() ||
+                    ((name.ends_with('/') || name.ends_with('\\')) &&
+                     blb::fs::safe_filename(name.substr(0, name.size() - 1)));
+        }
+
+        bool multimcFolder(const std::filesystem::path& path) {
+            std::error_code error;
+            return std::filesystem::is_regular_file(path / "mmc-pack.json", error);
+        }
+
+        Kind archiveHint(const std::filesystem::path& file) {
+            static std::map<std::filesystem::path, Kind> known;
             auto found = known.find(file);
             if (found != known.end()) {
                 return found->second;
             }
-            bool theme = false;
+            Kind kind = Kind::Unknown;
             auto zip = blb::zip_reader::open(file);
             if (zip) {
                 auto entries = zip->entries();
-                theme = entries && themeEntries(*entries);
+                if (entries && std::any_of(entries->begin(), entries->end(), [](const blb::zip_entry& entry) {
+                        return !entry.directory && multimcEntry(entry.name);
+                    })) {
+                    kind = Kind::Modpack;
+                } else if (entries && themeEntries(*entries)) {
+                    kind = Kind::Theme;
+                }
             }
             if (known.size() > 64) {
                 known.clear();
             }
-            known[file] = theme;
-            return theme;
+            known[file] = kind;
+            return kind;
         }
 
         struct Item {
             std::filesystem::path file;
             Kind kind = Kind::Unknown;
             blb::modpack::pack_manifest manifest;
+            std::string problem;
         };
 
 #if !defined(_WIN32)
@@ -222,8 +246,21 @@ namespace Drops {
         bool acceptable(const std::vector<std::filesystem::path>& files) {
             return std::any_of(files.begin(), files.end(), [](const std::filesystem::path& file) {
                 std::string name = nameOf(file);
-                return Mods::acceptsDrop(name) || name.ends_with(".mrpack") || name.ends_with(".zip");
+                return Mods::acceptsDrop(name) || name.ends_with(".mrpack") || name.ends_with(".zip") ||
+                        multimcFolder(file);
             });
+        }
+
+        Item readPack(const std::filesystem::path& file, bool multimc) {
+            auto manifest = blb::modpack::read_modpack(file);
+            if (manifest) {
+                return {file, Kind::Modpack, std::move(*manifest)};
+            }
+            Item item{file};
+            if (multimc) {
+                item.problem = "无法导入 MMC 实例：" + manifest.err().message;
+            }
+            return item;
         }
 
         Item classify(const std::filesystem::path& file) {
@@ -232,7 +269,7 @@ namespace Drops {
             std::string name = nameOf(file);
             std::error_code error;
             if (std::filesystem::is_directory(file, error)) {
-                return item;
+                return multimcFolder(file) ? readPack(file, true) : item;
             }
             if (Mods::acceptsDrop(name)) {
                 item.kind = Kind::Mod;
@@ -253,6 +290,7 @@ namespace Drops {
             bool assets = false;
             bool data = false;
             bool shaders = false;
+            bool multimc = false;
             bool modpack = name.ends_with(".mrpack");
             for (const blb::zip_entry& entry : *entries) {
                 const std::string& path = entry.name;
@@ -265,21 +303,19 @@ namespace Drops {
                 } else if (path.rfind("shaders/", 0) == 0) {
                     shaders = true;
                 }
-                if (path == "modrinth.index.json" || path == "manifest.json" || path == "mcbbs.packmeta" ||
-                    path == "instance.cfg" || path.ends_with("mmc-pack.json")) {
+                if (path == "modrinth.index.json" || path == "manifest.json" || path == "mcbbs.packmeta") {
                     modpack = true;
                 }
+                multimc |= multimcEntry(path);
             }
-            if (!modpack && !packMeta && themeEntries(*entries)) {
+            if (!multimc && !modpack && !packMeta && themeEntries(*entries)) {
                 item.kind = Kind::Theme;
                 return item;
             }
-            if (modpack) {
-                auto manifest = blb::modpack::read_modpack(file);
-                if (manifest) {
-                    item.kind = Kind::Modpack;
-                    item.manifest = std::move(*manifest);
-                    return item;
+            if (modpack || multimc) {
+                Item pack = readPack(file, multimc);
+                if (pack.kind == Kind::Modpack || multimc) {
+                    return pack;
                 }
             }
             if (shaders) {
@@ -491,7 +527,9 @@ namespace Drops {
             }
             for (const Item& item : found) {
                 if (item.kind == Kind::Unknown) {
-                    Notices::add(Notices::Kind::Failed, "无法识别 " + blb::path_to_utf8(item.file.filename()), 4000);
+                    Notices::add(Notices::Kind::Failed, item.problem.empty()
+                                         ? "无法识别 " + blb::path_to_utf8(item.file.filename())
+                                         : item.problem, 4000);
                     break;
                 }
             }
@@ -558,7 +596,7 @@ namespace Drops {
     int modCount() {
         int mods = 0;
         for (const std::filesystem::path& file : dragged) {
-            mods += Mods::acceptsDrop(nameOf(file)) ? 1 : 0;
+            mods += Mods::acceptsDrop(nameOf(file)) && !multimcFolder(file) ? 1 : 0;
         }
         return mods;
     }
@@ -581,12 +619,21 @@ namespace Drops {
         int zips = 0;
         int themes = 0;
         for (const std::filesystem::path& file : dragged) {
+            if (multimcFolder(file)) {
+                return "松开以导入 MMC 实例";
+            }
             std::string name = nameOf(file);
             mods += Mods::acceptsDrop(name) ? 1 : 0;
             packs += name.ends_with(".mrpack") ? 1 : 0;
             bool zip = name.ends_with(".zip");
             zips += zip ? 1 : 0;
-            themes += zip && themeArchive(file) ? 1 : 0;
+            if (zip) {
+                Kind hint = archiveHint(file);
+                if (hint == Kind::Modpack) {
+                    return "松开以导入 MMC 实例";
+                }
+                themes += hint == Kind::Theme ? 1 : 0;
+            }
         }
         if (themes > 0 && themes == (int) dragged.size()) {
             return "松开以导入主题";
@@ -628,7 +675,8 @@ namespace Drops {
                 if (pack != batch.items.end()) {
                     openModpack(*pack);
                 } else {
-                    Notices::add(Notices::Kind::Failed, "这个文件不是支持的整合包", 4000);
+                    const auto& problem = batch.items.front().problem;
+                    Notices::add(Notices::Kind::Failed, problem.empty() ? "这个文件不是支持的整合包" : problem, 4000);
                 }
             } else {
                 act(batch.items, batch.target, batch.point);
