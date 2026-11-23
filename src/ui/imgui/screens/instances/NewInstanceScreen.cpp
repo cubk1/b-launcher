@@ -29,7 +29,6 @@
 #include "ui/imgui/value/Values.h"
 #include "ui/imgui/widget/SelectWidget.h"
 #include "ui/imgui/widget/TextFieldWidget.h"
-#include "ui/imgui/widget/ToggleWidget.h"
 
 #include <core/instance/loader_editor.hpp>
 #include <core/base/strings.hpp>
@@ -874,7 +873,7 @@ namespace NewInstanceScreen {
                             UiWidgets::TEXT_CONTROL);
         }
 
-        void modpackRows(float y, bool blocked) {
+        void modpackRows(float y) {
             infoRow(modpack->pack.multimc ? "MMC 实例" : "整合包", modpack->title, y);
             y += Page::ROW_H;
             infoRow("版本", modpack->version, y);
@@ -887,23 +886,6 @@ namespace NewInstanceScreen {
                 loaders += (loaders.empty() ? "" : "、") + loader;
             }
             infoRow("加载器", loaders.empty() ? std::string("无") : loaders, y);
-            if (modpack->pack.multimc) {
-                y += Page::ROW_H;
-                Page::label("保留嵌套实例", y);
-                static const std::string id = "new#keepNestedInstances";
-                static const auto flag = std::make_shared<FlagBinding>(
-                        id, [] { return modpack->pack.keepNestedInstances; },
-                        [](bool on) { modpack->pack.keepNestedInstances = on; });
-                ToggleWidget toggle(id, flag, true);
-                float x = Page::controlRight() - 30.0f;
-                toggle.bounds(x, y + (Page::ROW_H - 18.0f) * 0.5f, 30.0f, 18.0f)
-                        .hitArea(Page::left(), y, Page::width(), Page::ROW_H)
-                        .block(blocked);
-                toggle.paint();
-                if (toggle.hovered()) {
-                    Page::tooltip("一并复制游戏目录里的嵌套 MMC 实例", x, y, 30.0f, Page::ROW_H);
-                }
-            }
         }
 
         void settings(float top, float bottom, float gone, bool blocked) {
@@ -911,7 +893,7 @@ namespace NewInstanceScreen {
             std::vector<blb::instance::loader_choice> choices = modpack
                     ? std::vector<blb::instance::loader_choice>()
                     : loaderSelection.choices();
-            int loaderRows = modpack ? (modpack->pack.multimc ? 5 : 4) : (int) choices.size();
+            int loaderRows = modpack ? 4 : (int) choices.size();
             bool edit = !editing.empty();
             bool choosePlace = !edit && Instances::soleSource() == nullptr;
             bool versionRow = !modpack;
@@ -999,7 +981,7 @@ namespace NewInstanceScreen {
                 Page::caption("整合包", y);
                 y += Page::CAPTION_H;
                 Page::card(y, loaderRows);
-                modpackRows(y, rowsBlocked);
+                modpackRows(y);
                 body.end();
                 UiRender::alphaMul = savedAlpha;
                 UiRender::offsetY = savedOffsetY;

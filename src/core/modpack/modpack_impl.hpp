@@ -35,9 +35,8 @@ read_multimc_file (const std::filesystem::path &source, zip_reader *zip,
 result<void> copy_multimc_game (const std::filesystem::path &source,
                                 const pack_manifest &manifest,
                                 const meta::game_layout &layout,
-                                const std::string &id,
-                                bool keep_nested_instances,
-                                progress_sink *sink, cancellation_token token);
+                                const std::string &id, progress_sink *sink,
+                                cancellation_token token);
 result<void> install_multimc (install::game_installer &installer,
                               const std::filesystem::path &source,
                               const pack_manifest &manifest,

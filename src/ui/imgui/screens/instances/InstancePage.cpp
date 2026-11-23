@@ -638,44 +638,31 @@ namespace InstancePage {
                                 UiTheme::textPrimary(), UiFont::MEDIUM, Page::TITLE_SIZE);
             }
 
-            const float lineY = y + 27.0f;
-            constexpr float lineH = 16.0f;
-            constexpr float tagPadding = 7.0f, tagGap = 6.0f, detailGap = 10.0f;
-            const float tagY = lineY + (lineH - Page::ROW_H) * 0.5f;
-            static const std::string multimcTag = "转换的MultiMC实例";
-            const bool multimc = entry.info.imported_from_multimc;
-            const float tagRight = Page::right() -
-                    (multimc ? UiFont::width(multimcTag, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 2.0f * tagPadding
-                             : 0.0f);
-
-            const bool showLoaders = problem.empty() && entry.info.valid;
-            std::string detail = showLoaders ? "Minecraft " + entry.info.minecraft_version
-                    : problem.empty()        ? "无法读取版本信息：" + entry.info.problem
-                                             : problem;
-            if (multimc || (problem.empty() && !entry.info.valid)) {
-                detail = fitEnd(detail, tagRight - textX - (multimc ? detailGap : 0.0f), UiWidgets::TEXT_SMALL);
-            }
-            UiRender::textY(detail, textX, lineY, lineH, showLoaders ? UiTheme::textMuted() : UiTheme::danger(),
-                            UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
-            float tagX = textX + UiFont::width(detail, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + detailGap;
-            if (showLoaders) {
+            float lineY = y + 27.0f;
+            float lineH = 16.0f;
+            if (!problem.empty()) {
+                UiRender::textY(problem, textX, lineY, lineH, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            } else if (!entry.info.valid) {
+                UiRender::textY(
+                        fitEnd("无法读取版本信息：" + entry.info.problem, Page::right() - textX, UiWidgets::TEXT_SMALL),
+                        textX, lineY, lineH, UiTheme::danger(), UiFont::MEDIUM, UiWidgets::TEXT_SMALL);
+            } else {
+                std::string version = "Minecraft " + entry.info.minecraft_version;
+                UiRender::textY(version, textX, lineY, lineH, UiTheme::textMuted(), UiFont::MEDIUM,
+                                UiWidgets::TEXT_SMALL);
+                float pillX = textX + UiFont::width(version, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 10.0f;
                 for (const blb::install::loader_info& loader : entry.info.loaders) {
                     std::string text = Installer::loaderName(loader.type) +
                             (loader.version.empty() ? std::string() : " " + loader.version);
-                    float available = tagRight - tagX - 2.0f * tagPadding - (multimc ? tagGap : 0.0f);
-                    if (multimc) {
-                        text = fitEnd(text, available, UiWidgets::TEXT_SMALL);
-                    }
-                    if (text.empty() || UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) > available) {
+                    float pillW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_SMALL) + 14.0f;
+                    if (pillX + pillW > Page::right()) {
                         break;
                     }
-                    tagX += Page::tag(text, tagX, tagY, UiTheme::surfaceRaised(), UiTheme::textSecondary(),
-                                      tagPadding) +
-                            tagGap;
+                    UiRender::roundRect(pillX, lineY - 1.0f, pillW, 18.0f, 6.0f, UiTheme::surfaceRaised());
+                    UiRender::textY(text, pillX + 7.0f, lineY - 1.0f, 18.0f, UiTheme::textSecondary(), UiFont::MEDIUM,
+                                    UiWidgets::TEXT_SMALL);
+                    pillX += pillW + 6.0f;
                 }
-            }
-            if (multimc && tagX <= tagRight) {
-                Page::tag(multimcTag, tagX, tagY, UiTheme::accentSoft(255), UiTheme::accentText(), tagPadding);
             }
 
             float buttonY = y + 6.0f;

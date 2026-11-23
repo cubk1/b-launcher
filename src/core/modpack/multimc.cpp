@@ -76,8 +76,6 @@ copy_source_file (const path &source, zip_reader *zip, std::string_view name,
 bool
 is_game_path (std::string_view name, std::string_view id)
 {
-  if (!safe_path (name))
-    return false;
   auto top = to_lower (name.substr (0, name.find ('/')));
   return top != instance::settings_file && top != info_file
          && top != meta::instance_libraries && top != "natives"
@@ -95,8 +93,7 @@ is_multimc_directory (const path &directory)
 
 result<void>
 copy_game_folder (const path &source, const path &target, std::string_view id,
-                  bool keep_nested_instances, progress_tracker &progress,
-                  cancellation_token token)
+                  progress_tracker &progress, cancellation_token token)
 {
   if (fs::stat (source).is_link)
     return make_error (errc::unsupported, "MMC game directory is a link");
@@ -120,11 +117,9 @@ copy_game_folder (const path &source, const path &target, std::string_view id,
         }
       if (it->is_directory (ec))
         {
-          if (!keep_nested_instances && is_multimc_directory (file))
+          if (is_multimc_directory (file))
             it.disable_recursion_pending ();
-          // 让复制文件时创建父目录，避免留下只包含嵌套实例的空目录。
-          else if (keep_nested_instances
-                   || std::filesystem::is_empty (file, ec))
+          else if (std::filesystem::is_empty (file, ec))
             BLB_TRY (fs::create_directories (target / path_from_utf8 (name)));
         }
       else if (!ec && it->is_regular_file (ec))
@@ -346,7 +341,6 @@ build_version (const path &source, zip_reader *zip,
   out.isolated_libraries = true;
   out.type = vanilla.type;
   out.release_time = vanilla.release_time;
-  // 补丁不能改写共享资源索引。
   out.asset_index = vanilla.asset_index;
   out.assets = vanilla.assets;
   out.java_version = vanilla.java_version;
@@ -364,10 +358,20 @@ build_version (const path &source, zip_reader *zip,
       for (auto key : { "jarMods", "+jarMods", "mavenFiles", "+agents", "mods",
                         "processors", "-libraries" })
         if (const auto *field = member (data, key); field && !field->empty ())
-          return make_error (
-              errc::unsupported,
-              sformat ("MMC component '{}' uses unsupported '{}'",
-                       patch.component->uid, key));
+          {
+            const auto &uid = patch.component->uid;
+            if (std::string_view (key) == "mavenFiles"
+                && (uid == "net.minecraftforge" || uid == "net.neoforged"))
+              return make_error (
+                  errc::unsupported,
+                  sformat ("cannot import {} {} together with custom MMC "
+                           "patches",
+                           uid, patch.component->version));
+            return make_error (
+                errc::unsupported,
+                sformat ("MMC component '{}' uses unsupported '{}'", uid,
+                         key));
+          }
 
       auto part = meta::detail::version_from_json (data);
       if (!part.main_class.empty ())
@@ -507,8 +511,7 @@ read_multimc_file (const path &source, zip_reader *zip, std::string_view name)
 result<void>
 copy_multimc_game (const path &source, const pack_manifest &manifest,
                    const meta::game_layout &layout, const std::string &id,
-                   bool keep_nested_instances, progress_sink *sink,
-                   cancellation_token token)
+                   progress_sink *sink, cancellation_token token)
 {
   if (manifest.overrides.empty ())
     return ok ();
@@ -519,31 +522,28 @@ copy_multimc_game (const path &source, const pack_manifest &manifest,
   if (fs::stat (source).is_directory)
     BLB_TRY (copy_game_folder (
         source / path_from_utf8 (prefix.substr (0, prefix.size () - 1)),
-        target, lower_id, keep_nested_instances, progress, token));
+        target, lower_id, progress, token));
   else
     {
       BLB_TRY_ASSIGN (auto zip, zip_reader::open (source));
       std::set<std::string, std::less<>> nested;
-      if (!keep_nested_instances)
-        {
-          BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &) {
-            if (token.is_cancelled ())
-              return false;
-            if (entry.directory || !entry.name.ends_with (instance_index))
-              return true;
-            auto name = replace_all (entry.name, "\\", "/");
-            if (!name.starts_with (prefix))
-              return true;
-            auto relative = std::string_view (name).substr (prefix.size ());
-            auto slash = relative.rfind ('/');
-            if (slash != std::string_view::npos
-                && relative.substr (slash + 1) == instance_index
-                && safe_path (relative))
-              nested.emplace (relative.substr (0, slash));
-            return true;
-          }));
-          BLB_TRY (token.check ());
-        }
+      BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &) {
+        if (token.is_cancelled ())
+          return false;
+        if (entry.directory || !entry.name.ends_with (instance_index))
+          return true;
+        auto name = replace_all (entry.name, "\\", "/");
+        if (!name.starts_with (prefix))
+          return true;
+        auto relative = std::string_view (name).substr (prefix.size ());
+        auto slash = relative.rfind ('/');
+        if (slash != std::string_view::npos
+            && relative.substr (slash + 1) == instance_index
+            && fs::safe_relative (relative))
+          nested.emplace (relative.substr (0, slash));
+        return true;
+      }));
+      BLB_TRY (token.check ());
       std::optional<error> failure;
       BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &reader) {
         if (token.is_cancelled ())
@@ -559,7 +559,8 @@ copy_multimc_game (const path &source, const pack_manifest &manifest,
                slash = relative.find ('/', slash + 1))
             if (nested.contains (relative.substr (0, slash)))
               return true;
-        if (!is_game_path (relative, lower_id))
+        if (!fs::safe_relative (relative)
+            || !is_game_path (relative, lower_id))
           return true;
         if (auto extracted
             = reader.extract_current (target / path_from_utf8 (relative));

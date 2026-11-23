@@ -84,7 +84,6 @@ struct import_options
   bool include_optional = true;
   bool overwrite = false;
   curseforge_settings curseforge;
-  bool keep_nested_instances = false;
 };
 
 struct export_options

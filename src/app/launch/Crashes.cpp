@@ -322,7 +322,8 @@ namespace Crashes {
                 required = number(between(all, "class file version ", '.')) - 44;
                 required = std::max(required, number(between(all, "Unsupported major.minor version ", '.')) - 44);
             }
-            if (required > std::max(0, launch.javaMajor)) {
+            required = std::max(required, number(between(all, "compatibility level JAVA_", ' ')));
+            if (required > 0) {
                 add("Java 版本过低",
                     "需要 Java " + std::to_string(required) + " 或更高版本" +
                             (major.empty() ? "" : "，当前是 Java " + major) + "。请在实例设置里换用更新的 Java。");
@@ -426,11 +427,6 @@ namespace Crashes {
             }
             if (out.empty() && launch.code == -1073741819) {
                 add("游戏进程发生访问冲突", "常见原因是显卡驱动、光影或带有原生代码的模组，可以先更新显卡驱动。");
-            }
-            if (out.empty() && static_cast<std::uint32_t>(launch.code) == 0xc000041du) {
-                add("Windows 原生回调异常",
-                    "游戏进程在 Windows 回调中异常退出。若再次发生，请查看 Windows 事件查看器的应用程序日志，"
-                    "确认故障模块。");
             }
             if (out.empty() && has(all, "Could not create the Java Virtual Machine")) {
                 add("Java 虚拟机无法启动", "请检查 Java 和 JVM 参数设置。");

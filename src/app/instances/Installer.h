@@ -40,7 +40,6 @@ namespace Installer {
         long long size = -1;
         std::vector<blb::install::loader_type> loaders;
         bool multimc = false;
-        bool keepNestedInstances = false;
     };
     void startModpack(const std::string& source, const Modpack& pack, const std::string& id);
     void startModify(const std::string& instanceKey, const std::vector<blb::install::loader_request>& loaders);

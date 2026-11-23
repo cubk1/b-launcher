@@ -5,7 +5,6 @@
 #include <core/base/strings.hpp>
 #include <core/instance/instance_manager.hpp>
 #include <core/meta/version.hpp>
-#include <core/modpack/modpack.hpp>
 
 #include <nlohmann/json.hpp>
 
@@ -20,30 +19,11 @@ namespace
 
 using json = nlohmann::json;
 constexpr log::logger s_log ("instance");
-constexpr std::uint64_t modpack_info_limit = 4u << 20;
 
 bool
 valid_id (std::string_view id)
 {
   return id.size () <= 128 && fs::safe_component (id);
-}
-
-bool
-is_multimc_import (const std::filesystem::path &directory)
-{
-  const auto file = directory / modpack::info_file;
-  const auto st = fs::stat (file);
-  if (st.is_directory || st.is_link || st.size == 0
-      || st.size > modpack_info_limit)
-    return false;
-  auto text = fs::read_file (file);
-  if (!text)
-    return false;
-  const auto info = json::parse (*text, nullptr, false);
-  const auto format = info.find ("format");
-  return format != info.end () && format->is_string ()
-         && format->get_ref<const std::string &> ()
-                == modpack::format_name (modpack::pack_format::multimc);
 }
 
 json
@@ -274,8 +254,7 @@ instance_manager::get (std::string_view id) const
       out.chain = resolved->chain;
       isolated_libraries = resolved->isolated_libraries;
     }
-  out.imported_from_multimc = is_multimc_import (out.directory);
-  out.loader_edit_locked = isolated_libraries || out.imported_from_multimc;
+  out.loader_edit_locked = isolated_libraries;
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
   else
