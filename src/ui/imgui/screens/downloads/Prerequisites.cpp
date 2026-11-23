@@ -44,6 +44,25 @@ namespace Prerequisites {
             return !saving && installed(owner, dependency.source, dependency.projectId, &dependency);
         }
 
+        bool required(const Addons::Dependency& dependency) {
+            return dependency.required && !dependency.embedded && !dependency.incompatible;
+        }
+
+        bool satisfied(const Addons::Version& version, const std::string& instanceKey) {
+            if (Instances::find(instanceKey) == nullptr) {
+                return false;
+            }
+            ModManager::prepare(instanceKey);
+            return std::all_of(version.dependencies.begin(), version.dependencies.end(),
+                               [&](const Addons::Dependency& dependency) {
+                                   if (!required(dependency)) {
+                                       return true;
+                                   }
+                                   std::string project = ModManager::dependencyProject(dependency);
+                                   return !project.empty() && installed(instanceKey, version.source, project, nullptr);
+                               });
+        }
+
         bool chosen(const Addons::Version& dependency) {
             auto found = toggled.find(dependency.projectId);
             return found != toggled.end() ? found->second : !present(dependency);
@@ -113,6 +132,13 @@ namespace Prerequisites {
             const ProjectInstaller::Plan& plan = ProjectInstaller::plan(root, gameVersion, loader);
             if (!saving) {
                 ModManager::prepare(owner);
+                if (Dialog::isOpen(DIALOG) && plan.status == Status::Ready && toggled.empty() &&
+                    !ModManager::identifying(owner, root.source) &&
+                    std::all_of(plan.dependencies.begin(), plan.dependencies.end(), present)) {
+                    Dialog::close();
+                    launch({});
+                    return;
+                }
             }
             UiRender::textY("前置模组", x + 20.0f, y + 16.0f, 24.0f, UiTheme::textPrimary(), UiFont::MEDIUM,
                             Page::TITLE_SIZE);
@@ -208,10 +234,7 @@ namespace Prerequisites {
     }
 
     bool needed(const Addons::Version& version) {
-        return std::any_of(version.dependencies.begin(), version.dependencies.end(),
-                           [](const Addons::Dependency& dependency) {
-                               return dependency.required && !dependency.embedded && !dependency.incompatible;
-                           });
+        return std::any_of(version.dependencies.begin(), version.dependencies.end(), required);
     }
 
     void open(const Addons::Version& version, const std::string& title, bool saveAs, const std::string& instanceKey,
@@ -228,6 +251,10 @@ namespace Prerequisites {
             const Instances::Entry* entry = Instances::find(instanceKey);
             gameVersion = entry != nullptr ? entry->info.minecraft_version : std::string();
             loader = ProjectInstaller::loaderOf(instanceKey);
+            if (satisfied(version, instanceKey)) {
+                launch({});
+                return;
+            }
         }
         Dialog::open(DIALOG, DIALOG_W, DIALOG_H, body);
     }

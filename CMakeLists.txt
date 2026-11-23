@@ -77,7 +77,7 @@ else ()
     target_link_libraries(core PUBLIC resolv)
 endif ()
 if (MSVC)
-    target_compile_options(core PRIVATE /W4 /utf-8 /permissive- /Zc:__cplusplus)
+    target_compile_options(core PRIVATE /W4 /utf-8 /permissive- /Zc:__cplusplus $<$<COMPILE_LANGUAGE:C,CXX>:/MP>)
     set_source_files_properties(
             src/core/base/hash.cpp
             src/core/base/sha1_x86.cpp
@@ -99,7 +99,7 @@ else ()
             PROPERTIES COMPILE_OPTIONS $<$<CONFIG:Release>:-O2>)
 endif ()
 if (MSVC)
-    add_compile_options(/utf-8 /W3 /permissive- /Zc:__cplusplus)
+    add_compile_options(/utf-8 /W3 /permissive- /Zc:__cplusplus $<$<COMPILE_LANGUAGE:C,CXX>:/MP>)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif ()
 
