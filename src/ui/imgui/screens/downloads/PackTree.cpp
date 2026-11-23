@@ -1,6 +1,7 @@
 #include "ui/imgui/screens/downloads/PackTree.h"
 #include "app/downloads/ModNames.h"
 #include "app/downloads/PackContents.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/RelationGraph.h"
 #include "ui/imgui/screens/shell/Page.h"
 
@@ -348,8 +349,8 @@ namespace PackTree {
                                     bottom, false);
             return;
         }
-        Page::Scroll scroll("downloads#pack#" + key + "#" + version->id, listTop, bottom, rows.size() * ROW + 6.0f, x,
-                            w);
+        Page::Scroll scroll("downloads#pack#" + key + "#" + version->id, listTop, bottom,
+                            rows.size() * ROW + 6.0f + DownloadButton::inset(), x, w);
         bool blocked = scroll.begin() || covered;
         float y = scroll.top - scroll.offset;
         for (const Row& row : rows) {

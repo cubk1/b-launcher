@@ -1721,7 +1721,7 @@ namespace DownloadsScreen {
         void aggregateView(bool covered) {
             float barX = mainX();
             float barW = mainW();
-            float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
+            float bottom = MainWindow::height() - 14.0f;
             searchBar(barX, Page::top(), barW, covered);
             if (asked.empty()) {
                 if (Ui::trim(asking).empty()) {
@@ -1760,7 +1760,7 @@ namespace DownloadsScreen {
                 return;
             }
             foundSummary(results, barX + 4.0f, toolsY, barX + barW - 4.0f, covered);
-            float contentH = results.items.size() * FOUND_H;
+            float contentH = results.items.size() * FOUND_H + DownloadButton::inset();
             Page::Scroll body(FOUND_SCROLL, listTop, bottom, contentH, mainX(), mainW());
             bool outside = body.begin();
             bool blocked = outside || covered;
@@ -2072,7 +2072,7 @@ namespace DownloadsScreen {
             float y = Page::top();
             float listTop = y + FILTER_H + 10.0f;
             const float pagesH = 28.0f;
-            float pagesY = MainWindow::height() - 12.0f - pagesH - DownloadButton::inset();
+            float pagesY = MainWindow::height() - 12.0f - pagesH;
             float listBottom = pagesY - 8.0f;
 
             ProjectBrowser::Merged merged;
@@ -2125,7 +2125,7 @@ namespace DownloadsScreen {
                 return;
             }
             bool stale = loading || merged.status == Addons::Status::Failed;
-            float contentH = (float) shown.hits.size() * RESULT_H;
+            float contentH = (float) shown.hits.size() * RESULT_H + DownloadButton::inset();
             Page::Scroll body("downloads#results#" + std::to_string((int) query.kind), listTop, listBottom, contentH,
                               mainX(), mainW());
             bool outside = body.begin();

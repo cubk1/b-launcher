@@ -4,6 +4,7 @@
 #include "app/downloads/Projects.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/Prerequisites.h"
 #include "ui/imgui/screens/downloads/RelationGraph.h"
 #include "ui/imgui/screens/shell/Page.h"
@@ -376,7 +377,8 @@ namespace DependencyView {
         std::set<std::string> ancestors = {route.hit.id};
         collect(ctx, *version, 1, std::string(), stack, ancestors, rows);
 
-        Page::Scroll scroll("downloads#deps#" + ctx.key, listTop, bottom, (float) rows.size() * ROW + 6.0f, x, w);
+        Page::Scroll scroll("downloads#deps#" + ctx.key, listTop, bottom,
+                            (float) rows.size() * ROW + 6.0f + DownloadButton::inset(), x, w);
         bool blocked = scroll.begin() || covered;
         float y = scroll.top - scroll.offset;
         for (const Row& row : rows) {

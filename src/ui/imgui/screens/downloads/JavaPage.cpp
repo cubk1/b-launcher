@@ -83,7 +83,7 @@ namespace JavaPage {
             major.paint();
 
             float top = Page::top() + 40.0f;
-            float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
+            float bottom = MainWindow::height() - 14.0f;
             std::vector<const JavaDownloads::Package*> shown;
             for (const JavaDownloads::Package& package : list.packages) {
                 if (javaMajor == 0 || package.major == javaMajor) {
@@ -109,7 +109,7 @@ namespace JavaPage {
                 return;
             }
             int rows = (int) shown.size();
-            Page::Scroll body("downloads#java#list", top, bottom, rows * Page::ROW_H);
+            Page::Scroll body("downloads#java#list", top, bottom, rows * Page::ROW_H + DownloadButton::inset());
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y0 = body.top - body.offset;

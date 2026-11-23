@@ -139,7 +139,7 @@ namespace AuthorPage {
 
         float tabsY = Page::top() + TABS_Y;
         float top = tabsY + DownloadsParts::SEGMENT_H + 12.0f;
-        float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
+        float bottom = MainWindow::height() - 14.0f;
         if (profile.status == Status::Loading) {
             DownloadsParts::message("正在获取作者信息", UiTheme::textMuted(), top, bottom, true);
             return;
@@ -199,7 +199,7 @@ namespace AuthorPage {
         float w = DownloadsParts::mainW();
         float rowH = DownloadsParts::RESULT_H;
         Page::Scroll scroll("downloads#author#" + key + "#" + std::to_string(route.tab), top, bottom,
-                            list.size() * rowH, x0, w);
+                            list.size() * rowH + DownloadButton::inset(), x0, w);
         bool blocked = scroll.begin() || covered;
         float y = scroll.top - scroll.offset;
         Page::listCard(x0, y, w, rowH, (int) list.size());

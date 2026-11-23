@@ -695,7 +695,8 @@ namespace ProjectPage {
             float sideW = wide ? SIDEBAR_W : contentW;
             float sideH = sidebar(route, d, mcmod, 0.0f, 0.0f, sideW, true, false);
             float contentH = wide ? std::max(bodyH, sideH) : bodyH + 28.0f + sideH;
-            Page::Scroll scroll("downloads#about#" + keyOf(route), top, bottom, contentH + 20.0f, x0, w);
+            Page::Scroll scroll("downloads#about#" + keyOf(route), top, bottom,
+                                contentH + 20.0f + DownloadButton::inset(), x0, w);
             bool blocked = scroll.begin() || covered;
             float y = scroll.top - scroll.offset;
             if (view != nullptr) {
@@ -1079,7 +1080,8 @@ namespace ProjectPage {
                 }
             }
             float contentH = list.size() * Page::ROW_H + panelH;
-            Page::Scroll scroll("downloads#versions#" + keyOf(route), scrollTop, bottom, contentH + 4.0f, x, w);
+            Page::Scroll scroll("downloads#versions#" + keyOf(route), scrollTop, bottom,
+                                contentH + 4.0f + DownloadButton::inset(), x, w);
             bool blocked = scroll.begin() || covered;
             clipTop = scroll.top;
             clipBottom = scroll.bottom;
@@ -1141,7 +1143,7 @@ namespace ProjectPage {
             }
             bool more = list.size() > shown;
             Page::Scroll scroll("downloads#changelog#" + keyOf(route), listTop, bottom,
-                                contentH + (more ? 44.0f : 8.0f), x, mainW());
+                                contentH + (more ? 44.0f : 8.0f) + DownloadButton::inset(), x, mainW());
             bool blocked = scroll.begin() || covered;
             float y = scroll.top - scroll.offset;
             float railTop = y + 15.0f;
@@ -1203,7 +1205,8 @@ namespace ProjectPage {
                                       [](const Projects::Image& image) { return !image.title.empty(); });
             float cellH = imageH + (titled ? 28.0f : 0.0f) + gap;
             int rows = ((int) d.gallery.size() + cols - 1) / cols;
-            Page::Scroll scroll("downloads#gallery#" + keyOf(route), top, bottom, rows * cellH, x, mainW());
+            Page::Scroll scroll("downloads#gallery#" + keyOf(route), top, bottom,
+                                rows * cellH + DownloadButton::inset(), x, mainW());
             bool blocked = scroll.begin() || covered;
             float y0 = scroll.top - scroll.offset;
             for (size_t i = 0; i < d.gallery.size(); i++) {
@@ -1325,7 +1328,7 @@ namespace ProjectPage {
         route.tab = DownloadsParts::segments("project", route.tab, items, mainX(), tabsY, covered,
                                              mainW() - (switchW > 0.0f ? switchW + 12.0f : 0.0f));
         float top = tabsY + DownloadsParts::SEGMENT_H + 12.0f;
-        float bottom = MainWindow::height() - 14.0f - DownloadButton::inset();
+        float bottom = MainWindow::height() - 14.0f;
         switch (route.tab) {
             case VERSIONS: versionsTab(route, st, versions, top, bottom, covered); break;
             case CHANGELOG: changelogTab(route, st, versions, top, bottom, covered); break;

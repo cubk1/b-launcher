@@ -9,6 +9,7 @@
 #include "ui/imgui/panel/UiState.h"
 #include "ui/imgui/panel/UiTheme.h"
 #include "ui/imgui/panel/UiWidgets.h"
+#include "ui/imgui/screens/downloads/DownloadButton.h"
 #include "ui/imgui/screens/downloads/DownloadsParts.h"
 #include "ui/imgui/screens/instances/ScreenshotViewer.h"
 #include "ui/imgui/screens/shell/Appearance.h"
@@ -258,7 +259,7 @@ namespace ThemeCatalogPage {
             }
             int count = (int) shown.size();
             float bottom = MainWindow::height() - 14.0f;
-            Page::Scroll body("downloads#themes#list", top, bottom, count * ROW);
+            Page::Scroll body("downloads#themes#list", top, bottom, count * ROW + DownloadButton::inset());
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y0 = body.top - body.offset;
@@ -292,7 +293,7 @@ namespace ThemeCatalogPage {
             float galleryH = previewRows > 0 ? previewRows * (previewH + PREVIEW_GAP) : 0.0f;
             float bodyTop = top + 40.0f;
             Page::Scroll body("downloads#themes#detail#" + entry.id, bodyTop, MainWindow::height() - 14.0f,
-                              headH + textH + galleryH);
+                              headH + textH + galleryH + DownloadButton::inset());
             bool outside = body.begin();
             bool blocked = outside || covered;
             float y = body.top - body.offset;
