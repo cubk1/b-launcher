@@ -804,6 +804,7 @@ namespace NewInstanceScreen {
             attachFabricApi();
             bool blocked = NewUi::overlayCoversMouse();
             bool localPack = modpack && !modpack->pack.file.empty();
+            bool multimc = modpack && modpack->pack.multimc;
             const char* backHint = !editing.empty() ? "返回实例设置"
                     : localPack                     ? "返回"
                     : modpack                       ? "返回下载中心"
@@ -824,6 +825,7 @@ namespace NewInstanceScreen {
                 }
             }
             Page::title(!editing.empty()  ? std::string("修改加载器")
+                                : multimc ? std::string("导入 MMC 实例")
                                 : modpack ? std::string("安装整合包")
                                           : "新建 " + minecraft + " 实例",
                         Page::left() + 30.0f, Page::top());
@@ -856,6 +858,7 @@ namespace NewInstanceScreen {
             } else {
                 const Instances::Source* source = targetSource();
                 problem = source == nullptr ? std::string("没有可用的游戏目录")
+                        : multimc           ? Instances::checkId(source->key, instanceName())
                                             : Instances::checkInstallId(source->key, instanceName());
             }
             installButton(Page::right(), buttonBottom, problem, autoFabricApi);
@@ -871,7 +874,7 @@ namespace NewInstanceScreen {
         }
 
         void modpackRows(float y) {
-            infoRow("整合包", modpack->title, y);
+            infoRow(modpack->pack.multimc ? "MMC 实例" : "整合包", modpack->title, y);
             y += Page::ROW_H;
             infoRow("版本", modpack->version, y);
             y += Page::ROW_H;
@@ -1124,7 +1127,8 @@ namespace NewInstanceScreen {
 
     void openLoaderEdit(const std::string& instanceKey) {
         const Instances::Entry* entry = Instances::find(instanceKey);
-        if (entry == nullptr || entry->info.minecraft_version.empty() || Installer::running()) {
+        if (entry == nullptr || entry->info.loader_edit_locked || entry->info.minecraft_version.empty() ||
+            Installer::running()) {
             return;
         }
         reset();

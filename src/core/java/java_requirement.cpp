@@ -42,6 +42,20 @@ java_requirement
 requirement_for (const meta::version &resolved)
 {
   java_requirement req;
+  if (resolved.java_version
+      && !resolved.java_version->compatible_majors.empty ())
+    {
+      const auto &ref = *resolved.java_version;
+      req.compatible_majors = ref.compatible_majors;
+      req.min_major = *std::min_element (req.compatible_majors.begin (),
+                                         req.compatible_majors.end ());
+      req.preferred_major
+          = ref.major_version ? ref.major_version : req.min_major;
+      req.component = ref.component.empty ()
+                          ? component_for (req.preferred_major)
+                          : ref.component;
+      return req;
+    }
   if (resolved.java_version && resolved.java_version->major_version > 0)
     {
       req.min_major = resolved.java_version->major_version;
@@ -109,6 +123,11 @@ satisfies (const java_installation &install,
   if (install.major < requirement.min_major)
     return false;
   if (requirement.max_major && install.major > requirement.max_major)
+    return false;
+  if (!requirement.compatible_majors.empty ()
+      && std::find (requirement.compatible_majors.begin (),
+                    requirement.compatible_majors.end (), install.major)
+             == requirement.compatible_majors.end ())
     return false;
   return arch_runnable (install.arch);
 }

@@ -19,6 +19,7 @@ ModpackSetup ModpackSetup::fromFile(const std::filesystem::path& file, const blb
     }
     setup.pack.minecraft = manifest.minecraft;
     setup.pack.file = file;
+    setup.pack.multimc = manifest.multimc.has_value();
     return setup;
 }
 

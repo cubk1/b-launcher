@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,6 +18,8 @@
 
 namespace b_launcher_base::modpack
 {
+
+inline constexpr std::string_view info_file = "blb-modpack.json";
 
 enum class pack_format : std::uint8_t
 {
@@ -38,6 +41,20 @@ struct pack_file
   std::int64_t curseforge_file = 0;
 };
 
+struct multimc_component
+{
+  std::string uid;
+  std::string version;
+  bool standard = false;
+};
+
+struct multimc_profile
+{
+  std::string prefix;
+  std::string notes;
+  std::vector<multimc_component> components;
+};
+
 struct pack_manifest
 {
   pack_format format = pack_format::modrinth;
@@ -53,6 +70,7 @@ struct pack_manifest
   std::uint32_t max_memory_mb = 0;
   std::vector<std::string> jvm_args;
   std::vector<std::string> game_args;
+  std::optional<multimc_profile> multimc;
 };
 
 struct curseforge_settings
@@ -102,11 +120,11 @@ struct export_report
 };
 
 std::string_view format_name (pack_format format) noexcept;
-result<pack_manifest> read_modpack (const std::filesystem::path &archive);
+result<pack_manifest> read_modpack (const std::filesystem::path &source);
 result<pack_manifest> parse_pack_index (std::string_view name,
                                         std::string_view text);
 result<std::string> import_modpack (install::game_installer &installer,
-                                    const std::filesystem::path &archive,
+                                    const std::filesystem::path &source,
                                     const import_options &options = {},
                                     progress_sink *sink = nullptr,
                                     cancellation_token token = {});

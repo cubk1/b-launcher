@@ -205,6 +205,10 @@ namespace ForgottenMelody {
         if (entry == nullptr) {
             return;
         }
+        if (entry->info.loader_edit_locked) {
+            message(parent, L"此实例需要保留原有启动配置，不能修改加载器", L"修改加载器");
+            return;
+        }
         if (entry->info.minecraft_version.empty()) {
             message(parent, L"认不出这个实例的游戏版本，不能修改加载器", L"修改加载器");
             return;

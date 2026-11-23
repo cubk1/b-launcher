@@ -68,6 +68,8 @@ loader_from_name (std::string_view name, std::string version,
   else if (lower == "fabric" || lower == "fabric-loader"
            || lower == "net.fabricmc.fabric-loader")
     request.type = install::loader_type::fabric;
+  else if (lower == "net.legacyfabric.fabric-loader")
+    request.type = install::loader_type::legacy_fabric;
   else if (lower == "quilt" || lower == "quilt-loader"
            || lower == "org.quiltmc.quilt-loader")
     request.type = install::loader_type::quilt;
@@ -75,7 +77,7 @@ loader_from_name (std::string_view name, std::string version,
     request.type = install::loader_type::optifine;
   else if (lower == "liteloader" || lower == "com.mumfrey.liteloader")
     request.type = install::loader_type::liteloader;
-  else if (lower == "cleanroom")
+  else if (lower == "cleanroom" || lower == "com.cleanroommc.cleanroom")
     request.type = install::loader_type::cleanroom;
   else
     return std::nullopt;
@@ -305,26 +307,54 @@ multimc_settings (std::string_view text)
 }
 
 result<pack_manifest>
-read_multimc (zip_reader &zip, const std::string &prefix,
+read_multimc (const std::filesystem::path &source, zip_reader *zip,
+              const std::string &prefix,
               const std::unordered_set<std::string> &names)
 {
-  auto doc = load_json (zip, prefix + "mmc-pack.json");
-  if (!doc.is_object ())
+  BLB_TRY_ASSIGN (auto text, detail::read_multimc_file (
+                                 source, zip, prefix + "mmc-pack.json"));
+  if (!text)
+    return make_error (errc::unsupported, "missing mmc-pack.json");
+  auto doc = detail::parse_json (*text);
+  const auto *components = meta::detail::member (doc, "components");
+  if (!components || !components->is_array ()
+      || int_of (doc, "formatVersion", 1) != 1)
     return make_error (errc::parse, "invalid mmc-pack.json");
   pack_manifest m;
   m.format = pack_format::multimc;
-  if (auto components = doc.find ("components");
-      components != doc.end () && components->is_array ())
+  auto &profile = m.multimc.emplace ();
+  profile.prefix = prefix;
+  std::unordered_set<std::string> uids;
+  for (const auto &c : *components)
     {
-      for (const auto &c : *components)
-        if (text_of (c, "uid") == "net.minecraft")
-          m.minecraft = text_of (c, "version");
-      for (const auto &c : *components)
-        if (auto loader = loader_from_name (
-                text_of (c, "uid"), text_of (c, "version"), m.minecraft))
-          m.loaders.push_back (*loader);
+      if (meta::detail::bool_of (c, "disabled"))
+        continue;
+      auto uid = text_of (c, "uid");
+      auto version = text_of (c, "version");
+      if (version.empty ())
+        version = text_of (c, "cachedVersion");
+      if (!fs::safe_filename (uid) || !uids.insert (uid).second)
+        return make_error (errc::parse, "invalid or duplicate MMC component");
+      if (uid == "net.minecraft")
+        m.minecraft = version;
+      profile.components.push_back ({ std::move (uid), std::move (version) });
     }
-  if (auto cfg = zip.read (prefix + "instance.cfg"))
+  if (!fs::safe_filename (m.minecraft))
+    return make_error (errc::parse, "invalid MMC Minecraft version");
+  for (auto &c : profile.components)
+    {
+      c.standard = c.uid == "net.minecraft" || c.uid == "org.lwjgl"
+                   || c.uid == "org.lwjgl3"
+                   || c.uid == "net.fabricmc.intermediary";
+      if (auto loader = loader_from_name (c.uid, c.version, m.minecraft))
+        {
+          c.standard = !c.version.empty ();
+          m.loaders.push_back (std::move (*loader));
+        }
+    }
+  BLB_TRY_ASSIGN (auto cfg, detail::read_multimc_file (
+                                source, zip, prefix + "instance.cfg"));
+  if (cfg)
     {
       auto values = multimc_settings (*cfg);
       auto enabled = [&] (const char *key, bool fallback = false) {
@@ -336,6 +366,11 @@ read_multimc (zip_reader &zip, const std::string &prefix,
       };
       if (auto it = values.find ("name"); it != values.end ())
         m.name = it->second;
+      if (auto it = values.find ("notes"); it != values.end ())
+        profile.notes = it->second;
+      if (auto it = values.find ("ManagedPackVersionName");
+          it != values.end ())
+        m.version = it->second;
       if (enabled ("OverrideJavaArgs", enabled ("OverrideJava")))
         if (auto it = values.find ("JvmArgs"); it != values.end ())
           m.jvm_args = split_arguments (it->second);
@@ -353,14 +388,19 @@ read_multimc (zip_reader &zip, const std::string &prefix,
             }
         }
     }
-  for (const char *dir : { ".minecraft/", "minecraft/" })
+  for (std::string_view dir : { ".minecraft", "minecraft" })
     {
-      auto candidate = prefix + dir;
-      bool found = std::any_of (
-          names.begin (), names.end (),
-          [&] (const std::string &n) { return n.starts_with (candidate); });
+      auto candidate = prefix + std::string (dir) + "/";
+      bool found = zip ? std::any_of (names.begin (), names.end (),
+                                      [&] (const std::string &n) {
+                                        return n.starts_with (candidate);
+                                      })
+                       : fs::stat (source / path_from_utf8 (dir)).is_directory;
       if (found)
-        m.overrides.push_back (candidate);
+        {
+          m.overrides.push_back (std::move (candidate));
+          break;
+        }
     }
   return m;
 }
@@ -395,10 +435,24 @@ format_name (pack_format format) noexcept
 }
 
 result<pack_manifest>
-read_modpack (const std::filesystem::path &archive)
+read_modpack (const std::filesystem::path &source)
 try
 {
-  BLB_TRY_ASSIGN (auto zip, zip_reader::open (archive));
+  if (const auto st = fs::stat (source); st.is_directory)
+    {
+      if (st.is_link)
+        return make_error (errc::unsupported, "MMC instance folder is a link");
+      BLB_TRY_ASSIGN (auto parsed, read_multimc (source, nullptr, {}, {}));
+      if (parsed.name.empty ())
+        {
+          auto folder = source.lexically_normal ();
+          if (folder.filename ().empty ())
+            folder = folder.parent_path ();
+          parsed.name = path_to_utf8 (folder.filename ());
+        }
+      return parsed;
+    }
+  BLB_TRY_ASSIGN (auto zip, zip_reader::open (source));
   std::unordered_set<std::string> names;
   BLB_TRY (zip.for_each ([&] (const zip_entry &entry, zip_reader &) {
     names.insert (replace_all (entry.name, "\\", "/"));
@@ -412,22 +466,32 @@ try
     parsed = read_mcbbs (zip);
   else if (names.contains ("manifest.json"))
     parsed = read_curseforge (zip);
+  else if (names.contains ("mmc-pack.json"))
+    parsed = read_multimc (source, &zip, {}, names);
   else
-    for (const auto &name : names)
-      if (name == "mmc-pack.json" || name.ends_with ("/mmc-pack.json"))
-        {
-          auto prefix = name.substr (0, name.size () - 13);
-          if (std::count (prefix.begin (), prefix.end (), '/') <= 1)
-            {
-              parsed = read_multimc (zip, prefix, names);
-              break;
-            }
-        }
+    {
+      constexpr std::string_view suffix = "/mmc-pack.json";
+      std::string prefix;
+      for (const auto &name : names)
+        if (name.ends_with (suffix))
+          {
+            auto folder = std::string_view (name).substr (
+                0, name.size () - suffix.size ());
+            if (!fs::safe_filename (folder))
+              continue;
+            if (!prefix.empty ())
+              return make_error (errc::parse,
+                                 "zip contains multiple MMC instances");
+            prefix = std::string (folder) + "/";
+          }
+      if (!prefix.empty ())
+        parsed = read_multimc (source, &zip, prefix, names);
+    }
   if (!parsed)
     return parsed;
   BLB_TRY (finish (*parsed));
   if (parsed->name.empty ())
-    parsed->name = path_to_utf8 (archive.stem ());
+    parsed->name = path_to_utf8 (source.stem ());
   return parsed;
 }
 catch (const json::exception &)

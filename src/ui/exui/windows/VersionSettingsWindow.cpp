@@ -279,6 +279,9 @@ namespace ForgottenMelody {
                     return;
                 }
                 const Settings& settings = entry->info.settings;
+                const bool loadersLocked = entry->info.loader_edit_locked;
+                FindControl(LOADERS)->SetEnabled(!loadersLocked);
+                UpdateText(LOADERS, loadersLocked ? L"修改加载器（已锁定）" : L"修改加载器");
                 bool automatic = settings.max_memory_mb == 0;
                 FindControl(MAX)->SetEnabled(!automatic);
                 FindControl(OPTIONS)->SetEnabled(Patches::enabled(settings.patch));

@@ -1184,7 +1184,7 @@ namespace ForgottenMelody {
                 }
                 auto manifest = blb::modpack::read_modpack(picked.front());
                 if (!manifest) {
-                    message(GetHwnd(), L"这个文件不是支持的整合包", L"导入整合包");
+                    message(GetHwnd(), L"无法导入：" + Platform::widen(manifest.err().message), L"导入整合包");
                     return;
                 }
                 openPack(ModpackSetup::fromFile(picked.front(), *manifest), -1);
@@ -1234,8 +1234,11 @@ namespace ForgottenMelody {
 
             void showSetup() {
                 bool pack = modpack.has_value();
+                bool multimc = pack && modpack->pack.multimc;
                 UpdateText(SETUP_TITLE,
-                           pack ? std::wstring(L"安装整合包") : L"新建 " + Platform::widen(minecraft) + L" 实例");
+                           multimc        ? L"导入 MMC 实例"
+                                   : pack ? L"安装整合包"
+                                          : L"新建 " + Platform::widen(minecraft) + L" 实例");
                 FindControl(LOADERS_REFRESH)->SetVisible(!pack);
 
                 std::vector<std::wstring> places;
@@ -1263,7 +1266,7 @@ namespace ForgottenMelody {
                     for (const std::string& loader : modpack->loaders) {
                         names += (names.empty() ? "" : "、") + loader;
                     }
-                    info = {{L"整合包", Platform::widen(modpack->title)},
+                    info = {{multimc ? L"MMC 实例" : L"整合包", Platform::widen(modpack->title)},
                             {L"版本", Platform::widen(modpack->version)},
                             {L"游戏版本", minecraft.empty() ? L"未知" : L"Minecraft " + Platform::widen(minecraft)},
                             {L"加载器", names.empty() ? L"无" : Platform::widen(names)}};
@@ -1288,6 +1291,7 @@ namespace ForgottenMelody {
                 }
                 nameShown = generated;
                 std::string problem = target == nullptr ? std::string("没有可用的游戏目录")
+                        : multimc                       ? Instances::checkId(target->key, trimmed(Text(NAME)))
                                                         : Instances::checkInstallId(target->key, trimmed(Text(NAME)));
                 UpdateText(SETUP_STATUS, Platform::widen(problem));
                 FindControl(INSTALL)->SetEnabled(problem.empty());

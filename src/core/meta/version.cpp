@@ -350,6 +350,7 @@ version_from_json (const json &node)
   out.release_time = string_of (node, "releaseTime");
   out.time = string_of (node, "time");
   out.client_version = string_of (node, "clientVersion");
+  out.isolated_libraries = bool_of (node, "isolatedLibraries");
   if (out.client_version.empty ())
     if (auto *patches = member (node, "patches");
         patches && patches->is_array ())
@@ -381,8 +382,17 @@ version_from_json (const json &node)
       if (it->is_object ())
         out.downloads.emplace (it.key (), artifact_from_json (*it));
   if (auto *java = member (node, "javaVersion"); java && java->is_object ())
-    out.java_version = java_version_ref { string_of (*java, "component"),
-                                          int32_of (*java, "majorVersion") };
+    {
+      auto &ref = out.java_version.emplace ();
+      ref.component = string_of (*java, "component");
+      ref.major_version = int32_of (*java, "majorVersion");
+      if (auto *majors = member (*java, "compatibleMajors");
+          majors && majors->is_array ())
+        for (const auto &entry : *majors)
+          if (entry.is_number_integer () && entry > 0
+              && entry <= std::numeric_limits<int>::max ())
+            ref.compatible_majors.push_back (entry.get<int> ());
+    }
   if (auto *logging = member (node, "logging"))
     if (auto *client = member (*logging, "client");
         client && client->is_object ())
@@ -428,6 +438,8 @@ version_to_json (const version &value)
     out["jar"] = value.jar;
   if (!value.client_version.empty ())
     out["clientVersion"] = value.client_version;
+  if (value.isolated_libraries)
+    out["isolatedLibraries"] = true;
   if (value.asset_index)
     {
       json index = json::object ();
@@ -454,6 +466,8 @@ version_to_json (const version &value)
       if (!value.java_version->component.empty ())
         java["component"] = value.java_version->component;
       java["majorVersion"] = value.java_version->major_version;
+      if (!value.java_version->compatible_majors.empty ())
+        java["compatibleMajors"] = value.java_version->compatible_majors;
       out["javaVersion"] = std::move (java);
     }
   if (value.logging)
@@ -503,7 +517,10 @@ library::merge_key () const
 std::optional<std::string>
 library::native_classifier (const rule_context &context) const
 {
-  auto it = natives.find (std::string (os_name (context.os)));
+  auto os = std::string (os_name (context.os));
+  auto it = natives.find (os + "-" + std::string (arch_name (context.arch)));
+  if (it == natives.end ())
+    it = natives.find (os);
   if (it == natives.end () && context.os == os_type::osx)
     it = natives.find ("macos");
   if (it == natives.end ())
@@ -672,6 +689,13 @@ version::asset_id () const
   if (asset_index && !asset_index->id.empty ())
     return asset_index->id;
   return assets.empty () ? "legacy" : assets;
+}
+
+std::filesystem::path
+version::library_directory (const game_layout &layout) const
+{
+  return isolated_libraries ? layout.version_dir (id) / instance_libraries
+                            : layout.libraries ();
 }
 
 const download_artifact *

@@ -100,11 +100,12 @@ build_classpath (const meta::version &resolved,
                  const meta::rule_context &context)
 {
   std::vector<std::filesystem::path> out;
+  const auto library_dir = resolved.library_directory (layout);
   for (const auto *lib : install::applicable_libraries (resolved, context))
     {
       if (lib->is_legacy_native () && !lib->download)
         continue;
-      out.push_back (layout.library (lib->relative_path ()));
+      out.push_back (library_dir / path_from_utf8 (lib->relative_path ()));
     }
   auto jar = layout.version_jar (resolved.jar_id ());
   if (std::find (out.begin (), out.end (), jar) == out.end ())
@@ -225,7 +226,8 @@ build_launch_command (const launch_context &ctx)
   values["launcher_version"] = settings.launcher_version;
   values["classpath"] = classpath;
   values["classpath_separator"] = separator;
-  values["library_directory"] = path_to_native (layout.libraries ());
+  values["library_directory"]
+      = path_to_native (version.library_directory (layout));
   values["primary_jar"] = path_to_native (client_jar);
   values["primary_jar_name"] = path_to_native (client_jar.filename ());
   values["resolution_width"]

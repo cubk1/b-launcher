@@ -231,15 +231,19 @@ instance_manager::get (std::string_view id) const
   instance out;
   out.id = std::string (id);
   out.directory = m_layout.version_dir (id);
+  bool isolated_libraries = false;
   auto resolved = meta::resolve_version (m_layout, id);
   if (!resolved)
     {
       out.valid = false;
       out.problem = resolved.err ().message;
       out.chain = { std::string (id) };
-      if (auto raw = meta::load_version (m_layout, id);
-          raw && raw->inherits_from == id)
-        out.minecraft_version = std::string (id);
+      if (auto raw = meta::load_version (m_layout, id))
+        {
+          isolated_libraries = raw->isolated_libraries;
+          if (raw->inherits_from == id)
+            out.minecraft_version = std::string (id);
+        }
     }
   else
     {
@@ -248,7 +252,9 @@ instance_manager::get (std::string_view id) const
       out.release_time = resolved->release_time;
       out.loaders = install::detect_loaders (*resolved);
       out.chain = resolved->chain;
+      isolated_libraries = resolved->isolated_libraries;
     }
+  out.loader_edit_locked = isolated_libraries;
   if (auto settings = load_settings (id))
     out.settings = std::move (*settings);
   else
