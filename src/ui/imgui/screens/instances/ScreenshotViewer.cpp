@@ -33,7 +33,6 @@ namespace ScreenshotViewer {
         constexpr float GROUP_GAP = 16.0f;
         constexpr float PERCENT_W = 50.0f;
         constexpr float SIDE_W = 72.0f;
-        constexpr float SHELL_RADIUS = 14.0f;
         constexpr float ZOOM_STEP = 1.25f;
         constexpr float ZOOM_MIN = 0.25f;
         constexpr float ZOOM_MAX = 16.0f;
@@ -251,7 +250,7 @@ namespace ScreenshotViewer {
             }
             bool spanX = x <= 0.5f && x + w >= windowW - 0.5f;
             bool spanY = y <= 0.5f && y + h >= windowH - 0.5f;
-            float radius = spanX && spanY ? SHELL_RADIUS : (spanX || spanY ? 0.0f : 4.0f);
+            float radius = spanX && spanY ? MainWindow::cornerRadius : (spanX || spanY ? 0.0f : 4.0f);
             ShaderUtil::roundTex(UiRender::transformX(x0), UiRender::transformY(y0), UiRender::transformW(x1 - x0),
                                  UiRender::transformW(y1 - y0), UiRender::transformW(radius), texture, (x0 - x) / w,
                                  (y0 - y) / h, (x1 - x) / w, (y1 - y) / h, UiRender::applyAlpha(0xFFFFFFFFu));
@@ -293,7 +292,7 @@ namespace ScreenshotViewer {
 
             float savedAlpha = UiRender::alphaMul;
             UiRender::alphaMul = savedAlpha * open;
-            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, SHELL_RADIUS, 0xEB000000u);
+            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, MainWindow::cornerRadius, 0xEB000000u);
             NewUi::markOverlayUnion(0.0f, 0.0f, windowW, windowH);
             NewUi::markAbove(0.0f, 0.0f, windowW, windowH);
 

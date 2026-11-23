@@ -17,7 +17,6 @@ namespace Dialog {
 
     namespace {
         constexpr float RADIUS = 14.0f;
-        constexpr float SHELL_RADIUS = 14.0f;
         constexpr float OPEN_SPEED = 14.0f;
         constexpr float CLOSE_SPEED = 20.0f;
         constexpr float GONE = 0.02f;
@@ -106,7 +105,7 @@ namespace Dialog {
             float savedPivotX = UiRender::pivotX;
             float savedPivotY = UiRender::pivotY;
             UiRender::alphaMul = savedAlpha * open;
-            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, SHELL_RADIUS, UiTheme::scrim());
+            UiRender::roundRect(0.0f, 0.0f, windowW, windowH, MainWindow::cornerRadius, UiTheme::scrim());
             NewUi::markOverlayUnion(0.0f, 0.0f, windowW, windowH);
             NewUi::markAbove(0.0f, 0.0f, windowW, windowH);
             UiRender::scaleFactor = savedScale * UiRender::lerp(SMALLEST, 1.0f, eased);

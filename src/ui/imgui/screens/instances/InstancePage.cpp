@@ -7,9 +7,11 @@
 #include "app/launch/KeyBinds.h"
 #include "ui/imgui/screens/shell/Icons.h"
 #include "ui/imgui/screens/instances/InstanceExport.h"
+#include "ui/imgui/screens/instances/InstancePackUpdate.h"
 #include "ui/imgui/screens/instances/InstanceMods.h"
 #include "ui/imgui/screens/instances/InstanceScreenshots.h"
 #include "app/instances/Exports.h"
+#include "app/instances/PackUpdates.h"
 #include "app/instances/Screenshots.h"
 #include "ui/imgui/screens/instances/InstanceShortcut.h"
 #include "app/instances/InstanceSettings.h"
@@ -88,6 +90,7 @@ namespace InstancePage {
         constexpr int SECTION_SHORTCUT = 4;
         constexpr int SECTION_SCREENSHOTS = 5;
         constexpr int SECTION_KEYS = 6;
+        constexpr int SECTION_PACK = 7;
         PageTransition sections(SECTION_MAIN);
         std::string sectionKey;
         bool screenshotsFromHome = false;
@@ -955,7 +958,8 @@ namespace InstancePage {
         }
 
         int manageCount(const Instances::Entry& entry) {
-            return (Instances::hasModLoader(entry) ? 1 : 0) + (GameOptions::ownFile(entry) ? 1 : 0) + 3;
+            return (Instances::hasModLoader(entry) ? 1 : 0) + (GameOptions::ownFile(entry) ? 1 : 0) +
+                    (PackUpdates::origin(entry.key) != nullptr ? 1 : 0) + 3;
         }
 
         void manageRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -1012,6 +1016,16 @@ namespace InstancePage {
             }
             y += Page::ROW_H;
             index++;
+            if (PackUpdates::origin(entry.key) != nullptr) {
+                if (Page::navRow("instance#packupdate", "整合包更新", InstancePackUpdate::rowValue(entry.key), y,
+                                 blocked || !Features::enabled(Features::INSTANCE_EDIT), Page::rowCorners(index, count),
+                                 0xf2f1)) {
+                    InstancePackUpdate::reset();
+                    sections.go(SECTION_PACK);
+                }
+                y += Page::ROW_H;
+                index++;
+            }
             if (Page::navRow("instance#export", "导出整合包", "", y, blocked || !entry.info.valid,
                              Page::rowCorners(index, count), 0xf56e)) {
                 Exports::tree(entry.key).refresh();
@@ -1269,6 +1283,10 @@ namespace InstancePage {
             }
         } else if (sections.page == SECTION_EXPORT) {
             if (InstanceExport::draw(entry)) {
+                sections.go(SECTION_MAIN);
+            }
+        } else if (sections.page == SECTION_PACK) {
+            if (InstancePackUpdate::draw(entry)) {
                 sections.go(SECTION_MAIN);
             }
         } else if (sections.page == SECTION_SHORTCUT) {

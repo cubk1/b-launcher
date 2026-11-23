@@ -78,12 +78,67 @@ struct curseforge_settings
   std::string api_key;
 };
 
+struct pack_origin
+{
+  std::string source;
+  std::string project;
+  std::string version;
+};
+
+struct owned_file
+{
+  std::string sha1;
+  std::optional<std::uint32_t> crc;
+  std::int64_t size = -1;
+};
+
+struct pack_info
+{
+  std::string name;
+  std::string version;
+  std::string format;
+  std::string minecraft;
+  pack_origin origin;
+  std::map<std::string, owned_file> files;
+  bool tracked = false;
+};
+
 struct import_options
 {
   std::string id;
   bool include_optional = true;
   bool overwrite = false;
   curseforge_settings curseforge;
+  pack_origin origin;
+};
+
+enum class update_action : std::uint8_t
+{
+  add,
+  change,
+  remove,
+};
+
+struct update_item
+{
+  std::string path;
+  update_action action = update_action::add;
+  bool modified = false;
+  std::optional<std::size_t> file;
+  std::string entry;
+  std::uint64_t bytes = 0;
+};
+
+struct update_plan
+{
+  std::string id;
+  pack_manifest manifest;
+  std::vector<std::string> urls;
+  std::uint64_t archive_size = 0;
+  std::vector<update_item> items;
+  std::map<std::string, owned_file> owned;
+  bool loaders_changed = false;
+  bool tracked = false;
 };
 
 struct export_options
@@ -152,5 +207,16 @@ detect_client_only (const std::filesystem::path &game_directory,
                     cancellation_token token = {});
 std::string serialize_export_options (const export_options &options);
 result<export_options> parse_export_options (std::string_view json);
-
+result<pack_info> read_pack_info (const std::filesystem::path &directory);
+result<update_plan> plan_update (install::game_installer &installer,
+                                 std::string_view id,
+                                 std::vector<std::string> urls,
+                                 std::uint64_t archive_size,
+                                 const curseforge_settings &curseforge,
+                                 cancellation_token token = {});
+result<void> apply_update (install::game_installer &installer,
+                           const update_plan &plan, const pack_origin &origin,
+                           bool overwrite_modified,
+                           progress_sink *sink = nullptr,
+                           cancellation_token token = {});
 }

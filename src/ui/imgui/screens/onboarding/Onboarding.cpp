@@ -582,13 +582,13 @@ namespace Onboarding {
                 return;
             }
             UiRender::alphaMul = savedAlpha * remain;
-            UiRender::roundRect(0.0f, 0.0f, w, h, 14.0f, UiTheme::shell());
+            UiRender::roundRect(0.0f, 0.0f, w, h, MainWindow::cornerRadius, UiTheme::shell());
             UiRender::alphaMul = savedAlpha;
             UiState::keepAnimating();
             return;
         }
 
-        UiRender::roundRect(0.0f, 0.0f, w, h, 14.0f, UiTheme::shell());
+        UiRender::roundRect(0.0f, 0.0f, w, h, MainWindow::cornerRadius, UiTheme::shell());
 
         if ((float) (now - shownAt) < INTRO_HOLD) {
             splash(w, h, (float) (now - shownAt));

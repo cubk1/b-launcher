@@ -36,6 +36,8 @@ std::optional<ModpackSetup> ModpackSetup::fromProject(const Addons::Version& ver
     setup.pack.urls = Addons::fileUrls(file->url);
     setup.pack.sha1 = file->sha1;
     setup.pack.size = file->size;
+    setup.pack.origin = {version.source == Addons::Source::CurseForge ? "curseforge" : "modrinth", version.projectId,
+                         version.id};
     using blb::install::loader_type;
     const std::pair<const char*, loader_type> types[] = {{"fabric", loader_type::fabric},
                                                       {"forge", loader_type::forge},

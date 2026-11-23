@@ -10,6 +10,7 @@
 #include "app/instances/Drops.h"
 #include "app/instances/PackInstall.h"
 #include "app/instances/Exports.h"
+#include "app/instances/PackUpdates.h"
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/instances/ModManager.h"
@@ -69,6 +70,7 @@ namespace Services {
         ServerList::poll();
         Screenshots::poll();
         Exports::poll();
+        PackUpdates::poll();
         LauncherBuilder::poll();
         ServerBuilds::poll();
         Drops::poll();
@@ -95,6 +97,7 @@ namespace Services {
         Drops::shutdown();
         JavaDownloads::shutdown();
         Exports::shutdown();
+        PackUpdates::shutdown();
         LauncherBuilder::shutdown();
         ServerBuilds::shutdown();
         Screenshots::shutdown();
@@ -116,8 +119,8 @@ namespace Services {
 
     bool busy() {
         return Game::active() || Multiplayer::active() || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || Exports::running() || LauncherBuilder::running() ||
-                ServerBuilds::running() || CustomDownload::busy() || ModManager::busy() ||
+                ProjectInstaller::busy() || Exports::running() || PackUpdates::running() ||
+                LauncherBuilder::running() || ServerBuilds::running() || CustomDownload::busy() || ModManager::busy() ||
                 !Instances::activity().empty();
     }
 }

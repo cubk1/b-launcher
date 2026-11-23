@@ -44,6 +44,7 @@ result<void>
 extract_overrides (const std::filesystem::path &archive,
                    const pack_manifest &manifest,
                    const std::filesystem::path &game_dir,
+                   std::map<std::string, owned_file> &owned,
                    cancellation_token token)
 {
   BLB_TRY_ASSIGN (auto zip, zip_reader::open (archive));
@@ -71,6 +72,8 @@ extract_overrides (const std::filesystem::path &archive,
             failure = std::move (r).err ();
             return false;
           }
+        owned[relative] = { std::string (), entry.crc,
+                            static_cast<std::int64_t> (entry.size) };
         ++count;
         return true;
       }));
@@ -139,6 +142,7 @@ import_modpack (install::game_installer &installer,
     if (options.include_optional || !f.optional)
       files.push_back (f);
 
+  std::map<std::string, owned_file> owned;
   install::task_graph graph;
   auto version_task = graph.add (
       "modpack:version", [&] (cancellation_token t) -> result<void> {
@@ -195,7 +199,8 @@ import_modpack (install::game_installer &installer,
           { resolve });
       graph.add ("modpack:overrides",
                  [&] (cancellation_token t) {
-                   return extract_overrides (source, manifest, game_dir, t);
+                   return extract_overrides (source, manifest, game_dir, owned,
+                                             t);
                  },
                  { download });
     }
@@ -221,12 +226,14 @@ import_modpack (install::game_installer &installer,
   for (const auto &arg : manifest.game_args)
     settings.game_args.push_back (arg);
   BLB_TRY (manager.save_settings (id, settings));
-  json info = { { "name", manifest.name },
-                { "version", manifest.version },
-                { "author", manifest.author },
-                { "format", format_name (manifest.format) },
-                { "minecraft", manifest.minecraft } };
-  BLB_TRY (fs::write_file_atomic (game_dir / info_file, info.dump (2)));
+  std::map<std::string, owned_file> record;
+  for (const auto &f : files)
+    if (!f.urls.empty () && fs::safe_relative (f.path))
+      record[f.path] = { to_lower (f.sha1), std::nullopt, f.size };
+  for (auto &[path, file] : owned)
+    record[path] = std::move (file);
+  BLB_TRY (
+      detail::write_pack_info (game_dir, manifest, options.origin, record));
   cleanup.directory.clear ();
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds> (
                 std::chrono::steady_clock::now () - started)

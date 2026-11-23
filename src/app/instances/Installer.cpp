@@ -495,54 +495,56 @@ namespace Installer {
         }
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
-        worker = std::thread([root, archive, download, id, token, made, local, javaOptions, javaKnown] {
-            std::string result;
-            std::string error;
-            bool wasCancelled = false;
-            try {
-                Progress sink;
-                blb::net::download_report report;
-                if (!local) {
-                    sink.on_stage("pack", "start");
-                    blb::progress_tracker tracker(&sink, "download:pack");
-                    blb::net::download_client client;
-                    report = client.run(std::vector<blb::net::download_task>{download}, &tracker, token);
-                }
-                if (!report.ok()) {
-                    error = report.failures.front().reason.message;
-                    sink.on_stage("pack", "failed");
-                } else {
+        worker = std::thread(
+                [root, archive, download, id, token, made, local, javaOptions, javaKnown, origin = pack.origin] {
+                    std::string result;
+                    std::string error;
+                    bool wasCancelled = false;
+                    try {
+                        Progress sink;
+                        blb::net::download_report report;
+                        if (!local) {
+                            sink.on_stage("pack", "start");
+                            blb::progress_tracker tracker(&sink, "download:pack");
+                            blb::net::download_client client;
+                            report = client.run(std::vector<blb::net::download_task>{download}, &tracker, token);
+                        }
+                        if (!report.ok()) {
+                            error = report.failures.front().reason.message;
+                            sink.on_stage("pack", "failed");
+                        } else {
+                            if (!local) {
+                                sink.on_stage("pack", "done");
+                            }
+                            blb::install::install_options options;
+                            options.mirror = DownloadSources::provider();
+                            options.java_scan = javaOptions;
+                            options.java_candidates = javaKnown;
+                            blb::install::game_installer installer(blb::meta::game_layout(root), options);
+                            blb::modpack::import_options settings;
+                            settings.id = id;
+                            settings.origin = origin;
+                            settings.curseforge.api_key = CurseForge::apiKey();
+                            auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
+                            if (imported) {
+                                result = *imported;
+                            } else {
+                                error = imported.err().message;
+                                wasCancelled = imported.err().code == blb::errc::cancelled;
+                            }
+                        }
+                    } catch (const std::exception& exception) {
+                        error = exception.what();
+                    }
                     if (!local) {
-                        sink.on_stage("pack", "done");
+                        std::error_code removeError;
+                        std::filesystem::remove(archive, removeError);
                     }
-                    blb::install::install_options options;
-                    options.mirror = DownloadSources::provider();
-                    options.java_scan = javaOptions;
-                    options.java_candidates = javaKnown;
-                    blb::install::game_installer installer(blb::meta::game_layout(root), options);
-                    blb::modpack::import_options settings;
-                    settings.id = id;
-                    settings.curseforge.api_key = CurseForge::apiKey();
-                    auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
-                    if (imported) {
-                        result = *imported;
-                    } else {
-                        error = imported.err().message;
-                        wasCancelled = imported.err().code == blb::errc::cancelled;
+                    if (result.empty()) {
+                        removeFolders(made);
                     }
-                }
-            } catch (const std::exception& exception) {
-                error = exception.what();
-            }
-            if (!local) {
-                std::error_code removeError;
-                std::filesystem::remove(archive, removeError);
-            }
-            if (result.empty()) {
-                removeFolders(made);
-            }
-            finished(result, error, wasCancelled || token.is_cancelled());
-        });
+                    finished(result, error, wasCancelled || token.is_cancelled());
+                });
     }
 
     void start(const std::string& source, const std::string& minecraft,

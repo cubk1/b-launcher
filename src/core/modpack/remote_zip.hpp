@@ -4,6 +4,7 @@
 #include <core/base/error.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -46,6 +47,12 @@ public:
   const remote_entry *find (std::string_view name) const noexcept;
   result<std::string> read (std::string_view name,
                             cancellation_token token = {});
+  result<void> prefetch (const std::vector<const remote_entry *> &wanted,
+                         cancellation_token token = {});
+  result<void> extract (std::string_view name,
+                        const std::filesystem::path &target,
+                        cancellation_token token = {});
+  void forget () noexcept;
   std::uint64_t size () const noexcept;
   std::uint64_t downloaded () const noexcept;
   int requests () const noexcept;

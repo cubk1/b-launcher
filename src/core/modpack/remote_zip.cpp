@@ -1,4 +1,5 @@
 #include <core/base/format.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
 #include <core/modpack/remote_zip.hpp>
 #include <core/network/http_client.hpp>
@@ -20,6 +21,9 @@ namespace
 constexpr std::uint64_t tail_size = 256 * 1024;
 constexpr std::uint64_t max_part = 64ull << 20;
 constexpr std::uint64_t local_slack = 1024;
+constexpr std::uint64_t merge_gap = 256 * 1024;
+constexpr std::uint64_t stream_chunk = 8ull << 20;
+constexpr std::uint64_t small_entry = 16ull << 20;
 
 std::mutex s_refused_mutex;
 std::set<std::string> s_refused;
@@ -420,4 +424,150 @@ remote_zip::read (std::string_view name, cancellation_token token)
   return out;
 }
 
+result<void>
+remote_zip::prefetch (const std::vector<const remote_entry *> &wanted,
+                      cancellation_token token)
+{
+  std::vector<std::pair<std::uint64_t, std::uint64_t>> spans;
+  for (const auto *entry : wanted)
+    if (entry != nullptr && entry->compressed <= small_entry)
+      spans.emplace_back (
+          entry->offset,
+          std::min (m_size, entry->offset + 30 + entry->name.size ()
+                                + local_slack + entry->compressed));
+  std::sort (spans.begin (), spans.end ());
+  std::uint64_t begin = 0;
+  std::uint64_t end = 0;
+  auto flush = [&] () -> result<void> {
+    if (end > begin)
+      BLB_TRY (bytes (begin, end, token));
+    return {};
+  };
+  for (const auto &[from, to] : spans)
+    {
+      if (end > begin && from <= end + merge_gap && to - begin <= max_part)
+        end = std::max (end, to);
+      else
+        {
+          BLB_TRY (flush ());
+          begin = from;
+          end = to;
+        }
+    }
+  return flush ();
+}
+
+result<void>
+remote_zip::extract (std::string_view name,
+                     const std::filesystem::path &target,
+                     cancellation_token token)
+{
+  const remote_entry *found = find (name);
+  if (found == nullptr)
+    return make_error (errc::not_found, sformat ("{} not found", name));
+  remote_entry entry = *found;
+  BLB_TRY (fs::create_directories (target.parent_path ()));
+  if (entry.compressed <= small_entry && entry.size <= max_part)
+    {
+      BLB_TRY_ASSIGN (auto data, read (name, token));
+      return fs::write_file_atomic (target, data);
+    }
+  if (entry.method != 0 && entry.method != 8)
+    return make_error (errc::unsupported, "unsupported zip compression");
+  BLB_TRY_ASSIGN (auto head,
+                  bytes (entry.offset,
+                         entry.offset + 30 + entry.name.size () + local_slack,
+                         token));
+  if (head.size () < 30 || head.compare (0, 4, "PK\x03\x04") != 0)
+    return make_error (errc::zip, "invalid zip entry header");
+  std::uint64_t pos = entry.offset + 30
+                      + static_cast<std::uint64_t> (u16 (head, 26))
+                      + u16 (head, 28);
+  std::uint64_t stop = pos + entry.compressed;
+  if (stop > m_size)
+    return make_error (errc::zip, "truncated zip entry");
+  auto temp = fs::temp_sibling (target);
+  BLB_TRY_ASSIGN (auto file,
+                  fs::native_file::open (temp, fs::native_file::mode::write));
+  bool deflated = entry.method == 8;
+  z_stream stream {};
+  if (deflated && inflateInit2 (&stream, -MAX_WBITS) != Z_OK)
+    return make_error (errc::zip, "inflate init failed");
+  std::vector<char> out (1u << 20);
+  uLong crc = crc32 (0L, Z_NULL, 0);
+  std::uint64_t produced = 0;
+  int code = Z_OK;
+  auto emit = [&] (const char *data, std::size_t size) -> result<void> {
+    crc = crc32 (crc, reinterpret_cast<const Bytef *> (data),
+                 static_cast<uInt> (size));
+    produced += size;
+    return file.write_all (data, size);
+  };
+  auto run = [&] () -> result<void> {
+    while (pos < stop)
+      {
+        BLB_TRY (token.check ());
+        auto end = std::min (stop, pos + stream_chunk);
+        BLB_TRY_ASSIGN (auto got, fetch (pos, end - 1, token));
+        std::string_view chunk = got.body;
+        if (got.status == 200)
+          {
+            if (got.body.size () < end)
+              return make_error (errc::zip, "truncated zip archive");
+            chunk = chunk.substr (static_cast<std::size_t> (pos),
+                                  static_cast<std::size_t> (end - pos));
+          }
+        else if (got.body.size () != end - pos)
+          return make_error (errc::size_mismatch, "unexpected range length");
+        pos = end;
+        if (!deflated)
+          {
+            BLB_TRY (emit (chunk.data (), chunk.size ()));
+            continue;
+          }
+        stream.next_in
+            = reinterpret_cast<Bytef *> (const_cast<char *> (chunk.data ()));
+        stream.avail_in = static_cast<uInt> (chunk.size ());
+        do
+          {
+            stream.next_out = reinterpret_cast<Bytef *> (out.data ());
+            stream.avail_out = static_cast<uInt> (out.size ());
+            code = inflate (&stream, Z_NO_FLUSH);
+            if (code != Z_OK && code != Z_STREAM_END && code != Z_BUF_ERROR)
+              return make_error (errc::zip, "corrupt zip entry");
+            BLB_TRY (emit (out.data (), out.size () - stream.avail_out));
+          }
+        while (stream.avail_out == 0 && code != Z_STREAM_END);
+      }
+    if (deflated && code != Z_STREAM_END)
+      return make_error (errc::zip, "corrupt zip entry");
+    if (produced != entry.size)
+      return make_error (errc::zip, "truncated zip entry");
+    if (static_cast<std::uint32_t> (crc) != entry.crc)
+      return make_error (errc::checksum_mismatch,
+                         "zip entry checksum mismatch");
+    return file.close ();
+  };
+  auto done = run ();
+  if (deflated)
+    inflateEnd (&stream);
+  if (!done)
+    {
+      (void)file.close ();
+      (void)fs::remove_file (temp);
+      return done;
+    }
+  if (auto moved = fs::rename_file (temp, target); !moved)
+    {
+      (void)fs::remove_file (temp);
+      return moved;
+    }
+  return ok ();
+}
+
+void
+remote_zip::forget () noexcept
+{
+  m_blocks.clear ();
+}
 }

@@ -29,6 +29,10 @@ struct remote_file
   std::string server_side;
 };
 
+result<void> write_pack_info (const std::filesystem::path &directory,
+                              const pack_manifest &manifest,
+                              const pack_origin &origin,
+                              const std::map<std::string, owned_file> &owned);
 result<std::optional<std::string>>
 read_multimc_file (const std::filesystem::path &source, zip_reader *zip,
                    std::string_view name);
