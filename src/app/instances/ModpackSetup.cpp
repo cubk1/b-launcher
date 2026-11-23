@@ -38,9 +38,9 @@ std::optional<ModpackSetup> ModpackSetup::fromProject(const Addons::Version& ver
     setup.pack.size = file->size;
     using blb::install::loader_type;
     const std::pair<const char*, loader_type> types[] = {{"fabric", loader_type::fabric},
-                                                         {"forge", loader_type::forge},
-                                                         {"neoforge", loader_type::neoforge},
-                                                         {"quilt", loader_type::quilt}};
+                                                      {"forge", loader_type::forge},
+                                                      {"neoforge", loader_type::neoforge},
+                                                      {"quilt", loader_type::quilt}};
     for (const auto& tag : version.loaders) {
         setup.loaders.push_back(Modrinth::label(tag));
         for (const auto& [name, type] : types) {

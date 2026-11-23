@@ -130,8 +130,8 @@ namespace ForgottenMelody {
                 bool busy = Installer::running() || readingLoaders || !readError.empty();
                 rows.refresh(!busy);
                 std::wstring problem = readingLoaders                    ? L"正在读取已安装的加载器…"
-                        : !readError.empty()                             ? readError
-                        : busy                                           ? L"正在安装，等它完成后再修改加载器"
+                        : !readError.empty()                            ? readError
+                        : busy                                          ? L"正在安装，等它完成后再修改加载器"
                         : rows.chosen() == original && entry->info.valid ? L"没有改动"
                                                                          : L"";
                 UpdateText(STATUS, problem);
@@ -160,10 +160,7 @@ namespace ForgottenMelody {
                             started = false;
                         }
                         break;
-                    case REFRESH:
-                        rows.reload();
-                        readLoaders();
-                        break;
+                    case REFRESH: rows.reload(); readLoaders(); break;
                     case CLOSE: CloseWindow(); return;
                 }
                 refresh();
@@ -194,12 +191,12 @@ namespace ForgottenMelody {
                         return;
                     }
                     std::map<loader_type, std::string> current;
-                    for (const auto& loader : *result)
-                        current[loader.type] = loader.version;
+                    for (const auto& loader : *result) current[loader.type] = loader.version;
                     if (rows.chosen() == original || started) rows.reset(minecraft, current);
                     original = std::move(current);
                 });
             }
+
         };
     }
 

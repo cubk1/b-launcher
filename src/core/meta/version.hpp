@@ -12,105 +12,115 @@
 #include <string_view>
 #include <vector>
 
-namespace b_launcher_base::meta {
+namespace b_launcher_base::meta
+{
 
-    inline constexpr std::string_view instance_libraries = ".blb-libraries";
+inline constexpr std::string_view instance_libraries = ".blb-libraries";
 
-    struct download_artifact {
-        std::string path;
-        std::string url;
-        std::string sha1;
-        std::int64_t size = -1;
-    };
+struct download_artifact
+{
+  std::string path;
+  std::string url;
+  std::string sha1;
+  std::int64_t size = -1;
+};
 
-    struct library {
-        std::string name;
-        maven_artifact artifact;
-        std::optional<download_artifact> download;
-        std::map<std::string, download_artifact> classifiers;
-        std::map<std::string, std::string> natives;
-        std::vector<std::string> extract_exclude;
-        std::vector<rule> rules;
-        std::string url;
-        std::string sha1;
-        std::int64_t size = -1;
-        std::vector<std::string> checksums;
-        std::optional<bool> client_required;
+struct library
+{
+  std::string name;
+  maven_artifact artifact;
+  std::optional<download_artifact> download;
+  std::map<std::string, download_artifact> classifiers;
+  std::map<std::string, std::string> natives;
+  std::vector<std::string> extract_exclude;
+  std::vector<rule> rules;
+  std::string url;
+  std::string sha1;
+  std::int64_t size = -1;
+  std::vector<std::string> checksums;
+  std::optional<bool> client_required;
 
-        bool is_legacy_native() const noexcept;
-        bool is_modern_native() const noexcept;
-        // Library identity when merging versions, with legacy natives kept separate.
-        std::string merge_key() const;
-        std::optional<std::string> native_classifier(const rule_context& context) const;
-        std::string relative_path() const;
-        std::string default_url() const;
-    };
+  bool is_legacy_native () const noexcept;
+  bool is_modern_native () const noexcept;
+  // Library identity when merging versions, with legacy natives kept separate.
+  std::string merge_key () const;
+  std::optional<std::string>
+  native_classifier (const rule_context &context) const;
+  std::string relative_path () const;
+  std::string default_url () const;
+};
 
-    struct argument {
-        std::vector<std::string> values;
-        std::vector<rule> rules;
-    };
+struct argument
+{
+  std::vector<std::string> values;
+  std::vector<rule> rules;
+};
 
-    struct asset_index_ref {
-        std::string id;
-        std::string sha1;
-        std::string url;
-        std::int64_t size = -1;
-        std::int64_t total_size = -1;
-    };
+struct asset_index_ref
+{
+  std::string id;
+  std::string sha1;
+  std::string url;
+  std::int64_t size = -1;
+  std::int64_t total_size = -1;
+};
 
-    struct java_version_ref {
-        std::string component;
-        int major_version = 0;
-        std::vector<int> compatible_majors;
-    };
+struct java_version_ref
+{
+  std::string component;
+  int major_version = 0;
+  std::vector<int> compatible_majors;
+};
 
-    struct logging_ref {
-        std::string argument;
-        std::string type;
-        std::string file_id;
-        download_artifact file;
-    };
+struct logging_ref
+{
+  std::string argument;
+  std::string type;
+  std::string file_id;
+  download_artifact file;
+};
 
-    struct version {
-        std::string id;
-        std::string inherits_from;
-        std::string type;
-        std::string main_class;
-        std::string minecraft_arguments;
-        std::string assets;
-        std::string jar;
-        std::string release_time;
-        std::string time;
-        std::string client_version;
-        bool has_arguments = false;
-        std::vector<argument> game_arguments;
-        std::vector<argument> jvm_arguments;
-        std::vector<library> libraries;
-        std::optional<asset_index_ref> asset_index;
-        std::map<std::string, download_artifact> downloads;
-        std::optional<java_version_ref> java_version;
-        std::optional<logging_ref> logging;
-        int compliance_level = 0;
-        int minimum_launcher_version = 0;
-        std::vector<std::string> chain;
-        bool isolated_libraries = false;
+struct version
+{
+  std::string id;
+  std::string inherits_from;
+  std::string type;
+  std::string main_class;
+  std::string minecraft_arguments;
+  std::string assets;
+  std::string jar;
+  std::string release_time;
+  std::string time;
+  std::string client_version;
+  bool has_arguments = false;
+  std::vector<argument> game_arguments;
+  std::vector<argument> jvm_arguments;
+  std::vector<library> libraries;
+  std::optional<asset_index_ref> asset_index;
+  std::map<std::string, download_artifact> downloads;
+  std::optional<java_version_ref> java_version;
+  std::optional<logging_ref> logging;
+  int compliance_level = 0;
+  int minimum_launcher_version = 0;
+  std::vector<std::string> chain;
+  bool isolated_libraries = false;
 
-        std::string jar_id() const;
-        std::string asset_id() const;
-        std::string minecraft() const;
-        std::filesystem::path library_directory(const game_layout& layout) const;
-        const download_artifact* client_download() const;
-    };
+  std::string jar_id () const;
+  std::string asset_id () const;
+  std::string minecraft () const;
+  std::filesystem::path library_directory (const game_layout &layout) const;
+  const download_artifact *client_download () const;
+};
 
-    result<version> parse_version(std::string_view json);
-    result<library> parse_library(std::string_view json);
-    result<void> validate_paths(const library& value);
-    result<void> validate_paths(const version& value);
-    std::string serialize_version(const version& value);
-    version merge_versions(const version& parent, const version& child);
-    result<version> load_version(const game_layout& layout, std::string_view id);
-    result<version> resolve_version(const game_layout& layout, std::string_view id);
-    result<void> save_version(const game_layout& layout, const version& value);
+result<version> parse_version (std::string_view json);
+result<library> parse_library (std::string_view json);
+result<void> validate_paths (const library &value);
+result<void> validate_paths (const version &value);
+std::string serialize_version (const version &value);
+version merge_versions (const version &parent, const version &child);
+result<version> load_version (const game_layout &layout, std::string_view id);
+result<version> resolve_version (const game_layout &layout,
+                                 std::string_view id);
+result<void> save_version (const game_layout &layout, const version &value);
 
 }

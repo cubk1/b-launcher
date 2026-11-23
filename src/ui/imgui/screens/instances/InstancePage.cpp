@@ -232,8 +232,9 @@ namespace InstancePage {
                 if (removal.needsPermanent) {
                     DeleteDialogs::openInstanceRecycleFailed(
                             name, removal.reason, removal.tooLarge, folder, [key, settled] {
-                                Instances::removePermanent(
-                                        key, [settled](const std::string& error) { settled(error.empty()); });
+                                Instances::removePermanent(key, [settled](const std::string& error) {
+                                    settled(error.empty());
+                                });
                             });
                 }
             });
