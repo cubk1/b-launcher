@@ -157,6 +157,11 @@ http_send (const http_request &request, cancellation_token token)
 
   detail::apply_common_options (easy, settings, proxy);
   curl_easy_setopt (easy, CURLOPT_SHARE, detail::shared_handle ());
+  if (request.bypass_proxy)
+    {
+      curl_easy_setopt (easy, CURLOPT_PROXY, "");
+      curl_easy_setopt (easy, CURLOPT_NOPROXY, "*");
+    }
   curl_easy_setopt (easy, CURLOPT_URL, request.url.c_str ());
   curl_easy_setopt (easy, CURLOPT_ERRORBUFFER, error_buffer);
   curl_easy_setopt (easy, CURLOPT_ACCEPT_ENCODING, "");

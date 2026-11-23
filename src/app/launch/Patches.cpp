@@ -188,12 +188,26 @@ namespace Patches {
         setValue(key, on ? "true" : "false");
     }
 
-    Plan plan() {
+    Plan plan(bool hmclCompatibility, bool configuredPatches) {
         Plan out;
+        if (!configuredPatches) {
+            for (const Default& entry : DEFAULTS) {
+                if (entry.passed) {
+                    out.values.emplace_back(entry.key, std::string_view(entry.value) == "true" ? "false" : entry.value);
+                }
+            }
+            put(out, "options.inherit", "false");
+            put(out, "lan.enabled", "false");
+            put(out, "lan.offlineJoin", hmclCompatibility ? "true" : "false");
+            return out;
+        }
         for (const Default& entry : DEFAULTS) {
             if (entry.passed) {
                 out.values.emplace_back(entry.key, value(entry.key));
             }
+        }
+        if (hmclCompatibility) {
+            put(out, "lan.offlineJoin", "true");
         }
         std::string source = value("skin.source");
         if (source == "littleskin") {

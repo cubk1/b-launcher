@@ -24,6 +24,7 @@
 #include "app/launch/ServerList.h"
 #include "app/launch/ShortcutLaunch.h"
 #include "app/multiplayer/Multiplayer.h"
+#include "app/multiplayer/TerracottaGuest.h"
 #include "app/system/Catalog.h"
 #include "app/system/CustomDownload.h"
 #include "app/system/DiskScan.h"
@@ -78,12 +79,14 @@ namespace Services {
         ShortcutLaunch::poll();
         ServerStatus::poll();
         Multiplayer::poll();
+        TerracottaGuest::poll();
         CustomDownload::poll();
         DiskScan::poll();
         Transfers::poll();
     }
 
     void stop() {
+        TerracottaGuest::shutdown();
         Multiplayer::shutdown();
         CustomDownload::shutdown();
         Crashes::shutdown();
@@ -115,8 +118,8 @@ namespace Services {
     }
 
     bool busy() {
-        return Game::active() || Multiplayer::active() || Installer::running() || JavaDownloads::busy() ||
-                ProjectInstaller::busy() || Exports::running() || LauncherBuilder::running() ||
+        return Game::active() || Multiplayer::active() || TerracottaGuest::active() || Installer::running() ||
+                JavaDownloads::busy() || ProjectInstaller::busy() || Exports::running() || LauncherBuilder::running() ||
                 ServerBuilds::running() || CustomDownload::busy() || ModManager::busy() ||
                 !Instances::activity().empty();
     }
