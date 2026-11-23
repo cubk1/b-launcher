@@ -101,7 +101,7 @@ namespace Prerequisites {
             bool on = chosen(dependency);
             bool hovered = !blocked && NewUi::hit(x, y, w, ROW);
             if (hovered) {
-                UiRender::roundRect(x, y + 2.0f, w, ROW - 4.0f, 8.0f, UiTheme::overlay(12));
+                UiRender::roundRect(x, y, w, ROW, 8.0f, UiTheme::overlay(12));
             }
             float boxX = x + 10.0f;
             checkbox(boxX, y + (ROW - 18.0f) * 0.5f, on);

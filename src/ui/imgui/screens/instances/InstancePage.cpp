@@ -26,6 +26,7 @@
 #include "ui/imgui/screens/settings/KeyBindEditor.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "ui/imgui/screens/shell/Textures.h"
+#include "app/system/Pixels.h"
 #include "app/launch/Patches.h"
 #include "app/system/Platform.h"
 
@@ -46,16 +47,20 @@
 #include "ui/imgui/widget/ToggleWidget.h"
 
 #include <core/auth/yggdrasil.hpp>
+#include <core/base/fs.hpp>
 #include <core/base/strings.hpp>
+#include <core/modpack/modpack.hpp>
 
 #include "imgui.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cwctype>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -221,8 +226,17 @@ namespace InstancePage {
                 }
             };
 
+            std::vector<std::string> notes;
+            std::vector<std::string> children = Instances::dependents(key);
+            if (!children.empty()) {
+                std::string list;
+                for (const std::string& child : children) {
+                    list += (list.empty() ? "" : "、") + child;
+                }
+                notes.push_back("继承它的 " + std::to_string(children.size()) + " 个实例将无法启动：" + list + "。");
+            }
             if (Deletion::mode() == Deletion::Mode::Permanent) {
-                DeleteDialogs::openInstance(name, {}, [key, settled] {
+                DeleteDialogs::openInstance(name, notes, [key, settled] {
                     Instances::removePermanent(key, [settled](const std::string& error) { settled(error.empty()); });
                 });
                 return;
@@ -957,9 +971,13 @@ namespace InstancePage {
             }
         }
 
+        bool packRow(const std::string& key) {
+            return PackUpdates::origin(key) != nullptr || PackUpdates::identifiable(key);
+        }
+
         int manageCount(const Instances::Entry& entry) {
             return (Instances::hasModLoader(entry) ? 1 : 0) + (GameOptions::ownFile(entry) ? 1 : 0) +
-                    (PackUpdates::origin(entry.key) != nullptr ? 1 : 0) + 3;
+                    (packRow(entry.key) ? 1 : 0) + 3;
         }
 
         void manageRows(const Instances::Entry& entry, float y, bool blocked) {
@@ -1016,11 +1034,11 @@ namespace InstancePage {
             }
             y += Page::ROW_H;
             index++;
-            if (PackUpdates::origin(entry.key) != nullptr) {
-                if (Page::navRow("instance#packupdate", "整合包更新", InstancePackUpdate::rowValue(entry.key), y,
+            if (packRow(entry.key)) {
+                if (Page::navRow("instance#packupdate", "整合包版本", InstancePackUpdate::rowValue(entry.key), y,
                                  blocked || !Features::enabled(Features::INSTANCE_EDIT), Page::rowCorners(index, count),
                                  0xf2f1)) {
-                    InstancePackUpdate::reset();
+                    InstancePackUpdate::reset(entry.key);
                     sections.go(SECTION_PACK);
                 }
                 y += Page::ROW_H;
@@ -1199,9 +1217,6 @@ namespace InstancePage {
             }
             const char* title = "高级";
             Page::title(title, Page::left() + 30.0f, Page::top());
-            float nameX = Page::left() + 30.0f + UiFont::width(title, UiFont::MEDIUM, Page::TITLE_SIZE) + 10.0f;
-            UiRender::textY(fitEnd(entry.info.id, Page::right() - nameX, UiWidgets::TEXT_CONTROL), nameX, Page::top(),
-                            24.0f, UiTheme::textMuted(), UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
 
             const int commandCount = 4;
             const int jvmCount = 3;
@@ -1237,7 +1252,41 @@ namespace InstancePage {
         }
     }
 
+    namespace {
+        struct PackIcon {
+            int64_t mtime = -1;
+            std::chrono::steady_clock::time_point checked;
+            std::shared_ptr<const Pixels> pixels;
+        };
+
+        std::map<std::string, PackIcon> packIcons;
+
+        uint32_t packIcon(const Instances::Entry& entry) {
+            PackIcon& icon = packIcons[entry.key];
+            auto now = std::chrono::steady_clock::now();
+            if (icon.mtime < 0 || now - icon.checked > std::chrono::seconds(2)) {
+                icon.checked = now;
+                std::filesystem::path file = entry.info.directory / blb::modpack::icon_file;
+                blb::fs::file_stat st = blb::fs::stat(file);
+                int64_t mtime = st.exists ? st.mtime : 0;
+                if (mtime != icon.mtime) {
+                    icon.mtime = mtime;
+                    icon.pixels.reset();
+                    if (st.exists) {
+                        if (auto data = blb::fs::read_file(file)) {
+                            icon.pixels = Pixels::decodePng(data->data(), data->size(), 256);
+                        }
+                    }
+                }
+            }
+            return icon.pixels ? Textures::of(icon.pixels) : 0;
+        }
+    }
+
     uint32_t icon(const Instances::Entry& entry) {
+        if (uint32_t custom = packIcon(entry)) {
+            return custom;
+        }
         if (!entry.info.valid) {
             return 0;
         }

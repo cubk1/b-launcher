@@ -69,8 +69,9 @@ namespace DownloadsScreen {
 
     namespace {
         constexpr float SIDE_W = 140.0f;
+        bool detailShown();
         float mainX() {
-            return Page::left() + SIDE_W + 14.0f;
+            return Page::left() + (detailShown() ? 0.0f : SIDE_W + 14.0f);
         }
         constexpr float NAV_ITEM_H = 30.0f;
         constexpr float NAV_STEP = 32.0f;
@@ -148,6 +149,10 @@ namespace DownloadsScreen {
         std::string loaderFilter;
         std::set<std::string> folded;
         std::vector<ProjectBrowser::MergedHit> picked;
+
+        bool detailShown() {
+            return side != Side::Java && side != Side::Themes && !routes.empty();
+        }
 
         PageTransition sourceViews(AGGREGATE_PAGE);
         struct Tab {
@@ -2310,7 +2315,15 @@ namespace DownloadsScreen {
         }
         bool covered = NewUi::overlayCoversMouse();
         followPending();
-        sidePanel(covered);
+        if (detailShown()) {
+            UiState::remove("downloads#side");
+        } else {
+            float sideAlpha = UiState::motionFrom("downloads#side", 1.0f, 14.0f, 0.0f);
+            float savedAlpha = UiRender::alphaMul;
+            UiRender::alphaMul = savedAlpha * sideAlpha;
+            sidePanel(covered);
+            UiRender::alphaMul = savedAlpha;
+        }
         sourceViews.begin();
         views.begin();
         if (side == Side::Java) {
@@ -2514,6 +2527,7 @@ namespace DownloadsParts {
             case Kind::Modpack: {
                 auto setup = ModpackSetup::fromProject(version, title);
                 if (setup) {
+                    setup->pack.iconUrl = icon;
                     NewInstanceScreen::openModpack(*setup);
                     MainWindow::showNewInstance();
                 }

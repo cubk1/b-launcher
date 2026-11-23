@@ -1177,7 +1177,10 @@ namespace LogWindow {
                         if (rounded) {
                             UiRender::roundRect(x0 - 1.0f, rowY + 1.0f, x1 - x0 + 2.0f, ROW_H - 2.0f, 3.0f, ink);
                         } else {
-                            UiRender::rect(x0, rowY, x1 - x0, ROW_H, ink);
+                            float top = UiRender::snapLayout(rowY);
+                            float bottom = UiRender::snapLayout(rowY + ROW_H);
+                            float from = UiRender::snapLayout(x0);
+                            UiRender::rect(from, top, UiRender::snapLayout(x1) - from, bottom - top, ink);
                         }
                     }
                 };

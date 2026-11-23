@@ -3,6 +3,7 @@
 #include "app/downloads/ModNames.h"
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
+#include "app/instances/PackUpdates.h"
 #include "app/system/Platform.h"
 #include "ui/imgui/screens/instances/DeleteDialogs.h"
 #include "ui/imgui/screens/instances/ModVersionPicker.h"
@@ -1042,11 +1043,13 @@ namespace ModGraph {
             if (hovered) {
                 UiRender::roundRect(nx, ny, w, h, radius, UiTheme::overlay(14));
             }
+            bool packed = mod != nullptr && PackUpdates::packFile(key, mod->info.file, mod->info.size);
             uint32_t border = selected                                      ? accent
                     : missing(node)                                         ? withAlpha(UiTheme::danger(), 0.6f)
                     : node.kind == Kind::Added || change != nullptr || root ? withAlpha(accent, 0.6f)
+                    : packed                                                ? withAlpha(UiTheme::success(), 0.75f)
                                                                             : UiTheme::border(UiTheme::outlineSoft());
-            UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : 1.0f);
+            UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : packed ? 1.3f : 1.0f);
             if (mod != nullptr && !mod->missing.empty()) {
                 UiRender::circle(nx + w - 6.0f * zoom, ny + 6.0f * zoom, 3.2f * zoom, UiTheme::danger());
             }

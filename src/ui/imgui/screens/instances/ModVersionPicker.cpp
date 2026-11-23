@@ -236,10 +236,10 @@ namespace ModVersionPicker {
             bool hovered = !outside && !blocked && NewUi::hit(x, rowY, listW, ROW);
             float lit = UiState::motion(id + "#" + version.id, hovered ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(x, rowY + 2.0f, listW, ROW - 4.0f, 8.0f, UiTheme::overlay(Ui::round(14 * lit)));
+                UiRender::roundRect(x, rowY, listW, ROW, 8.0f, UiTheme::overlay(Ui::round(14 * lit)));
             }
             if (selected) {
-                UiRender::outline(x, rowY + 2.0f, listW, ROW - 4.0f, 8.0f, UiTheme::accent(), 0xF, 1.4f);
+                UiRender::outline(x, rowY, listW, ROW, 8.0f, UiTheme::accent(), 0xF, 1.4f);
             }
             float cy = rowY + ROW * 0.5f;
             float right = x + listW - 10.0f;

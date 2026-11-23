@@ -15,6 +15,7 @@ namespace Page {
     constexpr float FIELD_H = 23.0f;
     constexpr float FIELD_Y = 8.0f;
     constexpr float SWATCH_Y = 12.0f;
+    constexpr float CARD_RADIUS = 12.0f;
 
     float top();
     float left();

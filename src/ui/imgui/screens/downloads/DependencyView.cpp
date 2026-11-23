@@ -159,7 +159,7 @@ namespace DependencyView {
             float lit = UiState::motion("downloads#deps#" + ctx.key + row.path + "#hover",
                                         hovered && interactive ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(x, y + 1.0f, w, ROW - 2.0f, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
+                UiRender::roundRect(x, y, w, ROW, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
             }
             rails(row, x, y);
             float centre = y + ROW * 0.5f;

@@ -1,4 +1,5 @@
 #include "app/instances/Installer.h"
+#include "app/instances/PackUpdates.h"
 #include "app/downloads/CurseForge.h"
 #include "app/downloads/DownloadSources.h"
 #include "app/instances/Instances.h"
@@ -45,6 +46,7 @@ namespace Installer {
         Clock::time_point lingerUntil;
         Clock::time_point startedAt;
         std::string finishedKey;
+        std::string packIcon;
         bool modifying = false;
         uint64_t transfer = 0;
 
@@ -459,6 +461,7 @@ namespace Installer {
         if (busy || target == nullptr || (pack.urls.empty() && !local)) {
             return;
         }
+        packIcon = pack.iconUrl;
         begin(source);
         {
             std::lock_guard<std::mutex> guard(partLock);
@@ -495,56 +498,57 @@ namespace Installer {
         }
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
-        worker = std::thread(
-                [root, archive, download, id, token, made, local, javaOptions, javaKnown, origin = pack.origin] {
-                    std::string result;
-                    std::string error;
-                    bool wasCancelled = false;
-                    try {
-                        Progress sink;
-                        blb::net::download_report report;
-                        if (!local) {
-                            sink.on_stage("pack", "start");
-                            blb::progress_tracker tracker(&sink, "download:pack");
-                            blb::net::download_client client;
-                            report = client.run(std::vector<blb::net::download_task>{download}, &tracker, token);
-                        }
-                        if (!report.ok()) {
-                            error = report.failures.front().reason.message;
-                            sink.on_stage("pack", "failed");
-                        } else {
-                            if (!local) {
-                                sink.on_stage("pack", "done");
-                            }
-                            blb::install::install_options options;
-                            options.mirror = DownloadSources::provider();
-                            options.java_scan = javaOptions;
-                            options.java_candidates = javaKnown;
-                            blb::install::game_installer installer(blb::meta::game_layout(root), options);
-                            blb::modpack::import_options settings;
-                            settings.id = id;
-                            settings.origin = origin;
-                            settings.curseforge.api_key = CurseForge::apiKey();
-                            auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
-                            if (imported) {
-                                result = *imported;
-                            } else {
-                                error = imported.err().message;
-                                wasCancelled = imported.err().code == blb::errc::cancelled;
-                            }
-                        }
-                    } catch (const std::exception& exception) {
-                        error = exception.what();
-                    }
+        worker = std::thread([root, archive, download, id, token, made, local, javaOptions, javaKnown,
+                              origin = pack.origin, inherit = Instances::inheritVanilla()] {
+            std::string result;
+            std::string error;
+            bool wasCancelled = false;
+            try {
+                Progress sink;
+                blb::net::download_report report;
+                if (!local) {
+                    sink.on_stage("pack", "start");
+                    blb::progress_tracker tracker(&sink, "download:pack");
+                    blb::net::download_client client;
+                    report = client.run(std::vector<blb::net::download_task>{download}, &tracker, token);
+                }
+                if (!report.ok()) {
+                    error = report.failures.front().reason.message;
+                    sink.on_stage("pack", "failed");
+                } else {
                     if (!local) {
-                        std::error_code removeError;
-                        std::filesystem::remove(archive, removeError);
+                        sink.on_stage("pack", "done");
                     }
-                    if (result.empty()) {
-                        removeFolders(made);
+                    blb::install::install_options options;
+                    options.mirror = DownloadSources::provider();
+                    options.java_scan = javaOptions;
+                    options.java_candidates = javaKnown;
+                    options.inherit_vanilla = inherit;
+                    blb::install::game_installer installer(blb::meta::game_layout(root), options);
+                    blb::modpack::import_options settings;
+                    settings.id = id;
+                    settings.origin = origin;
+                    settings.curseforge.api_key = CurseForge::apiKey();
+                    auto imported = blb::modpack::import_modpack(installer, archive, settings, &sink, token);
+                    if (imported) {
+                        result = *imported;
+                    } else {
+                        error = imported.err().message;
+                        wasCancelled = imported.err().code == blb::errc::cancelled;
                     }
-                    finished(result, error, wasCancelled || token.is_cancelled());
-                });
+                }
+            } catch (const std::exception& exception) {
+                error = exception.what();
+            }
+            if (!local) {
+                std::error_code removeError;
+                std::filesystem::remove(archive, removeError);
+            }
+            if (result.empty()) {
+                removeFolders(made);
+            }
+            finished(result, error, wasCancelled || token.is_cancelled());
+        });
     }
 
     void start(const std::string& source, const std::string& minecraft,
@@ -587,43 +591,45 @@ namespace Installer {
         track(Transfers::Kind::Instance, root, source, expected, minecraft);
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
-        worker = std::thread([root, request, token, made, javaOptions, javaKnown] {
-            std::string result;
-            std::string error;
-            bool wasCancelled = false;
-            try {
-                blb::install::install_options options;
-                options.mirror = DownloadSources::provider();
-                options.java_scan = javaOptions;
-                options.java_candidates = javaKnown;
-                blb::install::game_installer installer(blb::meta::game_layout(root), options);
-                Progress sink;
-                if (request.loaders.empty() && request.id.empty()) {
-                    auto installed = installer.install_vanilla(request.minecraft, &sink, token);
-                    if (installed) {
-                        result = installed->id;
-                    } else {
-                        error = installed.err().message;
-                        wasCancelled = installed.err().code == blb::errc::cancelled;
+        worker = std::thread(
+                [root, request, token, made, javaOptions, javaKnown, inherit = Instances::inheritVanilla()] {
+                    std::string result;
+                    std::string error;
+                    bool wasCancelled = false;
+                    try {
+                        blb::install::install_options options;
+                        options.mirror = DownloadSources::provider();
+                        options.java_scan = javaOptions;
+                        options.java_candidates = javaKnown;
+                        options.inherit_vanilla = inherit;
+                        blb::install::game_installer installer(blb::meta::game_layout(root), options);
+                        Progress sink;
+                        if (request.loaders.empty() && request.id.empty()) {
+                            auto installed = installer.install_vanilla(request.minecraft, &sink, token);
+                            if (installed) {
+                                result = installed->id;
+                            } else {
+                                error = installed.err().message;
+                                wasCancelled = installed.err().code == blb::errc::cancelled;
+                            }
+                        } else {
+                            blb::install::loader_installer loaders(installer);
+                            auto installed = loaders.install(request, &sink, token);
+                            if (installed) {
+                                result = *installed;
+                            } else {
+                                error = installed.err().message;
+                                wasCancelled = installed.err().code == blb::errc::cancelled;
+                            }
+                        }
+                    } catch (const std::exception& exception) {
+                        error = exception.what();
                     }
-                } else {
-                    blb::install::loader_installer loaders(installer);
-                    auto installed = loaders.install(request, &sink, token);
-                    if (installed) {
-                        result = *installed;
-                    } else {
-                        error = installed.err().message;
-                        wasCancelled = installed.err().code == blb::errc::cancelled;
+                    if (result.empty()) {
+                        removeFolders(made);
                     }
-                }
-            } catch (const std::exception& exception) {
-                error = exception.what();
-            }
-            if (result.empty()) {
-                removeFolders(made);
-            }
-            finished(result, error, wasCancelled || token.is_cancelled());
-        });
+                    finished(result, error, wasCancelled || token.is_cancelled());
+                });
     }
 
     void startModify(const std::string& instanceKey, const std::vector<blb::install::loader_request>& loaders) {
@@ -652,30 +658,32 @@ namespace Installer {
         blb::instance::isolation_mode mode = Instances::isolation();
         auto javaOptions = Catalog::javaScanOptions();
         auto javaKnown = Catalog::javaCandidates();
-        worker = std::thread([root, id, loaders, mode, token, javaOptions, javaKnown] {
-            std::string result;
-            std::string error;
-            bool wasCancelled = false;
-            try {
-                blb::install::install_options options;
-                options.mirror = DownloadSources::provider();
-                options.java_scan = javaOptions;
-                options.java_candidates = javaKnown;
-                blb::install::game_installer installer(blb::meta::game_layout(root), options);
-                blb::instance::instance_manager manager(blb::meta::game_layout(root), mode);
-                Progress sink;
-                auto changed = blb::instance::modify_loaders(installer, manager, id, loaders, &sink, token);
-                if (changed) {
-                    result = *changed;
-                } else {
-                    error = changed.err().message;
-                    wasCancelled = changed.err().code == blb::errc::cancelled;
-                }
-            } catch (const std::exception& exception) {
-                error = exception.what();
-            }
-            finished(result, error, wasCancelled || token.is_cancelled());
-        });
+        worker = std::thread(
+                [root, id, loaders, mode, token, javaOptions, javaKnown, inherit = Instances::inheritVanilla()] {
+                    std::string result;
+                    std::string error;
+                    bool wasCancelled = false;
+                    try {
+                        blb::install::install_options options;
+                        options.mirror = DownloadSources::provider();
+                        options.java_scan = javaOptions;
+                        options.java_candidates = javaKnown;
+                        options.inherit_vanilla = inherit;
+                        blb::install::game_installer installer(blb::meta::game_layout(root), options);
+                        blb::instance::instance_manager manager(blb::meta::game_layout(root), mode);
+                        Progress sink;
+                        auto changed = blb::instance::modify_loaders(installer, manager, id, loaders, &sink, token);
+                        if (changed) {
+                            result = *changed;
+                        } else {
+                            error = changed.err().message;
+                            wasCancelled = changed.err().code == blb::errc::cancelled;
+                        }
+                    } catch (const std::exception& exception) {
+                        error = exception.what();
+                    }
+                    finished(result, error, wasCancelled || token.is_cancelled());
+                });
     }
 
     void cancel() {
@@ -723,11 +731,14 @@ namespace Installer {
             finishAll(Part::Status::Done);
             Transfers::finish(transfer, Transfers::State::Done);
             finishedKey = Instances::keyOf(sourceKey, id);
+            PackUpdates::adoptIcon(finishedKey, packIcon);
+            packIcon.clear();
             lingering = true;
             lingerUntil = Clock::now() + LINGER;
             return;
         }
         busy = false;
+        packIcon.clear();
         Transfers::finish(transfer, wasCancelled ? Transfers::State::Cancelled : Transfers::State::Failed, error);
         if (!wasCancelled) {
             Notices::add(Notices::Kind::Failed, (modifying ? "修改加载器失败：" : "安装失败：") + error, 5000);

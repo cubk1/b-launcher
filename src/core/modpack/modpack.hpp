@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,6 +21,7 @@ namespace b_launcher_base::modpack
 {
 
 inline constexpr std::string_view info_file = "blb-modpack.json";
+inline constexpr std::string_view icon_file = "blb-icon.png";
 
 enum class pack_format : std::uint8_t
 {
@@ -55,6 +57,13 @@ struct multimc_profile
   std::vector<multimc_component> components;
 };
 
+struct pack_origin
+{
+  std::string source;
+  std::string project;
+  std::string version;
+};
+
 struct pack_manifest
 {
   pack_format format = pack_format::modrinth;
@@ -71,6 +80,7 @@ struct pack_manifest
   std::vector<std::string> jvm_args;
   std::vector<std::string> game_args;
   std::optional<multimc_profile> multimc;
+  pack_origin origin;
 };
 
 struct curseforge_settings
@@ -78,12 +88,6 @@ struct curseforge_settings
   std::string api_key;
 };
 
-struct pack_origin
-{
-  std::string source;
-  std::string project;
-  std::string version;
-};
 
 struct owned_file
 {
@@ -127,6 +131,21 @@ struct update_item
   std::optional<std::size_t> file;
   std::string entry;
   std::uint64_t bytes = 0;
+  std::string replaces;
+  bool disabled = false;
+};
+
+struct pack_candidate
+{
+  pack_origin origin;
+  std::string title;
+  std::string icon_url;
+  std::string version_name;
+  std::vector<std::string> urls;
+  std::uint64_t archive_size = 0;
+  std::size_t matched = 0;
+  std::size_t total = 0;
+  bool exact = false;
 };
 
 struct update_plan
@@ -208,15 +227,26 @@ detect_client_only (const std::filesystem::path &game_directory,
 std::string serialize_export_options (const export_options &options);
 result<export_options> parse_export_options (std::string_view json);
 result<pack_info> read_pack_info (const std::filesystem::path &directory);
-result<update_plan> plan_update (install::game_installer &installer,
-                                 std::string_view id,
-                                 std::vector<std::string> urls,
-                                 std::uint64_t archive_size,
-                                 const curseforge_settings &curseforge,
-                                 cancellation_token token = {});
+result<std::vector<pack_candidate>>
+identify_pack (install::game_installer &installer, std::string_view id,
+               const curseforge_settings &curseforge,
+               cancellation_token token = {});
+result<void> bind_pack (install::game_installer &installer,
+                        std::string_view id, const pack_candidate &candidate,
+                        const curseforge_settings &curseforge,
+                        cancellation_token token = {});
+result<bool> record_pack_files (install::game_installer &installer,
+                                std::string_view id,
+                                const curseforge_settings &curseforge,
+                                cancellation_token token = {});
+result<update_plan>
+plan_update (install::game_installer &installer, std::string_view id,
+             std::vector<std::string> urls, std::uint64_t archive_size,
+             const curseforge_settings &curseforge,
+             progress_sink *sink = nullptr, cancellation_token token = {});
 result<void> apply_update (install::game_installer &installer,
                            const update_plan &plan, const pack_origin &origin,
-                           bool overwrite_modified,
+                           const std::set<std::string> &keep,
                            progress_sink *sink = nullptr,
                            cancellation_token token = {});
 }

@@ -5,6 +5,7 @@
 #include "app/system/Features.h"
 #include "app/instances/ModManager.h"
 #include "app/instances/Mods.h"
+#include "app/instances/PackUpdates.h"
 #include "ui/imgui/screens/shell/Page.h"
 #include "app/system/Config.h"
 #include "app/system/Platform.h"
@@ -227,6 +228,10 @@ namespace InstanceMods {
                 UiRender::roundRect(iconX, iconY, ICON, ICON, 6.0f, UiTheme::surfaceRaised());
                 UiWidgets::icon(Ui::glyph(0xf12e), iconX + ICON * 0.5f, iconY + ICON * 0.5f, UiTheme::textFaint(),
                                 11.0f);
+            }
+            if (PackUpdates::packFile(key, mod.info.file, mod.info.size)) {
+                UiRender::outline(iconX - 2.0f, iconY - 2.0f, ICON + 4.0f, ICON + 4.0f, 8.0f, UiTheme::success(), 0xF,
+                                  1.5f);
             }
 
             std::vector<std::pair<std::string, std::string>> tags;
@@ -527,6 +532,7 @@ namespace InstanceMods {
         bool covered = NewUi::overlayCoversMouse();
         const Mods::List& list = Mods::of(key);
         ModManager::prepare(key);
+        PackUpdates::recognize(key);
         std::string query = Ui::trim(NewUi::textEditing == SEARCH_OWNER ? UiInput::get(NewUi::INPUT_TEXT) : searchText);
         bool graph = graphView();
         MainWindow::claimSearch();

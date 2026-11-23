@@ -743,10 +743,9 @@ namespace ProjectPage {
             bool instance = ProjectBrowser::usesInstance(route.kind);
             bool loaders = ProjectBrowser::hasLoaders(route.source, route.kind);
             constexpr float PREFERRED_CELL = 210.0f;
-            constexpr float LEAST_CELL = 132.0f;
             int cells = (instance ? 1 : 0) + (loaders ? 2 : 1) + 1;
             float fillCell = (Page::right() - mainX() - DownloadsParts::GAP * (cells - 1)) / cells;
-            float cell = std::clamp(fillCell, LEAST_CELL, PREFERRED_CELL);
+            float cell = std::min(fillCell, PREFERRED_CELL);
             float x = mainX();
             if (instance) {
                 DownloadsParts::instancePicker(x, top, cell, covered);
@@ -972,7 +971,7 @@ namespace ProjectPage {
         }
 
         void versionRow(Route& route, State& st, const Addons::Version& version, const std::string& prefix,
-                        const Columns& c, float x, float y, float w, bool blocked) {
+                        const Columns& c, float x, float y, float w, bool blocked, int corners) {
             const float h = Page::ROW_H;
             bool open = st.expanded == version.id;
             bool overAction = !blocked && NewUi::hit(c.actionX - 8.0f, y, c.right - c.actionX + 20.0f, h);
@@ -980,8 +979,8 @@ namespace ProjectPage {
             float lit =
                     UiState::motion("downloads#version#" + version.id + "#hover", hovered || open ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(x + 4.0f, y + 3.0f, w - 8.0f, h - 6.0f, 8.0f,
-                                    UiTheme::overlay(Ui::round((open ? 8 : 12) * lit)));
+                UiRender::roundRect(x, y, w, h, Page::CARD_RADIUS, UiTheme::overlay(Ui::round((open ? 8 : 12) * lit)),
+                                    corners);
             }
             float centre = y + h * 0.5f;
             float nx = c.nameX;
@@ -1095,7 +1094,8 @@ namespace ProjectPage {
                     UiRender::hLine(x + 14.0f, x + w - 14.0f, y, UiTheme::rowDivider(UiTheme::outlineSoft()));
                 }
                 if (y + h >= scroll.top && y <= scroll.bottom) {
-                    versionRow(route, st, version, prefix, c, x, y, w, blocked);
+                    int corners = (i == 0 ? 1 | 2 : 0) | (i + 1 == list.size() && !open ? 4 | 8 : 0);
+                    versionRow(route, st, version, prefix, c, x, y, w, blocked, corners);
                     if (open) {
                         panel(route, version, x + 38.0f, y + Page::ROW_H, panelW, true, blocked);
                     }

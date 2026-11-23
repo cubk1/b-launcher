@@ -318,8 +318,12 @@ namespace ForgottenMelody {
 
             // Asks first; a current instance hands over to its neighbour in the list as it is after the question.
             void remove(const std::string& key, const std::wstring& name) {
-                if (message(GetHwnd(), L"要删除实例 " + name + L" 吗？", L"实例管理", exui::MsgBoxButtons::OkCancel,
-                            {L"取消", L"删除"}) != 0) {
+                std::wstring question = L"要删除实例 " + name + L" 吗？";
+                std::vector<std::string> children = Instances::dependents(key);
+                if (!children.empty()) {
+                    question += L"\n继承它的 " + std::to_wstring(children.size()) + L" 个实例将无法启动。";
+                }
+                if (message(GetHwnd(), question, L"实例管理", exui::MsgBoxButtons::OkCancel, {L"取消", L"删除"}) != 0) {
                     return;
                 }
                 const std::vector<Instances::Entry>& list = Instances::list();

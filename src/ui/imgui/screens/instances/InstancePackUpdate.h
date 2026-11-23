@@ -7,6 +7,6 @@
 namespace InstancePackUpdate {
 
     std::string rowValue(const std::string& instanceKey);
-    void reset();
+    void reset(const std::string& instanceKey);
     bool draw(const Instances::Entry& entry);
 }

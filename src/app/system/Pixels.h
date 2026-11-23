@@ -14,7 +14,5 @@ struct Pixels {
     static std::shared_ptr<const Pixels> decode(const void* data, size_t size);
     static std::shared_ptr<const Pixels> decodePng(const void* data, size_t size, uint32_t maxSide);
     static Pixels resized(const Pixels& source, int x, int y, int w, int h, int width, int height);
-#if !defined(_WIN32)
     static std::string encodePng(const Pixels& pixels);
-#endif
 };

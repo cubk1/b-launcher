@@ -168,6 +168,10 @@ namespace SettingsScreen {
             select("settings#isolation", isolation, y, blocked);
             y += Page::ROW_H;
 
+            Page::label("安装时继承原版", y);
+            toggle("settings#inheritVanilla", Instances::inheritVanilla, Instances::setInheritVanilla, y, blocked);
+            y += Page::ROW_H;
+
             Page::label("实例列表", y);
             std::string count = Instances::loading() ? std::string("正在读取…")
                                                      : std::to_string(Instances::list().size()) + " 个实例";
@@ -1192,9 +1196,9 @@ namespace SettingsScreen {
 
         void foldersSection(bool covered) {
 #if defined(_WIN32)
-            const int instanceCount = 3;
+            const int instanceCount = 4;
 #else
-            const int instanceCount = 2;
+            const int instanceCount = 3;
 #endif
             const int foundCount = (int) DiskScan::status().folders.size();
             float contentH = Page::CAPTION_H + instanceCount * Page::ROW_H;
@@ -1211,7 +1215,7 @@ namespace SettingsScreen {
                 Page::card(y + Page::CAPTION_H, instanceCount);
                 instanceRows(y + Page::CAPTION_H, blocked);
 #if defined(_WIN32)
-                folderRows(y + Page::CAPTION_H + 2 * Page::ROW_H, blocked);
+                folderRows(y + Page::CAPTION_H + 3 * Page::ROW_H, blocked);
 #endif
             }
             y += Page::CAPTION_H + instanceCount * Page::ROW_H + Page::GAP;

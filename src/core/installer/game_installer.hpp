@@ -32,6 +32,7 @@ struct install_options
   bool discover_import_sources = true;
   bool verify_imported = true;
   bool assets = true;
+  bool inherit_vanilla = false;
   java::scan_options java_scan;
   std::optional<std::vector<java::java_installation>> java_candidates;
 };

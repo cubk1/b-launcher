@@ -21,6 +21,33 @@ constexpr log::logger s_log ("loader");
 constexpr std::string_view launchwrapper_main
     = "net.minecraft.launchwrapper.Launch";
 
+result<bool>
+prepare_parent (const meta::game_layout &layout,
+                const meta::game_layout &base_layout,
+                const std::string &minecraft)
+{
+  if (fs::exists (layout.version_json (minecraft)))
+    {
+      auto raw = meta::load_version (layout, minecraft);
+      if (!raw || !raw->inherits_from.empty ())
+        return false;
+      auto resolved = meta::resolve_version (layout, minecraft);
+      return resolved && detect_loaders (*resolved).empty ();
+    }
+  BLB_TRY_ASSIGN (auto parent, meta::load_version (base_layout, minecraft));
+  parent.id = minecraft;
+  parent.inherits_from.clear ();
+  parent.jar.clear ();
+  parent.chain.clear ();
+  BLB_TRY (fs::create_directories (layout.version_dir (minecraft)));
+  BLB_TRY (meta::save_version (layout, parent));
+  auto jar = base_layout.version_jar (minecraft);
+  if (fs::exists (jar))
+    BLB_TRY (fs::copy_file (jar, layout.version_jar (minecraft)));
+  s_log.info ("created {} for inheriting instances", minecraft);
+  return true;
+}
+
 std::unique_ptr<detail::loader_job>
 make_job (const loader_request &request)
 {
@@ -305,17 +332,37 @@ loader_installer::install (const install_request &request, progress_sink *sink,
     if (auto p = job->patch ())
       patches.push_back (std::move (*p));
   auto merged = merge_patches (patches, vanilla, id, request.minecraft);
-  if (merged.main_class.empty ())
-    merged.main_class = vanilla.main_class;
-  auto standalone = meta::merge_versions (vanilla, merged);
-  auto vanilla_jar = base_layout.version_jar (vanilla.jar_id ());
-  if (fs::exists (vanilla_jar))
-    BLB_TRY (fs::copy_file (vanilla_jar, layout.version_jar (id)));
-  standalone.inherits_from.clear ();
-  standalone.chain.clear ();
-  standalone.jar.clear ();
-  standalone.client_version = request.minecraft;
-  BLB_TRY (meta::save_version (layout, standalone));
+  bool inherit = false;
+  if (installer.options ().inherit_vanilla && id != request.minecraft)
+    {
+      BLB_TRY_ASSIGN (inherit,
+                      prepare_parent (layout, base_layout, request.minecraft));
+      if (!inherit)
+        s_log.warn ("{} is not a plain vanilla version, {} keeps a full json",
+                    request.minecraft, id);
+    }
+  if (inherit)
+    {
+      merged.client_version = request.minecraft;
+      BLB_TRY (meta::save_version (layout, merged));
+      auto own_jar = layout.version_jar (id);
+      if (fs::exists (own_jar))
+        BLB_TRY (fs::remove_file (own_jar));
+    }
+  else
+    {
+      if (merged.main_class.empty ())
+        merged.main_class = vanilla.main_class;
+      auto standalone = meta::merge_versions (vanilla, merged);
+      auto vanilla_jar = base_layout.version_jar (vanilla.jar_id ());
+      if (fs::exists (vanilla_jar))
+        BLB_TRY (fs::copy_file (vanilla_jar, layout.version_jar (id)));
+      standalone.inherits_from.clear ();
+      standalone.chain.clear ();
+      standalone.jar.clear ();
+      standalone.client_version = request.minecraft;
+      BLB_TRY (meta::save_version (layout, standalone));
+    }
   BLB_TRY_ASSIGN (auto final_version, meta::resolve_version (layout, id));
   BLB_TRY (installer.complete_version (final_version,
                                        meta::rule_context::current (), sink,

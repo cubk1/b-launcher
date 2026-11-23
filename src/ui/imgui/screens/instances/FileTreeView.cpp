@@ -98,23 +98,26 @@ namespace FileTreeView {
     float height(FileTree::Tree& tree) {
         std::vector<Row> rows;
         flatten(tree, std::string(), 0, rows);
-        return (float) std::max<size_t>(rows.size(), 1) * ROW + PAD * 2.0f;
+        return (float) std::max<size_t>(rows.size(), 1) * ROW;
     }
 
     bool draw(const std::string& id, FileTree::Tree& tree, FileTree::Rules& rules, float x, float y, float w,
               bool blocked, const Tagger& tagger, std::string* toggled) {
         std::vector<Row> rows;
         flatten(tree, std::string(), 0, rows);
-        float h = (float) std::max<size_t>(rows.size(), 1) * ROW + PAD * 2.0f;
+        float h = (float) std::max<size_t>(rows.size(), 1) * ROW;
         Page::card(x, y, w, h);
         if (rows.empty()) {
-            UiRender::textY("游戏目录里没有文件", x + 16.0f, y + PAD, ROW, UiTheme::textMuted(), UiFont::MEDIUM,
+            UiRender::textY("游戏目录里没有文件", x + 16.0f, y, ROW, UiTheme::textMuted(), UiFont::MEDIUM,
                             UiWidgets::TEXT_CONTROL);
             return false;
         }
         bool changed = false;
-        float rowY = y + PAD;
+        float rowY = y;
+        int index = -1;
+        int count = (int) rows.size();
         for (const Row& row : rows) {
+            index++;
             if (!Page::shown(rowY, ROW)) {
                 rowY += ROW;
                 continue;
@@ -125,11 +128,12 @@ namespace FileTreeView {
             float rw = w - PAD * 2.0f;
             float ix = rx + 8.0f + row.depth * INDENT;
             float cy = rowY + ROW * 0.5f;
-            bool hovered = !blocked && NewUi::hit(rx, rowY, rw, ROW);
+            bool hovered = !blocked && NewUi::hit(x, rowY, w, ROW);
             bool overBox = hovered && NewUi::hit(rx, rowY, ix + BOX + 6.0f - rx, ROW);
             float lit = UiState::motion(key + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(rx, rowY, rw, ROW, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
+                UiRender::roundRect(x, rowY, w, ROW, Page::CARD_RADIUS, UiTheme::overlay(Ui::round(12 * lit)),
+                                    Page::rowCorners(index, count));
             }
             FileTree::Mark mark = FileTree::mark(rules, node.path);
             checkbox(ix, cy, mark, UiState::motion(key + "#box", overBox ? 1.0f : 0.0f, 18.0f));
@@ -164,7 +168,7 @@ namespace FileTreeView {
                     textX, rowY, ROW, ink, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
             if (hovered) {
                 UiCursor::hand();
-                if (NewUi::click(rx, rowY, rw, ROW)) {
+                if (NewUi::click(x, rowY, w, ROW)) {
                     UiSound::request(UiSound::TICK);
                     if (node.directory && !overBox) {
                         tree.setOpen(node.path, !tree.open(node.path));

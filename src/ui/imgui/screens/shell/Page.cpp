@@ -26,8 +26,6 @@
 namespace Page {
 
     namespace {
-        constexpr float CARD_RADIUS = 12.0f;
-
         struct ScrollState {
             float target = 0.0f;
             float shown = 0.0f;

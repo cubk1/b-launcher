@@ -55,6 +55,9 @@ namespace Instances {
 
     blb::instance::isolation_mode isolation();
     void setIsolation(blb::instance::isolation_mode mode);
+    bool inheritVanilla();
+    void setInheritVanilla(bool on);
+    std::vector<std::string> dependents(const std::string& key);
     void refresh();
     void refresh(std::function<void()> done);
     void readLoaders(const std::string& key,

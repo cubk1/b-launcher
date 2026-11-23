@@ -2,9 +2,7 @@
 
 #include "stb_image.h"
 
-#if !defined(_WIN32)
 #include <zlib.h>
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -12,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#if !defined(_WIN32)
 namespace {
     void bigEndian(std::string& out, uint32_t value) {
         for (int shift = 24; shift >= 0; shift -= 8) {
@@ -27,7 +24,6 @@ namespace {
         bigEndian(out, (uint32_t) crc32(0, (const Bytef*) tagged.data(), (uInt) tagged.size()));
     }
 }
-#endif
 
 namespace {
     uint32_t little(const unsigned char* p, int bytes) {
@@ -92,7 +88,6 @@ namespace {
     }
 }
 
-#if !defined(_WIN32)
 std::string Pixels::encodePng(const Pixels& pixels) {
     if (pixels.width <= 0 || pixels.height <= 0 || pixels.rgba.size() < (size_t) pixels.width * pixels.height * 4) {
         return {};
@@ -120,7 +115,6 @@ std::string Pixels::encodePng(const Pixels& pixels) {
     chunk(out, "IEND", std::string());
     return out;
 }
-#endif
 
 std::shared_ptr<const Pixels> Pixels::decode(const void* data, size_t size) {
     int width = 0;

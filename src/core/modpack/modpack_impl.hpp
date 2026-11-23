@@ -47,6 +47,20 @@ result<void> install_multimc (install::game_installer &installer,
                               const std::string &id, progress_sink *sink,
                               cancellation_token token);
 
+result<nlohmann::json> modrinth_get (const net::mirror_provider &mirror,
+                                     std::string_view path,
+                                     cancellation_token token);
+result<nlohmann::json> curseforge_get (const curseforge_settings &settings,
+                                       const net::mirror_provider &mirror,
+                                       std::string_view path,
+                                       cancellation_token token);
+remote_file curseforge_remote_file (const nlohmann::json &file);
+std::vector<std::string> curseforge_mirrors (const std::string &url);
+result<pack_candidate> describe_origin (install::game_installer &installer,
+                                        const pack_origin &origin,
+                                        const curseforge_settings &curseforge,
+                                        cancellation_token token);
+
 bool glob_match (std::string_view pattern, std::string_view path);
 std::uint32_t curseforge_fingerprint (std::string_view data);
 result<void> resolve_curseforge (std::vector<pack_file> &files,

@@ -126,7 +126,7 @@ namespace PackTree {
             bool hovered = !blocked && NewUi::hit(x, y, w, ROW);
             float lit = UiState::motion("downloads#tree#" + row.path + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(x, y + 1.0f, w, ROW - 2.0f, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
+                UiRender::roundRect(x, y, w, ROW, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
             }
             float ix = x + 8.0f + row.depth * INDENT;
             UiWidgets::icon(Ui::glyph(isOpen ? 0xf078 : 0xf054), ix + 4.0f, y + ROW * 0.5f, UiTheme::textMuted(), 8.0f);
@@ -153,7 +153,7 @@ namespace PackTree {
             std::string id = "downloads#tree#" + row.path + "/" + item.name;
             float lit = UiState::motion(id + "#hover", hovered ? 1.0f : 0.0f, 20.0f);
             if (lit > 0.001f) {
-                UiRender::roundRect(x, y + 1.0f, w, ROW - 2.0f, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
+                UiRender::roundRect(x, y, w, ROW, 7.0f, UiTheme::overlay(Ui::round(12 * lit)));
             }
             float ix = x + 8.0f + row.depth * INDENT + 16.0f;
             float right = x + w - 10.0f;

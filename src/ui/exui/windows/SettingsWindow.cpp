@@ -62,6 +62,7 @@ namespace ForgottenMelody {
             INSTANCES,
             ISOLATION_LABEL,
             ISOLATION,
+            INHERIT,
             COUNT_LABEL,
             COUNT,
             REFRESH,
@@ -321,6 +322,7 @@ namespace ForgottenMelody {
                         {INSTANCES, ControlKind::Group, {}, L"实例"},
                         {ISOLATION_LABEL, ControlKind::Label, {}, L"默认版本隔离"},
                         {ISOLATION, ControlKind::Combo, {}},
+                        {INHERIT, ControlKind::Check, {}, L"安装时继承原版"},
                         {COUNT_LABEL, ControlKind::Label, {}, L"实例列表"},
                         {COUNT, ControlKind::Label, {}},
                         {REFRESH, ControlKind::Button, {}, L"重新读取"},
@@ -488,7 +490,7 @@ namespace ForgottenMelody {
                          {LAUNCH, LANGUAGE_LABEL, LANGUAGE, GC_LABEL, GC, JVM_LABEL, JVM, GAME_ARGS_LABEL, GAME_ARGS,
                           LOGS, ASK_AI_LABEL, ASK_AI, PRE_LAUNCH_LABEL, PRE_LAUNCH});
                 MoveInto(pages.at(FOLDERS_PAGE)->GetContent(),
-                         {INSTANCES, ISOLATION_LABEL, ISOLATION, COUNT_LABEL, COUNT, REFRESH, MANAGE});
+                         {INSTANCES, ISOLATION_LABEL, ISOLATION, INHERIT, COUNT_LABEL, COUNT, REFRESH, MANAGE});
                 MoveInto(pages.at(OPTIONS_PAGE)->GetContent(),
                          {GAME_OPTIONS_GROUP, GAME_SOURCE_LABEL, GAME_SOURCE, GAME_OPTIONS_PANEL});
                 MoveInto(pages.at(PATCH)->GetContent(),
@@ -598,6 +600,7 @@ namespace ForgottenMelody {
                     case OPEN_FOLDER:
                     case UNLOCK_PCL: toolAction(id); break;
                     case LOGS: LaunchDefaults::setShowLogs(Checked(LOGS)); break;
+                    case INHERIT: Instances::setInheritVanilla(Checked(INHERIT)); break;
                     case ALL: Patches::setAll(Checked(ALL)); break;
                     case SYSTEM_PROXY: Network::setSystemProxy(Checked(SYSTEM_PROXY)); break;
                     case OFFLINE_LAUNCH: Network::setOfflineLaunch(Checked(OFFLINE_LAUNCH)); break;
@@ -767,6 +770,7 @@ namespace ForgottenMelody {
                         Layout::Column({formGroup(INSTANCES,
                                                   {
                                                           setting(ISOLATION_LABEL, {field(ISOLATION, 200, 28)}),
+                                                          toggle(INHERIT, 200),
                                                           setting(COUNT_LABEL,
                                                                   {cell(COUNT, 110, 26),
                                                                    Layout::Row({cell(REFRESH, 80), cell(MANAGE, 90)},
@@ -961,6 +965,7 @@ namespace ForgottenMelody {
                     selected = ISOLATIONS[i].mode == Instances::isolation() ? i : selected;
                 }
                 choose(ISOLATION, options, selected);
+                SetChecked(INHERIT, Instances::inheritVanilla());
 
                 options.clear();
                 for (int i = 0; i < (int) std::size(LANGUAGES); i++) {

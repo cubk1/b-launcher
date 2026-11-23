@@ -975,6 +975,35 @@ namespace Instances {
         return mode;
     }
 
+    bool inheritVanilla() {
+        const nlohmann::json& doc = Config::data();
+        auto it = doc.find("inheritVanilla");
+        return it != doc.end() && it->is_boolean() && it->get<bool>();
+    }
+
+    void setInheritVanilla(bool on) {
+        Config::data()["inheritVanilla"] = on;
+        Config::save();
+    }
+
+    std::vector<std::string> dependents(const std::string& key) {
+        std::vector<std::string> out;
+        const Entry* target = find(key);
+        if (target == nullptr) {
+            return out;
+        }
+        for (const Entry& entry : entries) {
+            if (entry.key == key || entry.source != target->source) {
+                continue;
+            }
+            const std::vector<std::string>& chain = entry.info.chain;
+            if (std::find(chain.begin(), chain.end(), target->info.id) != chain.end()) {
+                out.push_back(entry.info.id);
+            }
+        }
+        return out;
+    }
+
     void setIsolation(blb::instance::isolation_mode next) {
         if (next == mode) {
             return;

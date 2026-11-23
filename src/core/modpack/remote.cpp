@@ -94,6 +94,24 @@ modrinth_post (const net::mirror_provider &mirror, std::string_view path,
   return last;
 }
 
+result<json>
+get_json (std::string_view url, std::vector<net::http_header> headers,
+          cancellation_token token)
+{
+  net::http_request request;
+  request.url = std::string (url);
+  request.headers = std::move (headers);
+  request.max_response_size = 32u << 20;
+  BLB_TRY_ASSIGN (auto response, net::http_send (request, token));
+  if (!response.ok ())
+    return make_error (errc::http_status,
+                       sformat ("HTTP {} ({})", response.status, url));
+  auto doc = json::parse (response.body, nullptr, false);
+  if (doc.is_discarded ())
+    return make_error (errc::parse, sformat ("invalid json from {}", url));
+  return doc;
+}
+
 remote_file
 curseforge_file (const json &f)
 {
@@ -126,6 +144,64 @@ curseforge_urls (const std::string &url)
   return out;
 }
 
+}
+
+result<json>
+modrinth_get (const net::mirror_provider &mirror, std::string_view path,
+              cancellation_token token)
+{
+  error last = make_error (errc::network, "no modrinth api configured");
+  for (const auto &url :
+       mirror.resolve (std::string (modrinth_api) + std::string (path)))
+    {
+      auto doc = get_json (url, {}, token);
+      if (doc)
+        return doc;
+      last = std::move (doc).err ();
+      if (last.code == errc::cancelled)
+        return last;
+      s_log.warn ("modrinth api {} failed: {}", url, last.message);
+    }
+  return last;
+}
+
+result<json>
+curseforge_get (const curseforge_settings &settings,
+                const net::mirror_provider &mirror, std::string_view path,
+                cancellation_token token)
+{
+  error last = make_error (errc::network, "no curseforge api configured");
+  for (const auto &url :
+       mirror.resolve (std::string (curseforge_api) + std::string (path)))
+    {
+      std::vector<net::http_header> headers;
+      if (url.starts_with (curseforge_api))
+        {
+          if (settings.api_key.empty ())
+            continue;
+          headers.push_back ({ "x-api-key", settings.api_key });
+        }
+      auto doc = get_json (url, headers, token);
+      if (doc)
+        return doc;
+      last = std::move (doc).err ();
+      if (last.code == errc::cancelled)
+        return last;
+      s_log.warn ("curseforge api {} failed: {}", url, last.message);
+    }
+  return last;
+}
+
+remote_file
+curseforge_remote_file (const json &file)
+{
+  return curseforge_file (file);
+}
+
+std::vector<std::string>
+curseforge_mirrors (const std::string &url)
+{
+  return curseforge_urls (url);
 }
 
 bool

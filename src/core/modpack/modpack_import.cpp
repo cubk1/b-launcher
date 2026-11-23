@@ -232,8 +232,10 @@ import_modpack (install::game_installer &installer,
       record[f.path] = { to_lower (f.sha1), std::nullopt, f.size };
   for (auto &[path, file] : owned)
     record[path] = std::move (file);
-  BLB_TRY (
-      detail::write_pack_info (game_dir, manifest, options.origin, record));
+  BLB_TRY (detail::write_pack_info (
+      game_dir, manifest,
+      options.origin.project.empty () ? manifest.origin : options.origin,
+      record));
   cleanup.directory.clear ();
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds> (
                 std::chrono::steady_clock::now () - started)

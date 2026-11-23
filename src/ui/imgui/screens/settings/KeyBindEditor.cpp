@@ -892,7 +892,7 @@ namespace KeyBindEditor {
                         UiRender::alphaMul = savedRow * row.t;
                         bool live = !outside && !row.leaving && row.t > 0.95f;
                         if (live && NewUi::hit(listX, rowY, listW, rowH)) {
-                            UiRender::roundRect(listX, rowY + 2.0f, listW, rowH - 4.0f, 7.0f, UiTheme::overlay(12));
+                            UiRender::roundRect(listX, rowY, listW, rowH, 7.0f, UiTheme::overlay(12));
                         }
                         float right = listX + listW - 10.0f;
                         float removeX = right - 22.0f;
@@ -947,7 +947,7 @@ namespace KeyBindEditor {
                     }
                     bool hovered = !outside && NewUi::hit(listX, rowY, listW, POP_ROW);
                     if (hovered) {
-                        UiRender::roundRect(listX, rowY + 2.0f, listW, POP_ROW - 4.0f, 7.0f, UiTheme::overlay(12));
+                        UiRender::roundRect(listX, rowY, listW, POP_ROW, 7.0f, UiTheme::overlay(12));
                     }
                     float right = listX + listW - 10.0f;
                     if (choosing) {
@@ -1046,7 +1046,7 @@ namespace KeyBindEditor {
                     CopyRow& row = copyRows[i];
                     bool hovered = !outside && NewUi::hit(listX, rowY, listW, ROW);
                     if (hovered) {
-                        UiRender::roundRect(listX, rowY + 2.0f, listW, ROW - 4.0f, 8.0f, UiTheme::overlay(12));
+                        UiRender::roundRect(listX, rowY, listW, ROW, 8.0f, UiTheme::overlay(12));
                     }
                     float boxX = listX + 10.0f;
                     float boxY = rowY + (ROW - 18.0f) * 0.5f;

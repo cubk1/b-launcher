@@ -371,6 +371,16 @@ read_multimc (const std::filesystem::path &source, zip_reader *zip,
       if (auto it = values.find ("ManagedPackVersionName");
           it != values.end ())
         m.version = it->second;
+      auto value = [&] (const char *key) {
+        auto it = values.find (key);
+        return it != values.end () ? it->second : std::string ();
+      };
+      auto type = to_lower (value ("ManagedPackType"));
+      if (enabled ("ManagedPack") && (type == "modrinth" || type == "flame"))
+        m.origin = { type == "flame" ? "curseforge" : "modrinth",
+                     value ("ManagedPackID"), value ("ManagedPackVersionID") };
+      if (m.origin.project.empty () || m.origin.version.empty ())
+        m.origin = {};
       if (enabled ("OverrideJavaArgs", enabled ("OverrideJava")))
         if (auto it = values.find ("JvmArgs"); it != values.end ())
           m.jvm_args = split_arguments (it->second);
