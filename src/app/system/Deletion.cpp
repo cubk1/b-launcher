@@ -64,6 +64,43 @@ namespace Deletion {
         return toRecycle(path);
     }
 
+    Outcome removeResources(const std::vector<std::filesystem::path>& paths) {
+        Outcome outcome;
+        if (mode() == Mode::Permanent) {
+            for (const std::filesystem::path& path : paths) {
+                outcome = permanent(path);
+                if (!outcome.ok) {
+                    return outcome;
+                }
+            }
+            outcome.ok = true;
+            return outcome;
+        }
+#if defined(_WIN32)
+        Platform::RecycleResult result = Platform::recycleAll(paths);
+        outcome.ok = result.ok;
+        outcome.recycled = result.ok;
+        outcome.needsPermanent = result.refused;
+        outcome.tooLarge = result.tooLarge;
+        outcome.reason = result.reason;
+        return outcome;
+#else
+        for (const std::filesystem::path& path : paths) {
+            std::error_code error;
+            if (!std::filesystem::exists(std::filesystem::symlink_status(path, error))) {
+                continue;
+            }
+            outcome = toRecycle(path);
+            if (!outcome.ok) {
+                return outcome;
+            }
+        }
+        outcome.ok = true;
+        outcome.recycled = true;
+        return outcome;
+#endif
+    }
+
     Outcome recycle(const std::filesystem::path& path) {
         return toRecycle(path);
     }

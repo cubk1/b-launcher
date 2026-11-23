@@ -207,6 +207,82 @@ load_remote_pack (install::game_installer &installer,
   return pack;
 }
 
+bool
+protected_scope (std::string_view scope)
+{
+  for (std::string_view kept :
+       { "saves", "screenshots", "logs", "crash-reports" })
+    if (scope == kept)
+      return true;
+  return false;
+}
+
+result<void>
+find_extras (const std::filesystem::path &game_dir,
+             const std::map<std::string, target> &targets,
+             std::vector<update_item> &items, cancellation_token token)
+{
+  std::set<std::string> scopes;
+  for (const auto &[relative, t] : targets)
+    if (auto slash = relative.find ('/'); slash != std::string::npos)
+      scopes.insert (relative.substr (0, slash));
+  for (const auto &scope : scopes)
+    {
+      if (protected_scope (scope))
+        continue;
+      auto base = game_dir / path_from_utf8 (scope);
+      std::error_code error;
+      if (!std::filesystem::is_directory (
+              std::filesystem::symlink_status (base, error)))
+        continue;
+      std::filesystem::recursive_directory_iterator it (
+          base, std::filesystem::directory_options::skip_permission_denied,
+          error);
+      for (; !error && it != std::filesystem::recursive_directory_iterator ();
+           it.increment (error))
+        {
+          BLB_TRY (token.check ());
+          auto status = it->symlink_status (error);
+          if (error)
+            break;
+          if (std::filesystem::is_symlink (status))
+            {
+              it.disable_recursion_pending ();
+              continue;
+            }
+          if (!std::filesystem::is_regular_file (status))
+            continue;
+          auto relative
+              = scope + "/"
+                + path_to_utf8 (it->path ().lexically_relative (base));
+          std::replace (relative.begin (), relative.end (), '\\', '/');
+          if (targets.contains (relative))
+            continue;
+          update_item item;
+          item.path = relative;
+          item.action = update_action::remove;
+          item.extra = true;
+          items.push_back (std::move (item));
+        }
+    }
+  return ok ();
+}
+
+void
+prune_empty (const std::filesystem::path &game_dir,
+             std::filesystem::path folder)
+{
+  std::error_code error;
+  while (folder.has_parent_path () && folder.parent_path () != game_dir
+         && folder != game_dir && std::filesystem::is_directory (folder, error)
+         && std::filesystem::is_empty (folder, error))
+    {
+      if (!std::filesystem::remove (folder, error))
+        return;
+      folder = folder.parent_path ();
+    }
+}
+
 result<std::pair<std::size_t, std::size_t>>
 score_local (const remote_pack &pack, const std::filesystem::path &game_dir,
              cancellation_token token)
@@ -435,11 +511,11 @@ read_pack_info (const std::filesystem::path &directory)
   return info;
 }
 
-result<update_plan>
-plan_update (install::game_installer &installer, std::string_view id,
-             std::vector<std::string> urls, std::uint64_t archive_size,
-             const curseforge_settings &curseforge, progress_sink *sink,
-             cancellation_token token)
+static result<update_plan>
+plan_pack (install::game_installer &installer, std::string_view id,
+           std::vector<std::string> urls, std::uint64_t archive_size,
+           const curseforge_settings &curseforge, progress_sink *sink,
+           cancellation_token token, bool restore)
 {
   auto stage = [sink] (std::string_view name) {
     if (sink)
@@ -456,7 +532,8 @@ plan_update (install::game_installer &installer, std::string_view id,
   update_plan plan;
   plan.id = std::string (id);
   plan.urls = urls;
-  if (!old.tracked && !old.origin.project.empty ())
+  plan.restore = restore;
+  if (!restore && !old.tracked && !old.origin.project.empty ())
     {
       stage ("origin");
       auto installed
@@ -513,7 +590,7 @@ plan_update (install::game_installer &installer, std::string_view id,
         }
       if (!present (local))
         {
-          if (t.file)
+          if (t.file && !restore)
             {
               auto disabled = local_at (game_dir, relative + ".disabled");
               if (present (disabled))
@@ -531,7 +608,8 @@ plan_update (install::game_installer &installer, std::string_view id,
         continue;
       item.action = update_action::change;
       item.modified = true;
-      if (auto it = old.files.find (relative); it != old.files.end ())
+      if (auto it = old.files.find (relative);
+          !restore && it != old.files.end ())
         {
           BLB_TRY_ASSIGN (bool untouched, matches (local, it->second, token));
           if (!untouched && same_owned (it->second, want))
@@ -542,7 +620,7 @@ plan_update (install::game_installer &installer, std::string_view id,
     }
   for (const auto &[relative, recorded] : old.files)
     {
-      if (targets.contains (relative))
+      if (restore || targets.contains (relative))
         continue;
       BLB_TRY (token.check ());
       tracker.item_done ();
@@ -560,21 +638,54 @@ plan_update (install::game_installer &installer, std::string_view id,
           plan.items.push_back (std::move (item));
         }
     }
+  if (restore)
+    BLB_TRY (find_extras (game_dir, targets, plan.items, token));
   tracker.finish ();
-  pair_replacements (plan.items);
+  if (!restore)
+    pair_replacements (plan.items);
   plan.loaders_changed = inst.minecraft_version != plan.manifest.minecraft
                          || primary_loaders (inst.loaders)
                                 != primary_loaders (plan.manifest.loaders);
-  s_log.info ("planned update of {} to {}: {} changes, {} of {} bytes",
-              plan.id, plan.manifest.version, plan.items.size (), pack.fetched,
-              plan.archive_size);
+  s_log.info ("planned {} of {} to {}: {} changes, {} of {} bytes",
+              restore ? "restore" : "update", plan.id, plan.manifest.version,
+              plan.items.size (), pack.fetched, plan.archive_size);
   return plan;
+}
+
+result<update_plan>
+plan_update (install::game_installer &installer, std::string_view id,
+             std::vector<std::string> urls, std::uint64_t archive_size,
+             const curseforge_settings &curseforge, progress_sink *sink,
+             cancellation_token token)
+{
+  return plan_pack (installer, id, std::move (urls), archive_size, curseforge,
+                    sink, token, false);
+}
+
+result<update_plan>
+plan_restore (install::game_installer &installer, std::string_view id,
+              const curseforge_settings &curseforge, progress_sink *sink,
+              cancellation_token token)
+{
+  BLB_TRY_ASSIGN (auto info,
+                  read_pack_info (installer.layout ().version_dir (id)));
+  if (info.origin.project.empty () || info.origin.version.empty ())
+    return make_error (errc::not_found,
+                       "the pack of this instance is unknown");
+  if (sink)
+    sink->on_stage ("update", "index");
+  BLB_TRY_ASSIGN (
+      auto current,
+      detail::describe_origin (installer, info.origin, curseforge, token));
+  return plan_pack (installer, id, std::move (current.urls),
+                    current.archive_size, curseforge, sink, token, true);
 }
 
 result<void>
 apply_update (install::game_installer &installer, const update_plan &plan,
               const pack_origin &origin, const std::set<std::string> &keep,
-              progress_sink *sink, cancellation_token token)
+              progress_sink *sink, cancellation_token token,
+              const file_remover &discard)
 {
   const auto &layout = installer.layout ();
   instance::instance_manager manager (layout);
@@ -582,7 +693,7 @@ apply_update (install::game_installer &installer, const update_plan &plan,
   auto game_dir = manager.game_directory (inst);
   const auto &manifest = plan.manifest;
   auto chosen = [&] (const update_item &item) {
-    return !item.modified || !keep.contains (item.path);
+    return !(item.modified || item.extra) || !keep.contains (item.path);
   };
   auto wanted = [&] (const update_item &item) {
     return item.action != update_action::remove && chosen (item);
@@ -670,6 +781,8 @@ apply_update (install::game_installer &installer, const update_plan &plan,
                   zip.requests ());
     }
 
+  std::vector<std::filesystem::path> discards;
+  std::set<std::filesystem::path> emptied;
   for (const auto &item : plan.items)
     {
       std::string old;
@@ -680,9 +793,19 @@ apply_update (install::game_installer &installer, const update_plan &plan,
       if (old.empty ())
         continue;
       auto target = game_dir / path_from_utf8 (old);
-      if (fs::exists (target))
+      if (!fs::exists (target))
+        continue;
+      if (item.extra)
+        emptied.insert (target.parent_path ());
+      if (item.extra && discard)
+        discards.push_back (target);
+      else
         BLB_TRY (fs::remove_file (target));
     }
+  if (!discards.empty ())
+    BLB_TRY (discard (discards));
+  for (auto it = emptied.rbegin (); it != emptied.rend (); ++it)
+    prune_empty (game_dir, *it);
   BLB_TRY (token.check ());
   BLB_TRY (detail::write_pack_info (layout.version_dir (plan.id), manifest,
                                     origin, plan.owned));

@@ -51,6 +51,7 @@ namespace InstancePackUpdate {
         std::string chosenId;
         bool wantPlan = false;
         bool wasApplying = false;
+        bool restoring = false;
 
         struct Node {
             std::string name;
@@ -322,12 +323,16 @@ namespace InstancePackUpdate {
             }
         }
 
+        bool keepable(const PackUpdates::Item& item) {
+            return item.modified || item.extra;
+        }
+
         bool pending(const PackUpdates::Summary& summary) {
-            if (summary.added + summary.changed + summary.removed > 0 || summary.loadersChanged) {
+            if (summary.loadersChanged) {
                 return true;
             }
             return std::any_of(summary.items.begin(), summary.items.end(), [](const PackUpdates::Item& item) {
-                return item.modified && !kept.contains(item.path);
+                return !keepable(item) || !kept.contains(item.path);
             });
         }
 
@@ -343,9 +348,11 @@ namespace InstancePackUpdate {
 
         void tally(Node& node, const PackUpdates::Item& item) {
             node.bytes += item.change == Change::Remove ? 0 : item.bytes;
+            if (keepable(item)) {
+                node.local.push_back(item.path);
+            }
             if (item.modified) {
                 node.modified++;
-                node.local.push_back(item.path);
             } else if (item.change == Change::Add) {
                 node.added++;
             } else if (item.change == Change::Update) {
@@ -370,7 +377,7 @@ namespace InstancePackUpdate {
             selected.clear();
             builtSerial = state.serial;
             for (const PackUpdates::Item& item : state.summary.items) {
-                if (item.modified && item.change == Change::Remove) {
+                if (!state.restore && item.modified && item.change == Change::Remove) {
                     kept.insert(item.path);
                 }
                 Node* at = &tree;
@@ -731,11 +738,11 @@ namespace InstancePackUpdate {
                 }
                 const Node& file = *files[at - (int) dirs.size()];
                 const PackUpdates::Item& item = *file.item;
-                if (keepColumn && item.modified) {
+                if (keepColumn && keepable(item)) {
                     keepBox("packupdate#keep#" + file.path, {file.path}, c.keepCx, cy, LIST_ROW, inactive);
                 }
                 int kind = kindOf(item);
-                bool faded = item.change == Change::Remove && !(item.modified && kept.contains(item.path));
+                bool faded = item.change == Change::Remove && !(keepable(item) && kept.contains(item.path));
                 std::string replaced = item.from.empty() ? std::string() : "替换 " + fileName(item.from);
                 float end =
                         nameCell(0xf15b, UiTheme::textMuted(), file.name,
@@ -797,8 +804,9 @@ namespace InstancePackUpdate {
                     },
                     [options](const std::string& picked) {
                         for (const auto& [label, id] : *options) {
-                            if (label == picked && id != chosenId) {
+                            if (label == picked && (id != chosenId || restoring)) {
                                 chosenId = id;
+                                restoring = false;
                                 wantPlan = true;
                             }
                         }
@@ -846,12 +854,22 @@ namespace InstancePackUpdate {
             SelectWidget select("packupdate#version", versionChoice(origin, versions));
             select.bounds(x, cy - Page::FIELD_H * 0.5f, selectW, Page::FIELD_H).block(covered || applying || !ready);
             select.paint();
-            x += selectW + 14.0f;
+            x += selectW + 8.0f;
+            std::string restoreLabel = "还原到初始状态";
+            float resetW = Page::buttonWidth(restoreLabel, 0xf0e2);
+            if (Page::button("packupdate#restore", restoreLabel, x, cy - Page::FIELD_H * 0.5f, resetW, false,
+                             covered || applying || restoring, 0xf0e2)) {
+                restoring = true;
+                chosenId = origin.version;
+                wantPlan = true;
+            }
+            x += resetW + 14.0f;
 
             bool here = applying && mine(key);
             bool planned = state.phase == Phase::Planned && mine(key);
-            std::string label = here ? "取消" : "更改";
-            float buttonW = std::max(88.0f, Page::buttonWidth(label, here ? 0 : 0xf2f1));
+            int glyph = here ? 0 : restoring ? 0xf0e2 : 0xf2f1;
+            std::string label = here ? "取消" : restoring ? "还原" : "更改";
+            float buttonW = std::max(88.0f, Page::buttonWidth(label, glyph));
             float buttonX = Page::right() - buttonW;
             bool gameBusy = Game::state(key) != Game::State::Idle;
             std::string note;
@@ -878,7 +896,7 @@ namespace InstancePackUpdate {
             }
             bool actionable = planned && pending(state.summary);
             if (Page::button("packupdate#go", label, buttonX, cy - Page::FIELD_H * 0.5f, buttonW, !here,
-                             covered || (!here && (!actionable || gameBusy)), here ? 0 : 0xf2f1)) {
+                             covered || (!here && (!actionable || gameBusy)), glyph)) {
                 if (here) {
                     PackUpdates::cancel();
                 } else {
@@ -1049,6 +1067,7 @@ namespace InstancePackUpdate {
             const Addons::Versions& versions = Addons::versions(origin.source, origin.project);
             bool applying = PackUpdates::running();
             if (wasApplying && !applying) {
+                restoring = false;
                 wantPlan = true;
             }
             wasApplying = applying;
@@ -1058,12 +1077,15 @@ namespace InstancePackUpdate {
                 wantPlan = true;
             }
             bool ready = versions.status == Addons::Status::Ready && !versions.list.empty();
-            if (ready && versionOf(versions, chosenId) == nullptr) {
+            if (ready && !restoring && versionOf(versions, chosenId) == nullptr) {
                 const Addons::Version* best = newest(versions, origin);
                 chosenId = best != nullptr ? best->id : versions.list.front().id;
                 wantPlan = true;
             }
-            if (ready && wantPlan && !applying) {
+            if (restoring && wantPlan && !applying) {
+                wantPlan = false;
+                PackUpdates::restore(key);
+            } else if (ready && wantPlan && !applying) {
                 wantPlan = false;
                 const Addons::Version* version = versionOf(versions, chosenId);
                 if (version->file() == nullptr) {
@@ -1126,6 +1148,7 @@ namespace InstancePackUpdate {
             } else if (state.summary.items.empty()) {
                 bool same = chosenId == origin.version;
                 centred(state.summary.loadersChanged ? "只有加载器需要更新"
+                                : state.restore      ? "已经是初始状态"
                                 : same               ? "本地文件和这个版本一致"
                                                      : "没有文件变化",
                         x, w, cy, UiTheme::textMuted());
@@ -1160,6 +1183,7 @@ namespace InstancePackUpdate {
         }
         chosenKey = instanceKey;
         chosenId.clear();
+        restoring = false;
         wantPlan = true;
         PackUpdates::reset();
     }

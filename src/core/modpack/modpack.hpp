@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -133,6 +134,7 @@ struct update_item
   std::uint64_t bytes = 0;
   std::string replaces;
   bool disabled = false;
+  bool extra = false;
 };
 
 struct pack_candidate
@@ -158,7 +160,11 @@ struct update_plan
   std::map<std::string, owned_file> owned;
   bool loaders_changed = false;
   bool tracked = false;
+  bool restore = false;
 };
+
+using file_remover
+    = std::function<result<void> (const std::vector<std::filesystem::path> &)>;
 
 struct export_options
 {
@@ -244,9 +250,15 @@ plan_update (install::game_installer &installer, std::string_view id,
              std::vector<std::string> urls, std::uint64_t archive_size,
              const curseforge_settings &curseforge,
              progress_sink *sink = nullptr, cancellation_token token = {});
+result<update_plan> plan_restore (install::game_installer &installer,
+                                  std::string_view id,
+                                  const curseforge_settings &curseforge,
+                                  progress_sink *sink = nullptr,
+                                  cancellation_token token = {});
 result<void> apply_update (install::game_installer &installer,
                            const update_plan &plan, const pack_origin &origin,
                            const std::set<std::string> &keep,
                            progress_sink *sink = nullptr,
-                           cancellation_token token = {});
+                           cancellation_token token = {},
+                           const file_remover &discard = {});
 }

@@ -19,7 +19,7 @@ namespace PackUpdates {
 
     const Origin* origin(const std::string& instanceKey);
     bool identifiable(const std::string& instanceKey);
-    bool packFile(const std::string& instanceKey, const std::filesystem::path& file, uint64_t size);
+    bool addedFile(const std::string& instanceKey, const std::filesystem::path& file, uint64_t size);
     void recognize(const std::string& instanceKey);
     void adoptIcon(const std::string& instanceKey, const std::string& url);
 
@@ -55,6 +55,7 @@ namespace PackUpdates {
         bool modified = false;
         uint64_t bytes = 0;
         std::string from;
+        bool extra = false;
     };
 
     struct Summary {
@@ -81,6 +82,7 @@ namespace PackUpdates {
         Summary summary;
         std::string error;
         uint64_t serial = 0;
+        bool restore = false;
     };
 
     const State& state();
@@ -97,6 +99,7 @@ namespace PackUpdates {
 
     std::vector<Step> steps();
     void plan(const std::string& instanceKey, const Addons::Version& version);
+    void restore(const std::string& instanceKey);
     void apply(const std::set<std::string>& keep);
     void cancel();
     void reset();

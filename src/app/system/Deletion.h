@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace Deletion {
 
@@ -25,6 +26,7 @@ namespace Deletion {
     // Deletes a resource file as configured; a recycle bin failure is reported, never turned into a permanent
     // delete on its own.
     Outcome removeResource(const std::filesystem::path& path);
+    Outcome removeResources(const std::vector<std::filesystem::path>& paths);
 
     Outcome recycle(const std::filesystem::path& path);
 

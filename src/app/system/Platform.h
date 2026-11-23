@@ -69,6 +69,9 @@ namespace Platform {
         std::string reason;
     };
     RecycleResult recycleDetailed(const std::filesystem::path& path);
+#if defined(_WIN32)
+    RecycleResult recycleAll(const std::vector<std::filesystem::path>& paths);
+#endif
 
     struct RecycleSpace {
         bool known = false;

@@ -723,6 +723,45 @@ namespace Platform {
         return result;
     }
 
+    RecycleResult recycleAll(const std::vector<std::filesystem::path>& paths) {
+        RecycleResult result;
+        std::wstring from;
+        for (const std::filesystem::path& path : paths) {
+            std::error_code error;
+            if (!std::filesystem::exists(std::filesystem::symlink_status(path, error))) {
+                continue;
+            }
+            if (from.empty()) {
+                result.reason = refusal(path, result.tooLarge);
+                if (!result.reason.empty()) {
+                    result.refused = true;
+                    return result;
+                }
+            }
+            from += path.wstring();
+            from.push_back(L'\0');
+        }
+        if (from.empty()) {
+            result.ok = true;
+            return result;
+        }
+        SHFILEOPSTRUCTW operation = {};
+        operation.hwnd = (HWND) window;
+        operation.wFunc = FO_DELETE;
+        operation.pFrom = from.c_str();
+        operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOF_WANTNUKEWARNING;
+        int code = SHFileOperationW(&operation);
+        if (code == 0 && operation.fAnyOperationsAborted) {
+            code = ERROR_CANCELLED;
+        }
+        if (code != 0) {
+            result.reason = failure(code);
+            return result;
+        }
+        result.ok = true;
+        return result;
+    }
+
     RecycleSpace recycleSpace(const std::filesystem::path& path) {
         RecycleSpace space;
         std::wstring mount = mountOf(path);

@@ -4,6 +4,7 @@
 #include "app/instances/Installer.h"
 #include "app/instances/Instances.h"
 #include "app/system/AsyncTasks.h"
+#include "app/system/Deletion.h"
 #include "app/system/Notices.h"
 #include "app/system/Pixels.h"
 #include "app/system/Transfers.h"
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -121,7 +123,7 @@ namespace PackUpdates {
                                      item.action == update_action::add              ? Change::Add
                                              : item.action == update_action::change ? Change::Update
                                                                                     : Change::Remove,
-                                     item.modified, item.bytes, item.replaces});
+                                     item.modified, item.bytes, item.replaces, item.extra});
                 if (item.action == update_action::remove) {
                     if (item.modified) {
                         out.kept.push_back(item.path);
@@ -186,7 +188,8 @@ namespace PackUpdates {
             return text;
         }
 
-        void finished(const std::string& key, const std::string& version, const std::string& error, bool cancelled) {
+        void finished(const std::string& key, const std::string& version, const std::string& error, bool cancelled,
+                      bool restore) {
             planned.reset();
             Transfers::finish(transfer,
                               cancelled               ? Transfers::State::Cancelled
@@ -201,12 +204,14 @@ namespace PackUpdates {
             if (!error.empty()) {
                 current.phase = Phase::Failed;
                 current.error = error;
-                Notices::add(Notices::Kind::Failed, "更改整合包版本失败：" + error, 5000);
+                Notices::add(Notices::Kind::Failed, (restore ? "还原整合包失败：" : "更改整合包版本失败：") + error,
+                             5000);
                 return;
             }
             const Instances::Entry* entry = Instances::find(key);
+            std::string name = entry != nullptr ? entry->info.id : key;
             Notices::add(Notices::Kind::Done,
-                         "已将 " + (entry != nullptr ? entry->info.id : key) + " 更改到 " + version, 4000);
+                         restore ? "已将 " + name + " 还原到初始状态" : "已将 " + name + " 更改到 " + version, 4000);
             current = State{};
             Instances::refresh();
         }
@@ -292,7 +297,7 @@ namespace PackUpdates {
         return cachedOf(instanceKey).identifiable;
     }
 
-    bool packFile(const std::string& instanceKey, const std::filesystem::path& file, uint64_t size) {
+    bool addedFile(const std::string& instanceKey, const std::filesystem::path& file, uint64_t size) {
         const Cached& cached = cachedOf(instanceKey);
         const Instances::Entry* entry = Instances::find(instanceKey);
         if (cached.files.empty() || entry == nullptr) {
@@ -304,7 +309,7 @@ namespace PackUpdates {
             relative.resize(relative.size() - 9);
         }
         auto found = cached.files.find(relative);
-        return found != cached.files.end() && (found->second < 0 || (uint64_t) found->second == size);
+        return found == cached.files.end() || (found->second >= 0 && (uint64_t) found->second != size);
     }
 
     const Identification& identification() {
@@ -453,6 +458,87 @@ namespace PackUpdates {
         return planSteps;
     }
 
+    namespace {
+        using Planner = std::function<blb::result<blb::modpack::update_plan>(
+                blb::install::game_installer&, const std::string&, const blb::modpack::curseforge_settings&,
+                blb::progress_sink*, blb::cancellation_token)>;
+
+        void startPlan(const std::string& instanceKey, const Target& target, const std::string& versionId,
+                       const std::string& targetName, bool restore, Planner planner) {
+            if (cancelling) {
+                cancelling->cancel();
+            }
+            planned.reset();
+            current = State{};
+            current.phase = Phase::Planning;
+            current.instanceKey = instanceKey;
+            current.versionId = versionId;
+            current.restore = restore;
+            setProgress("正在比较文件");
+            uint64_t generation;
+            {
+                std::lock_guard<std::mutex> guard(progressLock);
+                planSteps.clear();
+                generation = ++planGeneration;
+            }
+            cancelling = std::make_shared<blb::cancellation_source>();
+            blb::cancellation_token token = cancelling->token();
+            std::string apiKey = CurseForge::apiKey();
+            tasks.run(
+                    [root = target.root, id = target.id, planner, apiKey, token, versionId, instanceKey, generation,
+                     targetName](blb::cancellation_token) -> AsyncTasks::Continuation {
+                        blb::install::game_installer installer(blb::meta::game_layout(root), installOptions());
+                        blb::modpack::curseforge_settings curseforge{apiKey};
+                        blb::function_progress_sink sink(
+                                [generation](const blb::progress_event& event) {
+                                    if (event.task == "update:compare") {
+                                        countStep(generation, event.done_items, event.total_items);
+                                    }
+                                },
+                                [generation, targetName](std::string_view task, std::string_view stage) {
+                                    if (task == "update") {
+                                        enterStep(generation, stage, targetName);
+                                    }
+                                });
+                        auto result = planner(installer, id, curseforge, &sink, token);
+                        std::shared_ptr<blb::modpack::update_plan> made;
+                        std::string error;
+                        if (result) {
+                            made = std::make_shared<blb::modpack::update_plan>(std::move(*result));
+                        } else {
+                            error = result.err().message;
+                        }
+                        bool cancelled = token.is_cancelled();
+                        return [made, error, cancelled, versionId, instanceKey] {
+                            if (current.phase != Phase::Planning || current.versionId != versionId ||
+                                current.instanceKey != instanceKey) {
+                                return;
+                            }
+                            if (cancelled) {
+                                current = State{};
+                            } else if (!made) {
+                                current.phase = Phase::Failed;
+                                current.error = error;
+                            } else {
+                                planned = made;
+                                current.summary = summarize(*made);
+                                current.phase = Phase::Planned;
+                                current.serial = ++serials;
+                            }
+                        };
+                    },
+                    [versionId, instanceKey](const std::string& error) -> AsyncTasks::Continuation {
+                        return [error, versionId, instanceKey] {
+                            if (current.phase == Phase::Planning && current.versionId == versionId &&
+                                current.instanceKey == instanceKey) {
+                                current.phase = Phase::Failed;
+                                current.error = error;
+                            }
+                        };
+                    });
+        }
+    }
+
     void plan(const std::string& instanceKey, const Addons::Version& version) {
         if (running()) {
             return;
@@ -462,81 +548,33 @@ namespace PackUpdates {
         if (file == nullptr || !target) {
             return;
         }
-        if (cancelling) {
-            cancelling->cancel();
-        }
-        planned.reset();
-        current = State{};
-        current.phase = Phase::Planning;
-        current.instanceKey = instanceKey;
-        current.versionId = version.id;
-        setProgress("正在比较文件");
-        uint64_t generation;
-        {
-            std::lock_guard<std::mutex> guard(progressLock);
-            planSteps.clear();
-            generation = ++planGeneration;
-        }
-        cancelling = std::make_shared<blb::cancellation_source>();
-        blb::cancellation_token token = cancelling->token();
         std::vector<std::string> urls = Addons::fileUrls(file->url);
         uint64_t size = file->size > 0 ? (uint64_t) file->size : 0;
-        std::string apiKey = CurseForge::apiKey();
-        std::string versionId = version.id;
         const Origin* from = origin(instanceKey);
         std::string targetName = Addons::sourceName(from != nullptr ? from->source : version.source);
-        tasks.run(
-                [root = target->root, id = target->id, urls, size, apiKey, token, versionId, instanceKey, generation,
-                 targetName](blb::cancellation_token) -> AsyncTasks::Continuation {
-                    blb::install::game_installer installer(blb::meta::game_layout(root), installOptions());
-                    blb::modpack::curseforge_settings curseforge{apiKey};
-                    blb::function_progress_sink sink(
-                            [generation](const blb::progress_event& event) {
-                                if (event.task == "update:compare") {
-                                    countStep(generation, event.done_items, event.total_items);
-                                }
-                            },
-                            [generation, targetName](std::string_view task, std::string_view stage) {
-                                if (task == "update") {
-                                    enterStep(generation, stage, targetName);
-                                }
-                            });
-                    auto result = blb::modpack::plan_update(installer, id, urls, size, curseforge, &sink, token);
-                    std::shared_ptr<blb::modpack::update_plan> made;
-                    std::string error;
-                    if (result) {
-                        made = std::make_shared<blb::modpack::update_plan>(std::move(*result));
-                    } else {
-                        error = result.err().message;
-                    }
-                    bool cancelled = token.is_cancelled();
-                    return [made, error, cancelled, versionId, instanceKey] {
-                        if (current.phase != Phase::Planning || current.versionId != versionId ||
-                            current.instanceKey != instanceKey) {
-                            return;
-                        }
-                        if (cancelled) {
-                            current = State{};
-                        } else if (!made) {
-                            current.phase = Phase::Failed;
-                            current.error = error;
-                        } else {
-                            planned = made;
-                            current.summary = summarize(*made);
-                            current.phase = Phase::Planned;
-                            current.serial = ++serials;
-                        }
-                    };
-                },
-                [versionId, instanceKey](const std::string& error) -> AsyncTasks::Continuation {
-                    return [error, versionId, instanceKey] {
-                        if (current.phase == Phase::Planning && current.versionId == versionId &&
-                            current.instanceKey == instanceKey) {
-                            current.phase = Phase::Failed;
-                            current.error = error;
-                        }
-                    };
-                });
+        startPlan(instanceKey, *target, version.id, targetName, false,
+                  [urls, size](blb::install::game_installer& installer, const std::string& id,
+                               const blb::modpack::curseforge_settings& curseforge, blb::progress_sink* sink,
+                               blb::cancellation_token token) {
+                      return blb::modpack::plan_update(installer, id, urls, size, curseforge, sink, token);
+                  });
+    }
+
+    void restore(const std::string& instanceKey) {
+        if (running()) {
+            return;
+        }
+        std::optional<Target> target = targetOf(instanceKey);
+        const Origin* from = origin(instanceKey);
+        if (!target || from == nullptr) {
+            return;
+        }
+        startPlan(instanceKey, *target, from->version, Addons::sourceName(from->source), true,
+                  [](blb::install::game_installer& installer, const std::string& id,
+                     const blb::modpack::curseforge_settings& curseforge, blb::progress_sink* sink,
+                     blb::cancellation_token token) {
+                      return blb::modpack::plan_restore(installer, id, curseforge, sink, token);
+                  });
     }
 
     void apply(const std::set<std::string>& keep) {
@@ -556,10 +594,11 @@ namespace PackUpdates {
         std::shared_ptr<blb::modpack::update_plan> plan = planned;
         std::string key = current.instanceKey;
         std::string version = current.summary.version;
+        bool restore = current.restore;
         const Instances::Entry* entry = Instances::find(key);
         Transfers::Spec spec;
         spec.kind = Transfers::Kind::Modpack;
-        spec.title = (entry != nullptr ? entry->info.id : key) + " 更改到 " + version;
+        spec.title = (entry != nullptr ? entry->info.id : key) + (restore ? " 还原到初始状态" : " 更改到 " + version);
         spec.minecraft = current.summary.minecraft;
         spec.instance = key;
         if (entry != nullptr) {
@@ -570,20 +609,35 @@ namespace PackUpdates {
         Transfers::stage(transfer, "正在准备");
         tasks.run(
                 [root = target->root, plan, next, keep, token, key, inherit = Instances::inheritVanilla(), version,
-                 id = transfer](blb::cancellation_token) -> AsyncTasks::Continuation {
+                 restore, id = transfer](blb::cancellation_token) -> AsyncTasks::Continuation {
                     blb::function_progress_sink sink([id](const blb::progress_event& event) {
                         setProgress(describe(event));
                         track(event, id);
                     });
                     blb::install::game_installer installer(blb::meta::game_layout(root), installOptions(inherit));
-                    auto done = blb::modpack::apply_update(installer, *plan, next, keep, &sink, token);
+                    blb::modpack::file_remover discard =
+                            [id](const std::vector<std::filesystem::path>& paths) -> blb::result<void> {
+                        Transfers::stage(id, "正在删除 " + std::to_string(paths.size()) + " 个本地文件");
+                        Deletion::Outcome outcome = Deletion::removeResources(paths);
+                        if (outcome.ok) {
+                            return blb::ok();
+                        }
+                        return blb::make_error(blb::errc::io,
+                                               outcome.reason.empty() ? std::string("无法删除本地文件")
+                                                                      : "无法删除本地文件：" + outcome.reason);
+                    };
+                    auto done = blb::modpack::apply_update(installer, *plan, next, keep, &sink, token, discard);
                     std::string error = done ? std::string() : done.err().message;
                     bool cancelled = token.is_cancelled() || (!done && done.err().code == blb::errc::cancelled);
-                    return [key, version, error, cancelled] { finished(key, version, error, cancelled); };
+                    return [key, version, error, cancelled, restore] {
+                        finished(key, version, error, cancelled, restore);
+                    };
                 },
-                [key, version, token](const std::string& error) -> AsyncTasks::Continuation {
+                [key, version, token, restore](const std::string& error) -> AsyncTasks::Continuation {
                     bool cancelled = token.is_cancelled();
-                    return [key, version, error, cancelled] { finished(key, version, error, cancelled); };
+                    return [key, version, error, cancelled, restore] {
+                        finished(key, version, error, cancelled, restore);
+                    };
                 });
     }
 

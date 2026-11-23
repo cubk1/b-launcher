@@ -229,7 +229,7 @@ namespace InstanceMods {
                 UiWidgets::icon(Ui::glyph(0xf12e), iconX + ICON * 0.5f, iconY + ICON * 0.5f, UiTheme::textFaint(),
                                 11.0f);
             }
-            if (PackUpdates::packFile(key, mod.info.file, mod.info.size)) {
+            if (PackUpdates::addedFile(key, mod.info.file, mod.info.size)) {
                 UiRender::outline(iconX - 2.0f, iconY - 2.0f, ICON + 4.0f, ICON + 4.0f, 8.0f, UiTheme::success(), 0xF,
                                   1.5f);
             }

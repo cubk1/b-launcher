@@ -1043,13 +1043,13 @@ namespace ModGraph {
             if (hovered) {
                 UiRender::roundRect(nx, ny, w, h, radius, UiTheme::overlay(14));
             }
-            bool packed = mod != nullptr && PackUpdates::packFile(key, mod->info.file, mod->info.size);
+            bool added = mod != nullptr && PackUpdates::addedFile(key, mod->info.file, mod->info.size);
             uint32_t border = selected                                      ? accent
                     : missing(node)                                         ? withAlpha(UiTheme::danger(), 0.6f)
                     : node.kind == Kind::Added || change != nullptr || root ? withAlpha(accent, 0.6f)
-                    : packed                                                ? withAlpha(UiTheme::success(), 0.75f)
+                    : added                                                 ? withAlpha(UiTheme::success(), 0.75f)
                                                                             : UiTheme::border(UiTheme::outlineSoft());
-            UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : packed ? 1.3f : 1.0f);
+            UiRender::outline(nx, ny, w, h, radius, border, 0xF, selected ? 1.6f : added ? 1.3f : 1.0f);
             if (mod != nullptr && !mod->missing.empty()) {
                 UiRender::circle(nx + w - 6.0f * zoom, ny + 6.0f * zoom, 3.2f * zoom, UiTheme::danger());
             }
