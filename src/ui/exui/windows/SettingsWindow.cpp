@@ -577,7 +577,7 @@ namespace ForgottenMelody {
                     case SKIN_MODE: Patches::setValue("skin.mode", SKIN_MODES[index].value); break;
                     case SKIN_SOURCE: Patches::setValue("skin.source", SKIN_SOURCES[index].value); break;
                     case STYLE: UiStyles::set(UiStyles::all()[index].key); break;
-                    case AVATAR: Avatars::setStyle(index == 1 ? Avatars::Style::Head : Avatars::Style::Bust); break;
+                    case AVATAR: Avatars::setStyle((Avatars::Style) index); break;
                     case MAJOR:
                         if (index < (int) shownMajors.size()) {
                             javaMajor = shownMajors[index];
@@ -1098,7 +1098,7 @@ namespace ForgottenMelody {
                     selected = &styles[i] == &UiStyles::current() ? i : selected;
                 }
                 choose(STYLE, options, selected);
-                choose(AVATAR, {L"上半身", L"头部"}, Avatars::style() == Avatars::Style::Head ? 1 : 0);
+                choose(AVATAR, {L"上半身", L"头部", L"立体头部"}, (int) Avatars::style());
                 SetChecked(SYSTEM_PROXY, Network::systemProxy());
                 SetChecked(OFFLINE_LAUNCH, Network::offlineLaunch());
                 FindControl(RESET_SETTINGS)->SetTextColor(0xD2C00000);

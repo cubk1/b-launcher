@@ -406,11 +406,18 @@ namespace SettingsScreen {
             select("settings#avatars",
                    std::make_shared<ModeBinding>(
                            "settings#avatars",
-                           [] { return std::string(Avatars::style() == Avatars::Style::Head ? "头部" : "上半身"); },
-                           [](const std::string& value) {
-                               Avatars::setStyle(value == "头部" ? Avatars::Style::Head : Avatars::Style::Bust);
+                           [] {
+                               Avatars::Style style = Avatars::style();
+                               return std::string(style == Avatars::Style::Cube           ? "立体头部"
+                                                          : style == Avatars::Style::Head ? "头部"
+                                                                                          : "上半身");
                            },
-                           [] { return std::vector<std::string>{"上半身", "头部"}; }),
+                           [](const std::string& value) {
+                               Avatars::setStyle(value == "立体头部"       ? Avatars::Style::Cube
+                                                         : value == "头部" ? Avatars::Style::Head
+                                                                           : Avatars::Style::Bust);
+                           },
+                           [] { return std::vector<std::string>{"上半身", "头部", "立体头部"}; }),
                    y, blocked);
             y += Page::ROW_H;
 
@@ -696,7 +703,7 @@ namespace SettingsScreen {
                 {SECTION_LOOK, "主题色", "强调色 颜色 主色"},
                 {SECTION_LOOK, "界面缩放", "缩放 大小"},
                 {SECTION_LOOK, "模组名称", "中文名 原名"},
-                {SECTION_LOOK, "账户头像", "皮肤 上半身 头部"},
+                {SECTION_LOOK, "账户头像", "皮肤 上半身 头部 立体头部"},
                 {SECTION_LOOK, "背景图片", nullptr},
                 {SECTION_LOOK, "背景图片文件", nullptr},
                 {SECTION_LOOK, "界面音效", "声音"},

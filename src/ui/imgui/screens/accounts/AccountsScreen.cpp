@@ -2,6 +2,7 @@
 #include "app/system/Customization.h"
 #include "app/accounts/Accounts.h"
 #include "app/accounts/Avatars.h"
+#include "ui/imgui/screens/accounts/CubeHead.h"
 #include "ui/imgui/screens/accounts/ProfilePage.h"
 #include "ui/imgui/screens/home/WebImages.h"
 #include "ui/imgui/screens/shell/Dialog.h"
@@ -239,8 +240,11 @@ namespace AccountsScreen {
                 UiRender::roundRect(x, y, w, h, CARD_RADIUS, UiTheme::overlay(Ui::round(shine)));
             }
             UiRender::outline(x, y, w, h, CARD_RADIUS, UiTheme::border(UiTheme::outlineSoft()));
-            bool heads = Avatars::style() == Avatars::Style::Head;
-            if (heads) {
+            Avatars::Style style = Avatars::style();
+            bool heads = style != Avatars::Style::Bust;
+            if (style == Avatars::Style::Cube) {
+                CubeHead::draw(account, x + 12.0f, y + (h - HEAD) * 0.5f, HEAD);
+            } else if (heads) {
                 headIn(Textures::of(Avatars::head(account)), x + 12.0f, y + (h - HEAD) * 0.5f, HEAD, 8.0f);
             } else {
                 bustIn(Textures::of(Avatars::bust(account)), x + 10.0f, BUST, y + h);
@@ -1036,7 +1040,7 @@ namespace AccountsScreen {
         }
 
         bool headRows() {
-            return Avatars::style() == Avatars::Style::Head;
+            return Avatars::style() != Avatars::Style::Bust;
         }
 
         float gridHeight() {
@@ -1209,8 +1213,13 @@ namespace AccountsScreen {
                 UiRender::roundRect(x, y, w, PROFILE_ROW, 12.0f, UiTheme::overlay(Ui::round(14 * hover)),
                                     Page::rowCorners(index, count));
             }
-            headIn(Textures::of(Avatars::head(Accounts::serverCandidate((size_t) index))), x + 12.0f,
-                   y + (PROFILE_ROW - PROFILE_ROW_HEAD) * 0.5f, PROFILE_ROW_HEAD, 6.0f);
+            if (Avatars::style() == Avatars::Style::Cube) {
+                CubeHead::draw(Accounts::serverCandidate((size_t) index), x + 12.0f,
+                               y + (PROFILE_ROW - PROFILE_ROW_HEAD) * 0.5f, PROFILE_ROW_HEAD);
+            } else {
+                headIn(Textures::of(Avatars::head(Accounts::serverCandidate((size_t) index))), x + 12.0f,
+                       y + (PROFILE_ROW - PROFILE_ROW_HEAD) * 0.5f, PROFILE_ROW_HEAD, 6.0f);
+            }
             std::string name = UiFont::fitEnd(profile.name, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL,
                                               w - 24.0f - PROFILE_ROW_HEAD - 44.0f);
             UiRender::textY(name, x + 24.0f + PROFILE_ROW_HEAD, y, PROFILE_ROW, UiTheme::textPrimary(), UiFont::MEDIUM,

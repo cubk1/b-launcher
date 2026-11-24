@@ -9,12 +9,13 @@
 
 namespace Avatars {
 
-    enum class Style { Bust, Head };
+    enum class Style { Bust, Head, Cube };
 
     Style style();
     void setStyle(Style style);
     std::shared_ptr<const Pixels> bust(const b_launcher_base::auth::account& account);
     std::shared_ptr<const Pixels> head(const b_launcher_base::auth::account& account);
+    std::shared_ptr<const Pixels> cube(const b_launcher_base::auth::account& account);
     void refresh(const std::string& key);
     void poll();
     void shutdown();

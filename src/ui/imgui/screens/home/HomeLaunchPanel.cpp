@@ -1,11 +1,13 @@
 #include "ui/imgui/screens/home/HomeLaunchPanel.h"
 #include "app/accounts/Accounts.h"
+#include "app/accounts/Avatars.h"
 #include "app/system/Features.h"
 #include "app/instances/Instances.h"
 #include "app/launch/Game.h"
 #include "ui/imgui/gl/ShaderUtil.h"
 #include "ui/imgui/menu/MenuItems.h"
 #include "ui/imgui/screens/accounts/AccountsScreen.h"
+#include "ui/imgui/screens/accounts/CubeHead.h"
 #include "ui/imgui/screens/home/HomeWidgets.h"
 #include "ui/imgui/screens/launch/LaunchButton.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
@@ -55,6 +57,18 @@ namespace HomeLaunchPanel {
             float textW = UiFont::width(text, UiFont::MEDIUM, UiWidgets::TEXT_TITLE);
             UiRender::textY(text, x + (size - textW) * 0.5f, y, size, UiTheme::textSecondary(), UiFont::MEDIUM,
                             UiWidgets::TEXT_TITLE);
+        }
+
+        void accountFace(const blb::auth::account& account, float x, float y, float size, float radius) {
+            if (Avatars::style() == Avatars::Style::Cube && CubeHead::draw(account, x, y, size)) {
+                return;
+            }
+            uint32_t texture = Textures::of(Accounts::face(account));
+            if (texture != 0) {
+                picture(texture, x, y, size, radius);
+            } else {
+                letter(account.name, x, y, size);
+            }
         }
 
         void accountsMenu(float x, float y) {
@@ -121,12 +135,7 @@ namespace HomeLaunchPanel {
             }
 
             std::string key = Accounts::keyOf(*account);
-            uint32_t face = Textures::of(Accounts::face(*account));
-            if (face != 0) {
-                picture(face, faceX, faceY, FACE, 10.0f);
-            } else {
-                letter(account->name, faceX, faceY, FACE);
-            }
+            accountFace(*account, faceX, faceY, FACE, 10.0f);
             UiRender::textY(UiFont::fitEnd(account->name, UiFont::BOLD, UiWidgets::TEXT_TITLE, textRoom), textX,
                             y + 11.0f, 20.0f, UiTheme::textPrimary(), UiFont::BOLD, UiWidgets::TEXT_TITLE);
             bool expired = Accounts::expired(key);
@@ -405,15 +414,10 @@ namespace HomeLaunchPanel {
         } else {
             expired = Accounts::expired(Accounts::keyOf(*account));
             kind = expired ? std::string("登录已过期，点击刷新") : Accounts::kindOf(*account);
-            uint32_t texture = Textures::of(Accounts::face(*account));
-            if (faceRadius > 0.0f) {
+            if (faceRadius > 0.0f && Avatars::style() != Avatars::Style::Cube) {
                 UiRender::shadow(faceX, faceY, face, face, faceRadius, 16.0f, 6.0f, UiTheme::shadow());
             }
-            if (texture != 0) {
-                picture(texture, faceX, faceY, face, faceRadius);
-            } else {
-                letter(account->name, faceX, faceY, face);
-            }
+            accountFace(*account, faceX, faceY, face, faceRadius);
         }
         std::string shownName = UiFont::fitEnd(name, UiFont::BOLD, 18.0f, inner);
         float nameW = UiFont::width(shownName, UiFont::BOLD, 18.0f);

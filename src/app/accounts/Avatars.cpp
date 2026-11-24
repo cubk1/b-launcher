@@ -16,6 +16,7 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -23,6 +24,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -40,8 +42,11 @@ namespace Avatars {
         const char* const PLACEHOLDER = "#default";
         const char* const HEAD = "#head";
         const char* const STYLE_KEY = "accountAvatar";
-        const char* const RENDER = "7";
+        const char* const CUBE = "#cube";
+        const char* const RENDER = "8";
         constexpr int FACE = 64;
+        constexpr int CUBE_SIZE = 224;
+        constexpr int CUBE_FACE = 192;
 
         struct Entry {
             std::string signature;
@@ -93,6 +98,23 @@ namespace Avatars {
         void changed() {
             dirty = true;
             changedAt = Clock::now();
+        }
+
+        std::string ownerOf(const std::string& key) {
+            for (std::string_view suffix : {HEAD, CUBE}) {
+                if (key.size() > suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    return key.substr(0, key.size() - suffix.size());
+                }
+            }
+            return key;
+        }
+
+        bool forget(const std::string& key) {
+            size_t removed = entries.erase(key);
+            for (const char* suffix : {HEAD, CUBE}) {
+                removed += entries.erase(key + suffix);
+            }
+            return removed != 0;
         }
 
         void putNumber(std::string& out, uint32_t value, int bytes) {
@@ -213,13 +235,9 @@ namespace Avatars {
             for (const blb::auth::account& account : Accounts::list()) {
                 live.insert(Accounts::keyOf(account));
             }
-            const std::string suffix = HEAD;
             Snapshot list;
             for (const auto& [key, entry] : entries) {
-                bool head = key.size() > suffix.size() &&
-                        key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0;
-                std::string owner = head ? key.substr(0, key.size() - suffix.size()) : key;
-                if (entry.pixels != nullptr && live.count(owner) != 0) {
+                if (entry.pixels != nullptr && live.count(ownerOf(key)) != 0) {
                     list.push_back({key, entry});
                 }
             }
@@ -324,22 +342,36 @@ namespace Avatars {
             return pixels;
         }
 
-        std::shared_ptr<const Pixels> faceOf(const Pixels& skin) {
-            if (skin.width < 64 || skin.width % 64 != 0 || skin.height * 2 < skin.width ||
-                skin.rgba.size() < (size_t) skin.width * skin.height * 4) {
-                return nullptr;
+        bool usable(const Pixels& skin) {
+            return skin.width >= 64 && skin.width % 64 == 0 && skin.height * 2 >= skin.width &&
+                    skin.rgba.size() >= (size_t) skin.width * skin.height * 4;
+        }
+
+        const unsigned char* texel(const Pixels& image, int x, int y) {
+            return &image.rgba[((size_t) y * image.width + x) * 4];
+        }
+
+        bool hatLayer(const Pixels& skin) {
+            if (skin.height * 2 != skin.width) {
+                return true;
             }
             int k = skin.width / 64;
-            auto alphaAt = [&](int x, int y) { return skin.rgba[((size_t) y * skin.width + x) * 4 + 3]; };
-            bool hat = true;
-            if (skin.height * 2 == skin.width) {
-                hat = false;
-                for (int y = 0; y < 32 * k && !hat; y++) {
-                    for (int x = 32 * k; x < 64 * k && !hat; x++) {
-                        hat = alphaAt(x, y) < 128;
+            for (int y = 0; y < 32 * k; y++) {
+                for (int x = 32 * k; x < 64 * k; x++) {
+                    if (texel(skin, x, y)[3] < 128) {
+                        return true;
                     }
                 }
             }
+            return false;
+        }
+
+        std::shared_ptr<const Pixels> faceOf(const Pixels& skin) {
+            if (!usable(skin)) {
+                return nullptr;
+            }
+            int k = skin.width / 64;
+            bool hat = hatLayer(skin);
             auto out = std::make_shared<Pixels>();
             out->width = FACE;
             out->height = FACE;
@@ -348,8 +380,8 @@ namespace Avatars {
                 for (int x = 0; x < FACE; x++) {
                     int sx = 8 * k + x * 8 * k / FACE;
                     int sy = 8 * k + y * 8 * k / FACE;
-                    const unsigned char* face = &skin.rgba[((size_t) sy * skin.width + sx) * 4];
-                    const unsigned char* cap = &skin.rgba[((size_t) sy * skin.width + sx + 32 * k) * 4];
+                    const unsigned char* face = texel(skin, sx, sy);
+                    const unsigned char* cap = texel(skin, sx + 32 * k, sy);
                     float cover = hat ? cap[3] / 255.0f : 0.0f;
                     unsigned char* p = &out->rgba[((size_t) y * FACE + x) * 4];
                     for (int i = 0; i < 3; i++) {
@@ -361,10 +393,71 @@ namespace Avatars {
             return out;
         }
 
+        std::shared_ptr<const Pixels> cubeOf(const Pixels& skin) {
+            if (!usable(skin)) {
+                return nullptr;
+            }
+            int k = skin.width / 64;
+            bool hat = hatLayer(skin);
+            int inset = (CUBE_SIZE - CUBE_FACE) / 2;
+            auto out = std::make_shared<Pixels>();
+            out->width = CUBE_SIZE;
+            out->height = CUBE_SIZE;
+            out->rgba.resize((size_t) CUBE_SIZE * CUBE_SIZE * 4);
+            for (int y = 0; y < CUBE_SIZE; y++) {
+                for (int x = 0; x < CUBE_SIZE; x++) {
+                    int fx = std::clamp(x - inset, 0, CUBE_FACE - 1);
+                    int fy = std::clamp(y - inset, 0, CUBE_FACE - 1);
+                    const unsigned char* face =
+                            texel(skin, 8 * k + fx * 8 * k / CUBE_FACE, 8 * k + fy * 8 * k / CUBE_FACE);
+                    const unsigned char* cap =
+                            texel(skin, 40 * k + x * 8 * k / CUBE_SIZE, 8 * k + y * 8 * k / CUBE_SIZE);
+                    float base = fx == x - inset && fy == y - inset ? 1.0f : 0.0f;
+                    float cover = hat ? cap[3] / 255.0f : 0.0f;
+                    float alpha = cover + base * (1.0f - cover);
+                    unsigned char* p = &out->rgba[((size_t) y * CUBE_SIZE + x) * 4];
+                    for (int i = 0; i < 3; i++) {
+                        float color =
+                                alpha > 0.0f ? (cap[i] * cover + face[i] * base * (1.0f - cover)) / alpha : face[i];
+                        p[i] = (unsigned char) std::min(255.0f, color + 0.5f);
+                    }
+                    p[3] = (unsigned char) (alpha * 255.0f + 0.5f);
+                }
+            }
+            return out;
+        }
+
+        struct Rendered {
+            std::shared_ptr<const Pixels> bust;
+            std::shared_ptr<const Pixels> head;
+            std::shared_ptr<const Pixels> cube;
+        };
+
+        std::optional<Rendered> renderAll(const Pixels& skin, const Pixels* cape, bool slim) {
+            SkinRender::Options options;
+            options.size = SIZE;
+            options.slim = slim;
+            Rendered out;
+            out.bust = SkinRender::render(skin, cape, options);
+            out.head = faceOf(skin);
+            out.cube = cubeOf(skin);
+            if (out.bust == nullptr || out.head == nullptr || out.cube == nullptr) {
+                return std::nullopt;
+            }
+            return out;
+        }
+
+        void store(const std::string& key, const std::string& signature, const Rendered& rendered) {
+            entries[key] = Entry{signature, rendered.bust};
+            entries[key + HEAD] = Entry{signature, rendered.head};
+            entries[key + CUBE] = Entry{signature, rendered.cube};
+            changed();
+        }
+
         void requestLocal(const std::string& key) {
             const Looks::Look& look = Looks::of(key);
             if (look.skin.empty()) {
-                if (entries.erase(key) + entries.erase(key + HEAD) != 0) {
+                if (forget(key)) {
                     changed();
                 }
                 return;
@@ -387,20 +480,13 @@ namespace Avatars {
                         }
                         std::shared_ptr<const Pixels> mantle =
                                 cape.empty() ? nullptr : Pixels::decode(cape.data(), cape.size());
-                        SkinRender::Options options;
-                        options.size = SIZE;
-                        options.slim = model == Looks::Model::Slim ||
+                        bool slim = model == Looks::Model::Slim ||
                                 (model == Looks::Model::Auto && SkinRender::looksSlim(*decoded));
-                        std::shared_ptr<const Pixels> pixels = SkinRender::render(*decoded, mantle.get(), options);
-                        std::shared_ptr<const Pixels> face = faceOf(*decoded);
-                        if (pixels == nullptr || face == nullptr) {
+                        std::optional<Rendered> rendered = renderAll(*decoded, mantle.get(), slim);
+                        if (!rendered) {
                             return nullptr;
                         }
-                        return [key, signature, pixels, face] {
-                            entries[key] = Entry{signature, pixels};
-                            entries[key + HEAD] = Entry{signature, face};
-                            changed();
-                        };
+                        return [key, signature, rendered] { store(key, signature, *rendered); };
                     },
                     [](const std::string&) -> Continuation { return nullptr; });
         }
@@ -423,7 +509,7 @@ namespace Avatars {
                         Look look = seen ? *seen : Look{fallback, std::string(), -1};
                         if (look.skin.empty()) {
                             return [key] {
-                                if (entries.erase(key) + entries.erase(key + HEAD) != 0) {
+                                if (forget(key)) {
                                     changed();
                                 }
                             };
@@ -437,25 +523,18 @@ namespace Avatars {
                             return nullptr;
                         }
                         std::shared_ptr<const Pixels> cape = look.cape.empty() ? nullptr : image(look.cape, token);
-                        SkinRender::Options options;
-                        options.size = SIZE;
-                        options.slim = look.model == 1 || (look.model < 0 && SkinRender::looksSlim(*skin));
-                        std::shared_ptr<const Pixels> pixels = SkinRender::render(*skin, cape.get(), options);
-                        std::shared_ptr<const Pixels> face = faceOf(*skin);
-                        if (pixels == nullptr || face == nullptr) {
+                        bool slim = look.model == 1 || (look.model < 0 && SkinRender::looksSlim(*skin));
+                        std::optional<Rendered> rendered = renderAll(*skin, cape.get(), slim);
+                        if (!rendered) {
                             return nullptr;
                         }
-                        return [key, signature, pixels, face] {
-                            entries[key] = Entry{signature, pixels};
-                            entries[key + HEAD] = Entry{signature, face};
-                            changed();
-                        };
+                        return [key, signature, rendered] { store(key, signature, *rendered); };
                     },
                     [](const std::string&) -> Continuation { return nullptr; });
         }
 
-        std::shared_ptr<const Pixels> placeholder(bool head) {
-            std::string key = std::string(PLACEHOLDER) + (head ? HEAD : "");
+        std::shared_ptr<const Pixels> placeholder(const char* suffix) {
+            std::string key = std::string(PLACEHOLDER) + suffix;
             auto found = entries.find(key);
             if (found != entries.end() && found->second.pixels != nullptr &&
                 found->second.signature == placeholderSignature()) {
@@ -470,50 +549,49 @@ namespace Avatars {
             if (skin == nullptr) {
                 return nullptr;
             }
-            SkinRender::Options options;
-            options.size = SIZE;
-            options.slim = SkinRender::looksSlim(*skin);
-            std::shared_ptr<const Pixels> pixels = SkinRender::render(*skin, nullptr, options);
-            std::shared_ptr<const Pixels> face = faceOf(*skin);
-            if (pixels == nullptr || face == nullptr) {
+            std::optional<Rendered> rendered = renderAll(*skin, nullptr, SkinRender::looksSlim(*skin));
+            if (!rendered) {
                 return nullptr;
             }
-            entries[PLACEHOLDER] = Entry{placeholderSignature(), pixels};
-            entries[std::string(PLACEHOLDER) + HEAD] = Entry{placeholderSignature(), face};
-            changed();
-            return head ? face : pixels;
+            store(PLACEHOLDER, placeholderSignature(), *rendered);
+            return entries[key].pixels;
         }
 
-        std::shared_ptr<const Pixels> avatar(const blb::auth::account& account, bool head) {
+        std::shared_ptr<const Pixels> avatar(const blb::auth::account& account, const char* suffix) {
             ensureLoaded();
             std::string key = Accounts::keyOf(account);
             request(account, key);
-            auto found = entries.find(head ? key + HEAD : key);
+            auto found = entries.find(key + suffix);
             if (found != entries.end() && found->second.pixels != nullptr) {
                 return found->second.pixels;
             }
-            return placeholder(head);
+            return placeholder(suffix);
         }
     }
 
     Style style() {
-        return blb::json_text(Config::data(), STYLE_KEY) == "head" ? Style::Head : Style::Bust;
+        std::string value = blb::json_text(Config::data(), STYLE_KEY);
+        return value == "head" ? Style::Head : value == "bust" ? Style::Bust : Style::Cube;
     }
 
     void setStyle(Style value) {
         if (style() == value) {
             return;
         }
-        Config::data()[STYLE_KEY] = value == Style::Head ? "head" : "bust";
+        Config::data()[STYLE_KEY] = value == Style::Head ? "head" : value == Style::Cube ? "cube" : "bust";
         Config::save();
     }
 
     std::shared_ptr<const Pixels> bust(const blb::auth::account& account) {
-        return avatar(account, false);
+        return avatar(account, "");
     }
 
     std::shared_ptr<const Pixels> head(const blb::auth::account& account) {
-        return avatar(account, true);
+        return avatar(account, HEAD);
+    }
+
+    std::shared_ptr<const Pixels> cube(const blb::auth::account& account) {
+        return avatar(account, CUBE);
     }
 
     void refresh(const std::string& key) {
