@@ -210,6 +210,7 @@ endif ()
 
 embed_files(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedIcons.cpp HEADER app/system/EmbeddedIcons.h NAMESPACE EmbeddedIcons FILES
         logoSvg assets/images/logo.svg
+        geminiSvg assets/images/gemini.svg
         forge assets/images/forge.png
         vanilla assets/images/vanilla.png
         neoforge assets/images/neoforge.png

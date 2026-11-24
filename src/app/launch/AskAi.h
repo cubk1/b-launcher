@@ -20,4 +20,5 @@ namespace AskAi {
     void setChosen(const std::string& key);
     size_t budget(const std::string& key);
     bool ask(const std::string& key, const std::string& prompt);
+    void poll();
 }

@@ -24,8 +24,8 @@ namespace exui {
         std::vector<MsgBoxButtonLayout> buttons; // from right to left
     };
 
-    // The skinned message box: icon, text and a row of 70px buttons at the bottom
-    // right. It inherits the look of an EXUI owner window.
+    // The skinned message box: icon, text and a row of buttons at the bottom right.
+    // It inherits the look of an EXUI owner window.
     class MsgBox {
     public:
         // Returns the index of the clicked button (counted from the right), or -1
