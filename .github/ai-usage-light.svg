@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="324" viewBox="0 0 560 324" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif" font-size="13" style="font-variant-numeric: tabular-nums" role="img">
+<title>AI usage: $1,395.07* (* if billed at full API rate)</title>
+<rect x="0.5" y="0.5" width="559" height="323" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+<text x="20" y="34" fill="#1f2328" font-size="14" font-weight="600">AI usage</text>
+<text x="20" y="78" fill="#1f2328" font-size="32" font-weight="700">$1,395.07<tspan font-size="20" dy="-10" fill="#59636e">*</tspan></text>
+<text x="20" y="100" fill="#59636e" font-size="12">* if billed at full API rate</text>
+<clipPath id="bar"><rect x="20" y="116" width="520" height="10" rx="5"/></clipPath>
+<g clip-path="url(#bar)">
+<rect x="20" y="116" width="487" height="10" fill="#d97757" fill-opacity="1"/>
+<rect x="509" y="116" width="19" height="10" fill="#d97757" fill-opacity="0.7"/>
+<rect x="530" y="116" width="5" height="10" fill="#d97757" fill-opacity="0.5"/>
+<rect x="537" y="116" width="1" height="10" fill="#d97757" fill-opacity="0.35"/>
+</g>
+<text x="36" y="152" fill="#59636e" font-size="11">Model</text>
+<text x="220" y="152" fill="#59636e" font-size="11">Provider</text>
+<text x="400" y="152" fill="#59636e" font-size="11" text-anchor="end">Cost</text>
+<text x="466" y="152" fill="#59636e" font-size="11" text-anchor="end">Share</text>
+<text x="540" y="152" fill="#59636e" font-size="11" text-anchor="end">Tokens</text>
+<circle cx="25" cy="171.5" r="4.5" fill="#d97757" fill-opacity="1"/>
+<text x="36" y="176" fill="#1f2328">claude-opus-5-5</text>
+<text x="220" y="176" fill="#59636e">anthropic</text>
+<text x="400" y="176" fill="#1f2328" text-anchor="end">$1,312.19</text>
+<text x="466" y="176" fill="#59636e" text-anchor="end">94.1%</text>
+<text x="540" y="176" fill="#59636e" text-anchor="end">4.1B</text>
+<circle cx="25" cy="195.5" r="4.5" fill="#d97757" fill-opacity="0.7"/>
+<text x="36" y="200" fill="#1f2328">claude-opus-4-7</text>
+<text x="220" y="200" fill="#59636e">anthropic</text>
+<text x="400" y="200" fill="#1f2328" text-anchor="end">$55.41</text>
+<text x="466" y="200" fill="#59636e" text-anchor="end">4.0%</text>
+<text x="540" y="200" fill="#59636e" text-anchor="end">53.9M</text>
+<circle cx="25" cy="219.5" r="4.5" fill="#d97757" fill-opacity="0.5"/>
+<text x="36" y="224" fill="#1f2328">claude-opus-4-8</text>
+<text x="220" y="224" fill="#59636e">anthropic</text>
+<text x="400" y="224" fill="#1f2328" text-anchor="end">$20.38</text>
+<text x="466" y="224" fill="#59636e" text-anchor="end">1.5%</text>
+<text x="540" y="224" fill="#59636e" text-anchor="end">28.9M</text>
+<circle cx="25" cy="243.5" r="4.5" fill="#d97757" fill-opacity="0.35"/>
+<text x="36" y="248" fill="#1f2328">claude-opus-4-6</text>
+<text x="220" y="248" fill="#59636e">anthropic</text>
+<text x="400" y="248" fill="#1f2328" text-anchor="end">$5.99</text>
+<text x="466" y="248" fill="#59636e" text-anchor="end">0.4%</text>
+<text x="540" y="248" fill="#59636e" text-anchor="end">2.4M</text>
+<circle cx="25" cy="267.5" r="4.5" fill="#d97757" fill-opacity="0.35"/>
+<text x="36" y="272" fill="#1f2328">claude-sonnet-5-5</text>
+<text x="220" y="272" fill="#59636e">anthropic</text>
+<text x="400" y="272" fill="#1f2328" text-anchor="end">$1.10</text>
+<text x="466" y="272" fill="#59636e" text-anchor="end">0.1%</text>
+<text x="540" y="272" fill="#59636e" text-anchor="end">4.7M</text>
+<line x1="20" y1="286" x2="540" y2="286" stroke="#d0d7de"/>
+<text x="20" y="308" fill="#59636e" font-size="12">1 change, 2026-11-24</text>
+</svg>
