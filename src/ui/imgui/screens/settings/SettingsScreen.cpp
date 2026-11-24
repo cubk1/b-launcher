@@ -1,5 +1,6 @@
 #include "ui/imgui/screens/settings/SettingsScreen.h"
 #include "ui/imgui/screens/downloads/DownloadsScreen.h"
+#include "ui/imgui/screens/downloads/JavaPage.h"
 #include "ui/imgui/screens/shell/Logo.h"
 #include "ui/imgui/screens/shell/Appearance.h"
 #include "ui/imgui/screens/shell/ShellLayout.h"
@@ -27,6 +28,7 @@
 #include "app/launch/Crashes.h"
 #include "app/launch/GameOptions.h"
 #include "app/launch/JavaDownloads.h"
+#include "app/launch/JavaVendors.h"
 #include "app/launch/LaunchDefaults.h"
 #include "ui/imgui/screens/shell/MainWindow.h"
 #include "ui/imgui/screens/onboarding/Onboarding.h"
@@ -1703,9 +1705,8 @@ namespace SettingsScreen {
                 std::string id = "settings#java#" + std::to_string(i);
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
                 Page::rowHover(id, rowY, hovered, Page::rowCorners(i, rows));
-                UiWidgets::icon(Ui::glyph(0xf0f4), mainX() + 24.0f, rowY + Page::ROW_H * 0.5f, UiTheme::textMuted(),
-                                12.0f);
-                std::string name = "Java " + (java.version.empty() ? std::to_string(java.major) : java.version);
+                JavaPage::vendorIcon(JavaVendors::of(java).icon, mainX() + 24.0f, rowY + Page::ROW_H * 0.5f);
+                std::string name = JavaVendors::title(java);
                 float x = mainX() + 44.0f;
                 UiRender::textY(name, x, rowY, Page::ROW_H, UiTheme::textPrimary(), UiFont::MEDIUM,
                                 UiWidgets::TEXT_CONTROL);

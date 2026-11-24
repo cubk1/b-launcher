@@ -56,18 +56,6 @@ namespace JavaPage {
                     [options] { return options; });
         }
 
-        void vendorIcon(const JavaDownloads::Package& package, float cx, float cy) {
-            constexpr float BOX = 20.0f;
-            float pixel = UiRender::stableScale() * UiRender::pixelScale();
-            std::shared_ptr<const Pixels> logo =
-                    Covers::icon(JavaDownloads::icon(package), (int) std::lround(BOX * pixel), !UiTheme::isLight());
-            if (logo == nullptr) {
-                UiWidgets::icon(Ui::glyph(0xf0f4), cx, cy, UiTheme::textMuted(), 12.0f);
-                return;
-            }
-            Textures::sharp(logo, cx - BOX * 0.5f, cy - BOX * 0.5f, BOX, BOX, 0.0f);
-        }
-
         void list(bool covered) {
             const JavaDownloads::List& list = JavaDownloads::list();
             bool loading = list.status == JavaDownloads::Status::Loading;
@@ -124,7 +112,7 @@ namespace JavaPage {
                 bool hovered = !blocked && NewUi::hit(mainX(), rowY, mainW(), Page::ROW_H);
                 Page::rowHover(id, rowY, hovered, Page::rowCorners(i, rows));
                 float cy = rowY + Page::ROW_H * 0.5f;
-                vendorIcon(package, mainX() + 24.0f, cy);
+                vendorIcon(JavaDownloads::icon(package), mainX() + 24.0f, cy);
 
                 JavaDownloads::State state = JavaDownloads::state(package.folder);
                 bool done = state == JavaDownloads::State::Done || JavaDownloads::installed(package);
@@ -180,5 +168,17 @@ namespace JavaPage {
         left = x;
         Page::Column column(x);
         list(covered);
+    }
+
+    void vendorIcon(const std::string& icon, float cx, float cy) {
+        constexpr float BOX = 20.0f;
+        float pixel = UiRender::stableScale() * UiRender::pixelScale();
+        std::shared_ptr<const Pixels> logo =
+                icon.empty() ? nullptr : Covers::icon(icon, (int) std::lround(BOX * pixel), !UiTheme::isLight());
+        if (logo == nullptr) {
+            UiWidgets::icon(Ui::glyph(0xf0f4), cx, cy, UiTheme::textMuted(), 12.0f);
+            return;
+        }
+        Textures::sharp(logo, cx - BOX * 0.5f, cy - BOX * 0.5f, BOX, BOX, 0.0f);
     }
 }

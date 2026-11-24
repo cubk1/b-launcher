@@ -401,6 +401,9 @@ probe_java (const std::filesystem::path &home_or_executable,
           install.arch = *parsed;
       if (auto vendor = release.find ("IMPLEMENTOR"); vendor != release.end ())
         install.vendor = vendor->second;
+      else if (auto build = release.find ("BUILD_TYPE");
+               build != release.end () && build->second == "commercial")
+        install.vendor = "Oracle Corporation";
       if (install.major > 0 && install.arch != cpu_arch::unknown && !unsure
           && !verify_execution && wrapper.empty ())
         return install;

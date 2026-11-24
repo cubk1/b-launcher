@@ -1,4 +1,5 @@
 #include "app/instances/InstanceSettings.h"
+#include "app/launch/JavaVendors.h"
 #include "app/system/Catalog.h"
 
 #include <core/base/fs.hpp>
@@ -79,7 +80,7 @@ namespace InstanceSettings {
     std::vector<JavaOption> javaOptions() {
         std::vector<JavaOption> out;
         for (const blb::java::java_installation& java : Catalog::java().list) {
-            std::string label = "Java " + (java.version.empty() ? std::to_string(java.major) : java.version);
+            std::string label = JavaVendors::title(java);
             std::string folder = blb::path_to_utf8(java.home.filename());
             if (!folder.empty()) {
                 label += " (" + folder + ")";

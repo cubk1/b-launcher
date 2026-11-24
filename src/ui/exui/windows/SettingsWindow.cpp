@@ -9,6 +9,7 @@
 #include "app/downloads/DownloadSources.h"
 #include "app/launch/AskAi.h"
 #include "app/launch/JavaDownloads.h"
+#include "app/launch/JavaVendors.h"
 #include "app/launch/GameOptions.h"
 #include "app/accounts/Avatars.h"
 #include "app/launch/LaunchDefaults.h"
@@ -1122,10 +1123,10 @@ namespace ForgottenMelody {
 
             void fillJava() {
                 auto& javas = Control<exui::ListView>(JAVA_LIST);
-                javas.InsertColumn(L"版本", 120);
-                javas.InsertColumn(L"类型", 50);
-                javas.InsertColumn(L"架构", 55);
-                javas.InsertColumn(L"位置", 305);
+                javas.InsertColumn(L"名称", 230);
+                javas.InsertColumn(L"类型", 45);
+                javas.InsertColumn(L"架构", 50);
+                javas.InsertColumn(L"位置", 205);
                 javas.InsertColumn(L"来源", 70);
                 auto& downloads = Control<exui::ListView>(DOWNLOAD_LIST);
                 downloads.InsertColumn(L"名称", 250);
@@ -1142,9 +1143,8 @@ namespace ForgottenMelody {
                 Rows rows;
                 std::vector<std::string> keys;
                 for (const blb::java::java_installation& java : javas.list) {
-                    std::string name = "Java " + (java.version.empty() ? std::to_string(java.major) : java.version);
-                    rows.push_back({Platform::widen(name), java.jdk ? L"JDK" : L"JRE", archName(java.arch),
-                                    Platform::widen(Platform::display(java.home)),
+                    rows.push_back({Platform::widen(JavaVendors::title(java)), java.jdk ? L"JDK" : L"JRE",
+                                    archName(java.arch), Platform::widen(Platform::display(java.home)),
                                     Catalog::addedByHand(java.executable) ? L"手动添加" : L"自动查找"});
                     keys.push_back(Platform::narrow(java.executable.wstring()));
                 }
