@@ -42,3 +42,12 @@ nix run github:cubk1/b-launcher
 ## Unix数据目录
 
 Linux和macOS将配置、账户写入`$XDG_DATA_HOME/b-launcher/`，默认路径为`~/.local/share/b-launcher/`。`XDG_DATA_HOME`必须是绝对路径。首次读取时会迁移旧目录中的配置和账户。
+
+## AI用量
+
+由 [agent-usage](https://github.com/1zun4/agent-usage) 统计：
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/ai-usage-dark.svg">
+  <img alt="B Launcher 用到的 AI 模型和花费" src=".github/ai-usage-light.svg">
+</picture>
