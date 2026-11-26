@@ -1172,6 +1172,16 @@ namespace InstancePage {
                     blocked);
             rowY += Page::ROW_H;
 
+            Page::label("主类", rowY);
+            float classX = Page::controlRight() - WIDE_FIELD;
+            const std::string& versionClass = entry.info.main_class;
+            textField(textSetting(
+                              id, "mainClass", versionClass.empty() ? "无" : versionClass,
+                              [](const Settings& s) { return s.main_class; },
+                              [](Settings& s, const std::string& value) { s.main_class = Ui::trim(value); }),
+                      classX, rowY, WIDE_FIELD, blocked);
+            rowY += Page::ROW_H;
+
             Page::label("最小内存", rowY);
             const char* unit = "MB";
             float unitX = Page::controlRight() - UiFont::width(unit, UiFont::MEDIUM, UiWidgets::TEXT_CONTROL);
@@ -1219,7 +1229,7 @@ namespace InstancePage {
             Page::title(title, Page::left() + 30.0f, Page::top());
 
             const int commandCount = 4;
-            const int jvmCount = 3;
+            const int jvmCount = 4;
             const int compatibilityCount = 2;
             float contentH =
                     3 * Page::CAPTION_H + (commandCount + jvmCount + compatibilityCount) * Page::ROW_H + 2 * Page::GAP;

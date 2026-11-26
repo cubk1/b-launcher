@@ -31,6 +31,7 @@ struct instance_settings
   std::uint32_t min_memory_mb = 0;
   std::vector<std::string> jvm_args;
   std::vector<std::string> game_args;
+  std::string main_class;
   std::optional<int> width;
   std::optional<int> height;
   bool fullscreen = false;
@@ -59,6 +60,8 @@ struct instance
   std::string minecraft_version;
   std::string type;
   std::string release_time;
+  // The main class the version json gives, used when the settings set none.
+  std::string main_class;
   std::vector<install::loader_info> loaders;
   instance_settings settings;
   bool valid = true;

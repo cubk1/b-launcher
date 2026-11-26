@@ -182,7 +182,9 @@ build_launch_command (const launch_context &ctx)
   const auto &layout = *ctx.layout;
   const auto &settings = ctx.settings;
   const auto &account = ctx.account;
-  if (version.main_class.empty ())
+  const auto &main_class = settings.main_class.empty () ? version.main_class
+                                                        : settings.main_class;
+  if (main_class.empty ())
     return make_error (errc::parse, "version has no main class");
 
   auto rules = ctx.rules;
@@ -249,7 +251,7 @@ build_launch_command (const launch_context &ctx)
   cmd.working_directory = ctx.game_directory;
   cmd.wrapper = settings.wrapper;
   cmd.environment = settings.environment;
-  cmd.main_class = version.main_class;
+  cmd.main_class = main_class;
 
   auto &jvm = cmd.jvm_args;
   auto max_memory = settings.max_memory_mb ? settings.max_memory_mb

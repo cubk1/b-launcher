@@ -24,7 +24,8 @@ namespace Screenshots {
         constexpr size_t MAX_CACHED = 192;
 
         AsyncTasks tasks;
-        std::map<std::string, List> lists;
+        // By folder: instances that share a game directory share one list.
+        std::map<std::filesystem::path, List> lists;
         int nextSerial = 1;
         const List noList;
 
@@ -119,75 +120,88 @@ namespace Screenshots {
         }
     }
 
+    namespace {
+        void scanFolder(const std::filesystem::path& folder) {
+            List& list = lists[folder];
+            if (list.loading) {
+                list.serial = nextSerial++;
+                return;
+            }
+            list.loading = true;
+            int serial = list.serial;
+            tasks.run(
+                    [folder, serial](blb::cancellation_token token) -> Continuation {
+                        std::vector<Entry> found;
+                        auto map = blb::fs::list_directory(folder);
+                        for (const auto& [name, stat] : map) {
+                            if (token.is_cancelled()) {
+                                return nullptr;
+                            }
+                            if (stat.is_directory || stat.is_link) {
+                                continue;
+                            }
+                            std::filesystem::path path = folder / blb::path_from_utf8(name);
+                            if (!isImage(path)) {
+                                continue;
+                            }
+                            Entry e;
+                            e.path = path;
+                            e.filename = name;
+                            e.size = stat.size;
+                            e.modified = stat.mtime;
+                            found.push_back(std::move(e));
+                        }
+                        std::sort(found.begin(), found.end(),
+                                  [](const Entry& a, const Entry& b) { return a.modified > b.modified; });
+                        return [folder, serial, found = std::move(found)]() mutable {
+                            List& list = lists[folder];
+                            list.loading = false;
+                            if (list.serial != serial) {
+                                scanFolder(folder);
+                                return;
+                            }
+                            for (const Entry& entry : found) {
+                                auto cached = thumbs.find(thumbKey(entry.path, entry.modified));
+                                if (cached != thumbs.end() && cached->second.failed) {
+                                    thumbs.erase(cached);
+                                }
+                            }
+                            list.entries = std::move(found);
+                            list.serial = nextSerial++;
+                        };
+                    },
+                    [folder, serial](const std::string& error) -> Continuation {
+                        return [folder, serial, error] {
+                            List& list = lists[folder];
+                            list.loading = false;
+                            if (list.serial != serial) {
+                                scanFolder(folder);
+                                return;
+                            }
+                            Notices::add(Notices::Kind::Failed, "无法读取截图：" + error, 5000);
+                        };
+                    });
+        }
+    }
+
     const List& of(const std::string& instanceKey) {
-        auto it = lists.find(instanceKey);
-        return it != lists.end() ? it->second : noList;
+        std::filesystem::path folder = folderOf(instanceKey);
+        if (folder.empty()) {
+            return noList;
+        }
+        auto it = lists.find(folder);
+        if (it != lists.end()) {
+            return it->second;
+        }
+        scanFolder(folder);
+        return lists[folder];
     }
 
     void scan(const std::string& instanceKey) {
-        List& list = lists[instanceKey];
-        if (list.loading) {
-            list.serial = nextSerial++;
-            return;
-        }
         std::filesystem::path folder = folderOf(instanceKey);
-        if (folder.empty()) {
-            return;
+        if (!folder.empty()) {
+            scanFolder(folder);
         }
-        list.loading = true;
-        int serial = list.serial;
-        tasks.run(
-                [folder, instanceKey, serial](blb::cancellation_token token) -> Continuation {
-                    std::vector<Entry> found;
-                    auto map = blb::fs::list_directory(folder);
-                    for (const auto& [name, stat] : map) {
-                        if (token.is_cancelled()) {
-                            return nullptr;
-                        }
-                        if (stat.is_directory || stat.is_link) {
-                            continue;
-                        }
-                        std::filesystem::path path = folder / blb::path_from_utf8(name);
-                        if (!isImage(path)) {
-                            continue;
-                        }
-                        Entry e;
-                        e.path = path;
-                        e.filename = name;
-                        e.size = stat.size;
-                        e.modified = stat.mtime;
-                        found.push_back(std::move(e));
-                    }
-                    std::sort(found.begin(), found.end(),
-                              [](const Entry& a, const Entry& b) { return a.modified > b.modified; });
-                    return [instanceKey, serial, found = std::move(found)]() mutable {
-                        List& list = lists[instanceKey];
-                        list.loading = false;
-                        if (list.serial != serial) {
-                            scan(instanceKey);
-                            return;
-                        }
-                        for (const Entry& entry : found) {
-                            auto cached = thumbs.find(thumbKey(entry.path, entry.modified));
-                            if (cached != thumbs.end() && cached->second.failed) {
-                                thumbs.erase(cached);
-                            }
-                        }
-                        list.entries = std::move(found);
-                        list.serial = nextSerial++;
-                    };
-                },
-                [instanceKey, serial](const std::string& error) -> Continuation {
-                    return [instanceKey, serial, error] {
-                        List& list = lists[instanceKey];
-                        list.loading = false;
-                        if (list.serial != serial) {
-                            scan(instanceKey);
-                            return;
-                        }
-                        Notices::add(Notices::Kind::Failed, "无法读取截图：" + error, 5000);
-                    };
-                });
     }
 
     std::shared_ptr<const Pixels> thumbnail(const std::filesystem::path& path, std::int64_t modified) {
@@ -308,7 +322,7 @@ namespace Screenshots {
         if (!outcome.ok) {
             return outcome;
         }
-        List& list = lists[instanceKey];
+        List& list = lists[path.parent_path()];
         list.entries.erase(std::remove_if(list.entries.begin(), list.entries.end(),
                                           [&path](const Entry& e) { return e.path == path; }),
                            list.entries.end());

@@ -42,6 +42,8 @@ settings_to_json (const instance_settings &s)
     out["jvmArgs"] = s.jvm_args;
   if (!s.game_args.empty ())
     out["gameArgs"] = s.game_args;
+  if (!s.main_class.empty ())
+    out["mainClass"] = s.main_class;
   if (s.width)
     out["width"] = *s.width;
   if (s.height)
@@ -133,6 +135,7 @@ settings_from_json (const json &doc)
   BLB_TRY_ASSIGN (s.min_memory_mb, memory_from_json (doc, "minMemory"));
   s.jvm_args = json_strings (doc, "jvmArgs");
   s.game_args = json_strings (doc, "gameArgs");
+  s.main_class = doc.value ("mainClass", std::string ());
   BLB_TRY_ASSIGN (s.width, dimension_from_json (doc, "width"));
   BLB_TRY_ASSIGN (s.height, dimension_from_json (doc, "height"));
   s.fullscreen = doc.value ("fullscreen", false);
@@ -250,6 +253,7 @@ instance_manager::get (std::string_view id) const
       out.minecraft_version = resolved->minecraft ();
       out.type = resolved->type;
       out.release_time = resolved->release_time;
+      out.main_class = resolved->main_class;
       out.loaders = install::detect_loaders (*resolved);
       out.chain = resolved->chain;
       isolated_libraries = resolved->isolated_libraries;
@@ -467,6 +471,7 @@ instance_manager::launch_settings_for (const instance &value) const
   out.min_memory_mb = value.settings.min_memory_mb;
   out.jvm_args = value.settings.jvm_args;
   out.game_args = value.settings.game_args;
+  out.main_class = value.settings.main_class;
   out.width = value.settings.width;
   out.height = value.settings.height;
   out.fullscreen = value.settings.fullscreen;

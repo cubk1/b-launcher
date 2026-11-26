@@ -107,6 +107,8 @@ namespace ForgottenMelody {
             JVM_GROUP,
             JVM_LABEL,
             JVM,
+            MAIN_CLASS_LABEL,
+            MAIN_CLASS,
             MIN_LABEL,
             MIN,
             MIN_UNIT,
@@ -231,6 +233,8 @@ namespace ForgottenMelody {
                 {JVM_GROUP, ControlKind::Group, {}, L"Java 虚拟机"},
                 {JVM_LABEL, ControlKind::Label, {}, L"JVM 参数"},
                 {JVM, ControlKind::Edit, {}},
+                {MAIN_CLASS_LABEL, ControlKind::Label, {}, L"主类"},
+                {MAIN_CLASS, ControlKind::Edit, {}},
                 {MIN_LABEL, ControlKind::Label, {}, L"最小内存"},
                 {MIN, ControlKind::Edit, {}},
                 {MIN_UNIT, ControlKind::Label, {}, L"MB"},
@@ -424,6 +428,7 @@ namespace ForgottenMelody {
                         }, {20, 25, 20, 10}),
                         group(JVM_GROUP, {
                                 row(JVM_LABEL, {cell(JVM)}),
+                                row(MAIN_CLASS_LABEL, {cell(MAIN_CLASS)}),
                                 row(MIN_LABEL, {cell(MIN, 80), cell(MIN_UNIT, 30)}),
                                 row(ENVIRONMENT_LABEL, {cell(ENVIRONMENT)}),
                         }, {20, 25, 20, 10}),
@@ -587,6 +592,8 @@ namespace ForgottenMelody {
                 text(JVM, blb::join_arguments(settings.jvm_args), [](Settings& s, const std::wstring& typed) {
                     s.jvm_args = blb::split_arguments(Platform::narrow(typed));
                 });
+                text(MAIN_CLASS, settings.main_class,
+                     [](Settings& s, const std::wstring& typed) { s.main_class = trimmed(typed); });
                 text(MIN, settings.min_memory_mb != 0 ? std::to_string(settings.min_memory_mb) : "",
                      [](Settings& s, const std::wstring& typed) {
                          s.min_memory_mb = InstanceSettings::parseMegabytes(Platform::narrow(typed));
