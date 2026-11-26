@@ -111,8 +111,10 @@ namespace Dialog {
             UiRender::scaleFactor = savedScale * UiRender::lerp(SMALLEST, 1.0f, eased);
             UiRender::pivotX = (x + w * 0.5f) * UiRender::uiScale;
             UiRender::pivotY = (y + h * 0.5f) * UiRender::uiScale;
+            UiRender::alphaMul = savedAlpha * UiRender::panelFade(open);
             UiRender::shadow(x, y, w, h, RADIUS, 14.0f, 6.0f, UiTheme::shadow());
             UiWidgets::overlayPanel(x, y, w, h, RADIUS, UiTheme::surface(), 0xF, ThemePaintSpec::DIALOG);
+            UiRender::alphaMul = savedAlpha * UiRender::contentFade(open);
             if (closing) {
                 Body body = layer.fading;
                 bool clicked = NewUi::pendingClick;

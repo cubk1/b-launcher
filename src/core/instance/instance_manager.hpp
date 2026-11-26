@@ -60,7 +60,6 @@ struct instance
   std::string minecraft_version;
   std::string type;
   std::string release_time;
-  // The main class the version json gives, used when the settings set none.
   std::string main_class;
   std::vector<install::loader_info> loaders;
   instance_settings settings;

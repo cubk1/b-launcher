@@ -24,7 +24,6 @@ namespace Screenshots {
         constexpr size_t MAX_CACHED = 192;
 
         AsyncTasks tasks;
-        // By folder: instances that share a game directory share one list.
         std::map<std::filesystem::path, List> lists;
         int nextSerial = 1;
         const List noList;

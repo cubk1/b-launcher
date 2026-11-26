@@ -39,7 +39,6 @@ struct launch_settings
   std::uint32_t min_memory_mb = 0;
   std::vector<std::string> jvm_args;
   std::vector<std::string> game_args;
-  // Replaces the main class of the version when not empty.
   std::string main_class;
   std::optional<int> width;
   std::optional<int> height;

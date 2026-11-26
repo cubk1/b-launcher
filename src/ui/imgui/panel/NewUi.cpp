@@ -1038,14 +1038,16 @@ namespace NewUi {
         float savedPivotX = UiRender::pivotX;
         float savedPivotY = UiRender::pivotY;
         float savedOffsetY = UiRender::offsetY;
-        UiRender::alphaMul = savedAlpha * open;
+        UiRender::alphaMul = savedAlpha * UiRender::panelFade(open);
         UiRender::scaleFactor = savedScale * UiRender::lerp(0.965f, 1.0f, eased);
         UiRender::pivotX = (px + sizeX * 0.5f) * UiRender::uiScale;
         UiRender::pivotY = py * UiRender::uiScale;
-        UiRender::offsetY = savedOffsetY + (1.0f - eased) * 8.0f * UiRender::uiScale;
+        float pixel = UiRender::pixelScale();
+        UiRender::offsetY = savedOffsetY + std::round((1.0f - eased) * 8.0f * UiRender::uiScale * pixel) / pixel;
 
         UiRender::shadow(px, py, sizeX, sizeY, 12, 9.0f, 4.0f, UiTheme::shadow());
         UiWidgets::overlayPanel(px, py, sizeX, sizeY, 12, UiTheme::surface(), 0xF);
+        UiRender::alphaMul = savedAlpha * UiRender::contentFade(open);
 
         if (popupOpen) {
             markOverlayUnion(px, py, sizeX, sizeY);

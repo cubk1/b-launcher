@@ -97,6 +97,8 @@ namespace UiRender {
     float lerp(float a, float b, float t);
     float clamp(float value, float min, float max);
     float saturate(float value);
+    float panelFade(float open);
+    float contentFade(float open);
     float deltaTime();
     float approach01(float current, float target, float speed);
     float approach(float current, float target, float speed);

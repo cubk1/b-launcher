@@ -615,6 +615,14 @@ namespace UiRender {
         return clamp(value, 0, 1);
     }
 
+    float panelFade(float open) {
+        return saturate(open * 2.0f);
+    }
+
+    float contentFade(float open) {
+        return saturate(open * 2.0f - 1.0f);
+    }
+
     float deltaTime() {
         return std::min(1.0f / 30.0f, ImGui::GetIO().DeltaTime);
     }
