@@ -1,6 +1,7 @@
 #include "ui/exui/MsgBox.h"
 #include "ui/exui/Skins.h"
 #include "ui/exui/widgets/Button.h"
+#include <cmath>
 
 namespace exui {
     using namespace Gdiplus;
@@ -65,12 +66,26 @@ namespace exui {
             for (size_t i = 0; i < custom.size(); ++i)
                 labels.emplace_back(custom[i], i < standard.size() ? standard[i].second : static_cast<int>(i));
         }
-        // Fixed widths: neither long labels nor many buttons widen the box.
-        for (size_t i = 0; i < labels.size(); ++i)
-            layout.buttons.push_back(
-                    {labels[i].first,
-                     Rect(layout.size.Width - static_cast<int>(i + 1) * 75 - 10, layout.size.Height - 36, 70, 24),
-                     labels[i].second});
+        constexpr int gap = 5;
+        constexpr int leftMargin = 10;
+        constexpr int rightMargin = 15;
+        int rowWidth = leftMargin + rightMargin - gap;
+        StringFormat format(StringFormatFlagsNoWrap);
+        format.SetHotkeyPrefix(HotkeyPrefixShow);
+        format.SetTrimming(StringTrimmingNone);
+        for (const auto& [caption, code] : labels) {
+            RectF text;
+            g.MeasureString(caption.c_str(), static_cast<INT>(caption.size()), DefaultFont(), PointF(), &format, &text);
+            const int width = std::max(70, static_cast<int>(std::ceil(text.Width)) + 12);
+            layout.buttons.push_back({caption, Rect(0, layout.size.Height - 36, width, 24), code});
+            rowWidth += width + gap;
+        }
+        layout.size.Width = std::max(layout.size.Width, rowWidth);
+        int right = layout.size.Width - rightMargin;
+        for (auto& button : layout.buttons) {
+            button.bounds.X = right - button.bounds.Width;
+            right = button.bounds.X - gap;
+        }
         return layout;
     }
     Rect MsgBox::IconSlice(MsgBoxIcon icon) {

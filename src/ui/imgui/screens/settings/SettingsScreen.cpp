@@ -675,7 +675,7 @@ namespace SettingsScreen {
                 {SECTION_LAUNCH, "JVM 参数", "Java 虚拟机"},
                 {SECTION_LAUNCH, "游戏参数", nullptr},
                 {SECTION_LAUNCH, "显示游戏日志", nullptr},
-                {SECTION_LAUNCH, "崩溃时问 AI", "ChatGPT Claude Grok DeepSeek Kimi"},
+                {SECTION_LAUNCH, "崩溃时问 AI", "ChatGPT Claude Gemini Grok DeepSeek Kimi"},
                 {SECTION_LAUNCH, "崩溃时上传日志", "mclo.gs 二维码"},
                 {SECTION_LAUNCH, "启动前命令", "cmd 脚本"},
                 {SECTION_KEYS, nullptr, "快捷键 键位"},

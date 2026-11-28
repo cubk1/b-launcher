@@ -7,6 +7,8 @@
 #include <core/base/strings.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <utility>
 
 namespace AskAi {
 
@@ -15,10 +17,15 @@ namespace AskAi {
     namespace {
         const char* const KEY = "crashAi";
         constexpr size_t MARGIN = 200;
+        constexpr auto DELAY = std::chrono::seconds(3);
+
+        std::string pendingUrl;
+        std::chrono::steady_clock::time_point pendingAt;
 
         constexpr Service SERVICES[] = {
-                {"chatgpt", "ChatGPT", "openai", "https://chatgpt.com/", 30000},
-                {"claude", "Claude", "claude", "https://claude.ai/new", 7000},
+                {"chatgpt", "ChatGPT（需要vpn）", "openai", "https://chatgpt.com/", 30000},
+                {"claude", "Claude（需要vpn）", "claude", "https://claude.ai/new", 7000},
+                {"gemini", "Gemini（需要vpn）", "gemini", "https://gemini.google.com/", 30000},
                 {"grok", "Grok", "grok", "https://grok.com/", 7000},
                 {"deepseek", "DeepSeek", "deepseek", "https://chat.deepseek.com/", 8000},
                 {"kimi", "Kimi", "kimi", "https://www.kimi.com/", 14000},
@@ -96,17 +103,34 @@ namespace AskAi {
             return false;
         }
         std::string url = urlOf(key, prompt);
-        if (url.size() <= service->limit) {
+        if (!url.empty() && url.size() <= service->limit) {
+            pendingUrl.clear();
             return open(url);
         }
         if (!Platform::setClipboardText(prompt)) {
             Notices::add(Notices::Kind::Failed, "无法复制到剪贴板", 4000);
             return false;
         }
+        if (url.empty()) {
+            pendingUrl = service->home;
+            pendingAt = std::chrono::steady_clock::now() + DELAY;
+            Notices::add(Notices::Kind::Info, "已自动粘贴，三秒后自动跳转到gemini.google.com", 3500);
+            return true;
+        }
+        pendingUrl.clear();
         if (!open(service->home)) {
             return false;
         }
         Notices::add(Notices::Kind::Info, "崩溃报告太长，已复制到剪贴板，请在打开的网页里粘贴后发送", 8000);
         return true;
+    }
+
+    void poll() {
+        if (pendingUrl.empty() || std::chrono::steady_clock::now() < pendingAt) {
+            return;
+        }
+        std::string url = std::move(pendingUrl);
+        pendingUrl.clear();
+        open(url);
     }
 }

@@ -1013,6 +1013,7 @@ namespace Crashes {
 
     void poll() {
         tasks.poll();
+        AskAi::poll();
     }
 
     void shutdown() {

@@ -1,6 +1,7 @@
 #include "app/instances/Covers.h"
 #include "app/system/AsyncTasks.h"
 #include "app/system/Catalog.h"
+#include "app/system/EmbeddedIcons.h"
 
 #include <core/base/fs.hpp>
 #include <core/base/zip.hpp>
@@ -271,12 +272,17 @@ namespace Covers {
             return present(dir / name);
         }
 
-        std::shared_ptr<Pixels> rasterize(const std::filesystem::path& file, int side, bool square) {
-            auto text = blb::fs::read_file(file);
-            if (!text || text->empty()) {
+        std::string embedded(const std::string& name) {
+            if (name == "gemini") {
+                return std::string((const char*) EmbeddedIcons::geminiSvg, EmbeddedIcons::geminiSvgSize);
+            }
+            return {};
+        }
+
+        std::shared_ptr<Pixels> rasterize(std::string data, int side, bool square) {
+            if (data.empty()) {
                 return nullptr;
             }
-            std::string data = *text;
             NSVGimage* image = nsvgParse(data.data(), "px", 96.0f);
             if (image == nullptr || image->width <= 0.0f || image->height <= 0.0f || image->shapes == nullptr) {
                 if (image != nullptr) {
@@ -299,6 +305,11 @@ namespace Covers {
             }
             nsvgDelete(image);
             return rasterizer != nullptr ? out : nullptr;
+        }
+
+        std::shared_ptr<Pixels> rasterize(const std::filesystem::path& file, int side, bool square) {
+            auto text = blb::fs::read_file(file);
+            return text ? rasterize(std::move(*text), side, square) : nullptr;
         }
 
         void vendor(Pixels& pixels, bool dark) {
@@ -335,13 +346,18 @@ namespace Covers {
             auto found = icons.find(id);
             bool fresh = found != icons.end() && found->second.first == side;
             if (!fresh && !name.empty() && side > 0 && drawing.insert(id).second) {
+                std::string builtin = embedded(name);
                 std::string file = name + VECTOR;
-                bool remote = asked.insert(file).second;
+                bool remote = builtin.empty() && asked.insert(file).second;
                 tasks.run(
-                        [id, file, side, square, adjust, dark, remote](blb::cancellation_token token) -> Continuation {
+                        [id, file, builtin = std::move(builtin), side, square, adjust, dark,
+                         remote](blb::cancellation_token token) -> Continuation {
                             std::shared_ptr<Pixels> pixels;
                             if (remote ? ensure(file, token) : present(folder() / file)) {
                                 pixels = rasterize(folder() / file, side, square);
+                            }
+                            if (pixels == nullptr && !builtin.empty()) {
+                                pixels = rasterize(builtin, side, square);
                             }
                             if (pixels != nullptr) {
                                 adjust(*pixels, dark);
